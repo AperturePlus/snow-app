@@ -11,15 +11,27 @@ import {
 
 type TopBarProps = {
   isSidebarCollapsed: boolean;
+  isRightPanelCollapsed: boolean;
   onToggleSidebar: () => void;
+  onToggleRightPanel: () => void;
 };
 
 export const TopBar = ({
   isSidebarCollapsed,
+  isRightPanelCollapsed,
   onToggleSidebar,
+  onToggleRightPanel,
 }: TopBarProps): React.JSX.Element => {
-  const ToggleIcon = isSidebarCollapsed ? SidebarOpen : SidebarClose;
-  const toggleLabel = isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar";
+  const SidebarToggleIcon = isSidebarCollapsed ? SidebarOpen : SidebarClose;
+  const sidebarToggleLabel = isSidebarCollapsed
+    ? "Expand sidebar"
+    : "Collapse sidebar";
+  const RightPanelToggleIcon = isRightPanelCollapsed
+    ? SidebarClose
+    : SidebarOpen;
+  const rightPanelToggleLabel = isRightPanelCollapsed
+    ? "Expand right panel"
+    : "Collapse right panel";
 
   return (
     <header className="top-bar">
@@ -28,11 +40,11 @@ export const TopBar = ({
           <button
             className="icon-btn sidebar-toggle-btn"
             type="button"
-            aria-label={toggleLabel}
-            title={toggleLabel}
+            aria-label={sidebarToggleLabel}
+            title={sidebarToggleLabel}
             onClick={onToggleSidebar}
           >
-            <ToggleIcon size={16} strokeWidth={1.8} />
+            <SidebarToggleIcon size={16} strokeWidth={1.8} />
           </button>
         </div>
       </div>
@@ -43,9 +55,6 @@ export const TopBar = ({
           <span className="header-subtitle">burger-restaurant</span>
         </div>
         <div className="header-actions">
-          <button className="icon-btn ghost" aria-label="Settings">
-            <Settings size={16} />
-          </button>
           <button className="icon-btn ghost" aria-label="Branch">
             <GitBranch size={16} />
           </button>
@@ -53,9 +62,6 @@ export const TopBar = ({
             <GitBranch size={14} />
             <span>Commit</span>
             <ChevronDown size={12} />
-          </button>
-          <button className="icon-btn ghost" aria-label="Maximize">
-            <Maximize2 size={16} />
           </button>
           <div className="diff-stat">
             <span className="diff-add">+938</span>
@@ -74,12 +80,15 @@ export const TopBar = ({
             <SquareStack size={16} />
             <span>Review</span>
           </button>
-          <button className="panel-tab-btn" aria-label="Add tab">
-            <span>+</span>
-          </button>
         </div>
-        <button className="icon-btn ghost" aria-label="Expand">
-          <span>⤢</span>
+        <button
+          className="icon-btn ghost right-panel-toggle-btn"
+          type="button"
+          aria-label={rightPanelToggleLabel}
+          title={rightPanelToggleLabel}
+          onClick={onToggleRightPanel}
+        >
+          <RightPanelToggleIcon size={16} strokeWidth={1.8} />
         </button>
       </div>
     </header>

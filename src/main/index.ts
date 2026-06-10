@@ -1,6 +1,13 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  nativeTheme,
+  shell,
+} from "electron";
 import { is } from "@electron-toolkit/utils";
 
 type NativeBridge = {
@@ -28,6 +35,9 @@ const loadNativeBridge = (): NativeBridge => {
 
 const native = loadNativeBridge();
 
+const getWindowBackgroundColor = (): string =>
+  nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff";
+
 const createWindow = (): void => {
   const mainWindow = new BrowserWindow({
     width: 1180,
@@ -36,15 +46,38 @@ const createWindow = (): void => {
     minHeight: 600,
     show: false,
     title: "Snow App",
-    titleBarStyle: "hidden",
-    trafficLightPosition: { x: 14, y: 13 },
-    backgroundColor: "#0f172a",
+    autoHideMenuBar: true,
+    backgroundColor: getWindowBackgroundColor(),
     webPreferences: {
       preload: join(__dirname, "../preload/index.mjs"),
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+
+  mainWindow.setMenu(null);
+  mainWindow.setMenuBarVisibility(false);
+  mainWindow.setAutoHideMenuBar(true);
+
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    if (is.dev && input.key === "F12") {
+      event.preventDefault();
+      mainWindow.webContents.toggleDevTools();
+      return;
+    }
+
+    if (
+      input.key === "Alt" ||
+      input.code === "AltLeft" ||
+      input.code === "AltRight"
+    ) {
+      event.preventDefault();
+    }
+  });
+
+  nativeTheme.on("updated", () => {
+    mainWindow.setBackgroundColor(getWindowBackgroundColor());
   });
 
   mainWindow.once("ready-to-show", () => {
@@ -75,6 +108,9 @@ const createWindow = (): void => {
 };
 
 app.whenReady().then(() => {
+  Menu.setApplicationMenu(null);
+  nativeTheme.themeSource = "system";
+
   ipcMain.handle("native:engine-info", () => native.engineInfo());
   ipcMain.handle("native:sum", (_event, a: number, b: number) =>
     native.sum(a, b)

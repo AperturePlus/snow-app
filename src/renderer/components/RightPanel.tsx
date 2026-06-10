@@ -81,9 +81,15 @@ const DIFF_LINES = [
   { type: "add", num: 26, content: "</span>" },
 ];
 
-export const RightPanel = (): React.JSX.Element => {
+type RightPanelProps = {
+  isCollapsed: boolean;
+};
+
+export const RightPanel = ({
+  isCollapsed,
+}: RightPanelProps): React.JSX.Element => {
   return (
-    <aside className="right-panel">
+    <aside className={`right-panel${isCollapsed ? " collapsed" : ""}`}>
       {/* Review header */}
       <div className="review-header">
         <span className="review-badge">
@@ -91,9 +97,6 @@ export const RightPanel = (): React.JSX.Element => {
         </span>
         <button className="icon-btn ghost">
           <span>⋯</span>
-        </button>
-        <button className="icon-btn ghost">
-          <span>▭</span>
         </button>
       </div>
 

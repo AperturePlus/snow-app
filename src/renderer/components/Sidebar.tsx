@@ -74,9 +74,6 @@ export const Sidebar = ({ isCollapsed }: SidebarProps): React.JSX.Element => {
         <div className="section-header">
           <span className="section-title">Projects</span>
           <div className="section-actions">
-            <button className="icon-btn ghost" aria-label="View mode">
-              <List size={14} />
-            </button>
             <button className="icon-btn ghost" aria-label="Add project">
               <Plus size={14} />
             </button>
@@ -96,14 +93,6 @@ export const Sidebar = ({ isCollapsed }: SidebarProps): React.JSX.Element => {
       <div className="sidebar-section">
         <div className="section-header">
           <span className="section-title">Chats</span>
-          <div className="section-actions">
-            <button className="icon-btn ghost" aria-label="View mode">
-              <List size={14} />
-            </button>
-            <button className="icon-btn ghost" aria-label="New chat">
-              <PenLine size={14} />
-            </button>
-          </div>
         </div>
         <div className="section-list">
           <span className="empty-text">No chats</span>
