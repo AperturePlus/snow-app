@@ -1,0 +1,55 @@
+{
+  "name": "snow-app",
+  "version": "0.1.0",
+  "description": "High-performance cross-platform desktop app scaffold powered by Electron, React, TypeScript, and Rust.",
+  "private": true,
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run build:rust && electron-vite build",
+    "build:app": "npm run build && electron-builder",
+    "build:rust": "napi build --manifest-path native/Cargo.toml --output-dir native --platform --release --package-json-path package.json",
+    "check": "npm run check:ts && cargo check --manifest-path native/Cargo.toml",
+    "check:ts": "tsc --noEmit",
+    "preview": "electron-vite preview"
+  },
+  "dependencies": {
+    "@electron-toolkit/preload": "^3.0.2",
+    "@electron-toolkit/utils": "^4.0.0",
+    "@napi-rs/triples": "^1.2.0",
+    "lucide-react": "^1.17.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.1.5",
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.2",
+    "electron": "^37.3.1",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^4.0.0",
+    "typescript": "^5.9.2"
+  },
+  "build": {
+    "appId": "com.snow.app",
+    "productName": "Snow App",
+    "files": [
+      "out/**",
+      "native/*.node",
+      "native/index.cjs",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "native/*.node"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.developer-tools"
+    }
+  }
+}

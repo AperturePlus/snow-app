@@ -1,0 +1,15 @@
+[package]
+name = "snow_native"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "3.2.4", default-features = false, features = ["napi4"] }
+napi-derive = "3.2.4"
+
+[build-dependencies]
+napi-build = "2.2.3"

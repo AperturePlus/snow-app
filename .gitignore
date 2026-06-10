@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+out/
+release/
+*.tsbuildinfo
+
+# Rust outputs
+/native/target/
+/native/*.node
+/native/*.d.ts
+/native/*.js
+!/native/index.cjs
+Cargo.lock
+!/native/Cargo.lock
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+
+# Snow local state
+.snow/
