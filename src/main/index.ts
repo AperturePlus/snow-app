@@ -46,6 +46,7 @@ const createWindow = (): void => {
     minHeight: 600,
     show: false,
     title: "Snow App",
+    titleBarStyle: process.platform === "darwin" ? "hidden" : "default",
     autoHideMenuBar: true,
     backgroundColor: getWindowBackgroundColor(),
     webPreferences: {

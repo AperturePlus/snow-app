@@ -257,7 +257,11 @@ input {
   -webkit-app-region: no-drag;
 }
 
-.sidebar-toggle-btn {
+.sidebar-toggle-btn,
+.right-panel-toggle-btn {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
   -webkit-app-region: no-drag;
 }
 
