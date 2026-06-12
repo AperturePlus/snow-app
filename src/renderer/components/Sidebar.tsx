@@ -1,18 +1,14 @@
 import {
-  MessageSquare,
   Search,
   LayoutGrid,
   Clock,
   Pin,
   Folder,
   Settings,
-  List,
   Plus,
-  PenLine,
 } from "lucide-react";
 
 const NAV_ITEMS = [
-  { icon: MessageSquare, label: "New chat" },
   { icon: Search, label: "Search" },
   { icon: LayoutGrid, label: "Plugins" },
   { icon: Clock, label: "Automations" },

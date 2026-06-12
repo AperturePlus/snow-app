@@ -2,10 +2,9 @@ import {
   ChevronDown,
   GitBranch,
   GitPullRequest,
-  Maximize2,
-  Settings,
   SidebarClose,
   SidebarOpen,
+  SquarePen,
   SquareStack,
 } from "lucide-react";
 
@@ -45,6 +44,14 @@ export const TopBar = ({
             onClick={onToggleSidebar}
           >
             <SidebarToggleIcon size={16} strokeWidth={1.8} />
+          </button>
+          <button
+            className="icon-btn new-chat-btn"
+            type="button"
+            aria-label="New chat"
+            title="New chat"
+          >
+            <SquarePen size={16} strokeWidth={1.8} />
           </button>
         </div>
       </div>

@@ -7,13 +7,16 @@ import { TopBar } from "./components/TopBar";
 export const App = (): React.JSX.Element => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
+  const shellClasses = [
+    "app-shell",
+    isSidebarCollapsed ? "sidebar-collapsed" : "",
+    isRightPanelCollapsed ? "right-panel-collapsed" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <div
-      className={`app-shell${
-        isRightPanelCollapsed ? " right-panel-collapsed" : ""
-      }`}
-    >
+    <div className={shellClasses}>
       <TopBar
         isSidebarCollapsed={isSidebarCollapsed}
         isRightPanelCollapsed={isRightPanelCollapsed}
