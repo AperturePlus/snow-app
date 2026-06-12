@@ -1,0 +1,181 @@
+import type {
+  CodebaseSettingsInput,
+  CodebaseSettingsRecord,
+  NativeBridge,
+} from "../native/types";
+import {
+  SNOW_CLI_GLOBAL_SETTINGS_FILE,
+  SNOW_CLI_PROJECT_SETTINGS_FILE,
+} from "../snowCli/paths";
+import { readJsonFile } from "../utils/jsonFile";
+import {
+  isRecord,
+  toBoolean,
+  toPositiveInteger,
+  toText,
+} from "../utils/value";
+
+const DEFAULT_CODEBASE_SETTINGS: CodebaseSettingsInput = {
+  profileName: "default",
+  enabled: false,
+  enableAgentReview: true,
+  enableReranking: false,
+  embeddingType: "jina",
+  embeddingModelName: "",
+  embeddingBaseUrl: "",
+  embeddingApiKey: "",
+  embeddingDimensions: 1536,
+  batchMaxLines: 10,
+  batchConcurrency: 3,
+  chunkingMaxLinesPerChunk: 200,
+  chunkingMinLinesPerChunk: 10,
+  chunkingMinCharsPerChunk: 20,
+  chunkingOverlapLines: 20,
+  rerankingModelName: "",
+  rerankingBaseUrl: "",
+  rerankingApiKey: "",
+  rerankingContextLength: 4096,
+  rerankingTopN: 5,
+  configJson: "{}",
+  source: "manual",
+};
+
+const getCodebaseObject = (
+  settings: Record<string, unknown> | null
+): Record<string, unknown> => {
+  const codebase = settings?.codebase;
+  return isRecord(codebase) ? codebase : {};
+};
+
+export const normalizeCodebaseSettings = (
+  value: unknown
+): CodebaseSettingsInput => {
+  const source = isRecord(value) ? value : {};
+  const profileName = toText(
+    source.profileName,
+    DEFAULT_CODEBASE_SETTINGS.profileName
+  ).trim();
+  const embeddingType = toText(
+    source.embeddingType,
+    DEFAULT_CODEBASE_SETTINGS.embeddingType
+  ).trim();
+  const sourceLabel = toText(
+    source.source,
+    DEFAULT_CODEBASE_SETTINGS.source
+  ).trim();
+
+  return {
+    profileName: profileName || DEFAULT_CODEBASE_SETTINGS.profileName,
+    enabled: toBoolean(source.enabled, DEFAULT_CODEBASE_SETTINGS.enabled),
+    enableAgentReview: toBoolean(
+      source.enableAgentReview,
+      DEFAULT_CODEBASE_SETTINGS.enableAgentReview
+    ),
+    enableReranking: toBoolean(
+      source.enableReranking,
+      DEFAULT_CODEBASE_SETTINGS.enableReranking
+    ),
+    embeddingType: embeddingType || DEFAULT_CODEBASE_SETTINGS.embeddingType,
+    embeddingModelName: toText(source.embeddingModelName).trim(),
+    embeddingBaseUrl: toText(source.embeddingBaseUrl).trim(),
+    embeddingApiKey: toText(source.embeddingApiKey),
+    embeddingDimensions: toPositiveInteger(
+      source.embeddingDimensions,
+      DEFAULT_CODEBASE_SETTINGS.embeddingDimensions
+    ),
+    batchMaxLines: toPositiveInteger(
+      source.batchMaxLines,
+      DEFAULT_CODEBASE_SETTINGS.batchMaxLines
+    ),
+    batchConcurrency: toPositiveInteger(
+      source.batchConcurrency,
+      DEFAULT_CODEBASE_SETTINGS.batchConcurrency
+    ),
+    chunkingMaxLinesPerChunk: toPositiveInteger(
+      source.chunkingMaxLinesPerChunk,
+      DEFAULT_CODEBASE_SETTINGS.chunkingMaxLinesPerChunk
+    ),
+    chunkingMinLinesPerChunk: toPositiveInteger(
+      source.chunkingMinLinesPerChunk,
+      DEFAULT_CODEBASE_SETTINGS.chunkingMinLinesPerChunk
+    ),
+    chunkingMinCharsPerChunk: toPositiveInteger(
+      source.chunkingMinCharsPerChunk,
+      DEFAULT_CODEBASE_SETTINGS.chunkingMinCharsPerChunk
+    ),
+    chunkingOverlapLines: toPositiveInteger(
+      source.chunkingOverlapLines,
+      DEFAULT_CODEBASE_SETTINGS.chunkingOverlapLines
+    ),
+    rerankingModelName: toText(source.rerankingModelName).trim(),
+    rerankingBaseUrl: toText(source.rerankingBaseUrl).trim(),
+    rerankingApiKey: toText(source.rerankingApiKey),
+    rerankingContextLength: toPositiveInteger(
+      source.rerankingContextLength,
+      DEFAULT_CODEBASE_SETTINGS.rerankingContextLength
+    ),
+    rerankingTopN: toPositiveInteger(
+      source.rerankingTopN,
+      DEFAULT_CODEBASE_SETTINGS.rerankingTopN
+    ),
+    configJson: toText(source.configJson, DEFAULT_CODEBASE_SETTINGS.configJson),
+    source: sourceLabel || DEFAULT_CODEBASE_SETTINGS.source,
+  };
+};
+
+export const persistCodebaseSettings = (
+  native: NativeBridge,
+  settings: CodebaseSettingsInput
+): CodebaseSettingsRecord => {
+  const normalized = normalizeCodebaseSettings(settings);
+  native.upsertCodebaseSettings(normalized);
+  return native.getCodebaseSettings();
+};
+
+export const readSnowCliCodebaseSettings = (
+  native: NativeBridge
+): CodebaseSettingsRecord => {
+  const globalSettings = readJsonFile(SNOW_CLI_GLOBAL_SETTINGS_FILE);
+  const projectSettings = readJsonFile(SNOW_CLI_PROJECT_SETTINGS_FILE);
+  const globalCodebase = getCodebaseObject(globalSettings);
+  const projectCodebase = getCodebaseObject(projectSettings);
+  const embedding = isRecord(globalCodebase.embedding)
+    ? globalCodebase.embedding
+    : {};
+  const reranking = isRecord(globalCodebase.reranking)
+    ? globalCodebase.reranking
+    : {};
+  const batch = isRecord(projectCodebase.batch) ? projectCodebase.batch : {};
+  const chunking = isRecord(projectCodebase.chunking)
+    ? projectCodebase.chunking
+    : {};
+  const config = normalizeCodebaseSettings({
+    profileName: "default",
+    enabled: projectCodebase.enabled,
+    enableAgentReview: projectCodebase.enableAgentReview,
+    enableReranking: projectCodebase.enableReranking,
+    embeddingType: embedding.type,
+    embeddingModelName: embedding.modelName,
+    embeddingBaseUrl: embedding.baseUrl,
+    embeddingApiKey: embedding.apiKey,
+    embeddingDimensions: embedding.dimensions,
+    batchMaxLines: batch.maxLines,
+    batchConcurrency: batch.concurrency,
+    chunkingMaxLinesPerChunk: chunking.maxLinesPerChunk,
+    chunkingMinLinesPerChunk: chunking.minLinesPerChunk,
+    chunkingMinCharsPerChunk: chunking.minCharsPerChunk,
+    chunkingOverlapLines: chunking.overlapLines,
+    rerankingModelName: reranking.modelName,
+    rerankingBaseUrl: reranking.baseUrl,
+    rerankingApiKey: reranking.apiKey,
+    rerankingContextLength: reranking.contextLength,
+    rerankingTopN: reranking.topN,
+    configJson: JSON.stringify({
+      global: globalSettings ?? {},
+      project: projectSettings ?? {},
+    }),
+    source: "snow-cli",
+  });
+
+  return persistCodebaseSettings(native, config);
+};

@@ -46,10 +46,11 @@ type ApiConfigFormData = {
   maxTokens: string;
   streamIdleTimeoutSec: string;
 };
-
 const DEFAULT_API_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_REQUEST_METHOD = "chat";
 const REQUEST_METHODS = ["chat", "responses", "anthropic", "gemini"];
+const ENABLED_STATUS_LABEL = "Enabled";
+const DISABLED_STATUS_LABEL = "Not enabled";
 
 const emptyForm = (index: number, active: boolean): ApiConfigFormData => ({
   profileName: `manual-${index}`,
@@ -377,7 +378,9 @@ function FormFields({
           </label>
           <label className="api-settings-field">
             <span>
-              {t("settings.apiSetActive", { defaultValue: "Set active" })}
+              {t("settings.apiSetActive", {
+                defaultValue: "Enable profile",
+              })}
             </span>
             <label className="toggle-switch">
               <input
@@ -390,8 +393,10 @@ function FormFields({
               <span className="toggle-slider" />
               <span>
                 {data.isActive
-                  ? t("settings.active", { defaultValue: "Active" })
-                  : t("settings.inactive", { defaultValue: "Inactive" })}
+                  ? t("settings.active", { defaultValue: ENABLED_STATUS_LABEL })
+                  : t("settings.inactive", {
+                      defaultValue: DISABLED_STATUS_LABEL,
+                    })}
               </span>
             </label>
           </label>
@@ -496,6 +501,23 @@ export function ApiSettingsTreePanel({
   const onFieldChange =
     (form: "add" | "edit") =>
     (field: keyof ApiConfigFormData, value: string | boolean) => {
+      if (field === "isActive" && value === false) {
+        const currentForm = form === "add" ? addForm : editForm;
+        const profileName = currentForm?.profileName;
+        const willKeepAnotherActive = configs.some(
+          (config) => config.isActive && config.profileName !== profileName
+        );
+
+        if (!willKeepAnotherActive) {
+          setError(
+            t("settings.apiAtLeastOneActive", {
+              defaultValue: "At least one API profile must be enabled.",
+            })
+          );
+          return;
+        }
+      }
+
       if (form === "add") setAddForm((p) => ({ ...p, [field]: value }));
       else if (form === "edit" && editForm)
         setEditForm({ ...editForm, [field]: value });
@@ -784,7 +806,7 @@ export function ApiSettingsTreePanel({
           )}
           <span>
             {t("settings.importFromSnowCli", {
-              defaultValue: "Import from Snow CLI",
+              defaultValue: "Sync Snow CLI API config",
             })}
           </span>
         </button>
@@ -909,14 +931,12 @@ export function ApiSettingsTreePanel({
       )}
 
       <AutoDismissNotice
-        message={status}
-        tone="success"
-        onDismiss={() => setStatus("")}
-      />
-      <AutoDismissNotice
-        message={error}
-        tone="error"
-        onDismiss={() => setError("")}
+        message={error || status}
+        tone={error ? "error" : "success"}
+        onDismiss={() => {
+          setError("");
+          setStatus("");
+        }}
       />
 
       {/* ── Table ── */}
@@ -983,16 +1003,20 @@ export function ApiSettingsTreePanel({
                       title={
                         config.isActive
                           ? t("settings.activeProfile", {
-                              defaultValue: "Active profile",
+                              defaultValue: "Enabled profile",
                             })
                           : t("settings.clickToActivate", {
-                              defaultValue: "Click to activate",
+                              defaultValue: "Click to enable this profile",
                             })
                       }
                     >
                       {config.isActive
-                        ? t("settings.active", { defaultValue: "Active" })
-                        : t("settings.inactive", { defaultValue: "Inactive" })}
+                        ? t("settings.active", {
+                            defaultValue: ENABLED_STATUS_LABEL,
+                          })
+                        : t("settings.inactive", {
+                            defaultValue: DISABLED_STATUS_LABEL,
+                          })}
                     </button>
                   </td>
                   <td className="api-settings-table-actions-col">

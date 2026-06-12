@@ -1,10 +1,24 @@
 use std::path::Path;
 
 use napi::bindgen_prelude::*;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 
 use super::super::database;
 use super::super::{ApiConfigInput, ApiConfigRecord};
+
+const DEFAULT_PROFILE_NAME: &str = "default";
+const DEFAULT_DISPLAY_NAME: &str = "Default API";
+const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
+const DEFAULT_REQUEST_METHOD: &str = "chat";
+const DEFAULT_ADVANCED_MODEL: &str = "gpt-4.1";
+const DEFAULT_BASIC_MODEL: &str = "gpt-4.1-mini";
+const DEFAULT_CONFIG_JSON: &str = "{\"snowcfg\":{\"baseUrl\":\"https://api.openai.com/v1\",\"baseUrlMode\":\"auto\",\"requestMethod\":\"chat\",\"advancedModel\":\"gpt-4.1\",\"basicModel\":\"gpt-4.1-mini\",\"supportsVision\":true}}";
+
+pub fn seed_default_api_config(database_path: &Path) -> Result<()> {
+    Connection::open(database_path)
+        .and_then(|connection| seed_default_api_config_with_connection(&connection))
+        .map_err(|error| database::database_error(database_path, "seed default API config", error))
+}
 
 pub fn list_api_configs(database_path: &Path) -> Result<Vec<ApiConfigRecord>> {
     Connection::open(database_path)
@@ -162,6 +176,10 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                 ],
             )?;
 
+            if !config.is_active {
+                ensure_one_active_config(&transaction)?;
+            }
+
             transaction.commit()
         })
         .map_err(|error| database::database_error(database_path, "upsert API config", error))
@@ -171,47 +189,79 @@ pub fn delete_api_config(database_path: &Path, profile_name: &str) -> Result<()>
     Connection::open(database_path)
         .and_then(|mut connection| {
             let transaction = connection.transaction()?;
-            let deleted_config_was_active = transaction
-                .query_row(
-                    "SELECT is_active FROM api_configs WHERE profile_name = ?1",
-                    [profile_name],
-                    |row| row.get::<_, i64>(0),
-                )
-                .optional()?
-                .unwrap_or(0)
-                != 0;
 
             transaction.execute(
                 "DELETE FROM api_configs WHERE profile_name = ?1",
                 [profile_name],
             )?;
 
-            if deleted_config_was_active {
-                let active_config_id = transaction
-                    .query_row(
-                        "SELECT id FROM api_configs WHERE is_active = 1 LIMIT 1",
-                        [],
-                        |row| row.get::<_, i32>(0),
-                    )
-                    .optional()?;
-
-                if active_config_id.is_none() {
-                    transaction.execute(
-                        "UPDATE api_configs
-                            SET is_active = 1,
-                                updated_at = datetime('now')
-                          WHERE id = (
-                            SELECT id
-                              FROM api_configs
-                             ORDER BY updated_at DESC, display_name COLLATE NOCASE ASC
-                             LIMIT 1
-                          )",
-                        [],
-                    )?;
-                }
-            }
+            seed_default_api_config_with_connection(&transaction)?;
+            ensure_one_active_config(&transaction)?;
 
             transaction.commit()
         })
         .map_err(|error| database::database_error(database_path, "delete API config", error))
+}
+
+fn seed_default_api_config_with_connection(connection: &Connection) -> rusqlite::Result<()> {
+    connection.execute(
+        "INSERT INTO api_configs (
+           profile_name,
+           display_name,
+           is_active,
+           base_url,
+           base_url_mode,
+           api_key,
+           request_method,
+           advanced_model,
+           basic_model,
+           supports_vision,
+           vision_base_url,
+           vision_base_url_mode,
+           vision_api_key,
+           vision_request_method,
+           vision_model,
+           config_json,
+           source,
+           created_at,
+           updated_at
+         )
+         SELECT
+           ?1, ?2, 1, ?3, 'auto', '', ?4, ?5, ?6, 1,
+           '', 'auto', '', ?4, '', ?7, 'default', datetime('now'), datetime('now')
+         WHERE NOT EXISTS (SELECT 1 FROM api_configs)",
+        params![
+            DEFAULT_PROFILE_NAME,
+            DEFAULT_DISPLAY_NAME,
+            DEFAULT_BASE_URL,
+            DEFAULT_REQUEST_METHOD,
+            DEFAULT_ADVANCED_MODEL,
+            DEFAULT_BASIC_MODEL,
+            DEFAULT_CONFIG_JSON,
+        ],
+    )?;
+
+    ensure_one_active_config(connection)
+}
+
+fn ensure_one_active_config(connection: &Connection) -> rusqlite::Result<()> {
+    connection.execute(
+        "UPDATE api_configs
+            SET is_active = 1,
+                updated_at = datetime('now')
+          WHERE id = (
+            SELECT id
+              FROM api_configs
+             ORDER BY updated_at DESC, display_name COLLATE NOCASE ASC
+             LIMIT 1
+          )
+            AND NOT EXISTS (
+              SELECT 1
+                FROM api_configs
+               WHERE is_active = 1
+            )",
+        [],
+    )?;
+
+    Ok(())
 }

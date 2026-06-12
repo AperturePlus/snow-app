@@ -130,7 +130,11 @@ export function SettingsSidebarContent({
   const handleExitSettings = (): void => {
     onSwitchContent("main");
 
-    if (activeMainView === "api-settings") {
+    if (
+      activeMainView === "api-settings" ||
+      activeMainView === "proxy-browser-settings" ||
+      activeMainView === "codebase-settings"
+    ) {
       onSelectMainView("chat");
     }
   };
@@ -157,16 +161,23 @@ export function SettingsSidebarContent({
         <div className="sidebar-section settings-menu-section">
           <div className="settings-list">
             {SETTINGS_ITEMS.map((item) => {
-              const isApiItem = item.id === "api";
-              const isActive = isApiItem && activeMainView === "api-settings";
+              const targetView =
+                item.id === "api"
+                  ? "api-settings"
+                  : item.id === "proxy"
+                  ? "proxy-browser-settings"
+                  : item.id === "codebase"
+                  ? "codebase-settings"
+                  : null;
+              const isActive = targetView === activeMainView;
 
               return (
                 <button
                   key={item.id}
                   className={`settings-item ${isActive ? "active" : ""}`}
                   onClick={() => {
-                    if (isApiItem) {
-                      onSelectMainView("api-settings");
+                    if (targetView) {
+                      onSelectMainView(targetView);
                     }
                   }}
                   type="button"

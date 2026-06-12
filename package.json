@@ -9,7 +9,7 @@
     "dev": "electron-vite dev",
     "build": "npm run build:rust && electron-vite build",
     "build:app": "npm run build && electron-builder",
-    "build:rust": "napi build --manifest-path native/Cargo.toml --output-dir native --platform --release --package-json-path package.json",
+    "build:rust": "node scripts/build-native.cjs",
     "check": "npm run check:ts && cargo check --manifest-path native/Cargo.toml",
     "check:ts": "tsc --noEmit",
     "preview": "electron-vite preview"

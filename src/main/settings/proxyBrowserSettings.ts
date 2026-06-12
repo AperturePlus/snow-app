@@ -1,0 +1,77 @@
+import { existsSync } from "node:fs";
+import type { NativeBridge } from "../native/types";
+import { SNOW_CLI_PROXY_CONFIG_FILE } from "../snowCli/paths";
+import { readJsonFile } from "../utils/jsonFile";
+import { isRecord, toBoolean, toText } from "../utils/value";
+
+export type ProxyBrowserSettings = {
+  enabled: boolean;
+  port: number;
+  browserPath: string;
+  browserDebugPort: number;
+  searchEngine: string;
+};
+
+const PROXY_BROWSER_SETTING_NAME = "Proxy and browser settings";
+const PROXY_BROWSER_SETTING_CODE = "proxy_browser_settings";
+const DEFAULT_PROXY_BROWSER_SETTINGS: ProxyBrowserSettings = {
+  enabled: false,
+  port: 7890,
+  browserPath: "",
+  browserDebugPort: 9222,
+  searchEngine: "duckduckgo",
+};
+
+const toPort = (value: unknown, defaultValue: number): number => {
+  const port = typeof value === "number" ? value : Number(value);
+
+  return Number.isInteger(port) && port >= 1 && port <= 65535
+    ? port
+    : defaultValue;
+};
+
+const normalizeProxyBrowserSettings = (value: unknown): ProxyBrowserSettings => {
+  const source = isRecord(value) ? value : {};
+
+  return {
+    enabled: toBoolean(source.enabled, DEFAULT_PROXY_BROWSER_SETTINGS.enabled),
+    port: toPort(source.port, DEFAULT_PROXY_BROWSER_SETTINGS.port),
+    browserPath: toText(source.browserPath).trim(),
+    browserDebugPort: toPort(
+      source.browserDebugPort,
+      DEFAULT_PROXY_BROWSER_SETTINGS.browserDebugPort
+    ),
+    searchEngine:
+      toText(
+        source.searchEngine,
+        DEFAULT_PROXY_BROWSER_SETTINGS.searchEngine
+      ).trim() || DEFAULT_PROXY_BROWSER_SETTINGS.searchEngine,
+  };
+};
+
+const persistProxyBrowserSettings = (
+  native: NativeBridge,
+  settings: ProxyBrowserSettings
+): ProxyBrowserSettings => {
+  native.setSystemSetting(
+    PROXY_BROWSER_SETTING_NAME,
+    PROXY_BROWSER_SETTING_CODE,
+    JSON.stringify(settings)
+  );
+
+  return settings;
+};
+
+export const readSnowCliProxyConfig = (
+  native: NativeBridge
+): ProxyBrowserSettings => {
+  if (!existsSync(SNOW_CLI_PROXY_CONFIG_FILE)) {
+    return persistProxyBrowserSettings(native, DEFAULT_PROXY_BROWSER_SETTINGS);
+  }
+
+  const config = readJsonFile(SNOW_CLI_PROXY_CONFIG_FILE);
+  return persistProxyBrowserSettings(
+    native,
+    normalizeProxyBrowserSettings(config)
+  );
+};

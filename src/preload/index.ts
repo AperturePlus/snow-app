@@ -36,6 +36,44 @@ export type ImportSnowCliApiConfigsResult = {
   configs: ApiConfigRecord[];
 };
 
+export type ProxyBrowserSettings = {
+  enabled: boolean;
+  port: number;
+  browserPath: string;
+  browserDebugPort: number;
+  searchEngine: string;
+};
+
+export type CodebaseSettingsInput = {
+  profileName: string;
+  enabled: boolean;
+  enableAgentReview: boolean;
+  enableReranking: boolean;
+  embeddingType: string;
+  embeddingModelName: string;
+  embeddingBaseUrl: string;
+  embeddingApiKey: string;
+  embeddingDimensions: number;
+  batchMaxLines: number;
+  batchConcurrency: number;
+  chunkingMaxLinesPerChunk: number;
+  chunkingMinLinesPerChunk: number;
+  chunkingMinCharsPerChunk: number;
+  chunkingOverlapLines: number;
+  rerankingModelName: string;
+  rerankingBaseUrl: string;
+  rerankingApiKey: string;
+  rerankingContextLength: number;
+  rerankingTopN: number;
+  configJson: string;
+  source: string;
+};
+
+export type CodebaseSettingsRecord = CodebaseSettingsInput & {
+  id: number;
+  updatedAt: string;
+};
+
 const api = {
   engineInfo: (): Promise<string> => ipcRenderer.invoke("native:engine-info"),
   getSystemSettingValue: (settingCode: string): Promise<string | null> =>
@@ -59,6 +97,21 @@ const api = {
     ipcRenderer.invoke("api-configs:delete", profileName),
   importSnowCliApiConfigs: (): Promise<ImportSnowCliApiConfigsResult> =>
     ipcRenderer.invoke("api-configs:import-snow-cli"),
+  importSnowCliProxyConfig: (): Promise<ProxyBrowserSettings> =>
+    ipcRenderer.invoke("proxy-browser-settings:import-snow-cli"),
+  getCodebaseSettings: (): Promise<CodebaseSettingsRecord> =>
+    ipcRenderer.invoke("codebase-settings:get"),
+  upsertCodebaseSettings: (
+    settings: CodebaseSettingsInput
+  ): Promise<CodebaseSettingsRecord> =>
+    ipcRenderer.invoke("codebase-settings:upsert", settings),
+  importSnowCliCodebaseSettings: (): Promise<CodebaseSettingsRecord> =>
+    ipcRenderer.invoke("codebase-settings:import-snow-cli"),
+  selectBrowserExecutable: (dialogTitle?: string): Promise<string | null> =>
+    ipcRenderer.invoke(
+      "proxy-browser-settings:select-browser-executable",
+      dialogTitle
+    ),
   sum: (a: number, b: number): Promise<number> =>
     ipcRenderer.invoke("native:sum", a, b),
 };

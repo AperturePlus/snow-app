@@ -61,11 +61,66 @@ pub struct ApiConfigRecord {
     pub updated_at: String,
 }
 
+#[napi(object)]
+pub struct CodebaseSettingsInput {
+    pub profile_name: String,
+    pub enabled: bool,
+    pub enable_agent_review: bool,
+    pub enable_reranking: bool,
+    pub embedding_type: String,
+    pub embedding_model_name: String,
+    pub embedding_base_url: String,
+    pub embedding_api_key: String,
+    pub embedding_dimensions: i32,
+    pub batch_max_lines: i32,
+    pub batch_concurrency: i32,
+    pub chunking_max_lines_per_chunk: i32,
+    pub chunking_min_lines_per_chunk: i32,
+    pub chunking_min_chars_per_chunk: i32,
+    pub chunking_overlap_lines: i32,
+    pub reranking_model_name: String,
+    pub reranking_base_url: String,
+    pub reranking_api_key: String,
+    pub reranking_context_length: i32,
+    pub reranking_top_n: i32,
+    pub config_json: String,
+    pub source: String,
+}
+
+#[napi(object)]
+pub struct CodebaseSettingsRecord {
+    pub id: i32,
+    pub profile_name: String,
+    pub enabled: bool,
+    pub enable_agent_review: bool,
+    pub enable_reranking: bool,
+    pub embedding_type: String,
+    pub embedding_model_name: String,
+    pub embedding_base_url: String,
+    pub embedding_api_key: String,
+    pub embedding_dimensions: i32,
+    pub batch_max_lines: i32,
+    pub batch_concurrency: i32,
+    pub chunking_max_lines_per_chunk: i32,
+    pub chunking_min_lines_per_chunk: i32,
+    pub chunking_min_chars_per_chunk: i32,
+    pub chunking_overlap_lines: i32,
+    pub reranking_model_name: String,
+    pub reranking_base_url: String,
+    pub reranking_api_key: String,
+    pub reranking_context_length: i32,
+    pub reranking_top_n: i32,
+    pub config_json: String,
+    pub source: String,
+    pub updated_at: String,
+}
+
 pub fn initialize_app_storage() -> Result<AppStorageInfo> {
     let storage_dir = ensure_storage_dir()?;
     let database_path = paths::database_file_path(&storage_dir);
     database::ensure_database(&database_path)?;
     services::system_settings::seed_default_settings(&database_path)?;
+    services::api_configs::seed_default_api_config(&database_path)?;
 
     Ok(AppStorageInfo {
         directory_path: storage_dir.to_string_lossy().into_owned(),
@@ -107,11 +162,22 @@ pub fn delete_api_config(profile_name: String) -> Result<()> {
     services::api_configs::delete_api_config(&database_path, &profile_name)
 }
 
+pub fn get_codebase_settings() -> Result<CodebaseSettingsRecord> {
+    let database_path = ensure_database_file()?;
+    services::codebase_settings::get_codebase_settings(&database_path)
+}
+
+pub fn upsert_codebase_settings(settings: CodebaseSettingsInput) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::codebase_settings::upsert_codebase_settings(&database_path, &settings)
+}
+
 fn ensure_database_file() -> Result<PathBuf> {
     let storage_dir = ensure_storage_dir()?;
     let database_path = paths::database_file_path(&storage_dir);
     database::ensure_database(&database_path)?;
     services::system_settings::seed_default_settings(&database_path)?;
+    services::api_configs::seed_default_api_config(&database_path)?;
     Ok(database_path)
 }
 
