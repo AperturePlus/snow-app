@@ -8,8 +8,10 @@ license = "MIT"
 crate-type = ["cdylib"]
 
 [dependencies]
+dirs-next = "2.0.0"
 napi = { version = "3.2.4", default-features = false, features = ["napi4"] }
 napi-derive = "3.2.4"
+rusqlite = { version = "0.32.1", features = ["bundled"] }
 
 [build-dependencies]
 napi-build = "2.2.3"
