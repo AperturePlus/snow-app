@@ -1,113 +1,36 @@
-import {
-  Download,
-  FolderOpen,
-  Globe,
-  Loader2,
-  MonitorCog,
-  Route,
-  Save,
-  Search,
-  X,
-} from "lucide-react";
+import { Download, Loader2, X } from "lucide-react";
 import { useCallback, useEffect, useState, type ChangeEvent } from "react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { useI18n } from "../../i18n";
-import type { ProxyBrowserSettings } from "../../../preload";
-
-type ProxyBrowserSettingsPanelProps = {
-  onClose?: () => void;
-};
-
-const SETTING_NAME = "Proxy and browser settings";
-const SETTING_CODE = "proxy_browser_settings";
-
-const DEFAULT_SETTINGS: ProxyBrowserSettings = {
-  enabled: false,
-  port: 7890,
-  browserPath: "",
-  browserDebugPort: 9222,
-  searchEngine: "duckduckgo",
-};
-
-const SEARCH_ENGINE_OPTIONS = [
-  { value: "duckduckgo", label: "DuckDuckGo" },
-  { value: "bing", label: "Bing" },
-];
-
-const parsePort = (value: string, fallback: number): number => {
-  const port = Number.parseInt(value, 10);
-
-  return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : fallback;
-};
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const toText = (value: unknown, fallback = ""): string =>
-  typeof value === "string" ? value : fallback;
-
-const toBoolean = (value: unknown, fallback: boolean): boolean =>
-  typeof value === "boolean" ? value : fallback;
-
-const normalizeSettings = (value: unknown): ProxyBrowserSettings => {
-  const source = isRecord(value) ? value : {};
-
-  return {
-    enabled: toBoolean(source.enabled, DEFAULT_SETTINGS.enabled),
-    port: parsePort(String(source.port ?? ""), DEFAULT_SETTINGS.port),
-    browserPath: toText(source.browserPath).trim(),
-    browserDebugPort: parsePort(
-      String(source.browserDebugPort ?? ""),
-      DEFAULT_SETTINGS.browserDebugPort
-    ),
-    searchEngine:
-      toText(source.searchEngine, DEFAULT_SETTINGS.searchEngine).trim() ||
-      DEFAULT_SETTINGS.searchEngine,
-  };
-};
-
-const readSettingsJson = (value: string | null): ProxyBrowserSettings => {
-  if (!value) {
-    return DEFAULT_SETTINGS;
-  }
-
-  try {
-    return normalizeSettings(JSON.parse(value) as unknown);
-  } catch {
-    return DEFAULT_SETTINGS;
-  }
-};
-
-const toForm = (settings: ProxyBrowserSettings) => ({
-  enabled: settings.enabled,
-  port: String(settings.port),
-  browserPath: settings.browserPath,
-  browserDebugPort: String(settings.browserDebugPort),
-  searchEngine: settings.searchEngine,
-});
-
-type ProxyBrowserSettingsForm = ReturnType<typeof toForm>;
-
-const toSettings = (form: ProxyBrowserSettingsForm): ProxyBrowserSettings => ({
-  enabled: form.enabled,
-  port: parsePort(form.port, DEFAULT_SETTINGS.port),
-  browserPath: form.browserPath.trim(),
-  browserDebugPort: parsePort(
-    form.browserDebugPort,
-    DEFAULT_SETTINGS.browserDebugPort
-  ),
-  searchEngine: form.searchEngine.trim() || DEFAULT_SETTINGS.searchEngine,
-});
+import { ProxyBrowserSettingsForm } from "./proxyBrowserSettings/ProxyBrowserSettingsForm";
+import { ProxyBrowserSettingsSummary } from "./proxyBrowserSettings/ProxyBrowserSettingsSummary";
+import {
+  DEFAULT_PROXY_BROWSER_SETTINGS,
+  PROXY_BROWSER_SETTING_CODE,
+  PROXY_BROWSER_SETTING_NAME,
+} from "./proxyBrowserSettings/proxyBrowserSettingsConstants";
+import {
+  normalizeProxyBrowserSettings,
+  readProxyBrowserSettingsJson,
+  toProxyBrowserForm,
+  toProxyBrowserSettings,
+} from "./proxyBrowserSettings/proxyBrowserSettingsUtils";
+import type {
+  ProxyBrowserSettingsForm as ProxyBrowserSettingsFormValue,
+  ProxyBrowserSettingsPanelProps,
+  ProxyBrowserSettingsValue,
+} from "./proxyBrowserSettings/types";
 
 export function ProxyBrowserSettingsPanel({
   onClose,
 }: ProxyBrowserSettingsPanelProps): React.JSX.Element {
   const { t } = useI18n();
-  const [form, setForm] = useState<ProxyBrowserSettingsForm>(() =>
-    toForm(DEFAULT_SETTINGS)
+  const [form, setForm] = useState<ProxyBrowserSettingsFormValue>(() =>
+    toProxyBrowserForm(DEFAULT_PROXY_BROWSER_SETTINGS)
   );
-  const [lastSaved, setLastSaved] =
-    useState<ProxyBrowserSettings>(DEFAULT_SETTINGS);
+  const [lastSaved, setLastSaved] = useState<ProxyBrowserSettingsValue>(
+    DEFAULT_PROXY_BROWSER_SETTINGS
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSelectingBrowser, setIsSelectingBrowser] = useState(false);
@@ -119,9 +42,11 @@ export function ProxyBrowserSettingsPanel({
     setError("");
 
     try {
-      const value = await window.snow.getSystemSettingValue(SETTING_CODE);
-      const settings = readSettingsJson(value);
-      setForm(toForm(settings));
+      const value = await window.snow.getSystemSettingValue(
+        PROXY_BROWSER_SETTING_CODE
+      );
+      const settings = readProxyBrowserSettingsJson(value);
+      setForm(toProxyBrowserForm(settings));
       setLastSaved(settings);
     } catch (e) {
       setError(
@@ -141,14 +66,10 @@ export function ProxyBrowserSettingsPanel({
   }, [load]);
 
   const isBusy = isLoading || isSaving || isSelectingBrowser;
-  const preview = toSettings(form);
-  const proxyUrl = preview.enabled ? `http://127.0.0.1:${preview.port}` : "-";
-  const browserLabel =
-    preview.browserPath ||
-    t("settings.autoDetectBrowser", { defaultValue: "Auto detect" });
+  const preview = toProxyBrowserSettings(form);
 
   const updateField =
-    (field: keyof ProxyBrowserSettingsForm) =>
+    (field: keyof ProxyBrowserSettingsFormValue) =>
     (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       const value =
         event.target instanceof HTMLInputElement &&
@@ -182,10 +103,10 @@ export function ProxyBrowserSettingsPanel({
     return null;
   };
 
-  const saveSettings = async (settings: ProxyBrowserSettings) => {
+  const saveSettings = async (settings: ProxyBrowserSettingsValue) => {
     await window.snow.setSystemSetting(
-      SETTING_NAME,
-      SETTING_CODE,
+      PROXY_BROWSER_SETTING_NAME,
+      PROXY_BROWSER_SETTING_CODE,
       JSON.stringify(settings)
     );
     setLastSaved(settings);
@@ -200,14 +121,14 @@ export function ProxyBrowserSettingsPanel({
       return;
     }
 
-    const settings = toSettings(form);
+    const settings = toProxyBrowserSettings(form);
     setIsSaving(true);
     setError("");
     setStatus("");
 
     try {
       await saveSettings(settings);
-      setForm(toForm(settings));
+      setForm(toProxyBrowserForm(settings));
       setStatus(
         t("settings.proxyBrowserSaveSuccess", {
           defaultValue: "Saved proxy and browser settings.",
@@ -233,8 +154,8 @@ export function ProxyBrowserSettingsPanel({
 
     try {
       const settings = await window.snow.importSnowCliProxyConfig();
-      const normalized = normalizeSettings(settings);
-      setForm(toForm(normalized));
+      const normalized = normalizeProxyBrowserSettings(settings);
+      setForm(toProxyBrowserForm(normalized));
       setLastSaved(normalized);
       setStatus(
         t("settings.proxyBrowserImportSuccess", {
@@ -314,31 +235,7 @@ export function ProxyBrowserSettingsPanel({
         )}
       </div>
 
-      <div className="api-settings-summary-grid">
-        <div className="api-settings-summary-card">
-          <Globe size={15} strokeWidth={1.8} />
-          <span>
-            {preview.enabled
-              ? t("settings.enabled", { defaultValue: "Enabled" })
-              : t("settings.disabled", { defaultValue: "Disabled" })}
-          </span>
-          <small>{t("settings.proxyStatus", { defaultValue: "Proxy" })}</small>
-        </div>
-        <div className="api-settings-summary-card wide">
-          <Route size={15} strokeWidth={1.8} />
-          <span>{proxyUrl}</span>
-          <small>
-            {t("settings.proxyEndpoint", { defaultValue: "Proxy endpoint" })}
-          </small>
-        </div>
-        <div className="api-settings-summary-card">
-          <Search size={15} strokeWidth={1.8} />
-          <span>{preview.searchEngine}</span>
-          <small>
-            {t("settings.searchEngine", { defaultValue: "Search engine" })}
-          </small>
-        </div>
-      </div>
+      <ProxyBrowserSettingsSummary preview={preview} />
 
       <div className="api-settings-actions">
         <button
@@ -369,182 +266,17 @@ export function ProxyBrowserSettingsPanel({
         }}
       />
 
-      <div className="api-settings-manual-form">
-        <div className="api-settings-manual-header">
-          <strong>
-            {t("settings.proxyBrowserManualTitle", {
-              defaultValue: "Manual configuration",
-            })}
-          </strong>
-          <span>
-            {t("settings.proxyBrowserManualInfo", {
-              defaultValue:
-                "These values are saved in Snow App system settings and can be synced from ~/.snow/proxy-config.json.",
-            })}
-          </span>
-        </div>
-
-        <div className="api-settings-form-body">
-          <div className="api-settings-form-section">
-            <div className="api-settings-form-section-header">
-              <strong className="api-settings-form-section-title">
-                {t("settings.formProxy", { defaultValue: "Proxy" })}
-              </strong>
-              <label className="toggle-switch">
-                <input
-                  type="checkbox"
-                  checked={form.enabled}
-                  onChange={updateField("enabled")}
-                  disabled={isBusy}
-                  hidden
-                />
-                <span className="toggle-slider" />
-                <span>
-                  {form.enabled
-                    ? t("settings.enabled", { defaultValue: "Enabled" })
-                    : t("settings.disabled", { defaultValue: "Disabled" })}
-                </span>
-              </label>
-            </div>
-            <div className="api-settings-form-grid">
-              <label className="api-settings-field">
-                <span>
-                  {t("settings.proxyPort", { defaultValue: "Proxy port" })}
-                </span>
-                <input
-                  value={form.port}
-                  onChange={updateField("port")}
-                  placeholder="7890"
-                  type="number"
-                  min={1}
-                  max={65535}
-                  disabled={isBusy}
-                />
-              </label>
-              <label className="api-settings-field">
-                <span>
-                  {t("settings.searchEngine", {
-                    defaultValue: "Search engine",
-                  })}
-                </span>
-                <select
-                  value={form.searchEngine}
-                  onChange={updateField("searchEngine")}
-                  disabled={isBusy}
-                >
-                  {SEARCH_ENGINE_OPTIONS.map((engine) => (
-                    <option key={engine.value} value={engine.value}>
-                      {engine.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </div>
-
-          <div className="api-settings-form-section">
-            <strong className="api-settings-form-section-title">
-              {t("settings.formBrowser", { defaultValue: "Browser" })}
-            </strong>
-            <div className="api-settings-form-grid">
-              <label className="api-settings-field wide">
-                <span>
-                  {t("settings.browserPath", {
-                    defaultValue: "Browser executable path",
-                  })}
-                </span>
-                <div className="api-settings-inline-field">
-                  <input
-                    value={form.browserPath}
-                    onChange={updateField("browserPath")}
-                    placeholder={t("settings.browserPathPlaceholder", {
-                      defaultValue:
-                        "Leave empty to auto-detect Chrome / Edge / Chromium",
-                    })}
-                    disabled={isBusy}
-                  />
-                  <button
-                    className="api-settings-inline-btn"
-                    onClick={() => void handleSelectBrowserExecutable()}
-                    type="button"
-                    disabled={isBusy}
-                    aria-label={t("settings.selectBrowserExecutable", {
-                      defaultValue: "Browse",
-                    })}
-                    title={t("settings.selectBrowserExecutable", {
-                      defaultValue: "Browse",
-                    })}
-                  >
-                    {isSelectingBrowser ? (
-                      <Loader2 size={14} className="spin" />
-                    ) : (
-                      <FolderOpen size={14} strokeWidth={1.9} />
-                    )}
-                    <span>
-                      {t("settings.selectBrowserExecutable", {
-                        defaultValue: "Browse",
-                      })}
-                    </span>
-                  </button>
-                </div>
-              </label>
-              <label className="api-settings-field">
-                <span>
-                  {t("settings.browserDebugPort", {
-                    defaultValue: "Browser debug port",
-                  })}
-                </span>
-                <input
-                  value={form.browserDebugPort}
-                  onChange={updateField("browserDebugPort")}
-                  placeholder="9222"
-                  type="number"
-                  min={1}
-                  max={65535}
-                  disabled={isBusy}
-                />
-              </label>
-              <div className="api-settings-summary-card wide proxy-browser-preview-card">
-                <MonitorCog size={15} strokeWidth={1.8} />
-                <span>{browserLabel}</span>
-                <small>
-                  {t("settings.browserLaunchMode", {
-                    defaultValue: "Browser path",
-                  })}
-                </small>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="api-settings-form-actions">
-          <button
-            className="api-settings-form-btn secondary"
-            onClick={() => setForm(toForm(lastSaved))}
-            type="button"
-            disabled={isBusy}
-          >
-            {t("settings.reset", { defaultValue: "Reset" })}
-          </button>
-          <button
-            className="api-settings-form-btn primary"
-            onClick={() => void handleSave()}
-            type="button"
-            disabled={isBusy}
-          >
-            {isSaving ? (
-              <Loader2 size={15} className="spin" />
-            ) : (
-              <Save size={15} strokeWidth={1.9} />
-            )}
-            <span>
-              {t("settings.saveProxyBrowserSettings", {
-                defaultValue: "Save settings",
-              })}
-            </span>
-          </button>
-        </div>
-      </div>
+      <ProxyBrowserSettingsForm
+        form={form}
+        preview={preview}
+        isBusy={isBusy}
+        isSaving={isSaving}
+        isSelectingBrowser={isSelectingBrowser}
+        onUpdateField={updateField}
+        onReset={() => setForm(toProxyBrowserForm(lastSaved))}
+        onSave={() => void handleSave()}
+        onSelectBrowserExecutable={() => void handleSelectBrowserExecutable()}
+      />
     </div>
   );
 }

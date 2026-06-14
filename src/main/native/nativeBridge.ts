@@ -48,6 +48,66 @@ export const loadNativeBridge = (): NativeBridge => {
           "Rust native bridge is required to write codebase settings"
         );
       },
+      listSystemPrompts: () => {
+        throw new Error(
+          "Rust native bridge is required to list system prompts"
+        );
+      },
+      upsertSystemPrompt: () => {
+        throw new Error(
+          "Rust native bridge is required to write system prompts"
+        );
+      },
+      deleteSystemPrompt: () => {
+        throw new Error(
+          "Rust native bridge is required to delete system prompts"
+        );
+      },
+      listCustomHeaderSchemes: () => {
+        throw new Error(
+          "Rust native bridge is required to list custom header schemes"
+        );
+      },
+      upsertCustomHeaderScheme: () => {
+        throw new Error(
+          "Rust native bridge is required to write custom header schemes"
+        );
+      },
+      deleteCustomHeaderScheme: () => {
+        throw new Error(
+          "Rust native bridge is required to delete custom header schemes"
+        );
+      },
+      listMcpServerConfigs: () => {
+        throw new Error(
+          "Rust native bridge is required to list MCP server configs"
+        );
+      },
+      upsertMcpServerConfig: () => {
+        throw new Error(
+          "Rust native bridge is required to write MCP server configs"
+        );
+      },
+      deleteMcpServerConfig: () => {
+        throw new Error(
+          "Rust native bridge is required to delete MCP server configs"
+        );
+      },
+      listSensitiveCommandConfigs: () => {
+        throw new Error(
+          "Rust native bridge is required to list sensitive command configs"
+        );
+      },
+      upsertSensitiveCommandConfig: () => {
+        throw new Error(
+          "Rust native bridge is required to write sensitive command configs"
+        );
+      },
+      deleteSensitiveCommandConfig: () => {
+        throw new Error(
+          "Rust native bridge is required to delete sensitive command configs"
+        );
+      },
       engineInfo: () => "Rust native bridge is not built yet",
       sum: (a: number, b: number) => a + b,
     };

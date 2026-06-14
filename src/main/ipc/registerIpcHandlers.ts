@@ -1,12 +1,31 @@
 import { BrowserWindow, dialog, ipcMain } from "electron";
 import type { NativeBridge } from "../native/types";
-import { normalizeApiConfigInput, toApiConfigInput } from "../settings/apiConfigs";
+import {
+  normalizeApiConfigInput,
+  toApiConfigInput,
+} from "../settings/apiConfigs";
 import {
   normalizeCodebaseSettings,
   persistCodebaseSettings,
   readSnowCliCodebaseSettings,
 } from "../settings/codebaseSettings";
+import {
+  normalizeSystemPromptItem,
+  readSnowCliSystemPromptConfig,
+} from "../settings/systemPromptSettings";
+import {
+  normalizeCustomHeaderScheme,
+  readSnowCliCustomHeadersConfig,
+} from "../settings/customHeadersSettings";
+import {
+  normalizeMcpServerConfig,
+  readSnowCliMcpConfig,
+} from "../settings/mcpSettings";
 import { readSnowCliProxyConfig } from "../settings/proxyBrowserSettings";
+import {
+  normalizeSensitiveCommandConfig,
+  readSnowCliSensitiveCommandConfig,
+} from "../settings/sensitiveCommandSettings";
 import { readSnowCliProfiles } from "../snowCli/profiles";
 
 export const registerIpcHandlers = (native: NativeBridge): void => {
@@ -54,6 +73,85 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
   );
   ipcMain.handle("codebase-settings:import-snow-cli", () =>
     readSnowCliCodebaseSettings(native)
+  );
+  ipcMain.handle("system-prompts:list", () => native.listSystemPrompts());
+  ipcMain.handle("system-prompts:upsert", (_event, item: unknown) => {
+    native.upsertSystemPrompt(normalizeSystemPromptItem(item));
+    return native.listSystemPrompts();
+  });
+  ipcMain.handle("system-prompts:delete", (_event, promptId: unknown) => {
+    if (typeof promptId !== "string" || !promptId.trim()) {
+      throw new Error("Prompt ID is required");
+    }
+    native.deleteSystemPrompt(promptId.trim());
+    return native.listSystemPrompts();
+  });
+  ipcMain.handle("system-prompts:import-snow-cli", () =>
+    readSnowCliSystemPromptConfig(native)
+  );
+  ipcMain.handle("custom-header-schemes:list", () =>
+    native.listCustomHeaderSchemes()
+  );
+  ipcMain.handle("custom-header-schemes:upsert", (_event, item: unknown) => {
+    native.upsertCustomHeaderScheme(normalizeCustomHeaderScheme(item));
+    return native.listCustomHeaderSchemes();
+  });
+  ipcMain.handle(
+    "custom-header-schemes:delete",
+    (_event, schemeId: unknown) => {
+      if (typeof schemeId !== "string" || !schemeId.trim()) {
+        throw new Error("Custom header scheme ID is required");
+      }
+      native.deleteCustomHeaderScheme(schemeId.trim());
+      return native.listCustomHeaderSchemes();
+    }
+  );
+  ipcMain.handle("custom-header-schemes:import-snow-cli", () =>
+    readSnowCliCustomHeadersConfig(native)
+  );
+  ipcMain.handle("mcp-server-configs:list", () =>
+    native.listMcpServerConfigs()
+  );
+  ipcMain.handle("mcp-server-configs:upsert", (_event, item: unknown) => {
+    native.upsertMcpServerConfig(normalizeMcpServerConfig(item));
+    return native.listMcpServerConfigs();
+  });
+  ipcMain.handle("mcp-server-configs:delete", (_event, serverId: unknown) => {
+    if (typeof serverId !== "string" || !serverId.trim()) {
+      throw new Error("MCP server ID is required");
+    }
+    native.deleteMcpServerConfig(serverId.trim());
+    return native.listMcpServerConfigs();
+  });
+  ipcMain.handle("mcp-server-configs:import-snow-cli", () =>
+    readSnowCliMcpConfig(native)
+  );
+  ipcMain.handle("sensitive-command-configs:list", () =>
+    native.listSensitiveCommandConfigs()
+  );
+  ipcMain.handle(
+    "sensitive-command-configs:upsert",
+    (_event, item: unknown) => {
+      native.upsertSensitiveCommandConfig(
+        normalizeSensitiveCommandConfig(item)
+      );
+      return native.listSensitiveCommandConfigs();
+    }
+  );
+  ipcMain.handle(
+    "sensitive-command-configs:delete",
+    (_event, commandId: unknown, scope: unknown) => {
+      if (typeof commandId !== "string" || !commandId.trim()) {
+        throw new Error("Sensitive command ID is required");
+      }
+
+      const normalizedScope = scope === "project" ? "project" : "global";
+      native.deleteSensitiveCommandConfig(commandId.trim(), normalizedScope);
+      return native.listSensitiveCommandConfigs();
+    }
+  );
+  ipcMain.handle("sensitive-command-configs:import-snow-cli", () =>
+    readSnowCliSensitiveCommandConfig(native)
   );
   ipcMain.handle(
     "proxy-browser-settings:select-browser-executable",

@@ -74,6 +74,70 @@ export type CodebaseSettingsRecord = CodebaseSettingsInput & {
   updatedAt: string;
 };
 
+export type SystemPromptItemInput = {
+  promptId: string;
+  name: string;
+  content: string;
+  isActive: boolean;
+  sortOrder: number;
+};
+
+export type SystemPromptItemRecord = SystemPromptItemInput & {
+  id: number;
+  updatedAt: string;
+};
+
+export type CustomHeaderSchemeInput = {
+  schemeId: string;
+  name: string;
+  headersJson: string;
+  isActive: boolean;
+  sortOrder: number;
+};
+
+export type CustomHeaderSchemeRecord = CustomHeaderSchemeInput & {
+  id: number;
+  updatedAt: string;
+};
+
+export type McpServerConfigInput = {
+  serverId: string;
+  scope: string;
+  name: string;
+  transportType: string;
+  url: string;
+  command: string;
+  argsJson: string;
+  envJson: string;
+  headersJson: string;
+  enabled: boolean;
+  timeoutMs?: number;
+  sortOrder: number;
+  source: string;
+};
+
+export type McpServerConfigRecord = Omit<McpServerConfigInput, "timeoutMs"> & {
+  id: number;
+  timeoutMs: number | null;
+  updatedAt: string;
+};
+
+export type SensitiveCommandConfigInput = {
+  commandId: string;
+  scope: string;
+  pattern: string;
+  description: string;
+  enabled: boolean;
+  isPreset: boolean;
+  sortOrder: number;
+  source: string;
+};
+
+export type SensitiveCommandConfigRecord = SensitiveCommandConfigInput & {
+  id: number;
+  updatedAt: string;
+};
+
 const api = {
   engineInfo: (): Promise<string> => ipcRenderer.invoke("native:engine-info"),
   getSystemSettingValue: (settingCode: string): Promise<string | null> =>
@@ -112,6 +176,50 @@ const api = {
       "proxy-browser-settings:select-browser-executable",
       dialogTitle
     ),
+  listSystemPrompts: (): Promise<SystemPromptItemRecord[]> =>
+    ipcRenderer.invoke("system-prompts:list"),
+  upsertSystemPrompt: (item: SystemPromptItemInput): Promise<void> =>
+    ipcRenderer.invoke("system-prompts:upsert", item),
+  deleteSystemPrompt: (promptId: string): Promise<void> =>
+    ipcRenderer.invoke("system-prompts:delete", promptId),
+  importSnowCliSystemPromptConfig: (): Promise<SystemPromptItemRecord[]> =>
+    ipcRenderer.invoke("system-prompts:import-snow-cli"),
+  listCustomHeaderSchemes: (): Promise<CustomHeaderSchemeRecord[]> =>
+    ipcRenderer.invoke("custom-header-schemes:list"),
+  upsertCustomHeaderScheme: (
+    item: CustomHeaderSchemeInput
+  ): Promise<CustomHeaderSchemeRecord[]> =>
+    ipcRenderer.invoke("custom-header-schemes:upsert", item),
+  deleteCustomHeaderScheme: (
+    schemeId: string
+  ): Promise<CustomHeaderSchemeRecord[]> =>
+    ipcRenderer.invoke("custom-header-schemes:delete", schemeId),
+  importSnowCliCustomHeadersConfig: (): Promise<CustomHeaderSchemeRecord[]> =>
+    ipcRenderer.invoke("custom-header-schemes:import-snow-cli"),
+  listMcpServerConfigs: (): Promise<McpServerConfigRecord[]> =>
+    ipcRenderer.invoke("mcp-server-configs:list"),
+  upsertMcpServerConfig: (
+    item: McpServerConfigInput
+  ): Promise<McpServerConfigRecord[]> =>
+    ipcRenderer.invoke("mcp-server-configs:upsert", item),
+  deleteMcpServerConfig: (serverId: string): Promise<McpServerConfigRecord[]> =>
+    ipcRenderer.invoke("mcp-server-configs:delete", serverId),
+  importSnowCliMcpConfig: (): Promise<McpServerConfigRecord[]> =>
+    ipcRenderer.invoke("mcp-server-configs:import-snow-cli"),
+  listSensitiveCommandConfigs: (): Promise<SensitiveCommandConfigRecord[]> =>
+    ipcRenderer.invoke("sensitive-command-configs:list"),
+  upsertSensitiveCommandConfig: (
+    item: SensitiveCommandConfigInput
+  ): Promise<SensitiveCommandConfigRecord[]> =>
+    ipcRenderer.invoke("sensitive-command-configs:upsert", item),
+  deleteSensitiveCommandConfig: (
+    commandId: string,
+    scope: string
+  ): Promise<SensitiveCommandConfigRecord[]> =>
+    ipcRenderer.invoke("sensitive-command-configs:delete", commandId, scope),
+  importSnowCliSensitiveCommandConfig: (): Promise<
+    SensitiveCommandConfigRecord[]
+  > => ipcRenderer.invoke("sensitive-command-configs:import-snow-cli"),
   sum: (a: number, b: number): Promise<number> =>
     ipcRenderer.invoke("native:sum", a, b),
 };

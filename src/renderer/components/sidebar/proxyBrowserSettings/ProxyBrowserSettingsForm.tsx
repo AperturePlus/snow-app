@@ -1,0 +1,221 @@
+import {
+  FolderOpen,
+  Loader2,
+  MonitorCog,
+  RotateCcw,
+  Save,
+} from "lucide-react";
+import { type ChangeEvent } from "react";
+import { useI18n } from "../../../i18n";
+import { SEARCH_ENGINE_OPTIONS } from "./proxyBrowserSettingsConstants";
+import type {
+  ProxyBrowserSettingsForm as ProxyBrowserSettingsFormValue,
+  ProxyBrowserSettingsValue,
+} from "./types";
+
+type ProxyBrowserSettingsFormProps = {
+  form: ProxyBrowserSettingsFormValue;
+  preview: ProxyBrowserSettingsValue;
+  isBusy: boolean;
+  isSaving: boolean;
+  isSelectingBrowser: boolean;
+  onUpdateField: (
+    field: keyof ProxyBrowserSettingsFormValue
+  ) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
+  onReset: () => void;
+  onSave: () => void;
+  onSelectBrowserExecutable: () => void;
+};
+
+export function ProxyBrowserSettingsForm({
+  form,
+  preview,
+  isBusy,
+  isSaving,
+  isSelectingBrowser,
+  onUpdateField,
+  onReset,
+  onSave,
+  onSelectBrowserExecutable,
+}: ProxyBrowserSettingsFormProps): React.JSX.Element {
+  const { t } = useI18n();
+  const browserLabel =
+    preview.browserPath ||
+    t("settings.autoDetectBrowser", { defaultValue: "Auto detect" });
+
+  return (
+    <div className="api-settings-manual-form">
+      <div className="api-settings-manual-header">
+        <strong>
+          {t("settings.proxyBrowserManualTitle", {
+            defaultValue: "Manual configuration",
+          })}
+        </strong>
+        <span>
+          {t("settings.proxyBrowserManualInfo", {
+            defaultValue:
+              "These values are saved in Snow App system settings and can be synced from ~/.snow/proxy-config.json.",
+          })}
+        </span>
+      </div>
+
+      <div className="api-settings-form-body">
+        <div className="api-settings-form-section">
+          <div className="api-settings-form-section-header">
+            <strong className="api-settings-form-section-title">
+              {t("settings.formProxy", { defaultValue: "Proxy" })}
+            </strong>
+            <label className="toggle-switch">
+              <input
+                type="checkbox"
+                checked={form.enabled}
+                onChange={onUpdateField("enabled")}
+                disabled={isBusy}
+                hidden
+              />
+              <span className="toggle-slider" />
+              <span>
+                {form.enabled
+                  ? t("settings.enabled", { defaultValue: "Enabled" })
+                  : t("settings.disabled", { defaultValue: "Disabled" })}
+              </span>
+            </label>
+          </div>
+          <div className="api-settings-form-grid">
+            <label className="api-settings-field">
+              <span>{t("settings.proxyPort", { defaultValue: "Proxy port" })}</span>
+              <input
+                value={form.port}
+                onChange={onUpdateField("port")}
+                placeholder="7890"
+                type="number"
+                min={1}
+                max={65535}
+                disabled={isBusy}
+              />
+            </label>
+            <label className="api-settings-field">
+              <span>
+                {t("settings.searchEngine", { defaultValue: "Search engine" })}
+              </span>
+              <select
+                value={form.searchEngine}
+                onChange={onUpdateField("searchEngine")}
+                disabled={isBusy}
+              >
+                {SEARCH_ENGINE_OPTIONS.map((engine) => (
+                  <option key={engine.value} value={engine.value}>
+                    {engine.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div className="api-settings-form-section">
+          <strong className="api-settings-form-section-title">
+            {t("settings.formBrowser", { defaultValue: "Browser" })}
+          </strong>
+          <div className="api-settings-form-grid">
+            <label className="api-settings-field wide">
+              <span>
+                {t("settings.browserPath", {
+                  defaultValue: "Browser executable path",
+                })}
+              </span>
+              <div className="api-settings-inline-field">
+                <input
+                  value={form.browserPath}
+                  onChange={onUpdateField("browserPath")}
+                  placeholder={t("settings.browserPathPlaceholder", {
+                    defaultValue:
+                      "Leave empty to auto-detect Chrome / Edge / Chromium",
+                  })}
+                  disabled={isBusy}
+                />
+                <button
+                  className="api-settings-inline-btn"
+                  onClick={onSelectBrowserExecutable}
+                  type="button"
+                  disabled={isBusy}
+                  aria-label={t("settings.selectBrowserExecutable", {
+                    defaultValue: "Browse",
+                  })}
+                  title={t("settings.selectBrowserExecutable", {
+                    defaultValue: "Browse",
+                  })}
+                >
+                  {isSelectingBrowser ? (
+                    <Loader2 size={14} className="spin" />
+                  ) : (
+                    <FolderOpen size={14} strokeWidth={1.9} />
+                  )}
+                  <span>
+                    {t("settings.selectBrowserExecutable", {
+                      defaultValue: "Browse",
+                    })}
+                  </span>
+                </button>
+              </div>
+            </label>
+            <label className="api-settings-field">
+              <span>
+                {t("settings.browserDebugPort", {
+                  defaultValue: "Browser debug port",
+                })}
+              </span>
+              <input
+                value={form.browserDebugPort}
+                onChange={onUpdateField("browserDebugPort")}
+                placeholder="9222"
+                type="number"
+                min={1}
+                max={65535}
+                disabled={isBusy}
+              />
+            </label>
+            <div className="api-settings-summary-card wide proxy-browser-preview-card">
+              <MonitorCog size={15} strokeWidth={1.8} />
+              <span>{browserLabel}</span>
+              <small>
+                {t("settings.browserLaunchMode", {
+                  defaultValue: "Browser path",
+                })}
+              </small>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="api-settings-form-actions">
+        <button
+          className="api-settings-form-btn secondary"
+          onClick={onReset}
+          type="button"
+          disabled={isBusy}
+        >
+          <RotateCcw size={15} strokeWidth={1.9} />
+          <span>{t("settings.reset", { defaultValue: "Reset" })}</span>
+        </button>
+        <button
+          className="api-settings-form-btn primary"
+          onClick={onSave}
+          type="button"
+          disabled={isBusy}
+        >
+          {isSaving ? (
+            <Loader2 size={15} className="spin" />
+          ) : (
+            <Save size={15} strokeWidth={1.9} />
+          )}
+          <span>
+            {t("settings.saveProxyBrowserSettings", {
+              defaultValue: "Save settings",
+            })}
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+}

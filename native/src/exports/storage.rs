@@ -2,6 +2,9 @@ use napi_derive::napi;
 
 use crate::storage::{
     ApiConfigInput, ApiConfigRecord, AppStorageInfo, CodebaseSettingsInput, CodebaseSettingsRecord,
+    CustomHeaderSchemeInput, CustomHeaderSchemeRecord, McpServerConfigInput, McpServerConfigRecord,
+    SensitiveCommandConfigInput, SensitiveCommandConfigRecord, SystemPromptItemInput,
+    SystemPromptItemRecord,
 };
 
 #[napi]
@@ -46,4 +49,64 @@ pub fn get_codebase_settings() -> napi::Result<CodebaseSettingsRecord> {
 #[napi]
 pub fn upsert_codebase_settings(settings: CodebaseSettingsInput) -> napi::Result<()> {
     crate::storage::upsert_codebase_settings(settings)
+}
+
+#[napi]
+pub fn list_system_prompts() -> napi::Result<Vec<SystemPromptItemRecord>> {
+    crate::storage::list_system_prompts()
+}
+
+#[napi]
+pub fn upsert_system_prompt(item: SystemPromptItemInput) -> napi::Result<()> {
+    crate::storage::upsert_system_prompt(item)
+}
+
+#[napi]
+pub fn delete_system_prompt(prompt_id: String) -> napi::Result<()> {
+    crate::storage::delete_system_prompt(prompt_id)
+}
+
+#[napi]
+pub fn list_custom_header_schemes() -> napi::Result<Vec<CustomHeaderSchemeRecord>> {
+    crate::storage::list_custom_header_schemes()
+}
+
+#[napi]
+pub fn upsert_custom_header_scheme(item: CustomHeaderSchemeInput) -> napi::Result<()> {
+    crate::storage::upsert_custom_header_scheme(item)
+}
+
+#[napi]
+pub fn delete_custom_header_scheme(scheme_id: String) -> napi::Result<()> {
+    crate::storage::delete_custom_header_scheme(scheme_id)
+}
+
+#[napi]
+pub fn list_mcp_server_configs() -> napi::Result<Vec<McpServerConfigRecord>> {
+    crate::storage::list_mcp_server_configs()
+}
+
+#[napi]
+pub fn upsert_mcp_server_config(item: McpServerConfigInput) -> napi::Result<()> {
+    crate::storage::upsert_mcp_server_config(item)
+}
+
+#[napi]
+pub fn delete_mcp_server_config(server_id: String) -> napi::Result<()> {
+    crate::storage::delete_mcp_server_config(server_id)
+}
+
+#[napi]
+pub fn list_sensitive_command_configs() -> napi::Result<Vec<SensitiveCommandConfigRecord>> {
+    crate::storage::list_sensitive_command_configs()
+}
+
+#[napi]
+pub fn upsert_sensitive_command_config(item: SensitiveCommandConfigInput) -> napi::Result<()> {
+    crate::storage::upsert_sensitive_command_config(item)
+}
+
+#[napi]
+pub fn delete_sensitive_command_config(command_id: String, scope: String) -> napi::Result<()> {
+    crate::storage::delete_sensitive_command_config(command_id, scope)
 }

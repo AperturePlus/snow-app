@@ -1,21 +1,78 @@
-const { existsSync, readdirSync } = require('node:fs')
+const { existsSync, readdirSync, statSync } = require('node:fs')
 const { join } = require('node:path')
 
 const nativeDir = __dirname
-const candidates = [
-  join(nativeDir, 'snow_native.darwin-arm64.node'),
-  join(nativeDir, 'snow_native.darwin-x64.node'),
-  join(nativeDir, 'snow_native.linux-x64-gnu.node'),
-  join(nativeDir, 'snow_native.win32-x64-msvc.node'),
-  ...readdirSync(nativeDir)
-    .filter((file) => file.endsWith('.node'))
-    .map((file) => join(nativeDir, file))
-]
 
-const nativeBinding = candidates.find((candidate) => existsSync(candidate))
-
-if (!nativeBinding) {
-  throw new Error('Unable to locate compiled snow_native *.node binding. Run `npm run build:rust`.')
+const platformMap = {
+  'win32-x64': 'win32-x64-msvc',
+  'win32-arm64': 'win32-arm64-msvc',
+  'darwin-x64': 'darwin-x64',
+  'darwin-arm64': 'darwin-arm64',
+  'linux-x64': 'linux-x64-gnu',
+  'linux-arm64': 'linux-arm64-gnu'
 }
 
-module.exports = require(nativeBinding)
+const requiredExports = [
+  'initializeAppStorage',
+  'listCustomHeaderSchemes',
+  'upsertCustomHeaderScheme',
+  'deleteCustomHeaderScheme'
+]
+
+const platformName = platformMap[`${process.platform}-${process.arch}`]
+const nodeFiles = readdirSync(nativeDir)
+  .filter((file) => file.endsWith('.node'))
+  .map((file) => join(nativeDir, file))
+
+const platformCandidates = platformName
+  ? nodeFiles
+      .filter((file) => file.includes(`snow_native.${platformName}`))
+      .sort((left, right) => statSync(right).mtimeMs - statSync(left).mtimeMs)
+  : []
+
+const candidates = [
+  ...platformCandidates,
+  ...nodeFiles.filter((file) => !platformCandidates.includes(file))
+]
+
+const loadErrors = []
+let nativeBinding = null
+
+for (const candidate of candidates) {
+  if (!existsSync(candidate)) {
+    continue
+  }
+
+  try {
+    const binding = require(candidate)
+    const missingExports = requiredExports.filter(
+      (exportName) => typeof binding[exportName] !== 'function'
+    )
+
+    if (missingExports.length > 0) {
+      loadErrors.push(
+        new Error(
+          `${candidate} is missing native exports: ${missingExports.join(', ')}`
+        )
+      )
+      continue
+    }
+
+    nativeBinding = binding
+    break
+  } catch (error) {
+    loadErrors.push(error)
+  }
+}
+
+if (!nativeBinding) {
+  const hint =
+    loadErrors.length > 0
+      ? ` Last error: ${loadErrors[loadErrors.length - 1].message}`
+      : ''
+  throw new Error(
+    `Unable to locate compiled snow_native *.node binding. Run npm run build:rust.${hint}`
+  )
+}
+
+module.exports = nativeBinding

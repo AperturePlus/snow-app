@@ -10,31 +10,37 @@ const targetMap = {
     triple: "x86_64-pc-windows-msvc",
     artifact: "snow_native.dll",
     output: "snow_native.win32-x64-msvc.node",
+    platformName: "win32-x64-msvc",
   },
   "win32-arm64": {
     triple: "aarch64-pc-windows-msvc",
     artifact: "snow_native.dll",
     output: "snow_native.win32-arm64-msvc.node",
+    platformName: "win32-arm64-msvc",
   },
   "darwin-x64": {
     triple: "x86_64-apple-darwin",
     artifact: "libsnow_native.dylib",
     output: "snow_native.darwin-x64.node",
+    platformName: "darwin-x64",
   },
   "darwin-arm64": {
     triple: "aarch64-apple-darwin",
     artifact: "libsnow_native.dylib",
     output: "snow_native.darwin-arm64.node",
+    platformName: "darwin-arm64",
   },
   "linux-x64": {
     triple: "x86_64-unknown-linux-gnu",
     artifact: "libsnow_native.so",
     output: "snow_native.linux-x64-gnu.node",
+    platformName: "linux-x64-gnu",
   },
   "linux-arm64": {
     triple: "aarch64-unknown-linux-gnu",
     artifact: "libsnow_native.so",
     output: "snow_native.linux-arm64-gnu.node",
+    platformName: "linux-arm64-gnu",
   },
 };
 
@@ -77,5 +83,25 @@ if (!existsSync(artifactPath)) {
   throw new Error(`Cargo build artifact not found: ${artifactPath}`);
 }
 
-copyFileSync(artifactPath, outputPath);
-console.log(`Native binding written to ${outputPath}`);
+const copyNativeBinding = () => {
+  try {
+    copyFileSync(artifactPath, outputPath);
+    console.log(`Native binding written to ${outputPath}`);
+    return;
+  } catch (error) {
+    if (error?.code !== "EBUSY") {
+      throw error;
+    }
+
+    const fallbackOutputPath = join(
+      nativeDir,
+      `snow_native.${target.platformName}.${Date.now()}.node`
+    );
+    copyFileSync(artifactPath, fallbackOutputPath);
+    console.warn(
+      `Native binding target is busy, wrote fresh binding to ${fallbackOutputPath}`
+    );
+  }
+};
+
+copyNativeBinding();

@@ -64,6 +64,70 @@ export type CodebaseSettingsRecord = CodebaseSettingsInput & {
   updatedAt: string;
 };
 
+export type SystemPromptItemInput = {
+  promptId: string;
+  name: string;
+  content: string;
+  isActive: boolean;
+  sortOrder: number;
+};
+
+export type SystemPromptItemRecord = SystemPromptItemInput & {
+  id: number;
+  updatedAt: string;
+};
+
+export type CustomHeaderSchemeInput = {
+  schemeId: string;
+  name: string;
+  headersJson: string;
+  isActive: boolean;
+  sortOrder: number;
+};
+
+export type CustomHeaderSchemeRecord = CustomHeaderSchemeInput & {
+  id: number;
+  updatedAt: string;
+};
+
+export type McpServerConfigInput = {
+  serverId: string;
+  scope: string;
+  name: string;
+  transportType: string;
+  url: string;
+  command: string;
+  argsJson: string;
+  envJson: string;
+  headersJson: string;
+  enabled: boolean;
+  timeoutMs?: number;
+  sortOrder: number;
+  source: string;
+};
+
+export type McpServerConfigRecord = Omit<McpServerConfigInput, "timeoutMs"> & {
+  id: number;
+  timeoutMs: number | null;
+  updatedAt: string;
+};
+
+export type SensitiveCommandConfigInput = {
+  commandId: string;
+  scope: string;
+  pattern: string;
+  description: string;
+  enabled: boolean;
+  isPreset: boolean;
+  sortOrder: number;
+  source: string;
+};
+
+export type SensitiveCommandConfigRecord = SensitiveCommandConfigInput & {
+  id: number;
+  updatedAt: string;
+};
+
 export type NativeBridge = {
   initializeAppStorage: () => AppStorageInfo;
   getSystemSettingValue: (settingCode: string) => string | null;
@@ -77,6 +141,18 @@ export type NativeBridge = {
   deleteApiConfig: (profileName: string) => void;
   getCodebaseSettings: () => CodebaseSettingsRecord;
   upsertCodebaseSettings: (settings: CodebaseSettingsInput) => void;
+  listSystemPrompts: () => SystemPromptItemRecord[];
+  upsertSystemPrompt: (item: SystemPromptItemInput) => void;
+  deleteSystemPrompt: (promptId: string) => void;
+  listCustomHeaderSchemes: () => CustomHeaderSchemeRecord[];
+  upsertCustomHeaderScheme: (item: CustomHeaderSchemeInput) => void;
+  deleteCustomHeaderScheme: (schemeId: string) => void;
+  listMcpServerConfigs: () => McpServerConfigRecord[];
+  upsertMcpServerConfig: (item: McpServerConfigInput) => void;
+  deleteMcpServerConfig: (serverId: string) => void;
+  listSensitiveCommandConfigs: () => SensitiveCommandConfigRecord[];
+  upsertSensitiveCommandConfig: (item: SensitiveCommandConfigInput) => void;
+  deleteSensitiveCommandConfig: (commandId: string, scope: string) => void;
   engineInfo: () => string;
   sum: (a: number, b: number) => number;
 };

@@ -133,7 +133,11 @@ export function SettingsSidebarContent({
     if (
       activeMainView === "api-settings" ||
       activeMainView === "proxy-browser-settings" ||
-      activeMainView === "codebase-settings"
+      activeMainView === "codebase-settings" ||
+      activeMainView === "system-prompt-settings" ||
+      activeMainView === "custom-headers-settings" ||
+      activeMainView === "mcp-settings" ||
+      activeMainView === "sensitive-command-settings"
     ) {
       onSelectMainView("chat");
     }
@@ -168,6 +172,14 @@ export function SettingsSidebarContent({
                   ? "proxy-browser-settings"
                   : item.id === "codebase"
                   ? "codebase-settings"
+                  : item.id === "systemprompt"
+                  ? "system-prompt-settings"
+                  : item.id === "customheaders"
+                  ? "custom-headers-settings"
+                  : item.id === "mcp"
+                  ? "mcp-settings"
+                  : item.id === "sensitive-commands"
+                  ? "sensitive-command-settings"
                   : null;
               const isActive = targetView === activeMainView;
 

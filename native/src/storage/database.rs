@@ -11,7 +11,7 @@ pub fn ensure_database(database_path: &Path) -> Result<()> {
 
 fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
-        "PRAGMA user_version = 3;
+        "PRAGMA user_version = 6;
 
          CREATE TABLE IF NOT EXISTS system_settings (
            id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,7 +81,80 @@ fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
          CREATE INDEX IF NOT EXISTS idx_api_configs_source
            ON api_configs(source);
          CREATE INDEX IF NOT EXISTS idx_codebase_settings_source
-           ON codebase_settings(source);",
+           ON codebase_settings(source);
+
+         CREATE TABLE IF NOT EXISTS system_prompts (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           prompt_id TEXT NOT NULL UNIQUE,
+           name TEXT NOT NULL DEFAULT '',
+           content TEXT NOT NULL DEFAULT '',
+           is_active INTEGER NOT NULL DEFAULT 0,
+           sort_order INTEGER NOT NULL DEFAULT 0,
+           created_at TEXT NOT NULL DEFAULT (datetime('now')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+         );
+         CREATE INDEX IF NOT EXISTS idx_system_prompts_active
+           ON system_prompts(is_active);
+
+         CREATE TABLE IF NOT EXISTS custom_header_schemes (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           scheme_id TEXT NOT NULL UNIQUE,
+           name TEXT NOT NULL DEFAULT '',
+           headers_json TEXT NOT NULL DEFAULT '{}',
+           is_active INTEGER NOT NULL DEFAULT 0,
+           sort_order INTEGER NOT NULL DEFAULT 0,
+           created_at TEXT NOT NULL DEFAULT (datetime('now')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+         );
+         CREATE INDEX IF NOT EXISTS idx_custom_header_schemes_active
+           ON custom_header_schemes(is_active);
+
+         CREATE TABLE IF NOT EXISTS mcp_server_configs (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           server_id TEXT NOT NULL UNIQUE,
+           scope TEXT NOT NULL DEFAULT 'global',
+           name TEXT NOT NULL DEFAULT '',
+           transport_type TEXT NOT NULL DEFAULT 'stdio',
+           url TEXT NOT NULL DEFAULT '',
+           command TEXT NOT NULL DEFAULT '',
+           args_json TEXT NOT NULL DEFAULT '[]',
+           env_json TEXT NOT NULL DEFAULT '{}',
+           headers_json TEXT NOT NULL DEFAULT '{}',
+           enabled INTEGER NOT NULL DEFAULT 1,
+           timeout_ms INTEGER,
+           sort_order INTEGER NOT NULL DEFAULT 0,
+           source TEXT NOT NULL DEFAULT 'manual',
+           created_at TEXT NOT NULL DEFAULT (datetime('now')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+         );
+         CREATE INDEX IF NOT EXISTS idx_mcp_server_configs_scope
+           ON mcp_server_configs(scope);
+         CREATE INDEX IF NOT EXISTS idx_mcp_server_configs_enabled
+           ON mcp_server_configs(enabled);
+         CREATE INDEX IF NOT EXISTS idx_mcp_server_configs_source
+           ON mcp_server_configs(source);
+
+         CREATE TABLE IF NOT EXISTS sensitive_command_configs (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           command_id TEXT NOT NULL,
+           scope TEXT NOT NULL DEFAULT 'global',
+           pattern TEXT NOT NULL,
+           description TEXT NOT NULL DEFAULT '',
+           enabled INTEGER NOT NULL DEFAULT 1,
+           is_preset INTEGER NOT NULL DEFAULT 0,
+           sort_order INTEGER NOT NULL DEFAULT 0,
+           source TEXT NOT NULL DEFAULT 'manual',
+           created_at TEXT NOT NULL DEFAULT (datetime('now')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+           UNIQUE(scope, command_id)
+         );
+         CREATE INDEX IF NOT EXISTS idx_sensitive_command_configs_scope
+           ON sensitive_command_configs(scope);
+         CREATE INDEX IF NOT EXISTS idx_sensitive_command_configs_enabled
+           ON sensitive_command_configs(enabled);
+         CREATE INDEX IF NOT EXISTS idx_sensitive_command_configs_source
+           ON sensitive_command_configs(source);
+    ",
     )
 }
 

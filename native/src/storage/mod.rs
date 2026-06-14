@@ -115,12 +115,115 @@ pub struct CodebaseSettingsRecord {
     pub updated_at: String,
 }
 
+#[napi(object)]
+pub struct SystemPromptItemInput {
+    pub prompt_id: String,
+    pub name: String,
+    pub content: String,
+    pub is_active: bool,
+    pub sort_order: i32,
+}
+
+#[napi(object)]
+pub struct SystemPromptItemRecord {
+    pub id: i32,
+    pub prompt_id: String,
+    pub name: String,
+    pub content: String,
+    pub is_active: bool,
+    pub sort_order: i32,
+    pub updated_at: String,
+}
+
+#[napi(object)]
+pub struct CustomHeaderSchemeInput {
+    pub scheme_id: String,
+    pub name: String,
+    pub headers_json: String,
+    pub is_active: bool,
+    pub sort_order: i32,
+}
+
+#[napi(object)]
+pub struct CustomHeaderSchemeRecord {
+    pub id: i32,
+    pub scheme_id: String,
+    pub name: String,
+    pub headers_json: String,
+    pub is_active: bool,
+    pub sort_order: i32,
+    pub updated_at: String,
+}
+
+#[napi(object)]
+pub struct McpServerConfigInput {
+    pub server_id: String,
+    pub scope: String,
+    pub name: String,
+    pub transport_type: String,
+    pub url: String,
+    pub command: String,
+    pub args_json: String,
+    pub env_json: String,
+    pub headers_json: String,
+    pub enabled: bool,
+    pub timeout_ms: Option<i32>,
+    pub sort_order: i32,
+    pub source: String,
+}
+
+#[napi(object)]
+pub struct McpServerConfigRecord {
+    pub id: i32,
+    pub server_id: String,
+    pub scope: String,
+    pub name: String,
+    pub transport_type: String,
+    pub url: String,
+    pub command: String,
+    pub args_json: String,
+    pub env_json: String,
+    pub headers_json: String,
+    pub enabled: bool,
+    pub timeout_ms: Option<i32>,
+    pub sort_order: i32,
+    pub source: String,
+    pub updated_at: String,
+}
+
+#[napi(object)]
+pub struct SensitiveCommandConfigInput {
+    pub command_id: String,
+    pub scope: String,
+    pub pattern: String,
+    pub description: String,
+    pub enabled: bool,
+    pub is_preset: bool,
+    pub sort_order: i32,
+    pub source: String,
+}
+
+#[napi(object)]
+pub struct SensitiveCommandConfigRecord {
+    pub id: i32,
+    pub command_id: String,
+    pub scope: String,
+    pub pattern: String,
+    pub description: String,
+    pub enabled: bool,
+    pub is_preset: bool,
+    pub sort_order: i32,
+    pub source: String,
+    pub updated_at: String,
+}
+
 pub fn initialize_app_storage() -> Result<AppStorageInfo> {
     let storage_dir = ensure_storage_dir()?;
     let database_path = paths::database_file_path(&storage_dir);
     database::ensure_database(&database_path)?;
     services::system_settings::seed_default_settings(&database_path)?;
     services::api_configs::seed_default_api_config(&database_path)?;
+    services::sensitive_command_configs::seed_default_sensitive_command_configs(&database_path)?;
 
     Ok(AppStorageInfo {
         directory_path: storage_dir.to_string_lossy().into_owned(),
@@ -172,12 +275,77 @@ pub fn upsert_codebase_settings(settings: CodebaseSettingsInput) -> Result<()> {
     services::codebase_settings::upsert_codebase_settings(&database_path, &settings)
 }
 
+pub fn list_system_prompts() -> Result<Vec<SystemPromptItemRecord>> {
+    let database_path = ensure_database_file()?;
+    services::system_prompts::list_system_prompts(&database_path)
+}
+
+pub fn upsert_system_prompt(item: SystemPromptItemInput) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::system_prompts::upsert_system_prompt(&database_path, &item)
+}
+
+pub fn delete_system_prompt(prompt_id: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::system_prompts::delete_system_prompt(&database_path, &prompt_id)
+}
+
+pub fn list_custom_header_schemes() -> Result<Vec<CustomHeaderSchemeRecord>> {
+    let database_path = ensure_database_file()?;
+    services::custom_header_schemes::list_custom_header_schemes(&database_path)
+}
+
+pub fn upsert_custom_header_scheme(item: CustomHeaderSchemeInput) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::custom_header_schemes::upsert_custom_header_scheme(&database_path, &item)
+}
+
+pub fn delete_custom_header_scheme(scheme_id: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::custom_header_schemes::delete_custom_header_scheme(&database_path, &scheme_id)
+}
+
+pub fn list_mcp_server_configs() -> Result<Vec<McpServerConfigRecord>> {
+    let database_path = ensure_database_file()?;
+    services::mcp_server_configs::list_mcp_server_configs(&database_path)
+}
+
+pub fn upsert_mcp_server_config(item: McpServerConfigInput) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::mcp_server_configs::upsert_mcp_server_config(&database_path, &item)
+}
+
+pub fn delete_mcp_server_config(server_id: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::mcp_server_configs::delete_mcp_server_config(&database_path, &server_id)
+}
+
+pub fn list_sensitive_command_configs() -> Result<Vec<SensitiveCommandConfigRecord>> {
+    let database_path = ensure_database_file()?;
+    services::sensitive_command_configs::list_sensitive_command_configs(&database_path)
+}
+
+pub fn upsert_sensitive_command_config(item: SensitiveCommandConfigInput) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::sensitive_command_configs::upsert_sensitive_command_config(&database_path, &item)
+}
+
+pub fn delete_sensitive_command_config(command_id: String, scope: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::sensitive_command_configs::delete_sensitive_command_config(
+        &database_path,
+        &command_id,
+        &scope,
+    )
+}
+
 fn ensure_database_file() -> Result<PathBuf> {
     let storage_dir = ensure_storage_dir()?;
     let database_path = paths::database_file_path(&storage_dir);
     database::ensure_database(&database_path)?;
     services::system_settings::seed_default_settings(&database_path)?;
     services::api_configs::seed_default_api_config(&database_path)?;
+    services::sensitive_command_configs::seed_default_sensitive_command_configs(&database_path)?;
     Ok(database_path)
 }
 
