@@ -107,28 +107,14 @@ export type WorkspaceDirectoryInput = {
   name: string;
   path: string;
   kind: WorkspaceDirectoryKind;
-  workspaceId?: string;
-  workspaceName?: string;
   isActive: boolean;
   sortOrder: number;
   source: string;
 };
 
-export type WorkspaceDirectoryRecord = Omit<
-  WorkspaceDirectoryInput,
-  "workspaceId" | "workspaceName"
-> & {
+export type WorkspaceDirectoryRecord = WorkspaceDirectoryInput & {
   id: number;
-  workspaceId: string;
-  workspaceName: string;
   updatedAt: string;
-};
-
-export type WorkspaceDirectoryPage = {
-  items: WorkspaceDirectoryRecord[];
-  total: number;
-  offset: number;
-  limit: number;
 };
 
 export type McpServerConfigInput = {
@@ -229,36 +215,14 @@ const api = {
     ipcRenderer.invoke("custom-header-schemes:import-snow-cli"),
   listWorkspaceDirectories: (): Promise<WorkspaceDirectoryRecord[]> =>
     ipcRenderer.invoke("workspace-directories:list"),
-  listWorkspaceDirectoriesPage: (
-    offset: number,
-    limit: number
-  ): Promise<WorkspaceDirectoryPage> =>
-    ipcRenderer.invoke("workspace-directories:list-page", offset, limit),
   upsertWorkspaceDirectory: (
     item: WorkspaceDirectoryInput
-  ): Promise<WorkspaceDirectoryPage> =>
+  ): Promise<WorkspaceDirectoryRecord[]> =>
     ipcRenderer.invoke("workspace-directories:upsert", item),
   activateWorkspaceDirectory: (
     directoryId: string
-  ): Promise<WorkspaceDirectoryPage> =>
+  ): Promise<WorkspaceDirectoryRecord[]> =>
     ipcRenderer.invoke("workspace-directories:activate", directoryId),
-  reorderWorkspaceDirectories: (
-    directoryIds: string[]
-  ): Promise<WorkspaceDirectoryPage> =>
-    ipcRenderer.invoke("workspace-directories:reorder", directoryIds),
-  mergeWorkspaceDirectories: (
-    sourceDirectoryId: string,
-    targetDirectoryId: string
-  ): Promise<WorkspaceDirectoryPage> =>
-    ipcRenderer.invoke(
-      "workspace-directories:merge",
-      sourceDirectoryId,
-      targetDirectoryId
-    ),
-  splitWorkspaceDirectory: (
-    directoryId: string
-  ): Promise<WorkspaceDirectoryPage> =>
-    ipcRenderer.invoke("workspace-directories:split", directoryId),
   selectWorkspaceDirectory: (dialogTitle?: string): Promise<string | null> =>
     ipcRenderer.invoke(
       "workspace-directories:select-local-directory",

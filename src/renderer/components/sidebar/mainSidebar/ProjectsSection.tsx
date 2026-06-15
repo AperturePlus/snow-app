@@ -2,7 +2,6 @@ import {
   Check,
   Folder,
   FolderOpen,
-  GripVertical,
   Loader2,
   Plus,
   Server,
@@ -14,36 +13,15 @@ import { useI18n } from "../../../i18n";
 import type {
   WorkspaceDirectoryInput,
   WorkspaceDirectoryKind,
-  WorkspaceDirectoryPage,
   WorkspaceDirectoryRecord,
 } from "../../../../preload";
 
 type AddDirectoryMode = "" | WorkspaceDirectoryKind;
-
 type ProjectsSectionProps = {
   onSwitchingDirectoryChange: (isSwitchingDirectory: boolean) => void;
 };
 
-type DirectoryDropIntent = "merge" | "sort-before" | "sort-after";
-
-type DirectoryDropTarget = {
-  directoryId: string;
-  intent: DirectoryDropIntent;
-};
-
-type WorkspaceDirectoryListEntry =
-  | {
-      type: "directory";
-      directory: WorkspaceDirectoryRecord;
-    }
-  | {
-      type: "workspace";
-      workspaceId: string;
-      workspaceName: string;
-      directories: WorkspaceDirectoryRecord[];
-    };
-
-const WORKSPACE_DIRECTORY_PAGE_SIZE = 30;
+const DIRECTORY_PAGE_SIZE = 12;
 
 const createDirectoryId = (
   kind: WorkspaceDirectoryKind,
@@ -75,8 +53,6 @@ const toWorkspaceDirectoryInput = (
     name: getDirectoryName(kind, trimmedPath),
     path: trimmedPath,
     kind,
-    workspaceId: "",
-    workspaceName: "",
     isActive: true,
     sortOrder: existingCount,
     source: "manual",
@@ -90,10 +66,7 @@ export function ProjectsSection({
   const [workspaceDirectories, setWorkspaceDirectories] = useState<
     WorkspaceDirectoryRecord[]
   >([]);
-  const [workspaceDirectoryTotal, setWorkspaceDirectoryTotal] = useState(0);
   const [isLoadingDirectories, setIsLoadingDirectories] = useState(true);
-  const [isLoadingMoreDirectories, setIsLoadingMoreDirectories] =
-    useState(false);
   const [isSavingDirectory, setIsSavingDirectory] = useState(false);
   const [isSwitchingDirectory, setIsSwitchingDirectory] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
@@ -101,123 +74,97 @@ export function ProjectsSection({
     useState<AddDirectoryMode>("");
   const [sshDirectoryPath, setSshDirectoryPath] = useState("");
   const [directoryError, setDirectoryError] = useState<string | null>(null);
-  const [draggedDirectoryId, setDraggedDirectoryId] = useState<string | null>(
-    null
-  );
-  const [directoryDropTarget, setDirectoryDropTarget] =
-    useState<DirectoryDropTarget | null>(null);
+  const [directoryPage, setDirectoryPage] = useState(1);
   const addMenuRef = useRef<HTMLDivElement | null>(null);
   const sshFormRef = useRef<HTMLDivElement | null>(null);
   const directoryListRef = useRef<HTMLDivElement | null>(null);
-  const didDropOnDirectoryRef = useRef(false);
-
-  const hasMoreDirectories =
-    workspaceDirectories.length < workspaceDirectoryTotal;
+  const directoryLoadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const activeDirectory = useMemo(
     () => workspaceDirectories.find((directory) => directory.isActive),
     [workspaceDirectories]
   );
-
-  const workspaceDirectoryListEntries = useMemo<
-    WorkspaceDirectoryListEntry[]
-  >(() => {
-    const renderedWorkspaceIds = new Set<string>();
-
-    return workspaceDirectories.reduce<WorkspaceDirectoryListEntry[]>(
-      (entries, directory) => {
-        if (!directory.workspaceId) {
-          entries.push({ type: "directory", directory });
-          return entries;
-        }
-
-        if (renderedWorkspaceIds.has(directory.workspaceId)) {
-          return entries;
-        }
-
-        renderedWorkspaceIds.add(directory.workspaceId);
-        const directories = workspaceDirectories.filter(
-          (item) => item.workspaceId === directory.workspaceId
-        );
-
-        entries.push({
-          type: "workspace",
-          workspaceId: directory.workspaceId,
-          workspaceName: directory.workspaceName || directory.name,
-          directories,
-        });
-        return entries;
-      },
-      []
-    );
-  }, [workspaceDirectories]);
-
-  const applyWorkspaceDirectoryPage = useCallback(
-    (page: WorkspaceDirectoryPage, shouldAppend: boolean): void => {
-      setWorkspaceDirectoryTotal(page.total);
-      setWorkspaceDirectories((currentDirectories) => {
-        if (!shouldAppend) {
-          return page.items;
-        }
-
-        const existingIds = new Set(
-          currentDirectories.map((directory) => directory.directoryId)
-        );
-        return [
-          ...currentDirectories,
-          ...page.items.filter(
-            (directory) => !existingIds.has(directory.directoryId)
-          ),
-        ];
-      });
-    },
-    []
+  const visibleDirectoryCount = directoryPage * DIRECTORY_PAGE_SIZE;
+  const visibleDirectories = useMemo(
+    () => workspaceDirectories.slice(0, visibleDirectoryCount),
+    [visibleDirectoryCount, workspaceDirectories]
   );
+  const hasMoreDirectories =
+    visibleDirectoryCount < workspaceDirectories.length;
+
+  const loadNextDirectoryPage = useCallback((): void => {
+    setDirectoryPage((currentPage) => {
+      const maxPage = Math.ceil(
+        workspaceDirectories.length / DIRECTORY_PAGE_SIZE
+      );
+
+      return Math.min(currentPage + 1, Math.max(maxPage, 1));
+    });
+  }, [workspaceDirectories.length]);
 
   const updateSwitchingDirectory = (nextIsSwitching: boolean): void => {
     setIsSwitchingDirectory(nextIsSwitching);
     onSwitchingDirectoryChange(nextIsSwitching);
   };
 
-  const loadWorkspaceDirectories = useCallback(
-    async (offset = 0): Promise<void> => {
-      const shouldAppend = offset > 0;
-      setDirectoryError(null);
+  const loadWorkspaceDirectories = async (): Promise<void> => {
+    setDirectoryError(null);
 
-      if (shouldAppend) {
-        setIsLoadingMoreDirectories(true);
-      } else {
-        setIsLoadingDirectories(true);
-      }
-
-      try {
-        const page = await window.snow.listWorkspaceDirectoriesPage(
-          offset,
-          WORKSPACE_DIRECTORY_PAGE_SIZE
-        );
-        applyWorkspaceDirectoryPage(page, shouldAppend);
-      } catch (error) {
-        setDirectoryError(
-          error instanceof Error
-            ? error.message
-            : t("sidebar.loadDirectoriesError", {
-                defaultValue: "Failed to load workspace directories",
-              })
-        );
-      } finally {
-        if (shouldAppend) {
-          setIsLoadingMoreDirectories(false);
-        } else {
-          setIsLoadingDirectories(false);
-        }
-      }
-    },
-    [applyWorkspaceDirectoryPage, t]
-  );
+    try {
+      const directories = await window.snow.listWorkspaceDirectories();
+      setWorkspaceDirectories(directories);
+    } catch (error) {
+      setDirectoryError(
+        error instanceof Error
+          ? error.message
+          : t("sidebar.loadDirectoriesError", {
+              defaultValue: "Failed to load workspace directories",
+            })
+      );
+    } finally {
+      setIsLoadingDirectories(false);
+    }
+  };
 
   useEffect(() => {
     void loadWorkspaceDirectories();
-  }, [loadWorkspaceDirectories]);
+  }, []);
+
+  useEffect(() => {
+    setDirectoryPage(1);
+  }, [workspaceDirectories.length]);
+
+  useEffect(() => {
+    if (!hasMoreDirectories) {
+      return;
+    }
+
+    const sentinel = directoryLoadMoreRef.current;
+    const scrollRoot = directoryListRef.current;
+
+    if (!sentinel || !scrollRoot) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          loadNextDirectoryPage();
+        }
+      },
+      {
+        root: scrollRoot,
+        rootMargin: "0px 0px 32px",
+        threshold: 0.1,
+      }
+    );
+
+    observer.observe(sentinel);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasMoreDirectories, loadNextDirectoryPage, visibleDirectories.length]);
 
   useEffect(() => {
     if (!isAddMenuOpen && addDirectoryMode !== "ssh") {
@@ -255,8 +202,8 @@ export function ProjectsSection({
     setDirectoryError(null);
 
     try {
-      const page = await window.snow.upsertWorkspaceDirectory(item);
-      applyWorkspaceDirectoryPage(page, false);
+      const directories = await window.snow.upsertWorkspaceDirectory(item);
+      setWorkspaceDirectories(directories);
       setIsAddMenuOpen(false);
       setAddDirectoryMode("");
       setSshDirectoryPath("");
@@ -298,7 +245,7 @@ export function ProjectsSection({
           toWorkspaceDirectoryInput(
             selectedPath,
             "local",
-            workspaceDirectoryTotal
+            workspaceDirectories.length
           )
         );
       } else {
@@ -330,7 +277,7 @@ export function ProjectsSection({
     }
 
     await persistWorkspaceDirectory(
-      toWorkspaceDirectoryInput(trimmedPath, "ssh", workspaceDirectoryTotal)
+      toWorkspaceDirectoryInput(trimmedPath, "ssh", workspaceDirectories.length)
     );
   };
 
@@ -352,8 +299,10 @@ export function ProjectsSection({
     setDirectoryError(null);
 
     try {
-      const page = await window.snow.activateWorkspaceDirectory(directoryId);
-      applyWorkspaceDirectoryPage(page, false);
+      const directories = await window.snow.activateWorkspaceDirectory(
+        directoryId
+      );
+      setWorkspaceDirectories(directories);
     } catch (error) {
       setDirectoryError(
         error instanceof Error
@@ -364,193 +313,6 @@ export function ProjectsSection({
       );
     } finally {
       updateSwitchingDirectory(false);
-    }
-  };
-
-  const handleWorkspaceDirectoryScroll = (): void => {
-    const listElement = directoryListRef.current;
-
-    if (
-      !listElement ||
-      !hasMoreDirectories ||
-      isLoadingDirectories ||
-      isLoadingMoreDirectories
-    ) {
-      return;
-    }
-
-    const remainingScroll =
-      listElement.scrollHeight -
-      listElement.scrollTop -
-      listElement.clientHeight;
-
-    if (remainingScroll < 48) {
-      void loadWorkspaceDirectories(workspaceDirectories.length);
-    }
-  };
-
-  const getDirectoryDropIntent = (
-    event: React.DragEvent<HTMLButtonElement>
-  ): DirectoryDropIntent => {
-    const targetRect = event.currentTarget.getBoundingClientRect();
-    const pointerRatio =
-      (event.clientY - targetRect.top) / Math.max(targetRect.height, 1);
-
-    if (pointerRatio < 0.28) {
-      return "sort-before";
-    }
-
-    if (pointerRatio > 0.72) {
-      return "sort-after";
-    }
-
-    return "merge";
-  };
-
-  const handleDragStart = (
-    event: React.DragEvent<HTMLButtonElement>,
-    directoryId: string
-  ): void => {
-    didDropOnDirectoryRef.current = false;
-    setDraggedDirectoryId(directoryId);
-    setDirectoryDropTarget(null);
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", directoryId);
-  };
-
-  const handleDragOver = (
-    event: React.DragEvent<HTMLButtonElement>,
-    directoryId: string
-  ): void => {
-    if (!draggedDirectoryId || draggedDirectoryId === directoryId) {
-      setDirectoryDropTarget(null);
-      return;
-    }
-
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-    setDirectoryDropTarget({
-      directoryId,
-      intent: getDirectoryDropIntent(event),
-    });
-  };
-
-  const handleDragEnd = async (): Promise<void> => {
-    const sourceDirectoryId = draggedDirectoryId;
-    const sourceDirectory = workspaceDirectories.find(
-      (directory) => directory.directoryId === sourceDirectoryId
-    );
-    const shouldSplitFromWorkspace =
-      Boolean(sourceDirectory?.workspaceId) && !didDropOnDirectoryRef.current;
-
-    setDraggedDirectoryId(null);
-    setDirectoryDropTarget(null);
-    didDropOnDirectoryRef.current = false;
-
-    if (!sourceDirectoryId || !shouldSplitFromWorkspace) {
-      return;
-    }
-
-    setIsSavingDirectory(true);
-    setDirectoryError(null);
-
-    try {
-      const page = await window.snow.splitWorkspaceDirectory(sourceDirectoryId);
-      applyWorkspaceDirectoryPage(page, false);
-    } catch (error) {
-      setDirectoryError(
-        error instanceof Error
-          ? error.message
-          : t("sidebar.splitDirectoryError", {
-              defaultValue: "Failed to split workspace directory",
-            })
-      );
-      await loadWorkspaceDirectories();
-    } finally {
-      setIsSavingDirectory(false);
-    }
-  };
-
-  const handleDrop = async (
-    event: React.DragEvent<HTMLButtonElement>,
-    targetDirectoryId: string
-  ): Promise<void> => {
-    event.preventDefault();
-    didDropOnDirectoryRef.current = true;
-    const sourceDirectoryId =
-      event.dataTransfer.getData("text/plain") || draggedDirectoryId;
-    const dropIntent =
-      directoryDropTarget?.directoryId === targetDirectoryId
-        ? directoryDropTarget.intent
-        : getDirectoryDropIntent(event);
-
-    setDraggedDirectoryId(null);
-    setDirectoryDropTarget(null);
-
-    if (!sourceDirectoryId || sourceDirectoryId === targetDirectoryId) {
-      return;
-    }
-
-    setIsSavingDirectory(true);
-    setDirectoryError(null);
-
-    try {
-      if (dropIntent === "merge") {
-        const page = await window.snow.mergeWorkspaceDirectories(
-          sourceDirectoryId,
-          targetDirectoryId
-        );
-        applyWorkspaceDirectoryPage(page, false);
-        return;
-      }
-
-      const sourceIndex = workspaceDirectories.findIndex(
-        (directory) => directory.directoryId === sourceDirectoryId
-      );
-      const targetIndex = workspaceDirectories.findIndex(
-        (directory) => directory.directoryId === targetDirectoryId
-      );
-
-      if (sourceIndex < 0 || targetIndex < 0) {
-        return;
-      }
-
-      const nextDirectories = [...workspaceDirectories];
-      const [sourceDirectory] = nextDirectories.splice(sourceIndex, 1);
-      const nextTargetIndex = nextDirectories.findIndex(
-        (directory) => directory.directoryId === targetDirectoryId
-      );
-
-      if (nextTargetIndex < 0) {
-        return;
-      }
-
-      nextDirectories.splice(
-        dropIntent === "sort-before" ? nextTargetIndex : nextTargetIndex + 1,
-        0,
-        sourceDirectory
-      );
-      setWorkspaceDirectories(nextDirectories);
-
-      if (sourceDirectory.workspaceId) {
-        await window.snow.splitWorkspaceDirectory(sourceDirectoryId);
-      }
-
-      const page = await window.snow.reorderWorkspaceDirectories(
-        nextDirectories.map((directory) => directory.directoryId)
-      );
-      applyWorkspaceDirectoryPage(page, false);
-    } catch (error) {
-      setDirectoryError(
-        error instanceof Error
-          ? error.message
-          : t("sidebar.reorderDirectoryError", {
-              defaultValue: "Failed to update workspace directories",
-            })
-      );
-      await loadWorkspaceDirectories();
-    } finally {
-      setIsSavingDirectory(false);
     }
   };
 
@@ -616,11 +378,9 @@ export function ProjectsSection({
           {t("sidebar.activeDirectory", {
             defaultValue: "Active directory",
           })}
-          {workspaceDirectoryTotal > 0 ? ` · ${workspaceDirectoryTotal}` : ""}
         </span>
         <div
           className="section-list workspace-directory-list"
-          onScroll={handleWorkspaceDirectoryScroll}
           ref={directoryListRef}
         >
           {isLoadingDirectories ? (
@@ -636,145 +396,28 @@ export function ProjectsSection({
               })}
             </span>
           ) : (
-            workspaceDirectoryListEntries.map((entry) => {
-              if (entry.type === "workspace") {
-                return (
-                  <div
-                    className="workspace-directory-group"
-                    key={entry.workspaceId}
-                  >
-                    <div className="workspace-directory-group-header">
-                      <span className="workspace-directory-group-title">
-                        {entry.workspaceName}
-                      </span>
-                      <span className="workspace-directory-group-count">
-                        {t("sidebar.workspaceDirectoryCount", {
-                          values: { count: entry.directories.length },
-                          defaultValue: "{{count}} dirs",
-                        })}
-                      </span>
-                    </div>
-                    <div className="workspace-directory-group-items">
-                      {entry.directories.map((directory) => {
-                        const dropIntent =
-                          directoryDropTarget?.directoryId ===
-                          directory.directoryId
-                            ? directoryDropTarget.intent
-                            : null;
-
-                        return (
-                          <button
-                            className={`list-item workspace-directory-item grouped${
-                              directory.isActive ? " active" : ""
-                            }${dropIntent === "merge" ? " merge-target" : ""}${
-                              dropIntent === "sort-before" ? " sort-before" : ""
-                            }${
-                              dropIntent === "sort-after" ? " sort-after" : ""
-                            }${
-                              draggedDirectoryId === directory.directoryId
-                                ? " dragging"
-                                : ""
-                            }`}
-                            disabled={isSavingDirectory || isSwitchingDirectory}
-                            draggable={
-                              !isSavingDirectory && !isSwitchingDirectory
-                            }
-                            key={directory.directoryId}
-                            onClick={() =>
-                              void handleActivateDirectory(
-                                directory.directoryId
-                              )
-                            }
-                            onDragEnd={() => void handleDragEnd()}
-                            onDragOver={(event) =>
-                              handleDragOver(event, directory.directoryId)
-                            }
-                            onDragStart={(event) =>
-                              handleDragStart(event, directory.directoryId)
-                            }
-                            onDrop={(event) =>
-                              void handleDrop(event, directory.directoryId)
-                            }
-                            title={`${directory.path}\n${t(
-                              "sidebar.workspaceGroup",
-                              { defaultValue: "Workspace" }
-                            )}: ${entry.workspaceName}`}
-                            type="button"
-                          >
-                            <GripVertical
-                              className="workspace-directory-drag-icon"
-                              size={13}
-                            />
-                            {directory.isActive ? (
-                              <FolderOpen className="list-icon" size={15} />
-                            ) : directory.kind === "ssh" ? (
-                              <Server className="list-icon" size={15} />
-                            ) : (
-                              <Folder className="list-icon" size={15} />
-                            )}
-                            <span className="workspace-directory-content">
-                              <span className="list-label">
-                                {directory.name}
-                              </span>
-                              <span className="workspace-directory-group-label">
-                                {t("sidebar.dragOutToSplit", {
-                                  defaultValue: "Drag out to split",
-                                })}
-                              </span>
-                            </span>
-                            {dropIntent === "merge" ? (
-                              <span className="workspace-directory-merge-icon">
-                                <Plus size={12} />
-                              </span>
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              }
-
-              const { directory } = entry;
-              const dropIntent =
-                directoryDropTarget?.directoryId === directory.directoryId
-                  ? directoryDropTarget.intent
-                  : null;
-
-              return (
+            <>
+              {visibleDirectories.map((directory, index) => (
                 <button
-                  className={`list-item workspace-directory-item${
-                    directory.isActive ? " active" : ""
-                  }${dropIntent === "merge" ? " merge-target" : ""}${
-                    dropIntent === "sort-before" ? " sort-before" : ""
-                  }${dropIntent === "sort-after" ? " sort-after" : ""}${
-                    draggedDirectoryId === directory.directoryId
-                      ? " dragging"
-                      : ""
-                  }`}
-                  disabled={isSavingDirectory || isSwitchingDirectory}
-                  draggable={!isSavingDirectory && !isSwitchingDirectory}
+                  className={`list-item${directory.isActive ? " active" : ""}`}
+                  disabled={
+                    isSavingDirectory ||
+                    isSwitchingDirectory ||
+                    directory.isActive
+                  }
                   key={directory.directoryId}
                   onClick={() =>
                     void handleActivateDirectory(directory.directoryId)
                   }
-                  onDragEnd={() => void handleDragEnd()}
-                  onDragOver={(event) =>
-                    handleDragOver(event, directory.directoryId)
-                  }
-                  onDragStart={(event) =>
-                    handleDragStart(event, directory.directoryId)
-                  }
-                  onDrop={(event) =>
-                    void handleDrop(event, directory.directoryId)
-                  }
                   title={directory.path}
                   type="button"
                 >
-                  <GripVertical
-                    className="workspace-directory-drag-icon"
-                    size={13}
-                  />
+                  <span
+                    className="workspace-directory-guide"
+                    aria-hidden="true"
+                  >
+                    <span className="workspace-directory-guide-dot" />
+                  </span>
                   {directory.isActive ? (
                     <FolderOpen className="list-icon" size={15} />
                   ) : directory.kind === "ssh" ? (
@@ -782,28 +425,37 @@ export function ProjectsSection({
                   ) : (
                     <Folder className="list-icon" size={15} />
                   )}
-                  <span className="workspace-directory-content">
-                    <span className="list-label">{directory.name}</span>
+                  <span className="list-label">{directory.name}</span>
+                  <span className="list-meta">{directory.kind}</span>
+                  <span className="workspace-directory-index">
+                    {index + 1}/{workspaceDirectories.length}
                   </span>
-                  {dropIntent === "merge" ? (
-                    <span className="workspace-directory-merge-icon">
-                      <Plus size={12} />
-                    </span>
-                  ) : (
-                    <span className="list-meta">{directory.kind}</span>
-                  )}
                 </button>
-              );
-            })
+              ))}
+              {hasMoreDirectories ? (
+                <div
+                  aria-hidden="true"
+                  className="workspace-directory-load-more"
+                  ref={directoryLoadMoreRef}
+                >
+                  <Loader2 className="spin" size={13} />
+                  <span>
+                    {t("sidebar.loadingMoreDirectories", {
+                      defaultValue: "Loading more...",
+                    })}
+                  </span>
+                </div>
+              ) : (
+                <div className="workspace-directory-end-line">
+                  <span>
+                    {t("sidebar.allDirectoriesLoaded", {
+                      defaultValue: "All directories loaded",
+                    })}
+                  </span>
+                </div>
+              )}
+            </>
           )}
-          {isLoadingMoreDirectories ? (
-            <span className="empty-text loading">
-              <Loader2 className="spin" size={13} />
-              {t("sidebar.loadingMoreDirectories", {
-                defaultValue: "Loading more...",
-              })}
-            </span>
-          ) : null}
         </div>
         {addDirectoryMode === "ssh" ? (
           <div className="workspace-directory-ssh-form" ref={sshFormRef}>

@@ -97,28 +97,14 @@ export type WorkspaceDirectoryInput = {
   name: string;
   path: string;
   kind: WorkspaceDirectoryKind;
-  workspaceId?: string;
-  workspaceName?: string;
   isActive: boolean;
   sortOrder: number;
   source: string;
 };
 
-export type WorkspaceDirectoryRecord = Omit<
-  WorkspaceDirectoryInput,
-  "workspaceId" | "workspaceName"
-> & {
+export type WorkspaceDirectoryRecord = WorkspaceDirectoryInput & {
   id: number;
-  workspaceId: string;
-  workspaceName: string;
   updatedAt: string;
-};
-
-export type WorkspaceDirectoryPage = {
-  items: WorkspaceDirectoryRecord[];
-  total: number;
-  offset: number;
-  limit: number;
 };
 
 export type McpServerConfigInput = {
@@ -179,18 +165,8 @@ export type NativeBridge = {
   upsertCustomHeaderScheme: (item: CustomHeaderSchemeInput) => void;
   deleteCustomHeaderScheme: (schemeId: string) => void;
   listWorkspaceDirectories: () => WorkspaceDirectoryRecord[];
-  listWorkspaceDirectoriesPage: (
-    offset: number,
-    limit: number
-  ) => WorkspaceDirectoryPage;
   upsertWorkspaceDirectory: (item: WorkspaceDirectoryInput) => void;
   activateWorkspaceDirectory: (directoryId: string) => void;
-  reorderWorkspaceDirectories: (directoryIds: string[]) => void;
-  mergeWorkspaceDirectories: (
-    sourceDirectoryId: string,
-    targetDirectoryId: string
-  ) => void;
-  splitWorkspaceDirectory: (directoryId: string) => void;
   listMcpServerConfigs: () => McpServerConfigRecord[];
   upsertMcpServerConfig: (item: McpServerConfigInput) => void;
   deleteMcpServerConfig: (serverId: string) => void;

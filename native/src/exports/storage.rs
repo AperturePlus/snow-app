@@ -4,7 +4,7 @@ use crate::storage::{
     ApiConfigInput, ApiConfigRecord, AppStorageInfo, CodebaseSettingsInput, CodebaseSettingsRecord,
     CustomHeaderSchemeInput, CustomHeaderSchemeRecord, McpServerConfigInput, McpServerConfigRecord,
     SensitiveCommandConfigInput, SensitiveCommandConfigRecord, SystemPromptItemInput,
-    SystemPromptItemRecord, WorkspaceDirectoryInput, WorkspaceDirectoryPage, WorkspaceDirectoryRecord,
+    SystemPromptItemRecord, WorkspaceDirectoryInput, WorkspaceDirectoryRecord,
 };
 
 #[napi]
@@ -87,14 +87,6 @@ pub fn list_workspace_directories() -> napi::Result<Vec<WorkspaceDirectoryRecord
 }
 
 #[napi]
-pub fn list_workspace_directories_page(
-    offset: i32,
-    limit: i32,
-) -> napi::Result<WorkspaceDirectoryPage> {
-    crate::storage::list_workspace_directories_page(offset, limit)
-}
-
-#[napi]
 pub fn upsert_workspace_directory(item: WorkspaceDirectoryInput) -> napi::Result<()> {
     crate::storage::upsert_workspace_directory(item)
 }
@@ -102,24 +94,6 @@ pub fn upsert_workspace_directory(item: WorkspaceDirectoryInput) -> napi::Result
 #[napi]
 pub fn activate_workspace_directory(directory_id: String) -> napi::Result<()> {
     crate::storage::activate_workspace_directory(directory_id)
-}
-
-#[napi]
-pub fn reorder_workspace_directories(directory_ids: Vec<String>) -> napi::Result<()> {
-    crate::storage::reorder_workspace_directories(directory_ids)
-}
-
-#[napi]
-pub fn merge_workspace_directories(
-    source_directory_id: String,
-    target_directory_id: String,
-) -> napi::Result<()> {
-    crate::storage::merge_workspace_directories(source_directory_id, target_directory_id)
-}
-
-#[napi]
-pub fn split_workspace_directory(directory_id: String) -> napi::Result<()> {
-    crate::storage::split_workspace_directory(directory_id)
 }
 
 #[napi]

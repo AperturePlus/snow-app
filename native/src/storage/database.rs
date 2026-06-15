@@ -11,7 +11,7 @@ pub fn ensure_database(database_path: &Path) -> Result<()> {
 
 fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
-        "PRAGMA user_version = 8;
+        "PRAGMA user_version = 7;
 
          CREATE TABLE IF NOT EXISTS system_settings (
            id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -115,8 +115,6 @@ fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
            name TEXT NOT NULL DEFAULT '',
            path TEXT NOT NULL DEFAULT '',
            kind TEXT NOT NULL DEFAULT 'local',
-           workspace_id TEXT NOT NULL DEFAULT '',
-           workspace_name TEXT NOT NULL DEFAULT '',
            is_active INTEGER NOT NULL DEFAULT 0,
            sort_order INTEGER NOT NULL DEFAULT 0,
            source TEXT NOT NULL DEFAULT 'manual',
@@ -127,8 +125,6 @@ fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
            ON workspace_directories(is_active);
          CREATE INDEX IF NOT EXISTS idx_workspace_directories_kind
            ON workspace_directories(kind);
-         CREATE INDEX IF NOT EXISTS idx_workspace_directories_workspace
-           ON workspace_directories(workspace_id);
 
          CREATE TABLE IF NOT EXISTS mcp_server_configs (
            id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -185,4 +181,3 @@ pub fn database_error(database_path: &Path, action: &str, error: rusqlite::Error
         database_path.display()
     ))
 }
-
