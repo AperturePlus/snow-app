@@ -22,6 +22,8 @@ export type ApiConfigFormData = {
   maxContextTokens: string;
   maxTokens: string;
   streamIdleTimeoutSec: string;
+  enableAutoCompress: boolean;
+  autoCompressThreshold: string;
 };
 
 export type ApiConfigItem = ApiConfigRecord;

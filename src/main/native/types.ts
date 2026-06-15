@@ -19,9 +19,11 @@ export type ApiConfigInput = {
   visionApiKey: string;
   visionRequestMethod: string;
   visionModel: string;
-  maxContextTokens?: number | null;
-  maxTokens?: number | null;
-  streamIdleTimeoutSec?: number | null;
+  maxContextTokens?: number;
+  maxTokens?: number;
+  streamIdleTimeoutSec?: number;
+  enableAutoCompress: boolean;
+  autoCompressThreshold?: number;
   configJson: string;
   source: string;
 };
@@ -167,6 +169,8 @@ export type NativeBridge = {
   listWorkspaceDirectories: () => WorkspaceDirectoryRecord[];
   upsertWorkspaceDirectory: (item: WorkspaceDirectoryInput) => void;
   activateWorkspaceDirectory: (directoryId: string) => void;
+  reorderWorkspaceDirectories: (items: WorkspaceDirectoryInput[]) => void;
+  deleteWorkspaceDirectory: (directoryId: string) => void;
   listMcpServerConfigs: () => McpServerConfigRecord[];
   upsertMcpServerConfig: (item: McpServerConfigInput) => void;
   deleteMcpServerConfig: (serverId: string) => void;

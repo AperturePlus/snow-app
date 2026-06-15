@@ -7,9 +7,19 @@ import { ApiSettingsActions } from "./apiSettings/ApiSettingsActions";
 import { ApiSettingsFormPanel } from "./apiSettings/ApiSettingsFormPanel";
 import { ApiSettingsSummary } from "./apiSettings/ApiSettingsSummary";
 import { ApiSettingsTable } from "./apiSettings/ApiSettingsTable";
-import { DEFAULT_API_BASE_URL, DEFAULT_REQUEST_METHOD } from "./apiSettings/apiSettingsConstants";
-import { emptyApiConfigForm, toApiConfigPayload } from "./apiSettings/apiSettingsUtils";
-import type { ApiConfigFormData, ApiSettingsPanelProps } from "./apiSettings/types";
+import {
+  DEFAULT_API_BASE_URL,
+  DEFAULT_REQUEST_METHOD,
+} from "./apiSettings/apiSettingsConstants";
+import {
+  emptyApiConfigForm,
+  toApiConfigPayload,
+} from "./apiSettings/apiSettingsUtils";
+import { calculateAutoCompressThresholdPercent } from "./apiSettings/autoCompressThreshold";
+import type {
+  ApiConfigFormData,
+  ApiSettingsPanelProps,
+} from "./apiSettings/types";
 
 export function ApiSettingsTreePanel({
   onClose,
@@ -127,7 +137,9 @@ export function ApiSettingsTreePanel({
     setStatus("");
     setShowAddForm((value) => {
       if (!value) {
-        setAddForm(emptyApiConfigForm(configs.length + 1, configs.length === 0));
+        setAddForm(
+          emptyApiConfigForm(configs.length + 1, configs.length === 0)
+        );
       }
       return !value;
     });
@@ -217,6 +229,11 @@ export function ApiSettingsTreePanel({
         config.streamIdleTimeoutSec != null
           ? String(config.streamIdleTimeoutSec)
           : "",
+      enableAutoCompress: config.enableAutoCompress ?? true,
+      autoCompressThreshold: calculateAutoCompressThresholdPercent(
+        config.maxContextTokens,
+        config.autoCompressThreshold
+      ),
     });
   };
 
@@ -280,9 +297,11 @@ export function ApiSettingsTreePanel({
         visionApiKey: "",
         visionRequestMethod: config.visionRequestMethod,
         visionModel: config.visionModel,
-        maxContextTokens: null,
-        maxTokens: null,
-        streamIdleTimeoutSec: null,
+        maxContextTokens: config.maxContextTokens,
+        maxTokens: config.maxTokens,
+        streamIdleTimeoutSec: config.streamIdleTimeoutSec,
+        enableAutoCompress: config.enableAutoCompress,
+        autoCompressThreshold: config.autoCompressThreshold,
         configJson: "{}",
         source: config.source,
       });

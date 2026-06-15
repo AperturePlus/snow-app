@@ -11,7 +11,7 @@ pub fn ensure_database(database_path: &Path) -> Result<()> {
 
 fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
-        "PRAGMA user_version = 7;
+        "PRAGMA user_version = 8;
 
          CREATE TABLE IF NOT EXISTS system_settings (
            id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,6 +42,8 @@ fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
            max_context_tokens INTEGER,
            max_tokens INTEGER,
            stream_idle_timeout_sec INTEGER,
+           enable_auto_compress INTEGER NOT NULL DEFAULT 1,
+           auto_compress_threshold INTEGER,
            config_json TEXT NOT NULL DEFAULT '{}',
            source TEXT NOT NULL DEFAULT 'manual',
            created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -172,7 +174,9 @@ fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
          CREATE INDEX IF NOT EXISTS idx_sensitive_command_configs_source
            ON sensitive_command_configs(source);
     ",
-    )
+    )?;
+
+    Ok(())
 }
 
 pub fn database_error(database_path: &Path, action: &str, error: rusqlite::Error) -> Error {

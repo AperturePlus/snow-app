@@ -8,6 +8,7 @@ import { RightPanel } from "./components/RightPanel";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import type { MainContentView } from "./components/mainContent/types";
+import type { WorkspaceDirectoryRecord } from "../preload";
 
 const SIDEBAR_MIN_WIDTH = 180;
 const SIDEBAR_MAX_WIDTH = 420;
@@ -31,6 +32,8 @@ const clamp = (value: number, min: number, max: number): number =>
 
 export const App = (): React.JSX.Element => {
   const [activeMainView, setActiveMainView] = useState<MainContentView>("chat");
+  const [activeDirectory, setActiveDirectory] =
+    useState<WorkspaceDirectoryRecord | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
@@ -123,8 +126,10 @@ export const App = (): React.JSX.Element => {
       />
       <div className="app-layout">
         <Sidebar
+          activeDirectory={activeDirectory}
           activeMainView={activeMainView}
           isCollapsed={isSidebarCollapsed}
+          onActiveDirectoryChange={setActiveDirectory}
           onSelectMainView={setActiveMainView}
         />
         {!isSidebarCollapsed && (
@@ -137,6 +142,7 @@ export const App = (): React.JSX.Element => {
           />
         )}
         <MainContent
+          activeDirectory={activeDirectory}
           activeView={activeMainView}
           onSelectView={setActiveMainView}
         />

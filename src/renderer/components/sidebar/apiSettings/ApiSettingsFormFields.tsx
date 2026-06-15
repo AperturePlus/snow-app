@@ -8,6 +8,13 @@ import {
   ENABLED_STATUS_LABEL,
   REQUEST_METHODS,
 } from "./apiSettingsConstants";
+import {
+  AUTO_COMPRESS_THRESHOLD_MAX_PERCENT,
+  AUTO_COMPRESS_THRESHOLD_MIN_PERCENT,
+  AUTO_COMPRESS_THRESHOLD_STEP_PERCENT,
+  calculateAutoCompressThresholdTokens,
+  normalizeAutoCompressThresholdPercent,
+} from "./autoCompressThreshold";
 import type { ApiConfigFormData } from "./types";
 
 type ApiSettingsFormFieldsProps = {
@@ -31,11 +38,20 @@ export function ApiSettingsFormFields({
     (field: keyof ApiConfigFormData) =>
     (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       const value =
-        event.target instanceof HTMLInputElement && event.target.type === "checkbox"
+        event.target instanceof HTMLInputElement &&
+        event.target.type === "checkbox"
           ? event.target.checked
           : event.target.value;
       onChange(field, value);
     };
+
+  const autoCompressThresholdPercent = normalizeAutoCompressThresholdPercent(
+    data.autoCompressThreshold
+  );
+  const autoCompressThresholdTokens = calculateAutoCompressThresholdTokens(
+    data.maxContextTokens,
+    autoCompressThresholdPercent
+  );
 
   return (
     <div className="api-settings-form-body">
@@ -46,7 +62,9 @@ export function ApiSettingsFormFields({
         <div className="api-settings-form-grid">
           {isNew && (
             <label className="api-settings-field">
-              <span>{t("settings.apiProfileName", { defaultValue: "Profile name" })}</span>
+              <span>
+                {t("settings.apiProfileName", { defaultValue: "Profile name" })}
+              </span>
               <input
                 value={data.profileName}
                 onChange={changeField("profileName")}
@@ -57,7 +75,9 @@ export function ApiSettingsFormFields({
             </label>
           )}
           <label className="api-settings-field">
-            <span>{t("settings.apiDisplayName", { defaultValue: "Display name" })}</span>
+            <span>
+              {t("settings.apiDisplayName", { defaultValue: "Display name" })}
+            </span>
             <input
               value={data.displayName}
               onChange={changeField("displayName")}
@@ -66,7 +86,9 @@ export function ApiSettingsFormFields({
             />
           </label>
           <label className="api-settings-field wide">
-            <span>{t("settings.apiBaseUrl", { defaultValue: "Base URL" })}</span>
+            <span>
+              {t("settings.apiBaseUrl", { defaultValue: "Base URL" })}
+            </span>
             <input
               value={data.baseUrl}
               onChange={changeField("baseUrl")}
@@ -75,7 +97,9 @@ export function ApiSettingsFormFields({
             />
           </label>
           <label className="api-settings-field">
-            <span>{t("settings.apiBaseUrlMode", { defaultValue: "Base URL mode" })}</span>
+            <span>
+              {t("settings.apiBaseUrlMode", { defaultValue: "Base URL mode" })}
+            </span>
             <select
               value={data.baseUrlMode}
               onChange={changeField("baseUrlMode")}
@@ -107,7 +131,9 @@ export function ApiSettingsFormFields({
           </label>
           <label className="api-settings-field">
             <span>
-              {t("settings.apiRequestMethod", { defaultValue: "Request method" })}
+              {t("settings.apiRequestMethod", {
+                defaultValue: "Request method",
+              })}
             </span>
             <select
               value={data.requestMethod}
@@ -130,7 +156,11 @@ export function ApiSettingsFormFields({
         </strong>
         <div className="api-settings-form-grid">
           <label className="api-settings-field">
-            <span>{t("settings.apiAdvancedModel", { defaultValue: "Advanced model" })}</span>
+            <span>
+              {t("settings.apiAdvancedModel", {
+                defaultValue: "Advanced model",
+              })}
+            </span>
             <input
               value={data.advancedModel}
               onChange={changeField("advancedModel")}
@@ -139,7 +169,9 @@ export function ApiSettingsFormFields({
             />
           </label>
           <label className="api-settings-field">
-            <span>{t("settings.apiBasicModel", { defaultValue: "Basic model" })}</span>
+            <span>
+              {t("settings.apiBasicModel", { defaultValue: "Basic model" })}
+            </span>
             <input
               value={data.basicModel}
               onChange={changeField("basicModel")}
@@ -148,7 +180,11 @@ export function ApiSettingsFormFields({
             />
           </label>
           <label className="api-settings-field">
-            <span>{t("settings.apiMaxContext", { defaultValue: "Max context (tokens)" })}</span>
+            <span>
+              {t("settings.apiMaxContext", {
+                defaultValue: "Max context (tokens)",
+              })}
+            </span>
             <input
               value={data.maxContextTokens}
               onChange={changeField("maxContextTokens")}
@@ -159,7 +195,9 @@ export function ApiSettingsFormFields({
             />
           </label>
           <label className="api-settings-field">
-            <span>{t("settings.apiMaxTokens", { defaultValue: "Max tokens" })}</span>
+            <span>
+              {t("settings.apiMaxTokens", { defaultValue: "Max tokens" })}
+            </span>
             <input
               value={data.maxTokens}
               onChange={changeField("maxTokens")}
@@ -187,14 +225,20 @@ export function ApiSettingsFormFields({
             />
             <span className="toggle-slider" />
             <span>
-              {t("settings.apiSupportsVision", { defaultValue: "Supports vision" })}
+              {t("settings.apiSupportsVision", {
+                defaultValue: "Supports vision",
+              })}
             </span>
           </label>
         </div>
         {!data.supportsVision && (
           <div className="api-settings-form-grid">
             <label className="api-settings-field wide">
-              <span>{t("settings.apiVisionBaseUrl", { defaultValue: "Vision Base URL" })}</span>
+              <span>
+                {t("settings.apiVisionBaseUrl", {
+                  defaultValue: "Vision Base URL",
+                })}
+              </span>
               <input
                 value={data.visionBaseUrl}
                 onChange={changeField("visionBaseUrl")}
@@ -203,7 +247,11 @@ export function ApiSettingsFormFields({
               />
             </label>
             <label className="api-settings-field">
-              <span>{t("settings.apiVisionApiKey", { defaultValue: "Vision API key" })}</span>
+              <span>
+                {t("settings.apiVisionApiKey", {
+                  defaultValue: "Vision API key",
+                })}
+              </span>
               <div className="api-settings-password-wrap">
                 <input
                   value={data.visionApiKey}
@@ -223,7 +271,11 @@ export function ApiSettingsFormFields({
               </div>
             </label>
             <label className="api-settings-field">
-              <span>{t("settings.apiVisionRequestMethod", { defaultValue: "Vision method" })}</span>
+              <span>
+                {t("settings.apiVisionRequestMethod", {
+                  defaultValue: "Vision method",
+                })}
+              </span>
               <select
                 value={data.visionRequestMethod}
                 onChange={changeField("visionRequestMethod")}
@@ -237,7 +289,9 @@ export function ApiSettingsFormFields({
               </select>
             </label>
             <label className="api-settings-field">
-              <span>{t("settings.apiVisionModel", { defaultValue: "Vision model" })}</span>
+              <span>
+                {t("settings.apiVisionModel", { defaultValue: "Vision model" })}
+              </span>
               <input
                 value={data.visionModel}
                 onChange={changeField("visionModel")}
@@ -269,8 +323,60 @@ export function ApiSettingsFormFields({
               disabled={disabled}
             />
           </label>
+          <div className="api-settings-field api-settings-auto-compress-field">
+            <div className="api-settings-auto-compress-header">
+              <span>
+                {t("settings.apiAutoCompressThreshold", {
+                  defaultValue: "Auto compress threshold",
+                })}
+              </span>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={data.enableAutoCompress}
+                  onChange={changeField("enableAutoCompress")}
+                  disabled={disabled}
+                  hidden
+                />
+                <span className="toggle-slider" />
+                <span>
+                  {data.enableAutoCompress
+                    ? t("settings.active", {
+                        defaultValue: ENABLED_STATUS_LABEL,
+                      })
+                    : t("settings.inactive", {
+                        defaultValue: DISABLED_STATUS_LABEL,
+                      })}
+                </span>
+              </label>
+            </div>
+            <div className="api-settings-threshold-slider-row">
+              <input
+                value={autoCompressThresholdPercent}
+                onChange={changeField("autoCompressThreshold")}
+                type="range"
+                min={AUTO_COMPRESS_THRESHOLD_MIN_PERCENT}
+                max={AUTO_COMPRESS_THRESHOLD_MAX_PERCENT}
+                step={AUTO_COMPRESS_THRESHOLD_STEP_PERCENT}
+                disabled={disabled || !data.enableAutoCompress}
+              />
+              <strong>{autoCompressThresholdPercent}%</strong>
+            </div>
+            <span className="api-settings-threshold-hint">
+              {autoCompressThresholdTokens == null
+                ? t("settings.apiAutoCompressThresholdNeedMaxContext", {
+                    defaultValue:
+                      "Set max context first to calculate the token threshold.",
+                  })
+                : t("settings.apiAutoCompressThresholdCalculated", {
+                    defaultValue: "Calculated threshold: {tokens} tokens",
+                  }).replace("{tokens}", String(autoCompressThresholdTokens))}
+            </span>
+          </div>
           <label className="api-settings-field">
-            <span>{t("settings.apiSetActive", { defaultValue: "Enable profile" })}</span>
+            <span>
+              {t("settings.apiSetActive", { defaultValue: "Enable profile" })}
+            </span>
             <label className="toggle-switch">
               <input
                 type="checkbox"
@@ -283,7 +389,9 @@ export function ApiSettingsFormFields({
               <span>
                 {data.isActive
                   ? t("settings.active", { defaultValue: ENABLED_STATUS_LABEL })
-                  : t("settings.inactive", { defaultValue: DISABLED_STATUS_LABEL })}
+                  : t("settings.inactive", {
+                      defaultValue: DISABLED_STATUS_LABEL,
+                    })}
               </span>
             </label>
           </label>

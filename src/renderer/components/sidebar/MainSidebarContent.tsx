@@ -8,6 +8,7 @@ import { ProjectsSection } from "./mainSidebar/ProjectsSection";
 import type { SidebarContentProps } from "./types";
 
 export function MainSidebarContent({
+  onActiveDirectoryChange,
   onSwitchContent,
 }: SidebarContentProps): React.JSX.Element {
   const { t } = useI18n();
@@ -16,7 +17,10 @@ export function MainSidebarContent({
   return (
     <>
       <PinnedSection isSwitchingDirectory={isSwitchingDirectory} />
-      <ProjectsSection onSwitchingDirectoryChange={setIsSwitchingDirectory} />
+      <ProjectsSection
+        onActiveDirectoryChange={onActiveDirectoryChange}
+        onSwitchingDirectoryChange={setIsSwitchingDirectory}
+      />
       <ChatsSection isSwitchingDirectory={isSwitchingDirectory} />
 
       <div className="sidebar-footer">

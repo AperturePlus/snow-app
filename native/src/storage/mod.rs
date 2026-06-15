@@ -33,6 +33,8 @@ pub struct ApiConfigInput {
     pub max_context_tokens: Option<i32>,
     pub max_tokens: Option<i32>,
     pub stream_idle_timeout_sec: Option<i32>,
+    pub enable_auto_compress: bool,
+    pub auto_compress_threshold: Option<i32>,
     pub config_json: String,
     pub source: String,
 }
@@ -57,6 +59,8 @@ pub struct ApiConfigRecord {
     pub max_context_tokens: Option<i32>,
     pub max_tokens: Option<i32>,
     pub stream_idle_timeout_sec: Option<i32>,
+    pub enable_auto_compress: bool,
+    pub auto_compress_threshold: Option<i32>,
     pub source: String,
     pub updated_at: String,
 }
@@ -342,6 +346,16 @@ pub fn upsert_workspace_directory(item: WorkspaceDirectoryInput) -> Result<()> {
 pub fn activate_workspace_directory(directory_id: String) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::workspace_directories::activate_workspace_directory(&database_path, &directory_id)
+}
+
+pub fn reorder_workspace_directories(items: Vec<WorkspaceDirectoryInput>) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::workspace_directories::reorder_workspace_directories(&database_path, &items)
+}
+
+pub fn delete_workspace_directory(directory_id: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::workspace_directories::delete_workspace_directory(&database_path, &directory_id)
 }
 
 pub fn list_mcp_server_configs() -> Result<Vec<McpServerConfigRecord>> {

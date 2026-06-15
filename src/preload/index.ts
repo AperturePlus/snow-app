@@ -16,9 +16,11 @@ export type ApiConfigInput = {
   visionApiKey: string;
   visionRequestMethod: string;
   visionModel: string;
-  maxContextTokens: number | null;
-  maxTokens: number | null;
-  streamIdleTimeoutSec: number | null;
+  maxContextTokens?: number | null;
+  maxTokens?: number | null;
+  streamIdleTimeoutSec?: number | null;
+  enableAutoCompress: boolean;
+  autoCompressThreshold?: number | null;
   configJson: string;
   source: string;
 };
@@ -223,6 +225,14 @@ const api = {
     directoryId: string
   ): Promise<WorkspaceDirectoryRecord[]> =>
     ipcRenderer.invoke("workspace-directories:activate", directoryId),
+  reorderWorkspaceDirectories: (
+    items: WorkspaceDirectoryInput[]
+  ): Promise<WorkspaceDirectoryRecord[]> =>
+    ipcRenderer.invoke("workspace-directories:reorder", items),
+  deleteWorkspaceDirectory: (
+    directoryId: string
+  ): Promise<WorkspaceDirectoryRecord[]> =>
+    ipcRenderer.invoke("workspace-directories:delete", directoryId),
   selectWorkspaceDirectory: (dialogTitle?: string): Promise<string | null> =>
     ipcRenderer.invoke(
       "workspace-directories:select-local-directory",
@@ -252,6 +262,8 @@ const api = {
   importSnowCliSensitiveCommandConfig: (): Promise<
     SensitiveCommandConfigRecord[]
   > => ipcRenderer.invoke("sensitive-command-configs:import-snow-cli"),
+  writeLog: (level: string, entry: unknown): Promise<void> =>
+    ipcRenderer.invoke("debug:write-log", level, entry),
   sum: (a: number, b: number): Promise<number> =>
     ipcRenderer.invoke("native:sum", a, b),
 };

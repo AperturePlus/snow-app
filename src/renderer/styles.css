@@ -518,11 +518,46 @@ input {
   pointer-events: none;
 }
 
+.workspace-directory-row {
+  position: relative;
+  border-radius: var(--radius-md);
+}
+
+.workspace-directory-row.dragging {
+  opacity: 0.55;
+}
+
+.workspace-directory-row.drag-over .list-item {
+  background: var(--bg-hover);
+  box-shadow: inset 0 0 0 1px var(--border-color);
+}
+
 .workspace-directory-list .list-item {
   position: relative;
   min-height: 28px;
 }
 
+.workspace-directory-list .list-item:not(:disabled) {
+  cursor: pointer;
+}
+
+.workspace-directory-drag-handle {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: var(--text-tertiary);
+  cursor: grab;
+}
+
+.workspace-directory-row.dragging .workspace-directory-drag-handle {
+  cursor: grabbing;
+}
+
+.workspace-directory-drag-handle svg {
+  pointer-events: none;
+}
 .workspace-directory-guide {
   position: absolute;
   left: -8px;
@@ -588,10 +623,8 @@ input {
   opacity: 0.68;
 }
 
-.workspace-directory-add-menu {
-  position: absolute;
-  top: 24px;
-  right: 0;
+.workspace-directory-add-menu,
+.workspace-directory-context-menu {
   z-index: 20;
   display: flex;
   min-width: 150px;
@@ -604,7 +637,18 @@ input {
   box-shadow: var(--shadow-md);
 }
 
-.workspace-directory-add-menu button {
+.workspace-directory-add-menu {
+  position: absolute;
+  top: 24px;
+  right: 0;
+}
+
+.workspace-directory-context-menu {
+  position: fixed;
+}
+
+.workspace-directory-add-menu button,
+.workspace-directory-context-menu button {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -617,16 +661,30 @@ input {
   transition: background 0.12s, color 0.12s;
 }
 
-.workspace-directory-add-menu button:hover {
+.workspace-directory-add-menu button:hover,
+.workspace-directory-context-menu button:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
-.workspace-directory-add-menu svg {
+.workspace-directory-context-menu button.danger {
+  color: var(--accent-red-text);
+}
+
+.workspace-directory-context-menu button.danger:hover {
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+}
+
+.workspace-directory-add-menu svg,
+.workspace-directory-context-menu svg {
   flex-shrink: 0;
   color: var(--text-muted);
 }
 
+.workspace-directory-context-menu button.danger svg {
+  color: var(--accent-red-text);
+}
 .workspace-directory-ssh-form input {
   width: 100%;
   min-width: 0;
@@ -1077,7 +1135,7 @@ input {
   font-weight: 600;
 }
 
-.api-settings-field input:not([type="checkbox"]),
+.api-settings-field input:not([type="checkbox"]):not([type="range"]),
 .api-settings-field select {
   width: 100%;
   min-width: 0;
@@ -1091,16 +1149,56 @@ input {
   font-size: 12px;
 }
 
-.api-settings-field input:not([type="checkbox"]):focus,
+.api-settings-field input:not([type="checkbox"]):not([type="range"]):focus,
 .api-settings-field select:focus {
   border-color: var(--text-muted);
   box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
-.api-settings-field input:not([type="checkbox"]):disabled,
+.api-settings-field input:not([type="checkbox"]):not([type="range"]):disabled,
 .api-settings-field select:disabled {
   cursor: default;
   opacity: 0.68;
+}
+
+.api-settings-auto-compress-field {
+  gap: 7px;
+}
+
+.api-settings-auto-compress-header,
+.api-settings-threshold-slider-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.api-settings-auto-compress-header .toggle-switch {
+  flex-shrink: 0;
+}
+
+.api-settings-threshold-slider-row input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--text-primary);
+}
+
+.api-settings-threshold-slider-row input[type="range"]:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.api-settings-threshold-slider-row strong {
+  min-width: 38px;
+  color: var(--text-primary);
+  font-size: 12px;
+  text-align: right;
+}
+
+.api-settings-field .api-settings-threshold-hint {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 500;
 }
 
 .api-settings-form-options,
@@ -1680,6 +1778,40 @@ input {
   gap: 16px;
 }
 
+.chat-empty-greeting {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.chat-empty-greeting-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-empty-greeting-logo {
+  width: auto;
+  height: 52px;
+  color: var(--text-primary);
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  opacity: 0.95;
+}
+
+.chat-empty-greeting-title {
+  max-width: 420px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
 .user-message-row {
   display: flex;
   justify-content: center;
@@ -1850,10 +1982,9 @@ input {
   background: var(--bg-primary);
   transition: border-color 0.12s, box-shadow 0.12s;
 }
-
 .input-box:focus-within {
-  border-color: var(--text-muted);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--border-color);
+  box-shadow: none;
 }
 
 .input-field {
@@ -1862,8 +1993,14 @@ input {
   outline: none;
   background: transparent;
   font-size: 13.5px;
+  line-height: 20px;
   color: var(--text-primary);
   padding: 0;
+  resize: none;
+  overflow-y: auto;
+  min-height: 20px;
+  max-height: 160px;
+  font-family: inherit;
 }
 
 .input-field::placeholder {
@@ -1894,6 +2031,9 @@ input {
   color: var(--text-tertiary);
   font-size: 12px;
   transition: background 0.12s, color 0.12s;
+  border: none;
+  background: transparent;
+  cursor: pointer;
 }
 
 .toolbar-btn:hover {
@@ -1901,14 +2041,8 @@ input {
   color: var(--text-primary);
 }
 
-.toolbar-btn.permissions,
-.toolbar-btn.model,
-.toolbar-btn.quality {
-  gap: 5px;
-}
-
-.model-icon {
-  font-size: 12px;
+.toolbar-btn:focus-visible {
+  outline: none;
 }
 
 .send-btn {
@@ -1921,10 +2055,21 @@ input {
   background: var(--text-primary);
   color: var(--on-solid);
   transition: opacity 0.12s;
+  border: none;
+  cursor: pointer;
 }
 
-.send-btn:hover {
+.send-btn:hover:not(:disabled) {
   opacity: 0.85;
+}
+
+.send-btn:focus-visible {
+  outline: none;
+}
+
+.send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* ===== Right Panel ===== */

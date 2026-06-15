@@ -65,6 +65,89 @@ pub fn activate_workspace_directory(database_path: &Path, directory_id: &str) ->
         })
 }
 
+pub fn reorder_workspace_directories(
+    database_path: &Path,
+    items: &[WorkspaceDirectoryInput],
+) -> Result<()> {
+    Connection::open(database_path)
+        .and_then(|mut connection| {
+            let transaction = connection.transaction()?;
+
+            for (index, item) in items.iter().enumerate() {
+                transaction.execute(
+                    "UPDATE workspace_directories
+                        SET sort_order = ?1,
+                            updated_at = datetime('now')
+                      WHERE directory_id = ?2",
+                    params![index as i32, &item.directory_id],
+                )?;
+            }
+
+            transaction.commit()
+        })
+        .map_err(|error| {
+            database::database_error(database_path, "reorder workspace directories", error)
+        })
+}
+
+pub fn delete_workspace_directory(database_path: &Path, directory_id: &str) -> Result<()> {
+    Connection::open(database_path)
+        .and_then(|mut connection| {
+            let transaction = connection.transaction()?;
+            transaction.execute(
+                "DELETE FROM workspace_directories WHERE directory_id = ?1",
+                [directory_id],
+            )?;
+            normalize_workspace_directory_state(&transaction)?;
+            transaction.commit()
+        })
+        .map_err(|error| {
+            database::database_error(database_path, "delete workspace directory", error)
+        })
+}
+
+fn normalize_workspace_directory_state(connection: &Connection) -> rusqlite::Result<()> {
+    let directory_ids = {
+        let mut statement = connection.prepare(
+            "SELECT directory_id
+               FROM workspace_directories
+              ORDER BY sort_order ASC, id ASC",
+        )?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        rows.collect::<rusqlite::Result<Vec<String>>>()?
+    };
+
+    for (index, directory_id) in directory_ids.iter().enumerate() {
+        connection.execute(
+            "UPDATE workspace_directories
+                SET sort_order = ?1,
+                    updated_at = datetime('now')
+              WHERE directory_id = ?2",
+            params![index as i32, directory_id],
+        )?;
+    }
+
+    let active_count: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM workspace_directories WHERE is_active = 1",
+        [],
+        |row| row.get(0),
+    )?;
+
+    if active_count == 0 {
+        if let Some(first_directory_id) = directory_ids.first() {
+            connection.execute(
+                "UPDATE workspace_directories
+                    SET is_active = 1,
+                        updated_at = datetime('now')
+                  WHERE directory_id = ?1",
+                [first_directory_id],
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
 fn query_workspace_directories(
     connection: &Connection,
 ) -> rusqlite::Result<Vec<WorkspaceDirectoryRecord>> {

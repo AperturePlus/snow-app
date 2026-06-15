@@ -1,13 +1,12 @@
+import { Check, Folder, Loader2, Plus, Server, X } from "lucide-react";
 import {
-  Check,
-  Folder,
-  FolderOpen,
-  Loader2,
-  Plus,
-  Server,
-  X,
-} from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from "react";
 
 import { useI18n } from "../../../i18n";
 import type {
@@ -15,9 +14,17 @@ import type {
   WorkspaceDirectoryKind,
   WorkspaceDirectoryRecord,
 } from "../../../../preload";
+import {
+  WorkspaceDirectoryList,
+  type WorkspaceDirectoryContextMenuState,
+} from "./WorkspaceDirectoryList";
 
 type AddDirectoryMode = "" | WorkspaceDirectoryKind;
 type ProjectsSectionProps = {
+  activeDirectory?: WorkspaceDirectoryRecord | null;
+  onActiveDirectoryChange?: (
+    directory: WorkspaceDirectoryRecord | null
+  ) => void;
   onSwitchingDirectoryChange: (isSwitchingDirectory: boolean) => void;
 };
 
@@ -59,7 +66,21 @@ const toWorkspaceDirectoryInput = (
   };
 };
 
+const toPersistableDirectoryInput = (
+  directory: WorkspaceDirectoryRecord,
+  sortOrder: number
+): WorkspaceDirectoryInput => ({
+  directoryId: directory.directoryId,
+  name: directory.name,
+  path: directory.path,
+  kind: directory.kind,
+  isActive: directory.isActive,
+  sortOrder,
+  source: directory.source,
+});
+
 export function ProjectsSection({
+  onActiveDirectoryChange,
   onSwitchingDirectoryChange,
 }: ProjectsSectionProps): React.JSX.Element {
   const { t } = useI18n();
@@ -68,6 +89,7 @@ export function ProjectsSection({
   >([]);
   const [isLoadingDirectories, setIsLoadingDirectories] = useState(true);
   const [isSavingDirectory, setIsSavingDirectory] = useState(false);
+  const [isReorderingDirectories, setIsReorderingDirectories] = useState(false);
   const [isSwitchingDirectory, setIsSwitchingDirectory] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [addDirectoryMode, setAddDirectoryMode] =
@@ -75,6 +97,14 @@ export function ProjectsSection({
   const [sshDirectoryPath, setSshDirectoryPath] = useState("");
   const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [directoryPage, setDirectoryPage] = useState(1);
+  const [draggedDirectoryId, setDraggedDirectoryId] = useState<string | null>(
+    null
+  );
+  const [dragOverDirectoryId, setDragOverDirectoryId] = useState<string | null>(
+    null
+  );
+  const [contextMenu, setContextMenu] =
+    useState<WorkspaceDirectoryContextMenuState | null>(null);
   const addMenuRef = useRef<HTMLDivElement | null>(null);
   const sshFormRef = useRef<HTMLDivElement | null>(null);
   const directoryListRef = useRef<HTMLDivElement | null>(null);
@@ -84,6 +114,11 @@ export function ProjectsSection({
     () => workspaceDirectories.find((directory) => directory.isActive),
     [workspaceDirectories]
   );
+
+  useEffect(() => {
+    onActiveDirectoryChange?.(activeDirectory ?? null);
+  }, [activeDirectory, onActiveDirectoryChange]);
+
   const visibleDirectoryCount = directoryPage * DIRECTORY_PAGE_SIZE;
   const visibleDirectories = useMemo(
     () => workspaceDirectories.slice(0, visibleDirectoryCount),
@@ -195,6 +230,30 @@ export function ProjectsSection({
     };
   }, [addDirectoryMode, isAddMenuOpen]);
 
+  useEffect(() => {
+    if (!contextMenu) {
+      return;
+    }
+
+    const handlePointerDown = (): void => {
+      setContextMenu(null);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        setContextMenu(null);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu]);
+
   const persistWorkspaceDirectory = async (
     item: WorkspaceDirectoryInput
   ): Promise<void> => {
@@ -297,6 +356,7 @@ export function ProjectsSection({
 
     updateSwitchingDirectory(true);
     setDirectoryError(null);
+    setContextMenu(null);
 
     try {
       const directories = await window.snow.activateWorkspaceDirectory(
@@ -313,6 +373,113 @@ export function ProjectsSection({
       );
     } finally {
       updateSwitchingDirectory(false);
+    }
+  };
+
+  const persistWorkspaceDirectoryOrder = async (
+    orderedDirectories: WorkspaceDirectoryRecord[]
+  ): Promise<void> => {
+    setIsReorderingDirectories(true);
+    setDirectoryError(null);
+
+    try {
+      const nextInputs = orderedDirectories.map((directory, index) =>
+        toPersistableDirectoryInput(directory, index)
+      );
+      const directories = await window.snow.reorderWorkspaceDirectories(
+        nextInputs
+      );
+      setWorkspaceDirectories(directories);
+    } catch (error) {
+      setDirectoryError(
+        error instanceof Error
+          ? error.message
+          : t("sidebar.reorderDirectoryError", {
+              defaultValue: "Failed to reorder workspace directories",
+            })
+      );
+    } finally {
+      setIsReorderingDirectories(false);
+    }
+  };
+
+  const handleDirectoryDragStart = (directoryId: string): void => {
+    setDraggedDirectoryId(directoryId);
+    setDragOverDirectoryId(null);
+    setContextMenu(null);
+  };
+
+  const handleDirectoryDragOver = (directoryId: string): void => {
+    setDragOverDirectoryId(directoryId);
+  };
+
+  const handleDirectoryDragEnd = (): void => {
+    setDraggedDirectoryId(null);
+    setDragOverDirectoryId(null);
+  };
+
+  const handleDirectoryDrop = (targetDirectoryId: string): void => {
+    if (!draggedDirectoryId || draggedDirectoryId === targetDirectoryId) {
+      handleDirectoryDragEnd();
+      return;
+    }
+
+    const sourceIndex = workspaceDirectories.findIndex(
+      (directory) => directory.directoryId === draggedDirectoryId
+    );
+    const targetIndex = workspaceDirectories.findIndex(
+      (directory) => directory.directoryId === targetDirectoryId
+    );
+
+    if (sourceIndex < 0 || targetIndex < 0) {
+      handleDirectoryDragEnd();
+      return;
+    }
+
+    const nextDirectories = [...workspaceDirectories];
+    const [movedDirectory] = nextDirectories.splice(sourceIndex, 1);
+    nextDirectories.splice(targetIndex, 0, movedDirectory);
+    setWorkspaceDirectories(nextDirectories);
+    handleDirectoryDragEnd();
+    void persistWorkspaceDirectoryOrder(nextDirectories);
+  };
+
+  const handleDirectoryContextMenu = (
+    directoryId: string,
+    event: MouseEvent<HTMLDivElement>
+  ): void => {
+    event.preventDefault();
+    setContextMenu({
+      directoryId,
+      x: event.clientX,
+      y: event.clientY,
+    });
+  };
+
+  const handleDeleteDirectory = async (directoryId: string): Promise<void> => {
+    if (!directoryId) {
+      return;
+    }
+
+    setIsSavingDirectory(true);
+    setDirectoryError(null);
+    setContextMenu(null);
+
+    try {
+      const directories = await window.snow.deleteWorkspaceDirectory(
+        directoryId
+      );
+      setWorkspaceDirectories(directories);
+    } catch (error) {
+      setDirectoryError(
+        error instanceof Error
+          ? error.message
+          : t("sidebar.deleteDirectoryError", {
+              defaultValue: "Failed to delete workspace directory",
+            })
+      );
+    } finally {
+      setIsSavingDirectory(false);
     }
   };
 
@@ -379,84 +546,31 @@ export function ProjectsSection({
             defaultValue: "Active directory",
           })}
         </span>
-        <div
-          className="section-list workspace-directory-list"
-          ref={directoryListRef}
-        >
-          {isLoadingDirectories ? (
-            <span className="empty-text">
-              {t("sidebar.loadingDirectories", {
-                defaultValue: "Loading directories...",
-              })}
-            </span>
-          ) : workspaceDirectories.length === 0 ? (
-            <span className="empty-text">
-              {t("sidebar.noDirectories", {
-                defaultValue: "No directories",
-              })}
-            </span>
-          ) : (
-            <>
-              {visibleDirectories.map((directory, index) => (
-                <button
-                  className={`list-item${directory.isActive ? " active" : ""}`}
-                  disabled={
-                    isSavingDirectory ||
-                    isSwitchingDirectory ||
-                    directory.isActive
-                  }
-                  key={directory.directoryId}
-                  onClick={() =>
-                    void handleActivateDirectory(directory.directoryId)
-                  }
-                  title={directory.path}
-                  type="button"
-                >
-                  <span
-                    className="workspace-directory-guide"
-                    aria-hidden="true"
-                  >
-                    <span className="workspace-directory-guide-dot" />
-                  </span>
-                  {directory.isActive ? (
-                    <FolderOpen className="list-icon" size={15} />
-                  ) : directory.kind === "ssh" ? (
-                    <Server className="list-icon" size={15} />
-                  ) : (
-                    <Folder className="list-icon" size={15} />
-                  )}
-                  <span className="list-label">{directory.name}</span>
-                  <span className="list-meta">{directory.kind}</span>
-                  <span className="workspace-directory-index">
-                    {index + 1}/{workspaceDirectories.length}
-                  </span>
-                </button>
-              ))}
-              {hasMoreDirectories ? (
-                <div
-                  aria-hidden="true"
-                  className="workspace-directory-load-more"
-                  ref={directoryLoadMoreRef}
-                >
-                  <Loader2 className="spin" size={13} />
-                  <span>
-                    {t("sidebar.loadingMoreDirectories", {
-                      defaultValue: "Loading more...",
-                    })}
-                  </span>
-                </div>
-              ) : (
-                <div className="workspace-directory-end-line">
-                  <span>
-                    {t("sidebar.allDirectoriesLoaded", {
-                      defaultValue: "All directories loaded",
-                    })}
-                  </span>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+        <WorkspaceDirectoryList
+          activeDirectoryId={activeDirectory?.directoryId}
+          contextMenu={contextMenu}
+          directoryListRef={directoryListRef}
+          draggedDirectoryId={draggedDirectoryId}
+          dragOverDirectoryId={dragOverDirectoryId}
+          hasMoreDirectories={hasMoreDirectories}
+          isActionLocked={
+            isSavingDirectory || isReorderingDirectories || isSwitchingDirectory
+          }
+          isLoadingDirectories={isLoadingDirectories}
+          loadMoreRef={directoryLoadMoreRef}
+          onActivate={(directoryId) =>
+            void handleActivateDirectory(directoryId)
+          }
+          onContextMenu={handleDirectoryContextMenu}
+          onDelete={(directoryId) => void handleDeleteDirectory(directoryId)}
+          onDragEnd={handleDirectoryDragEnd}
+          onDragOver={handleDirectoryDragOver}
+          onDragStart={handleDirectoryDragStart}
+          onDrop={handleDirectoryDrop}
+          totalCount={workspaceDirectories.length}
+          visibleDirectories={visibleDirectories}
+          workspaceDirectories={workspaceDirectories}
+        />
         {addDirectoryMode === "ssh" ? (
           <div className="workspace-directory-ssh-form" ref={sshFormRef}>
             <input

@@ -7,13 +7,16 @@ import { SensitiveCommandsPanel } from "./sidebar/SensitiveCommandsPanel";
 import { SystemPromptSettingsPanel } from "./sidebar/SystemPromptSettingsPanel";
 import { ChatContent } from "./mainContent/ChatContent";
 import type { MainContentView } from "./mainContent/types";
+import type { WorkspaceDirectoryRecord } from "../../preload";
 
 type MainContentProps = {
+  activeDirectory?: WorkspaceDirectoryRecord | null;
   activeView: MainContentView;
   onSelectView: (view: MainContentView) => void;
 };
 
 export const MainContent = ({
+  activeDirectory,
   activeView,
   onSelectView,
 }: MainContentProps): React.JSX.Element => {
@@ -34,7 +37,7 @@ export const MainContent = ({
       ) : activeView === "sensitive-command-settings" ? (
         <SensitiveCommandsPanel onClose={() => onSelectView("chat")} />
       ) : (
-        <ChatContent />
+        <ChatContent activeDirectory={activeDirectory} />
       )}
     </main>
   );

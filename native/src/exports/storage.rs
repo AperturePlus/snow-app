@@ -97,6 +97,16 @@ pub fn activate_workspace_directory(directory_id: String) -> napi::Result<()> {
 }
 
 #[napi]
+pub fn reorder_workspace_directories(items: Vec<WorkspaceDirectoryInput>) -> napi::Result<()> {
+    crate::storage::reorder_workspace_directories(items)
+}
+
+#[napi]
+pub fn delete_workspace_directory(directory_id: String) -> napi::Result<()> {
+    crate::storage::delete_workspace_directory(directory_id)
+}
+
+#[napi]
 pub fn list_mcp_server_configs() -> napi::Result<Vec<McpServerConfigRecord>> {
     crate::storage::list_mcp_server_configs()
 }

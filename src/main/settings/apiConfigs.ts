@@ -1,11 +1,18 @@
 import type { ApiConfigInput } from "../native/types";
 import type { SnowCliProfile } from "../snowCli/profiles";
 import { isRecord, toBoolean, toIntegerOrNull, toText } from "../utils/value";
+import { resolveAutoCompressThreshold } from "./apiConfigThreshold";
 
 export const toApiConfigInput = (profile: SnowCliProfile): ApiConfigInput => {
   const snowcfg = isRecord(profile.config.snowcfg)
     ? profile.config.snowcfg
     : {};
+  const maxContextTokens = toIntegerOrNull(snowcfg.maxContextTokens);
+  const autoCompressThreshold = resolveAutoCompressThreshold(
+    snowcfg.autoCompressThreshold,
+    snowcfg.autoCompressThresholdPercent,
+    maxContextTokens
+  );
 
   return {
     profileName: profile.name,
@@ -23,9 +30,12 @@ export const toApiConfigInput = (profile: SnowCliProfile): ApiConfigInput => {
     visionApiKey: toText(snowcfg.visionApiKey),
     visionRequestMethod: toText(snowcfg.visionRequestMethod, "chat"),
     visionModel: toText(snowcfg.visionModel),
-    maxContextTokens: toIntegerOrNull(snowcfg.maxContextTokens),
-    maxTokens: toIntegerOrNull(snowcfg.maxTokens),
-    streamIdleTimeoutSec: toIntegerOrNull(snowcfg.streamIdleTimeoutSec),
+    maxContextTokens: maxContextTokens ?? undefined,
+    maxTokens: toIntegerOrNull(snowcfg.maxTokens) ?? undefined,
+    streamIdleTimeoutSec:
+      toIntegerOrNull(snowcfg.streamIdleTimeoutSec) ?? undefined,
+    enableAutoCompress: toBoolean(snowcfg.enableAutoCompress, true),
+    autoCompressThreshold: autoCompressThreshold ?? undefined,
     configJson: JSON.stringify(profile.config),
     source: "snow-cli",
   };
@@ -72,6 +82,9 @@ export const normalizeApiConfigInput = (value: unknown): ApiConfigInput => {
       maxTokens: toIntegerOrNull(value.maxTokens) ?? undefined,
       streamIdleTimeoutSec:
         toIntegerOrNull(value.streamIdleTimeoutSec) ?? undefined,
+      enableAutoCompress: toBoolean(value.enableAutoCompress, true),
+      autoCompressThreshold:
+        toIntegerOrNull(value.autoCompressThreshold) ?? undefined,
       source,
     },
   };
@@ -96,6 +109,9 @@ export const normalizeApiConfigInput = (value: unknown): ApiConfigInput => {
     maxTokens: toIntegerOrNull(value.maxTokens) ?? undefined,
     streamIdleTimeoutSec:
       toIntegerOrNull(value.streamIdleTimeoutSec) ?? undefined,
+    enableAutoCompress: toBoolean(value.enableAutoCompress, true),
+    autoCompressThreshold:
+      toIntegerOrNull(value.autoCompressThreshold) ?? undefined,
     configJson: toText(value.configJson, JSON.stringify(manualConfig)),
     source,
   };

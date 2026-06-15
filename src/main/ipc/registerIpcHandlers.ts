@@ -1,5 +1,6 @@
 import { BrowserWindow, dialog, ipcMain } from "electron";
 import type { NativeBridge } from "../native/types";
+import { writeLog, type LogEntry, type LogLevel } from "../../utils/snowLogger";
 import {
   normalizeApiConfigInput,
   toApiConfigInput,
@@ -26,7 +27,10 @@ import {
   normalizeSensitiveCommandConfig,
   readSnowCliSensitiveCommandConfig,
 } from "../settings/sensitiveCommandSettings";
-import { normalizeWorkspaceDirectory } from "../settings/workspaceDirectories";
+import {
+  normalizeWorkspaceDirectory,
+  normalizeWorkspaceDirectoryList,
+} from "../settings/workspaceDirectories";
 import { readSnowCliProfiles } from "../snowCli/profiles";
 
 export const registerIpcHandlers = (native: NativeBridge): void => {
@@ -175,6 +179,31 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
       return native.listWorkspaceDirectories();
     }
   );
+  ipcMain.handle("workspace-directories:reorder", (_event, items: unknown) => {
+    const existingCount = native.listWorkspaceDirectories().length;
+    const directories = normalizeWorkspaceDirectoryList(items, existingCount);
+
+    if (typeof native.reorderWorkspaceDirectories === "function") {
+      native.reorderWorkspaceDirectories(directories);
+    } else {
+      for (const directory of directories) {
+        native.upsertWorkspaceDirectory(directory);
+      }
+    }
+
+    return native.listWorkspaceDirectories();
+  });
+  ipcMain.handle(
+    "workspace-directories:delete",
+    (_event, directoryId: unknown) => {
+      if (typeof directoryId !== "string" || !directoryId.trim()) {
+        throw new Error("Workspace directory ID is required");
+      }
+
+      native.deleteWorkspaceDirectory(directoryId.trim());
+      return native.listWorkspaceDirectories();
+    }
+  );
   ipcMain.handle(
     "workspace-directories:select-local-directory",
     async (event, dialogTitle: unknown) => {
@@ -222,5 +251,11 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
   );
   ipcMain.handle("native:sum", (_event, a: number, b: number) =>
     native.sum(a, b)
+  );
+  ipcMain.handle(
+    "debug:write-log",
+    (_event, level: unknown, entry: unknown) => {
+      writeLog(level as LogLevel, entry as LogEntry);
+    }
   );
 };

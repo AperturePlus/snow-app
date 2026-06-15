@@ -42,6 +42,8 @@ pub fn list_api_configs(database_path: &Path) -> Result<Vec<ApiConfigRecord>> {
                         max_context_tokens,
                         max_tokens,
                         stream_idle_timeout_sec,
+                        enable_auto_compress,
+                        auto_compress_threshold,
                         source,
                         updated_at
                    FROM api_configs
@@ -51,6 +53,7 @@ pub fn list_api_configs(database_path: &Path) -> Result<Vec<ApiConfigRecord>> {
             let rows = statement.query_map([], |row| {
                 let is_active: i64 = row.get(3)?;
                 let supports_vision: i64 = row.get(10)?;
+                let enable_auto_compress: i64 = row.get(18)?;
 
                 Ok(ApiConfigRecord {
                     id: row.get(0)?,
@@ -71,8 +74,10 @@ pub fn list_api_configs(database_path: &Path) -> Result<Vec<ApiConfigRecord>> {
                     max_context_tokens: row.get(15)?,
                     max_tokens: row.get(16)?,
                     stream_idle_timeout_sec: row.get(17)?,
-                    source: row.get(18)?,
-                    updated_at: row.get(19)?,
+                    enable_auto_compress: enable_auto_compress != 0,
+                    auto_compress_threshold: row.get(19)?,
+                    source: row.get(20)?,
+                    updated_at: row.get(21)?,
                 })
             })?;
 
@@ -116,6 +121,8 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                    max_context_tokens,
                    max_tokens,
                    stream_idle_timeout_sec,
+                   enable_auto_compress,
+                   auto_compress_threshold,
                    config_json,
                    source,
                    created_at,
@@ -123,6 +130,7 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                  ) VALUES (
                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
                    ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
+                   ?21, ?22,
                    datetime('now'), datetime('now')
                  )
                  ON CONFLICT(profile_name) DO UPDATE SET
@@ -149,6 +157,8 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                    max_context_tokens = excluded.max_context_tokens,
                    max_tokens = excluded.max_tokens,
                    stream_idle_timeout_sec = excluded.stream_idle_timeout_sec,
+                   enable_auto_compress = excluded.enable_auto_compress,
+                   auto_compress_threshold = excluded.auto_compress_threshold,
                    config_json = excluded.config_json,
                    source = excluded.source,
                    updated_at = datetime('now')",
@@ -171,6 +181,8 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                     config.max_context_tokens,
                     config.max_tokens,
                     config.stream_idle_timeout_sec,
+                    config.enable_auto_compress as i32,
+                    config.auto_compress_threshold,
                     config.config_json,
                     config.source,
                 ],

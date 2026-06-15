@@ -16,7 +16,9 @@ const requiredExports = [
   'initializeAppStorage',
   'listCustomHeaderSchemes',
   'upsertCustomHeaderScheme',
-  'deleteCustomHeaderScheme'
+  'deleteCustomHeaderScheme',
+  'reorderWorkspaceDirectories',
+  'deleteWorkspaceDirectory'
 ]
 
 const platformName = platformMap[`${process.platform}-${process.arch}`]

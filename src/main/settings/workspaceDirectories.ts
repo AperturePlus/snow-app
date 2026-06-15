@@ -82,3 +82,16 @@ export const normalizeWorkspaceDirectory = (
     source: toText(value.source).trim() || WORKSPACE_SOURCE_MANUAL,
   };
 };
+
+export const normalizeWorkspaceDirectoryList = (
+  value: unknown,
+  existingCount: number
+): WorkspaceDirectoryInput[] => {
+  if (!Array.isArray(value)) {
+    throw new Error("Workspace directories must be an array");
+  }
+
+  return value.map((item, index) =>
+    normalizeWorkspaceDirectory(item, existingCount + index)
+  );
+};

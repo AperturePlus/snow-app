@@ -3,6 +3,11 @@ import {
   DEFAULT_API_BASE_URL,
   DEFAULT_REQUEST_METHOD,
 } from "./apiSettingsConstants";
+import {
+  DEFAULT_AUTO_COMPRESS_THRESHOLD_PERCENT,
+  calculateAutoCompressThresholdTokens,
+  normalizeAutoCompressThresholdPercent,
+} from "./autoCompressThreshold";
 import type { ApiConfigFormData } from "./types";
 
 export const emptyApiConfigForm = (
@@ -26,6 +31,8 @@ export const emptyApiConfigForm = (
   maxContextTokens: "",
   maxTokens: "",
   streamIdleTimeoutSec: "",
+  enableAutoCompress: true,
+  autoCompressThreshold: String(DEFAULT_AUTO_COMPRESS_THRESHOLD_PERCENT),
 });
 
 export const parseOptionalInteger = (value: string): number | null => {
@@ -45,6 +52,13 @@ export function toApiConfigPayload(
   const advancedModel = data.advancedModel.trim();
   const basicModel = data.basicModel.trim();
   const visionRequestMethod = data.visionRequestMethod.trim() || requestMethod;
+  const autoCompressThresholdPercent = normalizeAutoCompressThresholdPercent(
+    data.autoCompressThreshold
+  );
+  const autoCompressThresholdTokens = calculateAutoCompressThresholdTokens(
+    data.maxContextTokens,
+    autoCompressThresholdPercent
+  );
   const configJson = JSON.stringify({
     snowcfg: {
       baseUrl,
@@ -53,6 +67,14 @@ export function toApiConfigPayload(
       advancedModel,
       basicModel,
       supportsVision: data.supportsVision,
+      maxContextTokens:
+        parseOptionalInteger(data.maxContextTokens) ?? undefined,
+      maxTokens: parseOptionalInteger(data.maxTokens) ?? undefined,
+      streamIdleTimeoutSec:
+        parseOptionalInteger(data.streamIdleTimeoutSec) ?? undefined,
+      enableAutoCompress: data.enableAutoCompress,
+      autoCompressThresholdPercent,
+      autoCompressThreshold: autoCompressThresholdTokens ?? undefined,
     },
   });
 
@@ -75,6 +97,8 @@ export function toApiConfigPayload(
     maxContextTokens: parseOptionalInteger(data.maxContextTokens),
     maxTokens: parseOptionalInteger(data.maxTokens),
     streamIdleTimeoutSec: parseOptionalInteger(data.streamIdleTimeoutSec),
+    enableAutoCompress: data.enableAutoCompress,
+    autoCompressThreshold: autoCompressThresholdTokens,
     configJson,
     source: "manual",
   };
