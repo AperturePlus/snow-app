@@ -78,6 +78,41 @@ export const loadNativeBridge = (): NativeBridge => {
           "Rust native bridge is required to delete custom header schemes"
         );
       },
+      listWorkspaceDirectories: () => {
+        throw new Error(
+          "Rust native bridge is required to list workspace directories"
+        );
+      },
+      listWorkspaceDirectoriesPage: () => {
+        throw new Error(
+          "Rust native bridge is required to list workspace directories"
+        );
+      },
+      upsertWorkspaceDirectory: () => {
+        throw new Error(
+          "Rust native bridge is required to write workspace directories"
+        );
+      },
+      activateWorkspaceDirectory: () => {
+        throw new Error(
+          "Rust native bridge is required to activate workspace directories"
+        );
+      },
+      reorderWorkspaceDirectories: () => {
+        throw new Error(
+          "Rust native bridge is required to reorder workspace directories"
+        );
+      },
+      mergeWorkspaceDirectories: () => {
+        throw new Error(
+          "Rust native bridge is required to merge workspace directories"
+        );
+      },
+      splitWorkspaceDirectory: () => {
+        throw new Error(
+          "Rust native bridge is required to split workspace directories"
+        );
+      },
       listMcpServerConfigs: () => {
         throw new Error(
           "Rust native bridge is required to list MCP server configs"

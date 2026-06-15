@@ -100,6 +100,37 @@ export type CustomHeaderSchemeRecord = CustomHeaderSchemeInput & {
   updatedAt: string;
 };
 
+export type WorkspaceDirectoryKind = "local" | "ssh";
+
+export type WorkspaceDirectoryInput = {
+  directoryId: string;
+  name: string;
+  path: string;
+  kind: WorkspaceDirectoryKind;
+  workspaceId?: string;
+  workspaceName?: string;
+  isActive: boolean;
+  sortOrder: number;
+  source: string;
+};
+
+export type WorkspaceDirectoryRecord = Omit<
+  WorkspaceDirectoryInput,
+  "workspaceId" | "workspaceName"
+> & {
+  id: number;
+  workspaceId: string;
+  workspaceName: string;
+  updatedAt: string;
+};
+
+export type WorkspaceDirectoryPage = {
+  items: WorkspaceDirectoryRecord[];
+  total: number;
+  offset: number;
+  limit: number;
+};
+
 export type McpServerConfigInput = {
   serverId: string;
   scope: string;
@@ -196,6 +227,43 @@ const api = {
     ipcRenderer.invoke("custom-header-schemes:delete", schemeId),
   importSnowCliCustomHeadersConfig: (): Promise<CustomHeaderSchemeRecord[]> =>
     ipcRenderer.invoke("custom-header-schemes:import-snow-cli"),
+  listWorkspaceDirectories: (): Promise<WorkspaceDirectoryRecord[]> =>
+    ipcRenderer.invoke("workspace-directories:list"),
+  listWorkspaceDirectoriesPage: (
+    offset: number,
+    limit: number
+  ): Promise<WorkspaceDirectoryPage> =>
+    ipcRenderer.invoke("workspace-directories:list-page", offset, limit),
+  upsertWorkspaceDirectory: (
+    item: WorkspaceDirectoryInput
+  ): Promise<WorkspaceDirectoryPage> =>
+    ipcRenderer.invoke("workspace-directories:upsert", item),
+  activateWorkspaceDirectory: (
+    directoryId: string
+  ): Promise<WorkspaceDirectoryPage> =>
+    ipcRenderer.invoke("workspace-directories:activate", directoryId),
+  reorderWorkspaceDirectories: (
+    directoryIds: string[]
+  ): Promise<WorkspaceDirectoryPage> =>
+    ipcRenderer.invoke("workspace-directories:reorder", directoryIds),
+  mergeWorkspaceDirectories: (
+    sourceDirectoryId: string,
+    targetDirectoryId: string
+  ): Promise<WorkspaceDirectoryPage> =>
+    ipcRenderer.invoke(
+      "workspace-directories:merge",
+      sourceDirectoryId,
+      targetDirectoryId
+    ),
+  splitWorkspaceDirectory: (
+    directoryId: string
+  ): Promise<WorkspaceDirectoryPage> =>
+    ipcRenderer.invoke("workspace-directories:split", directoryId),
+  selectWorkspaceDirectory: (dialogTitle?: string): Promise<string | null> =>
+    ipcRenderer.invoke(
+      "workspace-directories:select-local-directory",
+      dialogTitle
+    ),
   listMcpServerConfigs: (): Promise<McpServerConfigRecord[]> =>
     ipcRenderer.invoke("mcp-server-configs:list"),
   upsertMcpServerConfig: (

@@ -26,6 +26,7 @@ import {
   normalizeSensitiveCommandConfig,
   readSnowCliSensitiveCommandConfig,
 } from "../settings/sensitiveCommandSettings";
+import { normalizeWorkspaceDirectory } from "../settings/workspaceDirectories";
 import { readSnowCliProfiles } from "../snowCli/profiles";
 
 export const registerIpcHandlers = (native: NativeBridge): void => {
@@ -152,6 +153,106 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
   );
   ipcMain.handle("sensitive-command-configs:import-snow-cli", () =>
     readSnowCliSensitiveCommandConfig(native)
+  );
+  const listWorkspaceDirectoriesFirstPage = () =>
+    native.listWorkspaceDirectoriesPage(0, 30);
+
+  ipcMain.handle("workspace-directories:list", () =>
+    native.listWorkspaceDirectories()
+  );
+  ipcMain.handle(
+    "workspace-directories:list-page",
+    (_event, offset: unknown, limit: unknown) => {
+      const normalizedOffset = Number.isInteger(offset) ? offset : 0;
+      const normalizedLimit = Number.isInteger(limit) ? limit : 30;
+
+      return native.listWorkspaceDirectoriesPage(
+        normalizedOffset as number,
+        normalizedLimit as number
+      );
+    }
+  );
+  ipcMain.handle("workspace-directories:upsert", (_event, item: unknown) => {
+    const existingCount = native.listWorkspaceDirectories().length;
+    native.upsertWorkspaceDirectory(
+      normalizeWorkspaceDirectory(item, existingCount)
+    );
+    return listWorkspaceDirectoriesFirstPage();
+  });
+  ipcMain.handle(
+    "workspace-directories:activate",
+    (_event, directoryId: unknown) => {
+      if (typeof directoryId !== "string" || !directoryId.trim()) {
+        throw new Error("Workspace directory ID is required");
+      }
+
+      native.activateWorkspaceDirectory(directoryId.trim());
+      return listWorkspaceDirectoriesFirstPage();
+    }
+  );
+  ipcMain.handle(
+    "workspace-directories:reorder",
+    (_event, directoryIds: unknown) => {
+      if (
+        !Array.isArray(directoryIds) ||
+        !directoryIds.every((directoryId) => typeof directoryId === "string")
+      ) {
+        throw new Error("Workspace directory IDs are required");
+      }
+
+      native.reorderWorkspaceDirectories(
+        directoryIds.map((directoryId) => directoryId.trim()).filter(Boolean)
+      );
+      return listWorkspaceDirectoriesFirstPage();
+    }
+  );
+  ipcMain.handle(
+    "workspace-directories:merge",
+    (_event, sourceDirectoryId: unknown, targetDirectoryId: unknown) => {
+      if (typeof sourceDirectoryId !== "string" || !sourceDirectoryId.trim()) {
+        throw new Error("Source workspace directory ID is required");
+      }
+
+      if (typeof targetDirectoryId !== "string" || !targetDirectoryId.trim()) {
+        throw new Error("Target workspace directory ID is required");
+      }
+
+      native.mergeWorkspaceDirectories(
+        sourceDirectoryId.trim(),
+        targetDirectoryId.trim()
+      );
+      return listWorkspaceDirectoriesFirstPage();
+    }
+  );
+  ipcMain.handle(
+    "workspace-directories:split",
+    (_event, directoryId: unknown) => {
+      if (typeof directoryId !== "string" || !directoryId.trim()) {
+        throw new Error("Workspace directory ID is required");
+      }
+
+      native.splitWorkspaceDirectory(directoryId.trim());
+      return listWorkspaceDirectoriesFirstPage();
+    }
+  );
+  ipcMain.handle(
+    "workspace-directories:select-local-directory",
+    async (event, dialogTitle: unknown) => {
+      const browserWindow = BrowserWindow.fromWebContents(event.sender);
+      const title =
+        typeof dialogTitle === "string" && dialogTitle.trim()
+          ? dialogTitle.trim()
+          : "Select workspace directory";
+      const options: Electron.OpenDialogOptions = {
+        title,
+        properties: ["openDirectory"],
+      };
+      const result = browserWindow
+        ? await dialog.showOpenDialog(browserWindow, options)
+        : await dialog.showOpenDialog(options);
+
+      return result.canceled ? null : result.filePaths[0] ?? null;
+    }
   );
   ipcMain.handle(
     "proxy-browser-settings:select-browser-executable",

@@ -156,6 +156,42 @@ pub struct CustomHeaderSchemeRecord {
 }
 
 #[napi(object)]
+pub struct WorkspaceDirectoryInput {
+    pub directory_id: String,
+    pub name: String,
+    pub path: String,
+    pub kind: String,
+    pub workspace_id: Option<String>,
+    pub workspace_name: Option<String>,
+    pub is_active: bool,
+    pub sort_order: i32,
+    pub source: String,
+}
+
+#[napi(object)]
+pub struct WorkspaceDirectoryRecord {
+    pub id: i32,
+    pub directory_id: String,
+    pub name: String,
+    pub path: String,
+    pub kind: String,
+    pub workspace_id: String,
+    pub workspace_name: String,
+    pub is_active: bool,
+    pub sort_order: i32,
+    pub source: String,
+    pub updated_at: String,
+}
+
+#[napi(object)]
+pub struct WorkspaceDirectoryPage {
+    pub items: Vec<WorkspaceDirectoryRecord>,
+    pub total: i32,
+    pub offset: i32,
+    pub limit: i32,
+}
+
+#[napi(object)]
 pub struct McpServerConfigInput {
     pub server_id: String,
     pub scope: String,
@@ -303,6 +339,51 @@ pub fn upsert_custom_header_scheme(item: CustomHeaderSchemeInput) -> Result<()> 
 pub fn delete_custom_header_scheme(scheme_id: String) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::custom_header_schemes::delete_custom_header_scheme(&database_path, &scheme_id)
+}
+
+pub fn list_workspace_directories() -> Result<Vec<WorkspaceDirectoryRecord>> {
+    let database_path = ensure_database_file()?;
+    services::workspace_directories::list_workspace_directories(&database_path)
+}
+
+pub fn list_workspace_directories_page(
+    offset: i32,
+    limit: i32,
+) -> Result<WorkspaceDirectoryPage> {
+    let database_path = ensure_database_file()?;
+    services::workspace_directories::list_workspace_directories_page(&database_path, offset, limit)
+}
+
+pub fn upsert_workspace_directory(item: WorkspaceDirectoryInput) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::workspace_directories::upsert_workspace_directory(&database_path, &item)
+}
+
+pub fn activate_workspace_directory(directory_id: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::workspace_directories::activate_workspace_directory(&database_path, &directory_id)
+}
+
+pub fn reorder_workspace_directories(directory_ids: Vec<String>) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::workspace_directories::reorder_workspace_directories(&database_path, directory_ids)
+}
+
+pub fn merge_workspace_directories(
+    source_directory_id: String,
+    target_directory_id: String,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::workspace_directories::merge_workspace_directories(
+        &database_path,
+        &source_directory_id,
+        &target_directory_id,
+    )
+}
+
+pub fn split_workspace_directory(directory_id: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::workspace_directories::split_workspace_directory(&database_path, &directory_id)
 }
 
 pub fn list_mcp_server_configs() -> Result<Vec<McpServerConfigRecord>> {
