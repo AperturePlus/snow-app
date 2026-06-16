@@ -1,6 +1,7 @@
 import { useCallback, useState, type ChangeEvent } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { useI18n } from "../../../i18n";
+import { ApiModelCombobox } from "./ApiModelCombobox";
 import {
   DEFAULT_API_BASE_URL,
   DISABLED_STATUS_LABEL,
@@ -16,8 +17,6 @@ import {
 } from "./autoCompressThreshold";
 import type { Model } from "../../../../preload";
 import type { ApiConfigFormData } from "./types";
-
-const MODEL_OPTIONS_DATALIST_ID = "api-settings-model-options";
 
 type ModelField = "advancedModel" | "basicModel";
 
@@ -132,53 +131,30 @@ export function ApiSettingsFormFields({
     label: string,
     placeholder: string
   ) => (
-    <label className="api-settings-field">
-      <span>{label}</span>
-      <input
-        value={data[field]}
-        onChange={changeField(field)}
-        onFocus={handleModelInputFocus}
-        onClick={handleModelInputFocus}
-        list={MODEL_OPTIONS_DATALIST_ID}
-        placeholder={placeholder}
-        disabled={disabled}
-      />
-      {isLoadingModelOptions && (
-        <small className="api-settings-model-hint">
-          {t("settings.loadingModels", { defaultValue: "Loading models..." })}
-        </small>
-      )}
-      {modelOptionsError && (
-        <span className="api-settings-model-error">
-          <span>{modelOptionsError}</span>
-          <button
-            type="button"
-            onClick={handleRetryModelOptions}
-            disabled={disabled || isLoadingModelOptions}
-          >
-            {t("common.retry", { defaultValue: "Retry" })}
-          </button>
-        </span>
-      )}
-      {!isLoadingModelOptions &&
-        !modelOptionsError &&
-        loadedModelOptionsKey &&
-        modelOptions.length === 0 && (
-          <small className="api-settings-model-hint">
-            {t("chat.noModelsFound", { defaultValue: "No models found" })}
-          </small>
-        )}
-    </label>
+    <ApiModelCombobox
+      label={label}
+      value={data[field]}
+      placeholder={placeholder}
+      disabled={disabled}
+      models={modelOptions}
+      isLoading={isLoadingModelOptions}
+      error={modelOptionsError}
+      hasLoaded={Boolean(loadedModelOptionsKey)}
+      loadingText={t("settings.loadingModels", {
+        defaultValue: "Loading models...",
+      })}
+      noModelsText={t("chat.noModelsFound", {
+        defaultValue: "No models found",
+      })}
+      retryText={t("common.retry", { defaultValue: "Retry" })}
+      onChange={(value) => onChange(field, value)}
+      onRequestModels={handleModelInputFocus}
+      onRetry={handleRetryModelOptions}
+    />
   );
 
   return (
     <div className="api-settings-form-body">
-      <datalist id={MODEL_OPTIONS_DATALIST_ID}>
-        {modelOptions.map((model) => (
-          <option key={model.id} value={model.id} />
-        ))}
-      </datalist>
-
       <div className="api-settings-form-section">
         <strong className="api-settings-form-section-title">
           {t("settings.formBasic", { defaultValue: "Basic" })}

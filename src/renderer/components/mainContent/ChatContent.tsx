@@ -1,6 +1,7 @@
 import type { WorkspaceDirectoryRecord } from "../../../preload";
 import { ChatInput } from "./ChatInput";
 import { EmptyGreeting } from "./EmptyGreeting";
+import { ChatMessageList, useMockChatConversation } from "./chatMessages";
 
 type ChatContentProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
@@ -9,15 +10,20 @@ type ChatContentProps = {
 export const ChatContent = ({
   activeDirectory,
 }: ChatContentProps): React.JSX.Element => {
+  const { messages, handleSendMessage } = useMockChatConversation();
+  const hasMessages = messages.length > 0;
+
   return (
     <>
-      {/* Chat area */}
       <div className="chat-area">
-        <EmptyGreeting activeDirectory={activeDirectory} />
+        {hasMessages ? (
+          <ChatMessageList messages={messages} />
+        ) : (
+          <EmptyGreeting activeDirectory={activeDirectory} />
+        )}
       </div>
 
-      {/* Input area */}
-      <ChatInput />
+      <ChatInput onSend={handleSendMessage} />
     </>
   );
 };

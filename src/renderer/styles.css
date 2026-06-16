@@ -1161,38 +1161,147 @@ input {
   opacity: 0.68;
 }
 
-.api-settings-model-hint {
-  color: var(--text-muted);
-  font-size: 10.5px;
-  line-height: 1.35;
+.api-model-combobox-field {
+  position: relative;
 }
 
-.api-settings-model-error {
+.api-model-combobox {
+  position: relative;
+  min-width: 0;
+}
+
+.api-model-combobox-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.api-settings-field
+  .api-model-combobox
+  .api-model-combobox-input-wrap
+  > input:not([type="checkbox"]):not([type="range"]) {
+  padding-left: 30px;
+  padding-right: 30px;
+}
+
+.api-model-combobox-search,
+.api-model-combobox-status {
+  position: absolute;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.api-model-combobox-search {
+  left: 9px;
+}
+
+.api-model-combobox-status {
+  right: 9px;
+}
+
+.api-model-combobox-spin {
+  animation: spin 1s linear infinite;
+}
+
+.api-model-combobox-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.14);
+}
+
+.api-model-combobox-list {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.api-model-combobox-option {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  text-align: left;
+  transition: background 0.12s, color 0.12s;
+}
+
+.api-model-combobox-option.highlighted,
+.api-model-combobox-option:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.api-model-combobox-option.selected {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.api-model-combobox .api-model-combobox-option-name {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.api-model-combobox-message,
+.api-model-combobox-error {
+  padding: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.api-model-combobox-error {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   color: var(--accent-red);
-  font-size: 10.5px;
-  line-height: 1.35;
 }
 
-.api-settings-model-error > span {
+.api-model-combobox-error > span {
   min-width: 0;
   color: inherit;
   font-size: inherit;
   font-weight: 500;
 }
 
-.api-settings-model-error > button {
+.api-model-combobox-error > button {
+  display: inline-flex;
   flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
   color: var(--accent-blue);
   font-size: 10.5px;
   font-weight: 600;
-  text-decoration: underline;
 }
 
-.api-settings-model-error > button:disabled {
+.api-model-combobox-error > button > span {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.api-model-combobox-error > button:disabled {
   cursor: default;
   opacity: 0.6;
 }
@@ -1323,6 +1432,55 @@ input {
   font-size: 10.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.api-settings-table-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.api-settings-table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.api-settings-table-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: min(100%, 320px);
+  padding: 6px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+}
+
+.api-settings-table-search:focus-within {
+  border-color: var(--text-muted);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.api-settings-table-search input {
+  width: 100%;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.api-settings-table-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.api-settings-table-search input:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .api-settings-table-wrap {
@@ -1463,6 +1621,19 @@ input {
 
 .api-settings-table .badge.clickable:disabled {
   cursor: default;
+}
+
+.api-settings-table-switch {
+  white-space: nowrap;
+}
+
+.api-settings-table-switch input:disabled + .toggle-slider {
+  opacity: 1;
+}
+
+.api-settings-search-count {
+  color: var(--text-muted);
+  font-size: 11.5px;
 }
 
 .api-settings-table .table-input,
@@ -1848,20 +2019,69 @@ input {
   line-height: 1.6;
 }
 
-.user-message-row {
+.chat-message-list {
   display: flex;
+  width: min(100%, 980px);
+  margin: 0 auto;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.chat-message-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.user-message-action-btn,
+.ai-response-action-btn {
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
 }
 
+.user-message-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
 .user-message-bubble {
-  display: inline-block;
-  padding: 8px 16px;
+  max-width: min(560px, 76%);
+  padding: 12px 18px;
   border-radius: var(--radius-xl);
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
   color: var(--text-primary);
-  font-size: 13.5px;
+  font-size: 14px;
+  font-weight: 520;
   line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.user-message-bubble p {
+  margin: 0;
+}
+
+.user-message-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 6px;
+  color: var(--text-muted);
+}
+
+.user-message-action-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-md);
+  color: inherit;
+  transition: background 0.12s, color 0.12s;
+}
+
+.user-message-action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
 }
 
 .previous-messages {
@@ -1879,17 +2099,96 @@ input {
 }
 
 .ai-message {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--text-primary);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.ai-message-content {
+  width: min(100%, 920px);
+}
+
+.ai-response-actions {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.ai-response-action-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-md);
+  color: inherit;
+  transition: background 0.12s, color 0.12s;
+}
+
+.ai-response-action-btn:hover {
+  background: var(--bg-hover);
   color: var(--text-secondary);
-  font-size: 13.5px;
-  line-height: 1.7;
+}
+
+.ai-message h2,
+.ai-message h3,
+.ai-message p,
+.ai-message ol {
+  margin-top: 0;
+}
+
+.ai-message h2 {
+  margin-bottom: 16px;
+  font-size: 20px;
+  font-weight: 760;
+  line-height: 1.35;
+}
+
+.ai-message h3 {
+  margin-bottom: 10px;
+  font-size: 17px;
+  font-weight: 740;
+  line-height: 1.4;
 }
 
 .ai-message p {
-  margin: 0 0 12px;
+  margin-bottom: 14px;
 }
 
 .ai-message p:last-child {
   margin-bottom: 0;
+}
+
+.ai-message-section {
+  margin-top: 22px;
+}
+
+.ai-message ol {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 0;
+  padding-left: 26px;
+}
+
+.ai-message li {
+  padding-left: 2px;
+}
+
+.ai-message li strong,
+.ai-message li span {
+  display: block;
+}
+
+.ai-message li strong {
+  color: var(--text-primary);
+  font-weight: 760;
+}
+
+.ai-message li span {
+  color: var(--text-secondary);
 }
 
 .ai-message a {
@@ -1902,12 +2201,12 @@ input {
 }
 
 .ai-message code {
-  padding: 1px 4px;
+  padding: 1px 5px;
   border-radius: 4px;
   background: var(--bg-tertiary);
+  color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--text-primary);
 }
 
 /* File Changes Card */
