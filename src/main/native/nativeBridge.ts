@@ -133,6 +133,16 @@ export const loadNativeBridge = (): NativeBridge => {
           "Rust native bridge is required to delete sensitive command configs"
         );
       },
+      fetchAvailableModels: () => {
+        throw new Error(
+          "Rust native bridge is required to fetch available models"
+        );
+      },
+      fetchAvailableModelsForConfig: () => {
+        throw new Error(
+          "Rust native bridge is required to fetch available models"
+        );
+      },
       engineInfo: () => "Rust native bridge is not built yet",
       sum: (a: number, b: number) => a + b,
     };

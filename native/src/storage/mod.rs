@@ -1,6 +1,6 @@
 mod database;
 mod paths;
-mod services;
+pub mod services;
 
 use std::{fs, path::PathBuf};
 
@@ -53,6 +53,7 @@ pub struct ApiConfigRecord {
     pub basic_model: String,
     pub supports_vision: bool,
     pub vision_base_url: String,
+    pub vision_base_url_mode: String,
     pub vision_api_key: String,
     pub vision_request_method: String,
     pub vision_model: String,
@@ -61,6 +62,7 @@ pub struct ApiConfigRecord {
     pub stream_idle_timeout_sec: Option<i32>,
     pub enable_auto_compress: bool,
     pub auto_compress_threshold: Option<i32>,
+    pub config_json: String,
     pub source: String,
     pub updated_at: String,
 }

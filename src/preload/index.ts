@@ -25,17 +25,27 @@ export type ApiConfigInput = {
   source: string;
 };
 
-export type ApiConfigRecord = Omit<
-  ApiConfigInput,
-  "visionBaseUrlMode" | "configJson"
-> & {
+export type ApiConfigRecord = ApiConfigInput & {
   id: number;
   updatedAt: string;
 };
-
 export type ImportSnowCliApiConfigsResult = {
   importedCount: number;
   configs: ApiConfigRecord[];
+};
+
+export type Model = {
+  id: string;
+  object: string;
+  created: number;
+  ownedBy: string;
+};
+
+export type ApiModelsConfig = {
+  baseUrl: string;
+  baseUrlMode: string;
+  apiKey: string;
+  requestMethod: string;
 };
 
 export type ProxyBrowserSettings = {
@@ -178,6 +188,10 @@ const api = {
     ipcRenderer.invoke("api-configs:upsert", config),
   deleteApiConfig: (profileName: string): Promise<ApiConfigRecord[]> =>
     ipcRenderer.invoke("api-configs:delete", profileName),
+  fetchAvailableModels: (): Promise<Model[]> =>
+    ipcRenderer.invoke("api-models:fetch"),
+  fetchAvailableModelsForConfig: (config: ApiModelsConfig): Promise<Model[]> =>
+    ipcRenderer.invoke("api-models:fetch-for-config", config),
   importSnowCliApiConfigs: (): Promise<ImportSnowCliApiConfigsResult> =>
     ipcRenderer.invoke("api-configs:import-snow-cli"),
   importSnowCliProxyConfig: (): Promise<ProxyBrowserSettings> =>

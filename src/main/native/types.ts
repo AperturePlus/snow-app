@@ -28,10 +28,7 @@ export type ApiConfigInput = {
   source: string;
 };
 
-export type ApiConfigRecord = Omit<
-  ApiConfigInput,
-  "visionBaseUrlMode" | "configJson"
-> & {
+export type ApiConfigRecord = ApiConfigInput & {
   id: number;
   updatedAt: string;
 };
@@ -147,8 +144,22 @@ export type SensitiveCommandConfigRecord = SensitiveCommandConfigInput & {
   updatedAt: string;
 };
 
+export type Model = {
+  id: string;
+  object: string;
+  created: number;
+  ownedBy: string;
+};
+export type ApiModelsConfig = {
+  baseUrl: string;
+  baseUrlMode: string;
+  apiKey: string;
+  requestMethod: string;
+};
+
 export type NativeBridge = {
   initializeAppStorage: () => AppStorageInfo;
+
   getSystemSettingValue: (settingCode: string) => string | null;
   setSystemSetting: (
     settingName: string,
@@ -177,6 +188,8 @@ export type NativeBridge = {
   listSensitiveCommandConfigs: () => SensitiveCommandConfigRecord[];
   upsertSensitiveCommandConfig: (item: SensitiveCommandConfigInput) => void;
   deleteSensitiveCommandConfig: (commandId: string, scope: string) => void;
+  fetchAvailableModels: () => Model[];
+  fetchAvailableModelsForConfig: (config: ApiModelsConfig) => Model[];
   engineInfo: () => string;
   sum: (a: number, b: number) => number;
 };

@@ -1,5 +1,5 @@
 import { BrowserWindow, dialog, ipcMain } from "electron";
-import type { NativeBridge } from "../native/types";
+import type { ApiModelsConfig, NativeBridge } from "../native/types";
 import { writeLog, type LogEntry, type LogLevel } from "../../utils/snowLogger";
 import {
   normalizeApiConfigInput,
@@ -69,9 +69,45 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
       configs: native.listApiConfigs(),
     };
   });
+  ipcMain.handle("api-models:fetch", async () => {
+    try {
+      const models = native.fetchAvailableModels();
+      return models;
+    } catch (error) {
+      throw error;
+    }
+  });
+  ipcMain.handle(
+    "api-models:fetch-for-config",
+    async (_event, config: unknown) => {
+      if (
+        typeof config !== "object" ||
+        config === null ||
+        Array.isArray(config)
+      ) {
+        throw new Error("API model config is required");
+      }
+
+      const source = config as Partial<Record<keyof ApiModelsConfig, unknown>>;
+      const normalizedConfig: ApiModelsConfig = {
+        baseUrl: typeof source.baseUrl === "string" ? source.baseUrl : "",
+        baseUrlMode:
+          typeof source.baseUrlMode === "string" ? source.baseUrlMode : "auto",
+        apiKey: typeof source.apiKey === "string" ? source.apiKey : "",
+        requestMethod:
+          typeof source.requestMethod === "string"
+            ? source.requestMethod
+            : "chat",
+      };
+
+      return native.fetchAvailableModelsForConfig(normalizedConfig);
+    }
+  );
+
   ipcMain.handle("proxy-browser-settings:import-snow-cli", () =>
     readSnowCliProxyConfig(native)
   );
+
   ipcMain.handle("codebase-settings:get", () => native.getCodebaseSettings());
   ipcMain.handle("codebase-settings:upsert", (_event, settings: unknown) =>
     persistCodebaseSettings(native, normalizeCodebaseSettings(settings))

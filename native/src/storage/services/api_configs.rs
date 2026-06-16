@@ -36,6 +36,7 @@ pub fn list_api_configs(database_path: &Path) -> Result<Vec<ApiConfigRecord>> {
                         basic_model,
                         supports_vision,
                         vision_base_url,
+                        vision_base_url_mode,
                         vision_api_key,
                         vision_request_method,
                         vision_model,
@@ -44,6 +45,7 @@ pub fn list_api_configs(database_path: &Path) -> Result<Vec<ApiConfigRecord>> {
                         stream_idle_timeout_sec,
                         enable_auto_compress,
                         auto_compress_threshold,
+                        config_json,
                         source,
                         updated_at
                    FROM api_configs
@@ -53,7 +55,7 @@ pub fn list_api_configs(database_path: &Path) -> Result<Vec<ApiConfigRecord>> {
             let rows = statement.query_map([], |row| {
                 let is_active: i64 = row.get(3)?;
                 let supports_vision: i64 = row.get(10)?;
-                let enable_auto_compress: i64 = row.get(18)?;
+                let enable_auto_compress: i64 = row.get(19)?;
 
                 Ok(ApiConfigRecord {
                     id: row.get(0)?,
@@ -68,16 +70,18 @@ pub fn list_api_configs(database_path: &Path) -> Result<Vec<ApiConfigRecord>> {
                     basic_model: row.get(9)?,
                     supports_vision: supports_vision != 0,
                     vision_base_url: row.get(11)?,
-                    vision_api_key: row.get(12)?,
-                    vision_request_method: row.get(13)?,
-                    vision_model: row.get(14)?,
-                    max_context_tokens: row.get(15)?,
-                    max_tokens: row.get(16)?,
-                    stream_idle_timeout_sec: row.get(17)?,
+                    vision_base_url_mode: row.get(12)?,
+                    vision_api_key: row.get(13)?,
+                    vision_request_method: row.get(14)?,
+                    vision_model: row.get(15)?,
+                    max_context_tokens: row.get(16)?,
+                    max_tokens: row.get(17)?,
+                    stream_idle_timeout_sec: row.get(18)?,
                     enable_auto_compress: enable_auto_compress != 0,
-                    auto_compress_threshold: row.get(19)?,
-                    source: row.get(20)?,
-                    updated_at: row.get(21)?,
+                    auto_compress_threshold: row.get(20)?,
+                    config_json: row.get(21)?,
+                    source: row.get(22)?,
+                    updated_at: row.get(23)?,
                 })
             })?;
 

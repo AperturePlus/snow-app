@@ -293,7 +293,7 @@ export function ApiSettingsTreePanel({
         basicModel: config.basicModel,
         supportsVision: config.supportsVision,
         visionBaseUrl: config.visionBaseUrl,
-        visionBaseUrlMode: "auto",
+        visionBaseUrlMode: config.visionBaseUrlMode || "auto",
         visionApiKey: "",
         visionRequestMethod: config.visionRequestMethod,
         visionModel: config.visionModel,
@@ -302,7 +302,7 @@ export function ApiSettingsTreePanel({
         streamIdleTimeoutSec: config.streamIdleTimeoutSec,
         enableAutoCompress: config.enableAutoCompress,
         autoCompressThreshold: config.autoCompressThreshold,
-        configJson: "{}",
+        configJson: config.configJson,
         source: config.source,
       });
       setConfigs(list);

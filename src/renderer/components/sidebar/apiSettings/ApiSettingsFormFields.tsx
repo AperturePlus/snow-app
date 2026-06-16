@@ -1,9 +1,8 @@
-import { useState, type ChangeEvent } from "react";
+import { useCallback, useState, type ChangeEvent } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { useI18n } from "../../../i18n";
 import {
   DEFAULT_API_BASE_URL,
-  DEFAULT_REQUEST_METHOD,
   DISABLED_STATUS_LABEL,
   ENABLED_STATUS_LABEL,
   REQUEST_METHODS,
@@ -15,7 +14,12 @@ import {
   calculateAutoCompressThresholdTokens,
   normalizeAutoCompressThresholdPercent,
 } from "./autoCompressThreshold";
+import type { Model } from "../../../../preload";
 import type { ApiConfigFormData } from "./types";
+
+const MODEL_OPTIONS_DATALIST_ID = "api-settings-model-options";
+
+type ModelField = "advancedModel" | "basicModel";
 
 type ApiSettingsFormFieldsProps = {
   data: ApiConfigFormData;
@@ -33,6 +37,76 @@ export function ApiSettingsFormFields({
   const { t } = useI18n();
   const [showApiKey, setShowApiKey] = useState(false);
   const [showVisionKey, setShowVisionKey] = useState(false);
+  const [modelOptions, setModelOptions] = useState<Model[]>([]);
+  const [isLoadingModelOptions, setIsLoadingModelOptions] = useState(false);
+  const [modelOptionsError, setModelOptionsError] = useState<string | null>(
+    null
+  );
+  const [loadedModelOptionsKey, setLoadedModelOptionsKey] = useState<
+    string | null
+  >(null);
+
+  const loadModelOptions = useCallback(
+    async (force = false) => {
+      const configKey = [
+        data.baseUrl.trim(),
+        data.baseUrlMode.trim(),
+        data.apiKey.trim(),
+        data.requestMethod.trim(),
+      ].join("\n");
+
+      if (
+        isLoadingModelOptions ||
+        (!force && loadedModelOptionsKey === configKey)
+      ) {
+        return;
+      }
+
+      setIsLoadingModelOptions(true);
+      setModelOptionsError(null);
+
+      try {
+        const availableModels = await window.snow.fetchAvailableModelsForConfig(
+          {
+            baseUrl: data.baseUrl,
+            baseUrlMode: data.baseUrlMode,
+            apiKey: data.apiKey,
+            requestMethod: data.requestMethod,
+          }
+        );
+        setModelOptions(availableModels);
+        setLoadedModelOptionsKey(configKey);
+      } catch (error) {
+        setModelOptionsError(
+          error instanceof Error
+            ? error.message
+            : t("chat.loadModelsError", {
+                defaultValue: "Failed to load models",
+              })
+        );
+        setLoadedModelOptionsKey(null);
+      } finally {
+        setIsLoadingModelOptions(false);
+      }
+    },
+    [
+      data.apiKey,
+      data.baseUrl,
+      data.baseUrlMode,
+      data.requestMethod,
+      isLoadingModelOptions,
+      loadedModelOptionsKey,
+      t,
+    ]
+  );
+
+  const handleModelInputFocus = useCallback(() => {
+    void loadModelOptions();
+  }, [loadModelOptions]);
+
+  const handleRetryModelOptions = useCallback(() => {
+    void loadModelOptions(true);
+  }, [loadModelOptions]);
 
   const changeField =
     (field: keyof ApiConfigFormData) =>
@@ -53,8 +127,58 @@ export function ApiSettingsFormFields({
     autoCompressThresholdPercent
   );
 
+  const renderModelField = (
+    field: ModelField,
+    label: string,
+    placeholder: string
+  ) => (
+    <label className="api-settings-field">
+      <span>{label}</span>
+      <input
+        value={data[field]}
+        onChange={changeField(field)}
+        onFocus={handleModelInputFocus}
+        onClick={handleModelInputFocus}
+        list={MODEL_OPTIONS_DATALIST_ID}
+        placeholder={placeholder}
+        disabled={disabled}
+      />
+      {isLoadingModelOptions && (
+        <small className="api-settings-model-hint">
+          {t("settings.loadingModels", { defaultValue: "Loading models..." })}
+        </small>
+      )}
+      {modelOptionsError && (
+        <span className="api-settings-model-error">
+          <span>{modelOptionsError}</span>
+          <button
+            type="button"
+            onClick={handleRetryModelOptions}
+            disabled={disabled || isLoadingModelOptions}
+          >
+            {t("common.retry", { defaultValue: "Retry" })}
+          </button>
+        </span>
+      )}
+      {!isLoadingModelOptions &&
+        !modelOptionsError &&
+        loadedModelOptionsKey &&
+        modelOptions.length === 0 && (
+          <small className="api-settings-model-hint">
+            {t("chat.noModelsFound", { defaultValue: "No models found" })}
+          </small>
+        )}
+    </label>
+  );
+
   return (
     <div className="api-settings-form-body">
+      <datalist id={MODEL_OPTIONS_DATALIST_ID}>
+        {modelOptions.map((model) => (
+          <option key={model.id} value={model.id} />
+        ))}
+      </datalist>
+
       <div className="api-settings-form-section">
         <strong className="api-settings-form-section-title">
           {t("settings.formBasic", { defaultValue: "Basic" })}
@@ -155,30 +279,18 @@ export function ApiSettingsFormFields({
           {t("settings.formModels", { defaultValue: "Models" })}
         </strong>
         <div className="api-settings-form-grid">
-          <label className="api-settings-field">
-            <span>
-              {t("settings.apiAdvancedModel", {
-                defaultValue: "Advanced model",
-              })}
-            </span>
-            <input
-              value={data.advancedModel}
-              onChange={changeField("advancedModel")}
-              placeholder="gpt-4.1"
-              disabled={disabled}
-            />
-          </label>
-          <label className="api-settings-field">
-            <span>
-              {t("settings.apiBasicModel", { defaultValue: "Basic model" })}
-            </span>
-            <input
-              value={data.basicModel}
-              onChange={changeField("basicModel")}
-              placeholder="gpt-4.1-mini"
-              disabled={disabled}
-            />
-          </label>
+          {renderModelField(
+            "advancedModel",
+            t("settings.apiAdvancedModel", {
+              defaultValue: "Advanced model",
+            }),
+            "gpt-4.1"
+          )}
+          {renderModelField(
+            "basicModel",
+            t("settings.apiBasicModel", { defaultValue: "Basic model" }),
+            "gpt-4.1-mini"
+          )}
           <label className="api-settings-field">
             <span>
               {t("settings.apiMaxContext", {
