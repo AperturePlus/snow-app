@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
 export type ApiConfigInput = {
   profileName: string;
@@ -26,7 +26,7 @@ export type ApiConfigInput = {
 };
 
 export type ApiConfigRecord = ApiConfigInput & {
-  id: number;
+  id: string;
   updatedAt: string;
 };
 export type ImportSnowCliApiConfigsResult = {
@@ -46,6 +46,34 @@ export type ApiModelsConfig = {
   baseUrlMode: string;
   apiKey: string;
   requestMethod: string;
+};
+
+export type ResponsesApiMessage = {
+  role: "user" | "assistant" | "system" | "developer";
+  content: string;
+};
+
+export type ResponsesApiRequest = {
+  messages: ResponsesApiMessage[];
+  model?: string | null;
+  conversationId?: string | null;
+  previousResponseId?: string | null;
+};
+
+export type ResponsesApiResult = {
+  id: string;
+  conversationId: string;
+  content: string;
+  thinking: string;
+  model: string;
+  status: string;
+};
+
+export type ResponsesApiStreamChunk = {
+  contentDelta: string;
+  thinkingDelta: string;
+  content: string;
+  thinking: string;
 };
 
 export type ProxyBrowserSettings = {
@@ -82,7 +110,7 @@ export type CodebaseSettingsInput = {
 };
 
 export type CodebaseSettingsRecord = CodebaseSettingsInput & {
-  id: number;
+  id: string;
   updatedAt: string;
 };
 
@@ -95,7 +123,7 @@ export type SystemPromptItemInput = {
 };
 
 export type SystemPromptItemRecord = SystemPromptItemInput & {
-  id: number;
+  id: string;
   updatedAt: string;
 };
 
@@ -108,7 +136,7 @@ export type CustomHeaderSchemeInput = {
 };
 
 export type CustomHeaderSchemeRecord = CustomHeaderSchemeInput & {
-  id: number;
+  id: string;
   updatedAt: string;
 };
 
@@ -125,7 +153,7 @@ export type WorkspaceDirectoryInput = {
 };
 
 export type WorkspaceDirectoryRecord = WorkspaceDirectoryInput & {
-  id: number;
+  id: string;
   updatedAt: string;
 };
 
@@ -146,7 +174,7 @@ export type McpServerConfigInput = {
 };
 
 export type McpServerConfigRecord = Omit<McpServerConfigInput, "timeoutMs"> & {
-  id: number;
+  id: string;
   timeoutMs: number | null;
   updatedAt: string;
 };
@@ -163,8 +191,33 @@ export type SensitiveCommandConfigInput = {
 };
 
 export type SensitiveCommandConfigRecord = SensitiveCommandConfigInput & {
-  id: number;
+  id: string;
   updatedAt: string;
+};
+
+const CHAT_CREATE_RESPONSE_CHUNK_CHANNEL = "chat:create-response:chunk";
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const createResponseStreamId = (): string =>
+  `response-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const normalizeResponseStreamChunk = (
+  value: unknown
+): ResponsesApiStreamChunk | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return {
+    contentDelta:
+      typeof value.contentDelta === "string" ? value.contentDelta : "",
+    thinkingDelta:
+      typeof value.thinkingDelta === "string" ? value.thinkingDelta : "",
+    content: typeof value.content === "string" ? value.content : "",
+    thinking: typeof value.thinking === "string" ? value.thinking : "",
+  };
 };
 
 const api = {
@@ -192,6 +245,33 @@ const api = {
     ipcRenderer.invoke("api-models:fetch"),
   fetchAvailableModelsForConfig: (config: ApiModelsConfig): Promise<Model[]> =>
     ipcRenderer.invoke("api-models:fetch-for-config", config),
+  createResponseStream: (
+    request: ResponsesApiRequest,
+    onChunk?: (chunk: ResponsesApiStreamChunk) => void
+  ): Promise<ResponsesApiResult> => {
+    const streamId = createResponseStreamId();
+    const handleChunk = (_event: IpcRendererEvent, payload: unknown): void => {
+      if (!isRecord(payload) || payload.streamId !== streamId) {
+        return;
+      }
+
+      const chunk = normalizeResponseStreamChunk(payload.chunk);
+      if (chunk) {
+        onChunk?.(chunk);
+      }
+    };
+
+    ipcRenderer.on(CHAT_CREATE_RESPONSE_CHUNK_CHANNEL, handleChunk);
+
+    return ipcRenderer
+      .invoke("chat:create-response-stream", request, streamId)
+      .finally(() => {
+        ipcRenderer.removeListener(
+          CHAT_CREATE_RESPONSE_CHUNK_CHANNEL,
+          handleChunk
+        );
+      });
+  },
   importSnowCliApiConfigs: (): Promise<ImportSnowCliApiConfigsResult> =>
     ipcRenderer.invoke("api-configs:import-snow-cli"),
   importSnowCliProxyConfig: (): Promise<ProxyBrowserSettings> =>

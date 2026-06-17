@@ -41,7 +41,7 @@ pub struct ApiConfigInput {
 
 #[napi(object)]
 pub struct ApiConfigRecord {
-    pub id: i32,
+    pub id: String,
     pub profile_name: String,
     pub display_name: String,
     pub is_active: bool,
@@ -95,7 +95,7 @@ pub struct CodebaseSettingsInput {
 
 #[napi(object)]
 pub struct CodebaseSettingsRecord {
-    pub id: i32,
+    pub id: String,
     pub profile_name: String,
     pub enabled: bool,
     pub enable_agent_review: bool,
@@ -132,7 +132,7 @@ pub struct SystemPromptItemInput {
 
 #[napi(object)]
 pub struct SystemPromptItemRecord {
-    pub id: i32,
+    pub id: String,
     pub prompt_id: String,
     pub name: String,
     pub content: String,
@@ -152,7 +152,7 @@ pub struct CustomHeaderSchemeInput {
 
 #[napi(object)]
 pub struct CustomHeaderSchemeRecord {
-    pub id: i32,
+    pub id: String,
     pub scheme_id: String,
     pub name: String,
     pub headers_json: String,
@@ -174,7 +174,7 @@ pub struct WorkspaceDirectoryInput {
 
 #[napi(object)]
 pub struct WorkspaceDirectoryRecord {
-    pub id: i32,
+    pub id: String,
     pub directory_id: String,
     pub name: String,
     pub path: String,
@@ -204,7 +204,7 @@ pub struct McpServerConfigInput {
 
 #[napi(object)]
 pub struct McpServerConfigRecord {
-    pub id: i32,
+    pub id: String,
     pub server_id: String,
     pub scope: String,
     pub name: String,
@@ -235,7 +235,7 @@ pub struct SensitiveCommandConfigInput {
 
 #[napi(object)]
 pub struct SensitiveCommandConfigRecord {
-    pub id: i32,
+    pub id: String,
     pub command_id: String,
     pub scope: String,
     pub pattern: String,

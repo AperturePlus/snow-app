@@ -2,9 +2,16 @@ use std::path::PathBuf;
 
 use napi_derive::napi;
 
+use crate::api::config::get_active_custom_headers;
+use crate::api::conversation::{
+    create_response_stream as create_conversation_response_stream,
+};
 use crate::api::models::{
     fetch_available_models as fetch_models_with_config, fetch_available_models_for_active_config,
-    get_active_custom_headers, ApiConfigForModels, Model,
+    ApiConfigForModels, Model,
+};
+use crate::api::responses::{
+    ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback,
 };
 use crate::storage::initialize_app_storage;
 
@@ -22,4 +29,12 @@ pub fn fetch_available_models_for_config(config: ApiConfigForModels) -> napi::Re
     let custom_headers = get_active_custom_headers(&custom_header_schemes);
 
     fetch_models_with_config(&config, &custom_headers)
+}
+
+#[napi]
+pub fn create_response_stream(
+    request: ResponsesApiRequest,
+    on_chunk: ResponsesApiStreamCallback<'_>,
+) -> napi::Result<ResponsesApiResult> {
+    create_conversation_response_stream(request, on_chunk)
 }

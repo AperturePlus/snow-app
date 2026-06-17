@@ -107,6 +107,7 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
 
             transaction.execute(
                 "INSERT INTO api_configs (
+                   id,
                    profile_name,
                    display_name,
                    is_active,
@@ -134,7 +135,7 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                  ) VALUES (
                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
                    ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
-                   ?21, ?22,
+                   ?21, ?22, ?23,
                    datetime('now'), datetime('now')
                  )
                  ON CONFLICT(profile_name) DO UPDATE SET
@@ -167,6 +168,7 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                    source = excluded.source,
                    updated_at = datetime('now')",
                 params![
+                    database::create_snowflake_id(),
                     config.profile_name,
                     config.display_name,
                     config.is_active as i32,
@@ -222,6 +224,7 @@ pub fn delete_api_config(database_path: &Path, profile_name: &str) -> Result<()>
 fn seed_default_api_config_with_connection(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute(
         "INSERT INTO api_configs (
+           id,
            profile_name,
            display_name,
            is_active,
@@ -243,10 +246,11 @@ fn seed_default_api_config_with_connection(connection: &Connection) -> rusqlite:
            updated_at
          )
          SELECT
-           ?1, ?2, 1, ?3, 'auto', '', ?4, ?5, ?6, 1,
-           '', 'auto', '', ?4, '', ?7, 'default', datetime('now'), datetime('now')
+           ?1, ?2, ?3, 1, ?4, 'auto', '', ?5, ?6, ?7, 1,
+           '', 'auto', '', ?5, '', ?8, 'default', datetime('now'), datetime('now')
          WHERE NOT EXISTS (SELECT 1 FROM api_configs)",
         params![
+            database::create_snowflake_id(),
             DEFAULT_PROFILE_NAME,
             DEFAULT_DISPLAY_NAME,
             DEFAULT_BASE_URL,

@@ -143,6 +143,11 @@ export const loadNativeBridge = (): NativeBridge => {
           "Rust native bridge is required to fetch available models"
         );
       },
+      createResponseStream: () => {
+        throw new Error(
+          "Rust native bridge is required to stream AI responses"
+        );
+      },
       engineInfo: () => "Rust native bridge is not built yet",
       sum: (a: number, b: number) => a + b,
     };

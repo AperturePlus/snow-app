@@ -6,11 +6,13 @@ use napi_derive::napi;
 use reqwest::{
     blocking::Client,
     header::{HeaderMap, HeaderName, HeaderValue},
-    Url,
 };
 use serde_json::Value;
 
-use crate::storage::{initialize_app_storage, CustomHeaderSchemeRecord};
+use crate::api::config::{
+    get_active_api_request_context, normalize_base_url, resolve_models_endpoint,
+    DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_GEMINI_BASE_URL, DEFAULT_OPENAI_BASE_URL,
+};
 
 #[napi(object)]
 pub struct Model {
@@ -21,9 +23,6 @@ pub struct Model {
 }
 
 
-const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
-const DEFAULT_GEMINI_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
-const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com/v1";
 const MODEL_FETCH_TIMEOUT_SECS: u64 = 15;
 
 fn create_models_http_client() -> Result<Client> {
@@ -33,91 +32,6 @@ fn create_models_http_client() -> Result<Client> {
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))
 }
 
-fn normalize_base_url(base_url: &str) -> String {
-    base_url.trim().trim_end_matches('/').to_string()
-}
-
-fn resolve_models_endpoint(base_url: &str, base_url_mode: &str) -> String {
-    let normalized_base_url = normalize_base_url(base_url);
-
-    if base_url_mode == "endpoint" {
-        return normalized_base_url;
-    }
-
-    if base_url_mode == "auto" && is_models_endpoint(&normalized_base_url) {
-        return normalized_base_url;
-    }
-
-    let base_for_append = if base_url_mode == "auto" || base_url_mode == "custom" {
-        strip_known_endpoint_suffix(&normalized_base_url).unwrap_or(normalized_base_url)
-    } else {
-        normalized_base_url
-    };
-
-    append_models_endpoint(&base_for_append)
-}
-
-fn append_models_endpoint(base_url: &str) -> String {
-    format!("{}/models", normalize_base_url(base_url))
-}
-
-fn is_models_endpoint(base_url: &str) -> bool {
-    get_normalized_pathname(base_url)
-        .map(|pathname| pathname.ends_with("/models"))
-        .unwrap_or(false)
-}
-
-fn strip_known_endpoint_suffix(base_url: &str) -> Option<String> {
-    let mut url = Url::parse(base_url).ok()?;
-    let pathname = normalize_pathname(url.path());
-    let known_suffix = get_known_endpoint_suffix(&pathname)?;
-    let next_pathname = pathname
-        .strip_suffix(known_suffix)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("/");
-
-    url.set_path(next_pathname);
-    url.set_query(None);
-    url.set_fragment(None);
-
-    Some(normalize_base_url(url.as_str()))
-}
-
-fn get_known_endpoint_suffix(pathname: &str) -> Option<&str> {
-    for suffix in [
-        "/chat/completions",
-        "/responses",
-        "/messages",
-        "/models",
-    ] {
-        if pathname.ends_with(suffix) {
-            return Some(suffix);
-        }
-    }
-
-    if let Some(index) = pathname.find("/models/") {
-        if pathname.ends_with(":streamGenerateContent") {
-            return Some(&pathname[index..]);
-        }
-    }
-
-    None
-}
-
-fn get_normalized_pathname(base_url: &str) -> Option<String> {
-    Url::parse(base_url)
-        .ok()
-        .map(|url| normalize_pathname(url.path()))
-}
-
-fn normalize_pathname(pathname: &str) -> String {
-    let trimmed = pathname.trim_end_matches('/');
-    if trimmed.is_empty() {
-        "/".to_string()
-    } else {
-        trimmed.to_string()
-    }
-}
 
 fn build_header_map(
     headers: &HashMap<String, String>,
@@ -445,55 +359,15 @@ pub fn fetch_available_models(
     Ok(models)
 }
 
-pub fn get_active_custom_headers(
-    schemes: &[CustomHeaderSchemeRecord],
-) -> HashMap<String, String> {
-    let active = schemes.iter().find(|scheme| scheme.is_active);
-
-    let Some(scheme) = active else {
-        return HashMap::new();
-    };
-
-    let Ok(parsed) = serde_json::from_str::<Value>(&scheme.headers_json) else {
-        return HashMap::new();
-    };
-
-    let Some(object) = parsed.as_object() else {
-        return HashMap::new();
-    };
-
-    object
-        .iter()
-        .filter_map(|(key, value)| {
-            value
-                .as_str()
-                .map(|value| (key.clone(), value.to_string()))
-        })
-        .collect()
-}
-
 #[napi]
 pub fn fetch_available_models_for_active_config() -> Result<Vec<Model>> {
-    let storage_info = initialize_app_storage()?;
-    let database_path = std::path::PathBuf::from(storage_info.database_path);
-
-    let configs = crate::storage::services::api_configs::list_api_configs(&database_path)?;
-    let active_config = configs
-        .iter()
-        .find(|config| config.is_active)
-        .or_else(|| configs.first())
-        .ok_or_else(|| Error::from_reason("No API configuration found"))?;
-
-    let custom_header_schemes =
-        crate::storage::services::custom_header_schemes::list_custom_header_schemes(&database_path)?;
-    let custom_headers = get_active_custom_headers(&custom_header_schemes);
-
+    let context = get_active_api_request_context()?;
     let config = ApiConfigForModels {
-        base_url: active_config.base_url.clone(),
-        base_url_mode: active_config.base_url_mode.clone(),
-        api_key: active_config.api_key.clone(),
-        request_method: active_config.request_method.clone(),
+        base_url: context.api_config.base_url,
+        base_url_mode: context.api_config.base_url_mode,
+        api_key: context.api_config.api_key,
+        request_method: context.api_config.request_method,
     };
 
-    fetch_available_models(&config, &custom_headers)
+    fetch_available_models(&config, &context.custom_headers)
 }

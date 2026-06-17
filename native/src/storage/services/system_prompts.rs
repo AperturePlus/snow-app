@@ -71,6 +71,7 @@ fn upsert_system_prompt_with_connection(
 ) -> rusqlite::Result<()> {
     connection.execute(
         "INSERT INTO system_prompts (
+           id,
            prompt_id,
            name,
            content,
@@ -79,7 +80,7 @@ fn upsert_system_prompt_with_connection(
            created_at,
            updated_at
          ) VALUES (
-           ?1, ?2, ?3, ?4, ?5, datetime('now'), datetime('now')
+           ?1, ?2, ?3, ?4, ?5, ?6, datetime('now'), datetime('now')
          )
          ON CONFLICT(prompt_id) DO UPDATE SET
            name = excluded.name,
@@ -88,6 +89,7 @@ fn upsert_system_prompt_with_connection(
            sort_order = excluded.sort_order,
            updated_at = datetime('now')",
         params![
+            database::create_snowflake_id(),
             item.prompt_id,
             item.name,
             item.content,

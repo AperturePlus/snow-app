@@ -190,6 +190,7 @@ fn upsert_workspace_directory_with_connection(
 ) -> rusqlite::Result<()> {
     connection.execute(
         "INSERT INTO workspace_directories (
+           id,
            directory_id,
            name,
            path,
@@ -200,7 +201,7 @@ fn upsert_workspace_directory_with_connection(
            created_at,
            updated_at
          ) VALUES (
-           ?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'), datetime('now')
+           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, datetime('now'), datetime('now')
          )
          ON CONFLICT(directory_id) DO UPDATE SET
            name = excluded.name,
@@ -211,6 +212,7 @@ fn upsert_workspace_directory_with_connection(
            source = excluded.source,
            updated_at = datetime('now')",
         params![
+            database::create_snowflake_id(),
             item.directory_id,
             item.name,
             item.path,

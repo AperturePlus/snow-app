@@ -22,12 +22,20 @@ import {
   toConfigUpdatePayload,
 } from "./configThinking";
 import type { ChatInputActions, ChatInputState } from "./types";
-
 type UseChatInputControllerParams = {
-  onSend?: (message: string) => void;
+  onSend?: (message: string, options: { model?: string }) => void;
 };
 
 type UseChatInputControllerResult = ChatInputState & ChatInputActions;
+
+const isComposingKeyboardEvent = (
+  event: React.KeyboardEvent<HTMLElement>
+): boolean => {
+  const nativeEvent = event.nativeEvent;
+  const nativeEventWithKeyCode = nativeEvent as unknown as { keyCode?: number };
+
+  return nativeEvent.isComposing || nativeEventWithKeyCode.keyCode === 229;
+};
 
 export const useChatInputController = ({
   onSend,
@@ -58,6 +66,12 @@ export const useChatInputController = ({
       selectModel: t("chat.selectModel", { defaultValue: "Select model" }),
       loadModelsError: t("chat.loadModelsError", {
         defaultValue: "Failed to load models",
+      }),
+      loadingModels: t("chat.loadingModels", {
+        defaultValue: "Loading models...",
+      }),
+      refreshModels: t("chat.refreshModels", {
+        defaultValue: "Refresh models",
       }),
       manualModel: t("chat.manualModel", {
         defaultValue: "Enter model manually",
@@ -223,7 +237,7 @@ export const useChatInputController = ({
       return;
     }
 
-    onSend?.(trimmed);
+    onSend?.(trimmed, { model: selectedModel || undefined });
     setValue("");
 
     if (textareaRef.current) {
@@ -231,11 +245,15 @@ export const useChatInputController = ({
         adjustHeight();
       });
     }
-  }, [adjustHeight, onSend, value]);
+  }, [adjustHeight, onSend, selectedModel, value]);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (event.key !== "Enter" || event.shiftKey) {
+      if (
+        event.key !== "Enter" ||
+        event.shiftKey ||
+        isComposingKeyboardEvent(event)
+      ) {
         return;
       }
 
@@ -268,6 +286,10 @@ export const useChatInputController = ({
   const handleManualKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
       if (event.key === "Enter") {
+        if (isComposingKeyboardEvent(event)) {
+          return;
+        }
+
         event.preventDefault();
         handleConfirmManualModel();
       } else if (event.key === "Escape") {

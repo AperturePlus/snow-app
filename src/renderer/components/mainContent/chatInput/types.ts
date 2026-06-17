@@ -1,10 +1,13 @@
 import type { RefObject } from "react";
 import type { LucideIcon } from "lucide-react";
 import type { ApiConfigRecord, Model } from "../../../../preload";
+export type ChatInputSendOptions = {
+  model?: string;
+};
 
 export type ChatInputProps = {
   placeholder?: string;
-  onSend?: (message: string) => void;
+  onSend?: (message: string, options: ChatInputSendOptions) => void;
 };
 
 export type RequestMethod = "chat" | "responses" | "gemini" | "anthropic";
@@ -44,6 +47,8 @@ export type ChatInputState = {
 export type ChatInputLabels = {
   selectModel: string;
   loadModelsError: string;
+  loadingModels: string;
+  refreshModels: string;
   manualModel: string;
   manualModelPlaceholder: string;
   noModelsFound: string;

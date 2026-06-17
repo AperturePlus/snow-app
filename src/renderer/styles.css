@@ -1450,7 +1450,7 @@ input {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: min(100%, 320px);
+  width: 100%;
   padding: 6px 8px;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
@@ -2033,6 +2033,43 @@ input {
   gap: 10px;
 }
 
+.chat-message-group.is-sending .ai-message {
+  color: var(--text-secondary);
+}
+
+.chat-message-group.is-sending .ai-message-summary p {
+  color: var(--text-tertiary);
+}
+
+.ai-message-summary.is-streaming::after,
+.stream-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 3px;
+  border-radius: 1px;
+  background: currentColor;
+  vertical-align: -0.15em;
+  animation: stream-cursor-blink 1s steps(2, start) infinite;
+  content: "";
+}
+
+@keyframes stream-cursor-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+
+  46%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.chat-message-group.is-error .ai-message {
+  color: var(--accent-red-text);
+}
+
 .user-message-action-btn,
 .ai-response-action-btn {
   display: inline-flex;
@@ -2207,6 +2244,76 @@ input {
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 12px;
+}
+
+.ai-message pre {
+  overflow-x: auto;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+}
+
+.ai-message pre code {
+  padding: 0;
+  background: transparent;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.ai-message blockquote {
+  margin: 0 0 14px;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.ai-message ul {
+  margin-top: 0;
+  margin-bottom: 14px;
+  padding-left: 24px;
+}
+
+.ai-message-thinking {
+  margin-bottom: 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-muted);
+}
+
+.ai-message-thinking summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 650;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ai-message-thinking summary::marker,
+.ai-message-thinking summary::-webkit-details-marker {
+  display: none;
+  content: "";
+}
+
+.ai-message-thinking svg {
+  flex-shrink: 0;
+  color: var(--accent-blue);
+}
+
+.ai-message-thinking-body {
+  padding: 0 12px 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.ai-message-thinking-body p {
+  margin-bottom: 10px;
 }
 
 /* File Changes Card */
@@ -2404,7 +2511,6 @@ input {
 
 .send-btn:disabled {
   opacity: 0.4;
-  cursor: not-allowed;
 }
 
 /* ===== Model Selector ===== */
@@ -2434,11 +2540,6 @@ input {
   color: var(--text-danger, #ef4444);
 }
 
-.toolbar-btn.model:disabled {
-  opacity: 0.7;
-  cursor: wait;
-}
-
 .model-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2461,6 +2562,23 @@ input {
   background: var(--bg-secondary);
   box-shadow: var(--island-shadow);
   z-index: 100;
+}
+
+.model-dropdown-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px;
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+
+.model-dropdown-status svg {
+  flex-shrink: 0;
 }
 
 .model-dropdown-error {
@@ -2490,6 +2608,11 @@ input {
   font-size: 11px;
   cursor: pointer;
   text-decoration: underline;
+}
+
+.model-dropdown-retry:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 .model-dropdown-list {
@@ -2561,6 +2684,13 @@ input {
   border-top: 1px solid var(--border-light);
 }
 
+.model-dropdown-footer-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.model-dropdown-action,
 .model-dropdown-manual {
   display: flex;
   align-items: center;
@@ -2575,10 +2705,30 @@ input {
   cursor: pointer;
   text-align: left;
 }
+
+.model-dropdown-action span,
+.model-dropdown-manual span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-dropdown-action:hover,
 .model-dropdown-manual:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+
+.model-dropdown-action:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.model-dropdown-action:disabled:hover {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
 .thinking-dropdown {
   min-width: 200px;
   max-width: 240px;

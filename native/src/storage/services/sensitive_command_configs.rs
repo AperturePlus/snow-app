@@ -98,6 +98,7 @@ fn seed_defaults_with_connection(connection: &Connection) -> rusqlite::Result<()
     for (index, command) in PRESET_SENSITIVE_COMMANDS.iter().enumerate() {
         connection.execute(
             "INSERT OR IGNORE INTO sensitive_command_configs (
+               id,
                command_id,
                scope,
                pattern,
@@ -108,8 +109,9 @@ fn seed_defaults_with_connection(connection: &Connection) -> rusqlite::Result<()
                source,
                created_at,
                updated_at
-             ) VALUES (?1, 'global', ?2, ?3, ?4, 1, ?5, 'preset', datetime('now'), datetime('now'))",
+             ) VALUES (?1, ?2, 'global', ?3, ?4, ?5, 1, ?6, 'preset', datetime('now'), datetime('now'))",
             params![
+                database::create_snowflake_id(),
                 command.command_id,
                 command.pattern,
                 command.description,
@@ -167,6 +169,7 @@ fn upsert_sensitive_command_config_with_connection(
 ) -> rusqlite::Result<()> {
     connection.execute(
         "INSERT INTO sensitive_command_configs (
+           id,
            command_id,
            scope,
            pattern,
@@ -177,7 +180,7 @@ fn upsert_sensitive_command_config_with_connection(
            source,
            created_at,
            updated_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, datetime('now'), datetime('now'))
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'), datetime('now'))
          ON CONFLICT(scope, command_id) DO UPDATE SET
            pattern = excluded.pattern,
            description = excluded.description,
@@ -187,6 +190,7 @@ fn upsert_sensitive_command_config_with_connection(
            source = excluded.source,
            updated_at = datetime('now')",
         params![
+            database::create_snowflake_id(),
             item.command_id,
             item.scope,
             item.pattern,

@@ -29,7 +29,7 @@ export type ApiConfigInput = {
 };
 
 export type ApiConfigRecord = ApiConfigInput & {
-  id: number;
+  id: string;
   updatedAt: string;
 };
 
@@ -59,7 +59,7 @@ export type CodebaseSettingsInput = {
 };
 
 export type CodebaseSettingsRecord = CodebaseSettingsInput & {
-  id: number;
+  id: string;
   updatedAt: string;
 };
 
@@ -72,7 +72,7 @@ export type SystemPromptItemInput = {
 };
 
 export type SystemPromptItemRecord = SystemPromptItemInput & {
-  id: number;
+  id: string;
   updatedAt: string;
 };
 
@@ -85,7 +85,7 @@ export type CustomHeaderSchemeInput = {
 };
 
 export type CustomHeaderSchemeRecord = CustomHeaderSchemeInput & {
-  id: number;
+  id: string;
   updatedAt: string;
 };
 
@@ -102,7 +102,7 @@ export type WorkspaceDirectoryInput = {
 };
 
 export type WorkspaceDirectoryRecord = WorkspaceDirectoryInput & {
-  id: number;
+  id: string;
   updatedAt: string;
 };
 
@@ -123,7 +123,7 @@ export type McpServerConfigInput = {
 };
 
 export type McpServerConfigRecord = Omit<McpServerConfigInput, "timeoutMs"> & {
-  id: number;
+  id: string;
   timeoutMs: number | null;
   updatedAt: string;
 };
@@ -140,7 +140,7 @@ export type SensitiveCommandConfigInput = {
 };
 
 export type SensitiveCommandConfigRecord = SensitiveCommandConfigInput & {
-  id: number;
+  id: string;
   updatedAt: string;
 };
 
@@ -155,6 +155,34 @@ export type ApiModelsConfig = {
   baseUrlMode: string;
   apiKey: string;
   requestMethod: string;
+};
+
+export type ResponsesApiMessage = {
+  role: "user" | "assistant" | "system" | "developer";
+  content: string;
+};
+
+export type ResponsesApiRequest = {
+  messages: ResponsesApiMessage[];
+  model?: string;
+  conversationId?: string;
+  previousResponseId?: string;
+};
+
+export type ResponsesApiResult = {
+  id: string;
+  conversationId: string;
+  content: string;
+  thinking: string;
+  model: string;
+  status: string;
+};
+
+export type ResponsesApiStreamChunk = {
+  contentDelta: string;
+  thinkingDelta: string;
+  content: string;
+  thinking: string;
 };
 
 export type NativeBridge = {
@@ -190,6 +218,10 @@ export type NativeBridge = {
   deleteSensitiveCommandConfig: (commandId: string, scope: string) => void;
   fetchAvailableModels: () => Model[];
   fetchAvailableModelsForConfig: (config: ApiModelsConfig) => Model[];
+  createResponseStream: (
+    request: ResponsesApiRequest,
+    onChunk: (chunk: ResponsesApiStreamChunk) => void
+  ) => ResponsesApiResult;
   engineInfo: () => string;
   sum: (a: number, b: number) => number;
 };

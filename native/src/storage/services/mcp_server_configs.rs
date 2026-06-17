@@ -81,6 +81,7 @@ fn upsert_mcp_server_config_with_connection(
 ) -> rusqlite::Result<()> {
     connection.execute(
         "INSERT INTO mcp_server_configs (
+           id,
            server_id,
            scope,
            name,
@@ -97,7 +98,7 @@ fn upsert_mcp_server_config_with_connection(
            created_at,
            updated_at
          ) VALUES (
-           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, datetime('now'), datetime('now')
+           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, datetime('now'), datetime('now')
          )
          ON CONFLICT(server_id) DO UPDATE SET
            scope = excluded.scope,
@@ -114,6 +115,7 @@ fn upsert_mcp_server_config_with_connection(
            source = excluded.source,
            updated_at = datetime('now')",
         params![
+            database::create_snowflake_id(),
             item.server_id,
             item.scope,
             item.name,

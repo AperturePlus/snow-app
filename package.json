@@ -19,11 +19,13 @@
     "@electron-toolkit/utils": "^4.0.0",
     "@napi-rs/triples": "^1.2.0",
     "lucide-react": "^1.17.0",
+    "markdown-it": "^14.2.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.1.5",
+    "@types/markdown-it": "^14.1.2",
     "@types/node": "^24.3.0",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",

@@ -39,6 +39,8 @@ export const en = {
   "chat.manualModelPlaceholder": "e.g. gpt-4.1",
   "chat.noModelsFound": "No models found",
   "chat.loadModelsError": "Failed to load models",
+  "chat.loadingModels": "Loading models...",
+  "chat.refreshModels": "Refresh models",
   "common.cancel": "Cancel",
   "common.confirm": "Confirm",
   "common.retry": "Retry",

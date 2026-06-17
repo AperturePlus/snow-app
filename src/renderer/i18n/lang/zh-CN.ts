@@ -39,6 +39,8 @@ export const zhCN = {
   "chat.manualModelPlaceholder": "例如 gpt-4.1",
   "chat.noModelsFound": "未找到模型",
   "chat.loadModelsError": "加载模型失败",
+  "chat.loadingModels": "正在加载模型...",
+  "chat.refreshModels": "重新获取模型",
   "common.cancel": "取消",
   "common.confirm": "确认",
   "common.retry": "重试",

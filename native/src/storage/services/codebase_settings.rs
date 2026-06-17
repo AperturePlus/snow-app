@@ -29,6 +29,7 @@ pub fn upsert_codebase_settings(
 fn seed_default_codebase_settings(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute(
         "INSERT OR IGNORE INTO codebase_settings (
+           id,
            profile_name,
            enabled,
            enable_agent_review,
@@ -54,10 +55,10 @@ fn seed_default_codebase_settings(connection: &Connection) -> rusqlite::Result<(
            created_at,
            updated_at
          ) VALUES (
-           ?1, 0, 1, 0, 'jina', '', '', '', 1536, 10, 3, 200, 10, 20, 20,
+           ?1, ?2, 0, 1, 0, 'jina', '', '', '', 1536, 10, 3, 200, 10, 20, 20,
            '', '', '', 4096, 5, '{}', 'default', datetime('now'), datetime('now')
          )",
-        [DEFAULT_PROFILE_NAME],
+        params![database::create_snowflake_id(), DEFAULT_PROFILE_NAME],
     )?;
 
     Ok(())
@@ -133,6 +134,7 @@ fn upsert_codebase_settings_with_connection(
 ) -> rusqlite::Result<()> {
     connection.execute(
         "INSERT INTO codebase_settings (
+           id,
            profile_name,
            enabled,
            enable_agent_review,
@@ -159,7 +161,7 @@ fn upsert_codebase_settings_with_connection(
            updated_at
          ) VALUES (
            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
-           ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22,
+           ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23,
            datetime('now'), datetime('now')
          )
          ON CONFLICT(profile_name) DO UPDATE SET
@@ -192,6 +194,7 @@ fn upsert_codebase_settings_with_connection(
            source = excluded.source,
            updated_at = datetime('now')",
         params![
+            database::create_snowflake_id(),
             settings.profile_name,
             settings.enabled as i32,
             settings.enable_agent_review as i32,

@@ -1,6 +1,6 @@
 import { AiResponse } from "./AiResponse";
 import { UserMessage } from "./UserMessage";
-import type { ChatConversationMessage } from "./useMockChatConversation";
+import type { ChatConversationMessage } from "./useChatConversation";
 
 type ChatMessageListProps = {
   messages: ChatConversationMessage[];
@@ -15,9 +15,17 @@ export const ChatMessageList = ({
         return <UserMessage content={message.content} key={message.id} />;
       }
 
+      const className = `chat-message-group ${
+        message.status ? `is-${message.status}` : ""
+      }`.trim();
+
       return (
-        <div className="chat-message-group" key={message.id}>
-          <AiResponse title="AI 响应" summary={<p>{message.content}</p>} />
+        <div className={className} key={message.id}>
+          <AiResponse
+            isStreaming={message.status === "sending"}
+            summary={message.content}
+            thinking={message.thinking}
+          />
         </div>
       );
     })}

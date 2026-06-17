@@ -94,6 +94,7 @@ fn upsert_custom_header_scheme_with_connection(
 ) -> rusqlite::Result<()> {
     connection.execute(
         "INSERT INTO custom_header_schemes (
+           id,
            scheme_id,
            name,
            headers_json,
@@ -102,7 +103,7 @@ fn upsert_custom_header_scheme_with_connection(
            created_at,
            updated_at
          ) VALUES (
-           ?1, ?2, ?3, ?4, ?5, datetime('now'), datetime('now')
+           ?1, ?2, ?3, ?4, ?5, ?6, datetime('now'), datetime('now')
          )
          ON CONFLICT(scheme_id) DO UPDATE SET
            name = excluded.name,
@@ -111,6 +112,7 @@ fn upsert_custom_header_scheme_with_connection(
            sort_order = excluded.sort_order,
            updated_at = datetime('now')",
         params![
+            database::create_snowflake_id(),
             item.scheme_id,
             item.name,
             item.headers_json,

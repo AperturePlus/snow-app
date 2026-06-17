@@ -3,8 +3,8 @@ export { AiResponseActions } from "./AiResponseActions";
 export { ChatMessageList } from "./ChatMessageList";
 export { UserMessage } from "./UserMessage";
 export { UserMessageActions } from "./UserMessageActions";
-export { useMockChatConversation } from "./useMockChatConversation";
-export type { ChatConversationMessage } from "./useMockChatConversation";
+export { useChatConversation } from "./useChatConversation";
+export type { ChatConversationMessage } from "./useChatConversation";
 export type {
   AiResponseProps,
   AiResponseSection,

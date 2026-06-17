@@ -1,16 +1,16 @@
-import type { ReactNode } from "react";
-
 export type UserMessageProps = {
   content: string;
 };
 
 export type AiResponseSection = {
   title: string;
-  body: ReactNode;
+  body: string;
 };
 
 export type AiResponseProps = {
-  title: string;
-  summary: ReactNode;
+  title?: string;
+  summary: string;
+  thinking?: string;
   sections?: AiResponseSection[];
+  isStreaming?: boolean;
 };

@@ -8,6 +8,7 @@ import {
   Keyboard,
   Loader2,
   Plus,
+  RefreshCw,
 } from "lucide-react";
 import type { ChatInputViewProps } from "./types";
 
@@ -80,12 +81,9 @@ export const ChatInputView = ({
             aria-label={labels.selectModel}
             aria-expanded={isDropdownOpen}
             onClick={handleToggleModelDropdown}
-            disabled={isLoadingModels}
             type="button"
           >
-            {isLoadingModels ? (
-              <Loader2 size={14} className="model-icon spin" />
-            ) : modelError ? (
+            {modelError ? (
               <AlertCircle size={14} className="model-icon" />
             ) : (
               <Bot size={14} className="model-icon" />
@@ -131,6 +129,12 @@ export const ChatInputView = ({
                 </div>
               ) : (
                 <>
+                  {isLoadingModels && (
+                    <div className="model-dropdown-status" aria-live="polite">
+                      <Loader2 size={14} className="spin" />
+                      <span>{labels.loadingModels}</span>
+                    </div>
+                  )}
                   {modelError && (
                     <div className="model-dropdown-error">
                       <AlertCircle size={14} />
@@ -138,6 +142,7 @@ export const ChatInputView = ({
                       <button
                         className="model-dropdown-retry"
                         onClick={handleRetryFetchModels}
+                        disabled={isLoadingModels}
                         type="button"
                       >
                         {labels.retry}
@@ -169,9 +174,19 @@ export const ChatInputView = ({
                       </button>
                     ))}
                   </div>
-                  <div className="model-dropdown-footer">
+                  <div className="model-dropdown-footer model-dropdown-footer-actions">
                     <button
-                      className="model-dropdown-manual"
+                      className="model-dropdown-action"
+                      onClick={handleRetryFetchModels}
+                      disabled={isLoadingModels}
+                      title={labels.refreshModels}
+                      type="button"
+                    >
+                      <RefreshCw size={14} />
+                      <span>{labels.refreshModels}</span>
+                    </button>
+                    <button
+                      className="model-dropdown-action"
                       onClick={handleOpenManualMode}
                       type="button"
                     >
@@ -192,7 +207,9 @@ export const ChatInputView = ({
             aria-label="Thinking strength"
             aria-expanded={isThinkingDropdownOpen}
             onClick={() => setIsThinkingDropdownOpen((open) => !open)}
-            disabled={!activeApiConfig || isLoadingApiConfig || isSavingThinking}
+            disabled={
+              !activeApiConfig || isLoadingApiConfig || isSavingThinking
+            }
             title={
               thinkingError ??
               (isLoadingApiConfig

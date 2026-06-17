@@ -39,6 +39,8 @@ export const zhTW = {
   "chat.manualModelPlaceholder": "例如 gpt-4.1",
   "chat.noModelsFound": "未找到模型",
   "chat.loadModelsError": "載入模型失敗",
+  "chat.loadingModels": "正在載入模型...",
+  "chat.refreshModels": "重新取得模型",
   "common.cancel": "取消",
   "common.confirm": "確認",
   "common.retry": "重試",
