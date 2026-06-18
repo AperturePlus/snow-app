@@ -221,7 +221,7 @@ export type NativeBridge = {
   createResponseStream: (
     request: ResponsesApiRequest,
     onChunk: (chunk: ResponsesApiStreamChunk) => void
-  ) => ResponsesApiResult;
+  ) => Promise<ResponsesApiResult>;
   engineInfo: () => string;
   sum: (a: number, b: number) => number;
 };

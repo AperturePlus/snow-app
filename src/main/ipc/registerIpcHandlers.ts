@@ -178,7 +178,7 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
       const normalizedRequest = normalizeResponsesApiRequest(request);
       const normalizedStreamId = normalizeCreateResponseStreamId(streamId);
 
-      return native.createResponseStream(
+      return await native.createResponseStream(
         normalizedRequest,
         (chunk: ResponsesApiStreamChunk) => {
           if (event.sender.isDestroyed()) {

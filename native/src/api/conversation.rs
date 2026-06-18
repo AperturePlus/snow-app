@@ -26,27 +26,33 @@ pub struct PreparedConversationRequest {
     pub current_messages: Vec<ChatContextMessage>,
 }
 
-pub fn create_response_stream(
+pub async fn create_response_stream(
     request: ResponsesApiRequest,
-    on_chunk: ResponsesApiStreamCallback<'_>,
+    on_chunk: ResponsesApiStreamCallback,
 ) -> Result<ResponsesApiResult> {
     let context = get_active_api_request_context()?;
 
     match context.api_config.request_method.as_str() {
-        "chat" => create_chat_completion_response_stream(
-            request,
-            context.database_path,
-            context.api_config,
-            context.custom_headers,
-            on_chunk,
-        ),
-        "responses" => create_response_stream_with_context(
-            request,
-            context.database_path,
-            context.api_config,
-            context.custom_headers,
-            on_chunk,
-        ),
+        "chat" => {
+            create_chat_completion_response_stream(
+                request,
+                context.database_path,
+                context.api_config,
+                context.custom_headers,
+                on_chunk,
+            )
+            .await
+        }
+        "responses" => {
+            create_response_stream_with_context(
+                request,
+                context.database_path,
+                context.api_config,
+                context.custom_headers,
+                on_chunk,
+            )
+            .await
+        }
         request_method => Err(Error::from_reason(format!(
             "Unsupported chat request method '{}'. Please switch the active API request method to Chat or Responses.",
             request_method

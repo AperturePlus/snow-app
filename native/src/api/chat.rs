@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use futures::StreamExt;
 use napi::bindgen_prelude::*;
+use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT_ENCODING, AUTHORIZATION, CONTENT_TYPE};
 use serde_json::{json, Value};
 
@@ -16,48 +17,14 @@ use crate::storage::services::chat_conversations::{
 };
 use crate::storage::ApiConfigRecord;
 
-pub fn create_chat_completion_response_stream(
+pub async fn create_chat_completion_response_stream(
     request: ResponsesApiRequest,
     database_path: PathBuf,
     api_config: ApiConfigRecord,
     custom_headers: HashMap<String, String>,
-    on_chunk: ResponsesApiStreamCallback<'_>,
+    on_chunk: ResponsesApiStreamCallback,
 ) -> Result<ResponsesApiResult> {
-    create_chat_completion_response_internal(
-        request,
-        database_path,
-        api_config,
-        custom_headers,
-        Some(on_chunk),
-    )
-}
-
-fn create_chat_completion_response_internal(
-    request: ResponsesApiRequest,
-    database_path: PathBuf,
-    api_config: ApiConfigRecord,
-    custom_headers: HashMap<String, String>,
-    on_chunk: Option<ResponsesApiStreamCallback<'_>>,
-) -> Result<ResponsesApiResult> {
-    if request.messages.is_empty() {
-        return Err(Error::from_reason("At least one chat message is required"));
-    }
-
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| Error::from_reason(format!("Failed to create async runtime: {}", error)))?;
-
-    runtime.block_on(async move {
-        create_chat_completion_response_async(
-            request,
-            database_path,
-            api_config,
-            custom_headers,
-            on_chunk.as_ref(),
-        )
-        .await
-    })
+    create_chat_completion_response_async(request, database_path, api_config, custom_headers, &on_chunk).await
 }
 
 async fn create_chat_completion_response_async(
@@ -65,8 +32,12 @@ async fn create_chat_completion_response_async(
     database_path: PathBuf,
     api_config: ApiConfigRecord,
     custom_headers: HashMap<String, String>,
-    on_chunk: Option<&ResponsesApiStreamCallback<'_>>,
+    on_chunk: &ResponsesApiStreamCallback,
 ) -> Result<ResponsesApiResult> {
+    if request.messages.is_empty() {
+        return Err(Error::from_reason("At least one chat message is required"));
+    }
+
     let api_key = api_config.api_key.trim();
     if api_key.is_empty() {
         return Err(Error::from_reason(
@@ -259,7 +230,7 @@ async fn collect_chat_completions_stream(
     api_key: &str,
     custom_headers: &HashMap<String, String>,
     payload: Value,
-    on_chunk: Option<&ResponsesApiStreamCallback<'_>>,
+    on_chunk: &ResponsesApiStreamCallback,
 ) -> Result<ChatCompletionStreamResult> {
     let response = client
         .post(endpoint)
@@ -310,13 +281,9 @@ async fn collect_chat_completions_stream(
                 &mut response_status,
                 &mut token_usage,
             )?;
-            emit_chat_completion_stream_chunk(
-                on_chunk,
-                &content_chunks[content_start_index..],
-                &thinking_chunks[thinking_start_index..],
-                &content_chunks,
-                &thinking_chunks,
-            )?;
+            let content_delta = content_chunks[content_start_index..].join("");
+            let thinking_delta = thinking_chunks[thinking_start_index..].join("");
+            emit_chat_completion_stream_chunk(on_chunk, content_delta, thinking_delta);
         }
     }
 
@@ -334,13 +301,9 @@ async fn collect_chat_completions_stream(
             &mut response_status,
             &mut token_usage,
         )?;
-        emit_chat_completion_stream_chunk(
-            on_chunk,
-            &content_chunks[content_start_index..],
-            &thinking_chunks[thinking_start_index..],
-            &content_chunks,
-            &thinking_chunks,
-        )?;
+        let content_delta = content_chunks[content_start_index..].join("");
+        let thinking_delta = thinking_chunks[thinking_start_index..].join("");
+        emit_chat_completion_stream_chunk(on_chunk, content_delta, thinking_delta);
     }
 
     let content = content_chunks.join("").trim().to_string();
@@ -460,29 +423,29 @@ fn process_chat_completion_event(
     Ok(())
 }
 
+/// Emit a streaming chunk to the JavaScript side via ThreadsafeFunction.
+///
+/// Only the delta strings are sent; the `content` and `thinking` fields are
+/// left empty to avoid O(n^2) data transfer. The renderer accumulates deltas
+/// locally and the final complete text arrives via the resolved Promise.
 fn emit_chat_completion_stream_chunk(
-    on_chunk: Option<&ResponsesApiStreamCallback<'_>>,
-    content_delta_chunks: &[String],
-    thinking_delta_chunks: &[String],
-    content_chunks: &[String],
-    thinking_chunks: &[String],
-) -> Result<()> {
-    let content_delta = content_delta_chunks.join("");
-    let thinking_delta = thinking_delta_chunks.join("");
+    on_chunk: &ResponsesApiStreamCallback,
+    content_delta: String,
+    thinking_delta: String,
+) {
     if content_delta.is_empty() && thinking_delta.is_empty() {
-        return Ok(());
+        return;
     }
 
-    if let Some(on_chunk) = on_chunk {
-        on_chunk.call(ResponsesApiStreamChunk {
+    on_chunk.call(
+        ResponsesApiStreamChunk {
             content_delta,
             thinking_delta,
-            content: content_chunks.join(""),
-            thinking: thinking_chunks.join(""),
-        })?;
-    }
-
-    Ok(())
+            content: String::new(),
+            thinking: String::new(),
+        },
+        ThreadsafeFunctionCallMode::NonBlocking,
+    );
 }
 
 fn build_header_map(api_key: &str, custom_headers: &HashMap<String, String>) -> Result<HeaderMap> {

@@ -5,6 +5,7 @@ use std::pin::Pin;
 use async_openai::{config::OpenAIConfig, error::OpenAIError, Client};
 use futures::{Stream, StreamExt};
 use napi::bindgen_prelude::*;
+use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::{json, Value};
@@ -50,50 +51,25 @@ pub struct ResponsesApiStreamChunk {
     pub thinking: String,
 }
 
-pub type ResponsesApiStreamCallback<'a> = Function<'a, ResponsesApiStreamChunk, ()>;
+/// ThreadsafeFunction variant of the streaming callback.
+///
+/// Using `CalleeHandled = false` so the JavaScript callback receives the chunk
+/// directly as its first argument (no error-first `null`), matching the existing
+/// `(chunk: ResponsesApiStreamChunk) => void` signature on the JS side.
+///
+/// `ThreadsafeFunction` is `Send + Sync`, which allows it to be called from the
+/// background tokio worker thread without blocking the Node.js main thread.
+pub type ResponsesApiStreamCallback =
+    ThreadsafeFunction<ResponsesApiStreamChunk, Unknown<'static>, ResponsesApiStreamChunk, Status, false>;
 
-pub fn create_response_stream_with_context(
+pub async fn create_response_stream_with_context(
     request: ResponsesApiRequest,
     database_path: PathBuf,
     api_config: ApiConfigRecord,
     custom_headers: HashMap<String, String>,
-    on_chunk: ResponsesApiStreamCallback<'_>,
+    on_chunk: ResponsesApiStreamCallback,
 ) -> Result<ResponsesApiResult> {
-    create_response_with_context_internal(
-        request,
-        database_path,
-        api_config,
-        custom_headers,
-        Some(on_chunk),
-    )
-}
-
-fn create_response_with_context_internal(
-    request: ResponsesApiRequest,
-    database_path: PathBuf,
-    api_config: ApiConfigRecord,
-    custom_headers: HashMap<String, String>,
-    on_chunk: Option<ResponsesApiStreamCallback<'_>>,
-) -> Result<ResponsesApiResult> {
-    if request.messages.is_empty() {
-        return Err(Error::from_reason("At least one chat message is required"));
-    }
-
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| Error::from_reason(format!("Failed to create async runtime: {}", error)))?;
-
-    runtime.block_on(async move {
-        create_response_async(
-            request,
-            database_path,
-            api_config,
-            custom_headers,
-            on_chunk.as_ref(),
-        )
-        .await
-    })
+    create_response_async(request, database_path, api_config, custom_headers, &on_chunk).await
 }
 
 async fn create_response_async(
@@ -101,7 +77,7 @@ async fn create_response_async(
     database_path: PathBuf,
     api_config: ApiConfigRecord,
     custom_headers: HashMap<String, String>,
-    on_chunk: Option<&ResponsesApiStreamCallback<'_>>,
+    on_chunk: &ResponsesApiStreamCallback,
 ) -> Result<ResponsesApiResult> {
     if api_config.request_method != "responses" {
         return Err(Error::from_reason(
@@ -329,7 +305,7 @@ struct StreamingResponseResult {
 async fn collect_streaming_response(
     client: &Client<OpenAIConfig>,
     payload: Value,
-    on_chunk: Option<&ResponsesApiStreamCallback<'_>>,
+    on_chunk: &ResponsesApiStreamCallback,
 ) -> Result<StreamingResponseResult> {
     let mut stream: ResponseValueStream = client
         .responses()
@@ -370,26 +346,14 @@ async fn collect_streaming_response(
                 let content_delta = read_stream_text_delta(event.get("delta"));
                 if !content_delta.is_empty() {
                     content_chunks.push(content_delta.clone());
-                    emit_stream_chunk(
-                        on_chunk,
-                        content_delta,
-                        String::new(),
-                        &content_chunks,
-                        &thinking_chunks,
-                    )?;
+                    emit_stream_chunk(on_chunk, content_delta, String::new());
                 }
             }
             "response.reasoning_summary_text.delta" => {
                 let thinking_delta = read_stream_text_delta(event.get("delta"));
                 if !thinking_delta.is_empty() {
                     thinking_chunks.push(thinking_delta.clone());
-                    emit_stream_chunk(
-                        on_chunk,
-                        String::new(),
-                        thinking_delta,
-                        &content_chunks,
-                        &thinking_chunks,
-                    )?;
+                    emit_stream_chunk(on_chunk, String::new(), thinking_delta);
                 }
             }
             "response.reasoning_summary.delta" => {
@@ -399,13 +363,7 @@ async fn collect_streaming_response(
                     let thinking_delta = delta_chunks.join("");
                     if !thinking_delta.is_empty() {
                         thinking_chunks.push(thinking_delta.clone());
-                        emit_stream_chunk(
-                            on_chunk,
-                            String::new(),
-                            thinking_delta,
-                            &content_chunks,
-                            &thinking_chunks,
-                        )?;
+                        emit_stream_chunk(on_chunk, String::new(), thinking_delta);
                     }
                 }
             }
@@ -490,27 +448,29 @@ fn read_stream_text_delta(value: Option<&Value>) -> String {
         .unwrap_or_default()
 }
 
+/// Emit a streaming chunk to the JavaScript side via ThreadsafeFunction.
+///
+/// Only the delta strings are sent; the `content` and `thinking` fields are
+/// left empty to avoid O(n^2) data transfer. The renderer accumulates deltas
+/// locally and the final complete text arrives via the resolved Promise.
 fn emit_stream_chunk(
-    on_chunk: Option<&ResponsesApiStreamCallback<'_>>,
+    on_chunk: &ResponsesApiStreamCallback,
     content_delta: String,
     thinking_delta: String,
-    content_chunks: &[String],
-    thinking_chunks: &[String],
-) -> Result<()> {
+) {
     if content_delta.is_empty() && thinking_delta.is_empty() {
-        return Ok(());
+        return;
     }
 
-    if let Some(on_chunk) = on_chunk {
-        on_chunk.call(ResponsesApiStreamChunk {
+    on_chunk.call(
+        ResponsesApiStreamChunk {
             content_delta,
             thinking_delta,
-            content: content_chunks.join(""),
-            thinking: thinking_chunks.join(""),
-        })?;
-    }
-
-    Ok(())
+            content: String::new(),
+            thinking: String::new(),
+        },
+        ThreadsafeFunctionCallMode::NonBlocking,
+    );
 }
 
 fn extract_token_usage(response: &Value) -> ChatTokenUsage {

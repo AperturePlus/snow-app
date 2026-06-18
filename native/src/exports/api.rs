@@ -31,10 +31,13 @@ pub fn fetch_available_models_for_config(config: ApiConfigForModels) -> napi::Re
     fetch_models_with_config(&config, &custom_headers)
 }
 
-#[napi]
-pub fn create_response_stream(
+#[napi(
+    ts_args_type = "request: ResponsesApiRequest, onChunk: (chunk: ResponsesApiStreamChunk) => void",
+    ts_return_type = "Promise<ResponsesApiResult>"
+)]
+pub async fn create_response_stream(
     request: ResponsesApiRequest,
-    on_chunk: ResponsesApiStreamCallback<'_>,
+    on_chunk: ResponsesApiStreamCallback,
 ) -> napi::Result<ResponsesApiResult> {
-    create_conversation_response_stream(request, on_chunk)
+    create_conversation_response_stream(request, on_chunk).await
 }
