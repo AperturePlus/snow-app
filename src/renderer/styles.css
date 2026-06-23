@@ -2045,24 +2045,23 @@ input {
 .stream-cursor {
   display: inline-block;
   width: 7px;
-  height: 1em;
-  margin-left: 3px;
-  border-radius: 1px;
+  height: 7px;
+  margin-left: 4px;
+  border-radius: 50%;
   background: currentColor;
-  vertical-align: -0.15em;
-  animation: stream-cursor-blink 1s steps(2, start) infinite;
+  vertical-align: 0.05em;
+  animation: stream-dot-pulse 1s ease-in-out infinite;
   content: "";
 }
 
-@keyframes stream-cursor-blink {
+@keyframes stream-dot-pulse {
   0%,
-  45% {
-    opacity: 1;
+  100% {
+    opacity: 0.25;
   }
 
-  46%,
-  100% {
-    opacity: 0;
+  50% {
+    opacity: 1;
   }
 }
 
@@ -2091,7 +2090,7 @@ input {
   background: var(--bg-tertiary);
   color: var(--text-primary);
   font-size: 14px;
-  font-weight: 520;
+  font-weight: 400;
   line-height: 1.5;
   white-space: pre-wrap;
 }
@@ -2276,22 +2275,28 @@ input {
 }
 
 .ai-message-thinking {
-  margin-bottom: 14px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
-  background: var(--surface-island-muted);
+  margin: 0 0 14px;
+  padding-left: 14px;
+  border-left: 4px solid var(--border-color);
+  color: var(--text-tertiary);
 }
 
 .ai-message-thinking summary {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 9px 12px;
+  gap: 4px;
+  width: fit-content;
+  padding: 0;
   color: var(--text-secondary);
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 650;
+  line-height: 1.45;
   cursor: pointer;
   user-select: none;
+}
+
+.ai-message-thinking summary:hover {
+  color: var(--text-primary);
 }
 
 .ai-message-thinking summary::marker,
@@ -2300,20 +2305,29 @@ input {
   content: "";
 }
 
-.ai-message-thinking svg {
+.ai-message-thinking-chevron {
   flex-shrink: 0;
-  color: var(--accent-blue);
+  color: currentColor;
+  transition: transform 0.14s ease;
+}
+
+.ai-message-thinking[open] .ai-message-thinking-chevron {
+  transform: rotate(90deg);
 }
 
 .ai-message-thinking-body {
-  padding: 0 12px 12px;
+  margin-top: 6px;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.65;
 }
 
 .ai-message-thinking-body p {
-  margin-bottom: 10px;
+  margin: 0 0 8px;
+}
+
+.ai-message-thinking-body p:last-child {
+  margin-bottom: 0;
 }
 
 /* File Changes Card */

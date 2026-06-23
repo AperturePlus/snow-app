@@ -1,4 +1,3 @@
-import { useEffect, useRef } from "react";
 import type { WorkspaceDirectoryRecord } from "../../../preload";
 import { ChatInput } from "./ChatInput";
 import { EmptyGreeting } from "./EmptyGreeting";
@@ -12,19 +11,11 @@ export const ChatContent = ({
   activeDirectory,
 }: ChatContentProps): React.JSX.Element => {
   const { messages, handleSendMessage } = useChatConversation();
-  const chatAreaRef = useRef<HTMLDivElement>(null);
   const hasMessages = messages.length > 0;
-
-  useEffect(() => {
-    chatAreaRef.current?.scrollTo({
-      top: chatAreaRef.current.scrollHeight,
-      behavior: "smooth",
-    });
-  }, [messages]);
 
   return (
     <>
-      <div className="chat-area" ref={chatAreaRef}>
+      <div className="chat-area">
         {hasMessages ? (
           <ChatMessageList messages={messages} />
         ) : (

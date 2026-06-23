@@ -1,5 +1,5 @@
 import MarkdownIt from "markdown-it";
-import { Brain } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useMemo } from "react";
 import { AiResponseActions } from "./AiResponseActions";
 import type { AiResponseProps } from "./types";
@@ -41,10 +41,14 @@ export const AiResponse = ({
       <div className="ai-message-content">
         {title ? <h2>{title}</h2> : null}
         {normalizedThinking ? (
-          <details className="ai-message-thinking" open>
+          <details className="ai-message-thinking">
             <summary>
-              <Brain size={15} aria-hidden="true" />
-              <span>Thinking</span>
+              <ChevronRight
+                className="ai-message-thinking-chevron"
+                size={16}
+                aria-hidden="true"
+              />
+              <span>思考过程</span>
             </summary>
             <MarkdownBlock
               className="ai-message-thinking-body"

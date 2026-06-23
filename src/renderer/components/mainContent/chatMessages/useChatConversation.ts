@@ -29,8 +29,6 @@ const createMessageId = (role: ChatConversationMessage["role"]): string =>
 const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : "AI 响应失败，请稍后重试。";
 
-const STREAMING_PLACEHOLDER = "正在思考...";
-
 export const useChatConversation = (): UseChatConversationResult => {
   const [messages, setMessages] = useState<ChatConversationMessage[]>([]);
   const conversationIdRef = useRef<string | undefined>(undefined);
@@ -54,7 +52,7 @@ export const useChatConversation = (): UseChatConversationResult => {
       const pendingAssistantMessage: ChatConversationMessage = {
         id: assistantMessageId,
         role: "assistant",
-        content: STREAMING_PLACEHOLDER,
+        content: "",
         timestamp: formatMessageTime(),
         status: "sending",
         model: options.model,
@@ -82,10 +80,7 @@ export const useChatConversation = (): UseChatConversationResult => {
                   return currentMessage;
                 }
 
-                const existingContent =
-                  currentMessage.content === STREAMING_PLACEHOLDER
-                    ? ""
-                    : currentMessage.content;
+                const existingContent = currentMessage.content;
                 const nextContent =
                   chunk.content || `${existingContent}${chunk.contentDelta}`;
                 const nextThinking =
@@ -94,7 +89,7 @@ export const useChatConversation = (): UseChatConversationResult => {
 
                 return {
                   ...currentMessage,
-                  content: nextContent || STREAMING_PLACEHOLDER,
+                  content: nextContent,
                   thinking: nextThinking || undefined,
                   timestamp: formatMessageTime(),
                   status: "sending",
@@ -114,10 +109,7 @@ export const useChatConversation = (): UseChatConversationResult => {
                 return currentMessage;
               }
 
-              const streamedContent =
-                currentMessage.content === STREAMING_PLACEHOLDER
-                  ? ""
-                  : currentMessage.content;
+              const streamedContent = currentMessage.content;
 
               return {
                 ...currentMessage,
