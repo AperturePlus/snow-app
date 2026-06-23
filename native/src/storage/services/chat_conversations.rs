@@ -5,7 +5,7 @@ use napi::bindgen_prelude::*;
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::super::database;
-use super::super::ChatConversationRecord;
+use super::super::{ChatConversationPage, ChatConversationRecord, ChatMessageRecord};
 
 #[derive(Clone, Debug)]
 pub struct ChatContextMessage {
@@ -190,6 +190,32 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
         .map_err(|error| database::database_error(database_path, "store chat exchange", error))
 }
 
+pub fn update_conversation_summary(
+    database_path: &Path,
+    conversation_id: &str,
+    summary: &str,
+) -> Result<()> {
+    let trimmed_summary = summary.trim();
+    if trimmed_summary.is_empty() {
+        return Ok(());
+    }
+
+    Connection::open(database_path)
+        .and_then(|connection| {
+            connection.execute(
+                "UPDATE chat_conversations
+                    SET summary = ?2,
+                        updated_at = datetime('now')
+                  WHERE conversation_id = ?1",
+                params![conversation_id, trimmed_summary],
+            )
+        })
+        .map_err(|error| {
+            database::database_error(database_path, "update conversation summary", error)
+        })
+        .map(|_| ())
+}
+
 pub fn list_chat_conversations(
     database_path: &Path,
     directory_id: &str,
@@ -231,6 +257,236 @@ pub fn list_chat_conversations(
             rows.collect()
         })
         .map_err(|error| database::database_error(database_path, "list chat conversations", error))
+}
+
+pub fn list_chat_conversations_paginated(
+    database_path: &Path,
+    directory_id: &str,
+    limit: i32,
+    offset: i32,
+) -> Result<ChatConversationPage> {
+    Connection::open(database_path)
+        .and_then(|connection| {
+            let total: i32 = connection.query_row(
+                "SELECT COUNT(*)
+                   FROM chat_conversations
+                  WHERE directory_id = ?1
+                    AND status = 'active'",
+                params![directory_id],
+                |row| row.get(0),
+            )?;
+
+            let safe_limit = if limit > 0 { limit } else { 20 };
+            let safe_offset = if offset > 0 { offset } else { 0 };
+
+            let mut statement = connection.prepare(
+                "SELECT conversation_id,
+                        title,
+                        summary,
+                        last_message_preview,
+                        message_count,
+                        model,
+                        status,
+                        directory_id,
+                        created_at,
+                        updated_at
+                   FROM chat_conversations
+                  WHERE directory_id = ?1
+                    AND status = 'active'
+                  ORDER BY updated_at DESC, id DESC
+                  LIMIT ?2 OFFSET ?3",
+            )?;
+
+            let rows = statement.query_map(
+                params![directory_id, safe_limit, safe_offset],
+                |row| {
+                    Ok(ChatConversationRecord {
+                        conversation_id: row.get(0)?,
+                        title: row.get(1)?,
+                        summary: row.get(2)?,
+                        last_message_preview: row.get(3)?,
+                        message_count: row.get(4)?,
+                        model: row.get(5)?,
+                        status: row.get(6)?,
+                        directory_id: row.get(7)?,
+                        created_at: row.get(8)?,
+                        updated_at: row.get(9)?,
+                    })
+                },
+            )?;
+
+            let items: Vec<ChatConversationRecord> = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+
+            Ok(ChatConversationPage { items, total })
+        })
+        .map_err(|error| {
+            database::database_error(database_path, "list chat conversations paginated", error)
+        })
+}
+
+pub fn list_pinned_conversations(
+    database_path: &Path,
+    directory_id: &str,
+) -> Result<Vec<ChatConversationRecord>> {
+    Connection::open(database_path)
+        .and_then(|connection| {
+            let mut statement = connection.prepare(
+                "SELECT conversation_id,
+                        title,
+                        summary,
+                        last_message_preview,
+                        message_count,
+                        model,
+                        status,
+                        directory_id,
+                        created_at,
+                        updated_at
+                   FROM chat_conversations
+                  WHERE directory_id = ?1
+                    AND status = 'pin'
+                  ORDER BY updated_at DESC, id DESC",
+            )?;
+
+            let rows = statement.query_map(params![directory_id], |row| {
+                Ok(ChatConversationRecord {
+                    conversation_id: row.get(0)?,
+                    title: row.get(1)?,
+                    summary: row.get(2)?,
+                    last_message_preview: row.get(3)?,
+                    message_count: row.get(4)?,
+                    model: row.get(5)?,
+                    status: row.get(6)?,
+                    directory_id: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
+                })
+            })?;
+
+            rows.collect()
+        })
+        .map_err(|error| database::database_error(database_path, "list pinned conversations", error))
+}
+
+pub fn update_conversation_status(
+    database_path: &Path,
+    conversation_id: &str,
+    status: &str,
+) -> Result<()> {
+    let normalized_status = match status.trim() {
+        "pin" => "pin",
+        "active" => "active",
+        _ => "active",
+    };
+
+    Connection::open(database_path)
+        .and_then(|connection| {
+            connection.execute(
+                "UPDATE chat_conversations
+                    SET status = ?2,
+                        updated_at = datetime('now')
+                  WHERE conversation_id = ?1",
+                params![conversation_id, normalized_status],
+            )
+        })
+        .map_err(|error| {
+            database::database_error(database_path, "update conversation status", error)
+        })
+        .map(|_| ())
+}
+
+pub fn rename_conversation(
+    database_path: &Path,
+    conversation_id: &str,
+    title: &str,
+) -> Result<()> {
+    let trimmed_title = title.trim();
+    if trimmed_title.is_empty() {
+        return Ok(());
+    }
+
+    Connection::open(database_path)
+        .and_then(|connection| {
+            connection.execute(
+                "UPDATE chat_conversations
+                    SET title = ?2,
+                        summary = CASE WHEN summary = '' THEN ?2 ELSE summary END,
+                        updated_at = datetime('now')
+                  WHERE conversation_id = ?1",
+                params![conversation_id, trimmed_title],
+            )
+        })
+        .map_err(|error| database::database_error(database_path, "rename conversation", error))
+        .map(|_| ())
+}
+
+pub fn delete_conversation(
+    database_path: &Path,
+    conversation_id: &str,
+) -> Result<()> {
+    let mut connection = Connection::open(database_path)
+        .map_err(|error| database::database_error(database_path, "delete conversation", error))?;
+
+    let transaction = connection
+        .transaction()
+        .map_err(|error| database::database_error(database_path, "delete conversation", error))?;
+
+    transaction
+        .execute(
+            "DELETE FROM chat_messages WHERE conversation_id = ?1",
+            params![conversation_id],
+        )
+        .map_err(|error| database::database_error(database_path, "delete chat messages", error))?;
+
+    transaction
+        .execute(
+            "DELETE FROM chat_conversations WHERE conversation_id = ?1",
+            params![conversation_id],
+        )
+        .map_err(|error| database::database_error(database_path, "delete conversation", error))?;
+
+    transaction
+        .commit()
+        .map_err(|error| database::database_error(database_path, "delete conversation", error))?;
+
+    Ok(())
+}
+
+pub fn list_chat_messages(
+    database_path: &Path,
+    conversation_id: &str,
+) -> Result<Vec<ChatMessageRecord>> {
+    Connection::open(database_path)
+        .and_then(|connection| {
+            let mut statement = connection.prepare(
+                "SELECT id,
+                        role,
+                        content,
+                        thinking,
+                        status,
+                        model,
+                        response_id,
+                        created_at
+                   FROM chat_messages
+                  WHERE conversation_id = ?1
+                  ORDER BY id ASC",
+            )?;
+
+            let rows = statement.query_map(params![conversation_id], |row| {
+                Ok(ChatMessageRecord {
+                    id: row.get(0)?,
+                    role: row.get(1)?,
+                    content: row.get(2)?,
+                    thinking: row.get(3)?,
+                    status: row.get(4)?,
+                    model: row.get(5)?,
+                    response_id: row.get(6)?,
+                    created_at: row.get(7)?,
+                })
+            })?;
+
+            rows.collect()
+        })
+        .map_err(|error| database::database_error(database_path, "list chat messages", error))
 }
 
 fn find_conversation_id_by_response_id(

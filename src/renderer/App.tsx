@@ -119,6 +119,7 @@ export const App = (): React.JSX.Element => {
         <TopBar
           isSidebarCollapsed={isSidebarCollapsed}
           isRightPanelCollapsed={isRightPanelCollapsed}
+          activeDirectory={activeDirectory}
           onToggleSidebar={() =>
             setIsSidebarCollapsed((isCollapsed) => !isCollapsed)
           }

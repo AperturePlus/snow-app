@@ -1,8 +1,16 @@
-import { Loader2, MessageSquare } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useI18n } from "../../../i18n";
-import type { ChatConversationRecord, WorkspaceDirectoryRecord } from "../../../../preload";
+import { useChatConversationContext } from "../../mainContent/chatMessages";
+import type {
+  ChatConversationRecord,
+  WorkspaceDirectoryRecord,
+} from "../../../../preload";
+import { ChatItem } from "./ChatItem";
+import { groupConversationsByTime, type TimeGroupKey } from "./chatTimeGroup";
+
+const CHAT_PAGE_SIZE = 20;
 
 type ChatsSectionProps = {
   isSwitchingDirectory: boolean;
@@ -14,29 +22,47 @@ export function ChatsSection({
   activeDirectory,
 }: ChatsSectionProps): React.JSX.Element {
   const { t } = useI18n();
-  const [conversations, setConversations] = useState<ChatConversationRecord[]>([]);
+  const {
+    conversationVersion,
+    refreshConversations,
+    handleSelectConversation,
+    activeConversationId,
+  } = useChatConversationContext();
+  const [conversations, setConversations] = useState<ChatConversationRecord[]>(
+    []
+  );
+  const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const directoryId = activeDirectory?.directoryId ?? "";
+  const hasMore = conversations.length < total;
 
   useEffect(() => {
     if (!directoryId) {
       setConversations([]);
+      setTotal(0);
       return;
     }
 
     let cancelled = false;
 
-    const loadConversations = async (): Promise<void> => {
+    const loadFirstPage = async (): Promise<void> => {
       setIsLoading(true);
       setError(null);
 
       try {
-        const result = await window.snow.listChatConversations(directoryId);
+        const result = await window.snow.listChatConversationsPaginated(
+          directoryId,
+          CHAT_PAGE_SIZE,
+          0
+        );
 
         if (!cancelled) {
-          setConversations(result);
+          setConversations(result.items);
+          setTotal(result.total);
         }
       } catch (err) {
         if (!cancelled) {
@@ -55,14 +81,122 @@ export function ChatsSection({
       }
     };
 
-    void loadConversations();
+    void loadFirstPage();
 
     return () => {
       cancelled = true;
     };
-  }, [directoryId, t]);
+  }, [directoryId, t, conversationVersion]);
+
+  const loadMore = useCallback(async (): Promise<void> => {
+    if (isLoadingMore || !hasMore || !directoryId || isLoading) {
+      return;
+    }
+
+    setIsLoadingMore(true);
+
+    try {
+      const result = await window.snow.listChatConversationsPaginated(
+        directoryId,
+        CHAT_PAGE_SIZE,
+        conversations.length
+      );
+
+      setConversations((prev) => [...prev, ...result.items]);
+      setTotal(result.total);
+    } catch {
+      // Silent fail for pagination
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [conversations.length, directoryId, hasMore, isLoading, isLoadingMore]);
+
+  useEffect(() => {
+    if (!hasMore || isLoading) {
+      return;
+    }
+
+    const sentinel = loadMoreRef.current;
+
+    if (!sentinel) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          void loadMore();
+        }
+      },
+      {
+        root: null,
+        rootMargin: "0px 0px 64px",
+        threshold: 0.1,
+      }
+    );
+
+    observer.observe(sentinel);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasMore, isLoading, loadMore, conversations.length]);
 
   const showLoading = isSwitchingDirectory || (isLoading && directoryId !== "");
+
+  const handlePin = async (
+    conversation: ChatConversationRecord
+  ): Promise<void> => {
+    try {
+      await window.snow.updateConversationStatus(
+        conversation.conversationId,
+        "pin"
+      );
+      refreshConversations();
+    } catch {
+      // Silent fail
+    }
+  };
+
+  const handleRename = async (
+    conversation: ChatConversationRecord,
+    newTitle: string
+  ): Promise<void> => {
+    await window.snow.renameConversation(conversation.conversationId, newTitle);
+    refreshConversations();
+  };
+
+  const handleDelete = async (
+    conversation: ChatConversationRecord
+  ): Promise<void> => {
+    try {
+      await window.snow.deleteConversation(conversation.conversationId);
+      refreshConversations();
+    } catch {
+      // Silent fail
+    }
+  };
+
+  const timeGroups = groupConversationsByTime(conversations);
+
+  const getGroupLabel = (key: TimeGroupKey): string => {
+    switch (key) {
+      case "today":
+        return t("sidebar.chatTimeToday", { defaultValue: "Today" });
+      case "yesterday":
+        return t("sidebar.chatTimeYesterday", {
+          defaultValue: "Yesterday",
+        });
+      case "last7days":
+        return t("sidebar.chatTimeLast7Days", {
+          defaultValue: "Last 7 days",
+        });
+      case "earlier":
+        return t("sidebar.chatTimeEarlier", { defaultValue: "Earlier" });
+      default:
+        return "";
+    }
+  };
 
   return (
     <div className="sidebar-section">
@@ -92,27 +226,55 @@ export function ChatsSection({
             {t("sidebar.noChats", { defaultValue: "No chats" })}
           </span>
         ) : (
-          conversations.map((conversation) => (
-            <button
-              className="chat-item"
-              key={conversation.conversationId}
-              type="button"
-            >
-              <MessageSquare size={13} className="chat-item-icon" />
-              <div className="chat-item-content">
-                <span className="chat-item-title">
-                  {conversation.title || t("sidebar.untitledChat", {
-                    defaultValue: "Untitled",
-                  })}
-                </span>
-                {conversation.lastMessagePreview ? (
-                  <span className="chat-item-preview">
-                    {conversation.lastMessagePreview}
-                  </span>
+          <>
+            {timeGroups.map((group) => (
+              <div key={group.key}>
+                <div className="chat-time-group-header">
+                  {getGroupLabel(group.key)}
+                </div>
+                {group.conversations.map((conversation) => (
+                  <ChatItem
+                    key={conversation.conversationId}
+                    conversation={conversation}
+                    isActive={
+                      conversation.conversationId === activeConversationId
+                    }
+                    onPin={() => void handlePin(conversation)}
+                    onRename={(newTitle) =>
+                      handleRename(conversation, newTitle)
+                    }
+                    onDelete={() => void handleDelete(conversation)}
+                    onSelect={() =>
+                      void handleSelectConversation(
+                        conversation.conversationId,
+                        conversation.summary || conversation.title
+                      )
+                    }
+                  />
+                ))}
+              </div>
+            ))}
+            {hasMore ? (
+              <div className="chat-load-more" ref={loadMoreRef}>
+                {isLoadingMore ? (
+                  <>
+                    <Loader2 className="spin" size={13} />
+                    <span>
+                      {t("sidebar.chatLoadingMore", {
+                        defaultValue: "Loading more...",
+                      })}
+                    </span>
+                  </>
                 ) : null}
               </div>
-            </button>
-          ))
+            ) : (
+              <div className="chat-all-loaded">
+                {t("sidebar.chatAllLoaded", {
+                  defaultValue: "All chats loaded",
+                })}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

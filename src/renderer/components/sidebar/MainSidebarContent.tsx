@@ -17,7 +17,10 @@ export function MainSidebarContent({
 
   return (
     <>
-      <PinnedSection isSwitchingDirectory={isSwitchingDirectory} />
+      <PinnedSection
+        activeDirectory={activeDirectory}
+        isSwitchingDirectory={isSwitchingDirectory}
+      />
       <ProjectsSection
         onActiveDirectoryChange={onActiveDirectoryChange}
         onSwitchingDirectoryChange={setIsSwitchingDirectory}

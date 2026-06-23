@@ -1,11 +1,12 @@
 use napi_derive::napi;
 
 use crate::storage::{
-    ApiConfigInput, ApiConfigRecord, AppStorageInfo, ChatConversationRecord,
-    CodebaseSettingsInput, CodebaseSettingsRecord, CustomHeaderSchemeInput,
-    CustomHeaderSchemeRecord, McpServerConfigInput, McpServerConfigRecord,
-    SensitiveCommandConfigInput, SensitiveCommandConfigRecord, SystemPromptItemInput,
-    SystemPromptItemRecord, WorkspaceDirectoryInput, WorkspaceDirectoryRecord,
+    ApiConfigInput, ApiConfigRecord, AppStorageInfo, ChatConversationPage,
+    ChatConversationRecord, ChatMessageRecord, CodebaseSettingsInput, CodebaseSettingsRecord,
+    CustomHeaderSchemeInput, CustomHeaderSchemeRecord, McpServerConfigInput,
+    McpServerConfigRecord, SensitiveCommandConfigInput, SensitiveCommandConfigRecord,
+    SystemPromptItemInput, SystemPromptItemRecord, WorkspaceDirectoryInput,
+    WorkspaceDirectoryRecord,
 };
 
 #[napi]
@@ -140,4 +141,40 @@ pub fn delete_sensitive_command_config(command_id: String, scope: String) -> nap
 #[napi]
 pub fn list_chat_conversations(directory_id: String) -> napi::Result<Vec<ChatConversationRecord>> {
     crate::storage::list_chat_conversations(directory_id)
+}
+
+#[napi]
+pub fn list_chat_conversations_paginated(
+    directory_id: String,
+    limit: i32,
+    offset: i32,
+) -> napi::Result<ChatConversationPage> {
+    crate::storage::list_chat_conversations_paginated(directory_id, limit, offset)
+}
+
+#[napi]
+pub fn list_pinned_conversations(directory_id: String) -> napi::Result<Vec<ChatConversationRecord>> {
+    crate::storage::list_pinned_conversations(directory_id)
+}
+
+#[napi]
+pub fn update_conversation_status(
+    conversation_id: String,
+    status: String,
+) -> napi::Result<()> {
+    crate::storage::update_conversation_status(conversation_id, status)
+}
+
+#[napi]
+pub fn rename_conversation(conversation_id: String, title: String) -> napi::Result<()> {
+    crate::storage::rename_conversation(conversation_id, title)
+}
+#[napi]
+pub fn delete_conversation(conversation_id: String) -> napi::Result<()> {
+    crate::storage::delete_conversation(conversation_id)
+}
+
+#[napi]
+pub fn list_chat_messages(conversation_id: String) -> napi::Result<Vec<ChatMessageRecord>> {
+    crate::storage::list_chat_messages(conversation_id)
 }

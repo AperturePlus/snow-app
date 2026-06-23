@@ -6,6 +6,7 @@ use crate::api::config::get_active_custom_headers;
 use crate::api::conversation::{
     create_response_stream as create_conversation_response_stream,
 };
+use crate::api::summary::generate_conversation_summary as generate_summary;
 use crate::api::models::{
     fetch_available_models as fetch_models_with_config, fetch_available_models_for_active_config,
     ApiConfigForModels, Model,
@@ -40,4 +41,9 @@ pub async fn create_response_stream(
     on_chunk: ResponsesApiStreamCallback,
 ) -> napi::Result<ResponsesApiResult> {
     create_conversation_response_stream(request, on_chunk).await
+}
+
+#[napi(ts_return_type = "Promise<string>")]
+pub async fn generate_conversation_summary(conversation_id: String) -> napi::Result<String> {
+    generate_summary(conversation_id).await
 }

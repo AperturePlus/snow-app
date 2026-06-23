@@ -170,6 +170,22 @@ export type ChatConversationRecord = {
   updatedAt: string;
 };
 
+export type ChatConversationPage = {
+  items: ChatConversationRecord[];
+  total: number;
+};
+
+export type ChatMessageRecord = {
+  id: string;
+  role: string;
+  content: string;
+  thinking: string;
+  status: string;
+  model: string;
+  responseId: string;
+  createdAt: string;
+};
+
 export type ResponsesApiMessage = {
   role: "user" | "assistant" | "system" | "developer";
   content: string;
@@ -231,6 +247,17 @@ export type NativeBridge = {
   upsertSensitiveCommandConfig: (item: SensitiveCommandConfigInput) => void;
   deleteSensitiveCommandConfig: (commandId: string, scope: string) => void;
   listChatConversations: (directoryId: string) => ChatConversationRecord[];
+  listChatConversationsPaginated: (
+    directoryId: string,
+    limit: number,
+    offset: number
+  ) => ChatConversationPage;
+  listPinnedConversations: (directoryId: string) => ChatConversationRecord[];
+  updateConversationStatus: (conversationId: string, status: string) => void;
+  renameConversation: (conversationId: string, title: string) => void;
+  deleteConversation: (conversationId: string) => void;
+  listChatMessages: (conversationId: string) => ChatMessageRecord[];
+  generateConversationSummary: (conversationId: string) => Promise<string>;
   fetchAvailableModels: () => Model[];
   fetchAvailableModelsForConfig: (config: ApiModelsConfig) => Model[];
   createResponseStream: (

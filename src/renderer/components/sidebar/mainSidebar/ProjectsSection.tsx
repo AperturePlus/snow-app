@@ -1,12 +1,5 @@
 import { Check, Folder, Loader2, Plus, Server, X } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type MouseEvent,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "../../../i18n";
 import type {
@@ -14,10 +7,7 @@ import type {
   WorkspaceDirectoryKind,
   WorkspaceDirectoryRecord,
 } from "../../../../preload";
-import {
-  WorkspaceDirectoryList,
-  type WorkspaceDirectoryContextMenuState,
-} from "./WorkspaceDirectoryList";
+import { WorkspaceDirectoryList } from "./WorkspaceDirectoryList";
 
 type AddDirectoryMode = "" | WorkspaceDirectoryKind;
 type ProjectsSectionProps = {
@@ -103,8 +93,6 @@ export function ProjectsSection({
   const [dragOverDirectoryId, setDragOverDirectoryId] = useState<string | null>(
     null
   );
-  const [contextMenu, setContextMenu] =
-    useState<WorkspaceDirectoryContextMenuState | null>(null);
   const addMenuRef = useRef<HTMLDivElement | null>(null);
   const sshFormRef = useRef<HTMLDivElement | null>(null);
   const directoryListRef = useRef<HTMLDivElement | null>(null);
@@ -230,30 +218,6 @@ export function ProjectsSection({
     };
   }, [addDirectoryMode, isAddMenuOpen]);
 
-  useEffect(() => {
-    if (!contextMenu) {
-      return;
-    }
-
-    const handlePointerDown = (): void => {
-      setContextMenu(null);
-    };
-
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        setContextMenu(null);
-      }
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [contextMenu]);
-
   const persistWorkspaceDirectory = async (
     item: WorkspaceDirectoryInput
   ): Promise<void> => {
@@ -356,7 +320,6 @@ export function ProjectsSection({
 
     updateSwitchingDirectory(true);
     setDirectoryError(null);
-    setContextMenu(null);
 
     try {
       const directories = await window.snow.activateWorkspaceDirectory(
@@ -406,7 +369,6 @@ export function ProjectsSection({
   const handleDirectoryDragStart = (directoryId: string): void => {
     setDraggedDirectoryId(directoryId);
     setDragOverDirectoryId(null);
-    setContextMenu(null);
   };
 
   const handleDirectoryDragOver = (directoryId: string): void => {
@@ -444,18 +406,6 @@ export function ProjectsSection({
     void persistWorkspaceDirectoryOrder(nextDirectories);
   };
 
-  const handleDirectoryContextMenu = (
-    directoryId: string,
-    event: MouseEvent<HTMLDivElement>
-  ): void => {
-    event.preventDefault();
-    setContextMenu({
-      directoryId,
-      x: event.clientX,
-      y: event.clientY,
-    });
-  };
-
   const handleDeleteDirectory = async (directoryId: string): Promise<void> => {
     if (!directoryId) {
       return;
@@ -463,7 +413,6 @@ export function ProjectsSection({
 
     setIsSavingDirectory(true);
     setDirectoryError(null);
-    setContextMenu(null);
 
     try {
       const directories = await window.snow.deleteWorkspaceDirectory(
@@ -548,7 +497,6 @@ export function ProjectsSection({
         </span>
         <WorkspaceDirectoryList
           activeDirectoryId={activeDirectory?.directoryId}
-          contextMenu={contextMenu}
           directoryListRef={directoryListRef}
           draggedDirectoryId={draggedDirectoryId}
           dragOverDirectoryId={dragOverDirectoryId}
@@ -561,7 +509,6 @@ export function ProjectsSection({
           onActivate={(directoryId) =>
             void handleActivateDirectory(directoryId)
           }
-          onContextMenu={handleDirectoryContextMenu}
           onDelete={(directoryId) => void handleDeleteDirectory(directoryId)}
           onDragEnd={handleDirectoryDragEnd}
           onDragOver={handleDirectoryDragOver}

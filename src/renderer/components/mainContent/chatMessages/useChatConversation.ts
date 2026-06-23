@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatInputSendOptions } from "../chatInput/types";
 
 export type ChatConversationMessage = {
@@ -11,10 +11,16 @@ export type ChatConversationMessage = {
   responseId?: string;
   model?: string;
 };
+
 type UseChatConversationResult = {
   messages: ChatConversationMessage[];
+  summary: string;
+  conversationVersion: number;
+  activeConversationId: string | undefined;
   handleSendMessage: (message: string, options: ChatInputSendOptions) => void;
+  handleSelectConversation: (conversationId: string, title?: string) => void;
   handleNewChat: () => void;
+  refreshConversations: () => void;
 };
 
 const formatMessageTime = (): string =>
@@ -33,8 +39,21 @@ export const useChatConversation = (
   directoryId?: string
 ): UseChatConversationResult => {
   const [messages, setMessages] = useState<ChatConversationMessage[]>([]);
+  const [summary, setSummary] = useState("");
+  const [conversationVersion, setConversationVersion] = useState(0);
+  const [activeConversationId, setActiveConversationId] = useState<
+    string | undefined
+  >(undefined);
   const conversationIdRef = useRef<string | undefined>(undefined);
   const isSendingRef = useRef(false);
+
+  useEffect(() => {
+    setMessages([]);
+    setSummary("");
+    setConversationVersion(0);
+    setActiveConversationId(undefined);
+    conversationIdRef.current = undefined;
+  }, [directoryId]);
 
   const handleSendMessage = useCallback(
     (message: string, options: ChatInputSendOptions) => {
@@ -42,6 +61,8 @@ export const useChatConversation = (
       if (!trimmed || isSendingRef.current) {
         return;
       }
+
+      const isFirstMessage = conversationIdRef.current === undefined;
 
       const userMessage: ChatConversationMessage = {
         id: createMessageId("user"),
@@ -104,6 +125,7 @@ export const useChatConversation = (
         .then((response) => {
           if (response.conversationId) {
             conversationIdRef.current = response.conversationId;
+            setActiveConversationId(response.conversationId);
           }
 
           setMessages((currentMessages) =>
@@ -126,6 +148,20 @@ export const useChatConversation = (
               };
             })
           );
+
+          if (isFirstMessage && response.conversationId) {
+            void window.snow
+              .generateConversationSummary(response.conversationId)
+              .then((generatedSummary) => {
+                if (generatedSummary) {
+                  setSummary(generatedSummary);
+                  setConversationVersion((version) => version + 1);
+                }
+              })
+              .catch(() => {
+                // Summary generation failure should not block the conversation
+              });
+          }
         })
         .catch((error: unknown) => {
           setMessages((currentMessages) =>
@@ -148,10 +184,64 @@ export const useChatConversation = (
     [directoryId]
   );
 
+  const handleSelectConversation = useCallback(
+    async (conversationId: string, title?: string): Promise<void> => {
+      const trimmedId = conversationId.trim();
+      if (!trimmedId || isSendingRef.current) {
+        return;
+      }
+      if (trimmedId === conversationIdRef.current) {
+        return;
+      }
+
+      const nextTitle = title?.trim() ?? "";
+
+      try {
+        const records = await window.snow.listChatMessages(trimmedId);
+        const loadedMessages: ChatConversationMessage[] = records.map(
+          (record) => ({
+            id: record.id,
+            role: record.role === "user" ? "user" : "assistant",
+            content: record.content,
+            thinking: record.thinking || undefined,
+            timestamp: record.createdAt,
+            status: record.status === "error" ? "error" : "sent",
+            responseId: record.responseId || undefined,
+            model: record.model || undefined,
+          })
+        );
+
+        conversationIdRef.current = trimmedId;
+        setActiveConversationId(trimmedId);
+        setMessages(loadedMessages);
+        setSummary(nextTitle);
+      } catch {
+        // 加载历史消息失败时静默处理，不阻断交互
+      }
+    },
+    []
+  );
+
   const handleNewChat = useCallback(() => {
     setMessages([]);
+    setSummary("");
+    setConversationVersion(0);
+    setActiveConversationId(undefined);
     conversationIdRef.current = undefined;
   }, []);
 
-  return { messages, handleSendMessage, handleNewChat };
+  const refreshConversations = useCallback(() => {
+    setConversationVersion((version) => version + 1);
+  }, []);
+
+  return {
+    messages,
+    summary,
+    conversationVersion,
+    activeConversationId,
+    handleSendMessage,
+    handleSelectConversation,
+    handleNewChat,
+    refreshConversations,
+  };
 };

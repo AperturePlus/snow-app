@@ -4,23 +4,16 @@ import {
   GripVertical,
   Loader2,
   Server,
-  Trash2,
 } from "lucide-react";
-import { createPortal } from "react-dom";
-import type { DragEvent, MouseEvent, RefObject } from "react";
+import { useState } from "react";
+import type { DragEvent, RefObject } from "react";
 
 import { useI18n } from "../../../i18n";
 import type { WorkspaceDirectoryRecord } from "../../../../preload";
-
-export type WorkspaceDirectoryContextMenuState = {
-  directoryId: string;
-  x: number;
-  y: number;
-};
+import { WorkspaceDirectoryMenu } from "./WorkspaceDirectoryMenu";
 
 type WorkspaceDirectoryListProps = {
   activeDirectoryId?: string;
-  contextMenu: WorkspaceDirectoryContextMenuState | null;
   directoryListRef: RefObject<HTMLDivElement | null>;
   draggedDirectoryId: string | null;
   dragOverDirectoryId: string | null;
@@ -29,10 +22,6 @@ type WorkspaceDirectoryListProps = {
   isLoadingDirectories: boolean;
   loadMoreRef: RefObject<HTMLDivElement | null>;
   onActivate: (directoryId: string) => void;
-  onContextMenu: (
-    directoryId: string,
-    event: MouseEvent<HTMLDivElement>
-  ) => void;
   onDelete: (directoryId: string) => void;
   onDragEnd: () => void;
   onDragOver: (directoryId: string) => void;
@@ -59,7 +48,6 @@ const getDirectoryIcon = (
 
 export function WorkspaceDirectoryList({
   activeDirectoryId,
-  contextMenu,
   directoryListRef,
   draggedDirectoryId,
   dragOverDirectoryId,
@@ -68,7 +56,6 @@ export function WorkspaceDirectoryList({
   isLoadingDirectories,
   loadMoreRef,
   onActivate,
-  onContextMenu,
   onDelete,
   onDragEnd,
   onDragOver,
@@ -79,11 +66,9 @@ export function WorkspaceDirectoryList({
   workspaceDirectories,
 }: WorkspaceDirectoryListProps): React.JSX.Element {
   const { t } = useI18n();
-  const contextDirectory = contextMenu
-    ? workspaceDirectories.find(
-        (directory) => directory.directoryId === contextMenu.directoryId
-      )
-    : undefined;
+  const [menuOpenDirectoryId, setMenuOpenDirectoryId] = useState<
+    string | null
+  >(null);
 
   const handleDragStart = (
     event: DragEvent<HTMLDivElement>,
@@ -137,17 +122,17 @@ export function WorkspaceDirectoryList({
           {visibleDirectories.map((directory, index) => {
             const isDragging = draggedDirectoryId === directory.directoryId;
             const isDragOver = dragOverDirectoryId === directory.directoryId;
+            const isMenuOpen = menuOpenDirectoryId === directory.directoryId;
 
             return (
               <div
                 className={`workspace-directory-row${
                   isDragging ? " dragging" : ""
-                }${isDragOver ? " drag-over" : ""}`}
+                }${isDragOver ? " drag-over" : ""}${
+                  isMenuOpen ? " menu-open" : ""
+                }`}
                 draggable={!isActionLocked}
                 key={directory.directoryId}
-                onContextMenu={(event) =>
-                  onContextMenu(directory.directoryId, event)
-                }
                 onDragEnd={onDragEnd}
                 onDragOver={(event) =>
                   handleDragOver(event, directory.directoryId)
@@ -191,6 +176,15 @@ export function WorkspaceDirectoryList({
                     {index + 1}/{totalCount}
                   </span>
                 </button>
+                <WorkspaceDirectoryMenu
+                  disabled={isActionLocked}
+                  onDelete={() => onDelete(directory.directoryId)}
+                  onOpenChange={(isOpen) =>
+                    setMenuOpenDirectoryId(
+                      isOpen ? directory.directoryId : null
+                    )
+                  }
+                />
               </div>
             );
           })}
@@ -218,34 +212,6 @@ export function WorkspaceDirectoryList({
           )}
         </>
       )}
-      {contextDirectory && contextMenu
-        ? createPortal(
-            <div
-              aria-label={t("sidebar.directoryContextMenu", {
-                defaultValue: "Directory actions",
-              })}
-              className="workspace-directory-context-menu"
-              onContextMenu={(event) => event.preventDefault()}
-              onPointerDown={(event) => event.stopPropagation()}
-              role="menu"
-              style={{ left: contextMenu.x, top: contextMenu.y }}
-            >
-              <button
-                className="danger"
-                disabled={isActionLocked}
-                onClick={() => onDelete(contextDirectory.directoryId)}
-                role="menuitem"
-                type="button"
-              >
-                <Trash2 size={13} />
-                <span>
-                  {t("sidebar.deleteDirectory", { defaultValue: "Delete" })}
-                </span>
-              </button>
-            </div>,
-            document.body
-          )
-        : null}
     </div>
   );
 }

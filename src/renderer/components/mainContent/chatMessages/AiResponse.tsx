@@ -1,6 +1,7 @@
 import MarkdownIt from "markdown-it";
 import { ChevronRight } from "lucide-react";
 import { useMemo } from "react";
+import { useI18n } from "../../../i18n";
 import { AiResponseActions } from "./AiResponseActions";
 import type { AiResponseProps } from "./types";
 
@@ -31,6 +32,7 @@ export const AiResponse = ({
   sections = [],
   isStreaming = false,
 }: AiResponseProps): React.JSX.Element => {
+  const { t } = useI18n();
   const normalizedThinking = thinking?.trim();
   const summaryClassName = `ai-message-summary ${
     isStreaming ? "is-streaming" : ""
@@ -48,7 +50,7 @@ export const AiResponse = ({
                 size={16}
                 aria-hidden="true"
               />
-              <span>思考过程</span>
+              <span>{t("chat.thinkingProcess")}</span>
             </summary>
             <MarkdownBlock
               className="ai-message-thinking-body"

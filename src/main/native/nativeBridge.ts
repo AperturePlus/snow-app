@@ -138,6 +138,40 @@ export const loadNativeBridge = (): NativeBridge => {
           "Rust native bridge is required to list chat conversations"
         );
       },
+      listChatConversationsPaginated: () => {
+        throw new Error(
+          "Rust native bridge is required to list chat conversations paginated"
+        );
+      },
+      listPinnedConversations: () => {
+        throw new Error(
+          "Rust native bridge is required to list pinned conversations"
+        );
+      },
+      updateConversationStatus: () => {
+        throw new Error(
+          "Rust native bridge is required to update conversation status"
+        );
+      },
+      renameConversation: () => {
+        throw new Error(
+          "Rust native bridge is required to rename conversation"
+        );
+      },
+      deleteConversation: () => {
+        throw new Error(
+          "Rust native bridge is required to delete conversation"
+        );
+      },
+      listChatMessages: () => {
+        throw new Error("Rust native bridge is required to list chat messages");
+      },
+      generateConversationSummary: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to generate conversation summary"
+          )
+        ),
       fetchAvailableModels: () => {
         throw new Error(
           "Rust native bridge is required to fetch available models"

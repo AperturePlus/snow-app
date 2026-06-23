@@ -261,6 +261,24 @@ pub struct ChatConversationRecord {
     pub updated_at: String,
 }
 
+#[napi(object)]
+pub struct ChatConversationPage {
+    pub items: Vec<ChatConversationRecord>,
+    pub total: i32,
+}
+
+#[napi(object)]
+pub struct ChatMessageRecord {
+    pub id: String,
+    pub role: String,
+    pub content: String,
+    pub thinking: String,
+    pub status: String,
+    pub model: String,
+    pub response_id: String,
+    pub created_at: String,
+}
+
 pub fn initialize_app_storage() -> Result<AppStorageInfo> {
     let storage_dir = ensure_storage_dir()?;
     let database_path = paths::database_file_path(&storage_dir);
@@ -411,6 +429,59 @@ pub fn delete_sensitive_command_config(command_id: String, scope: String) -> Res
 pub fn list_chat_conversations(directory_id: String) -> Result<Vec<ChatConversationRecord>> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::list_chat_conversations(&database_path, &directory_id)
+}
+
+pub fn list_chat_conversations_paginated(
+    directory_id: String,
+    limit: i32,
+    offset: i32,
+) -> Result<ChatConversationPage> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::list_chat_conversations_paginated(
+        &database_path,
+        &directory_id,
+        limit,
+        offset,
+    )
+}
+
+pub fn list_pinned_conversations(directory_id: String) -> Result<Vec<ChatConversationRecord>> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::list_pinned_conversations(&database_path, &directory_id)
+}
+
+pub fn update_conversation_status(
+    conversation_id: String,
+    status: String,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::update_conversation_status(
+        &database_path,
+        &conversation_id,
+        &status,
+    )
+}
+
+pub fn rename_conversation(
+    conversation_id: String,
+    title: String,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::rename_conversation(
+        &database_path,
+        &conversation_id,
+        &title,
+    )
+}
+
+pub fn delete_conversation(conversation_id: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::delete_conversation(&database_path, &conversation_id)
+}
+
+pub fn list_chat_messages(conversation_id: String) -> Result<Vec<ChatMessageRecord>> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::list_chat_messages(&database_path, &conversation_id)
 }
 
 fn ensure_database_file() -> Result<PathBuf> {

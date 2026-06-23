@@ -7,11 +7,13 @@ import {
   SquarePen,
   SquareStack,
 } from "lucide-react";
+import type { WorkspaceDirectoryRecord } from "../../preload";
 import { useChatConversationContext } from "./mainContent/chatMessages";
 
 type TopBarProps = {
   isSidebarCollapsed: boolean;
   isRightPanelCollapsed: boolean;
+  activeDirectory?: WorkspaceDirectoryRecord | null;
   onToggleSidebar: () => void;
   onToggleRightPanel: () => void;
 };
@@ -19,10 +21,11 @@ type TopBarProps = {
 export const TopBar = ({
   isSidebarCollapsed,
   isRightPanelCollapsed,
+  activeDirectory,
   onToggleSidebar,
   onToggleRightPanel,
 }: TopBarProps): React.JSX.Element => {
-  const { handleNewChat } = useChatConversationContext();
+  const { handleNewChat, summary } = useChatConversationContext();
   const SidebarToggleIcon = isSidebarCollapsed ? SidebarOpen : SidebarClose;
   const sidebarToggleLabel = isSidebarCollapsed
     ? "Expand sidebar"
@@ -33,6 +36,9 @@ export const TopBar = ({
   const rightPanelToggleLabel = isRightPanelCollapsed
     ? "Expand right panel"
     : "Collapse right panel";
+
+  const headerTitle = summary || activeDirectory?.name || "New Chat";
+  const headerSubtitle = activeDirectory?.name || "";
 
   return (
     <header className="top-bar">
@@ -61,8 +67,10 @@ export const TopBar = ({
 
       <div className="top-bar-main">
         <div className="header-title-group">
-          <h2 className="header-title">Redesign app modern UI</h2>
-          <span className="header-subtitle">burger-restaurant</span>
+          <h2 className="header-title">{headerTitle}</h2>
+          {headerSubtitle ? (
+            <span className="header-subtitle">{headerSubtitle}</span>
+          ) : null}
         </div>
         <div className="header-actions">
           <button className="icon-btn ghost" aria-label="Branch">

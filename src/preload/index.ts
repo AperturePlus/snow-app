@@ -209,6 +209,22 @@ export type ChatConversationRecord = {
   updatedAt: string;
 };
 
+export type ChatConversationPage = {
+  items: ChatConversationRecord[];
+  total: number;
+};
+
+export type ChatMessageRecord = {
+  id: string;
+  role: string;
+  content: string;
+  thinking: string;
+  status: string;
+  model: string;
+  responseId: string;
+  createdAt: string;
+};
+
 const CHAT_CREATE_RESPONSE_CHUNK_CHANNEL = "chat:create-response:chunk";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -350,6 +366,38 @@ const api = {
     directoryId: string
   ): Promise<ChatConversationRecord[]> =>
     ipcRenderer.invoke("chat-conversations:list", directoryId),
+  listChatConversationsPaginated: (
+    directoryId: string,
+    limit: number,
+    offset: number
+  ): Promise<ChatConversationPage> =>
+    ipcRenderer.invoke(
+      "chat-conversations:list-paginated",
+      directoryId,
+      limit,
+      offset
+    ),
+  listPinnedConversations: (
+    directoryId: string
+  ): Promise<ChatConversationRecord[]> =>
+    ipcRenderer.invoke("chat-conversations:list-pinned", directoryId),
+  updateConversationStatus: (
+    conversationId: string,
+    status: string
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "chat-conversations:update-status",
+      conversationId,
+      status
+    ),
+  renameConversation: (conversationId: string, title: string): Promise<void> =>
+    ipcRenderer.invoke("chat-conversations:rename", conversationId, title),
+  deleteConversation: (conversationId: string): Promise<void> =>
+    ipcRenderer.invoke("chat-conversations:delete", conversationId),
+  listChatMessages: (conversationId: string): Promise<ChatMessageRecord[]> =>
+    ipcRenderer.invoke("chat-conversations:list-messages", conversationId),
+  generateConversationSummary: (conversationId: string): Promise<string> =>
+    ipcRenderer.invoke("chat-conversations:generate-summary", conversationId),
   listMcpServerConfigs: (): Promise<McpServerConfigRecord[]> =>
     ipcRenderer.invoke("mcp-server-configs:list"),
   upsertMcpServerConfig: (
