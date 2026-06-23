@@ -157,6 +157,19 @@ export type ApiModelsConfig = {
   requestMethod: string;
 };
 
+export type ChatConversationRecord = {
+  conversationId: string;
+  title: string;
+  summary: string;
+  lastMessagePreview: string;
+  messageCount: number;
+  model: string;
+  status: string;
+  directoryId: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ResponsesApiMessage = {
   role: "user" | "assistant" | "system" | "developer";
   content: string;
@@ -167,6 +180,7 @@ export type ResponsesApiRequest = {
   model?: string;
   conversationId?: string;
   previousResponseId?: string;
+  directoryId?: string;
 };
 
 export type ResponsesApiResult = {
@@ -216,6 +230,7 @@ export type NativeBridge = {
   listSensitiveCommandConfigs: () => SensitiveCommandConfigRecord[];
   upsertSensitiveCommandConfig: (item: SensitiveCommandConfigInput) => void;
   deleteSensitiveCommandConfig: (commandId: string, scope: string) => void;
+  listChatConversations: (directoryId: string) => ChatConversationRecord[];
   fetchAvailableModels: () => Model[];
   fetchAvailableModelsForConfig: (config: ApiModelsConfig) => Model[];
   createResponseStream: (

@@ -7,6 +7,7 @@ import { MainContent } from "./components/MainContent";
 import { RightPanel } from "./components/RightPanel";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
+import { ChatConversationProvider } from "./components/mainContent/chatMessages";
 import type { MainContentView } from "./components/mainContent/types";
 import type { WorkspaceDirectoryRecord } from "../preload";
 
@@ -113,50 +114,52 @@ export const App = (): React.JSX.Element => {
   };
 
   return (
-    <div className={shellClasses} style={panelSizeStyle}>
-      <TopBar
-        isSidebarCollapsed={isSidebarCollapsed}
-        isRightPanelCollapsed={isRightPanelCollapsed}
-        onToggleSidebar={() =>
-          setIsSidebarCollapsed((isCollapsed) => !isCollapsed)
-        }
-        onToggleRightPanel={() =>
-          setIsRightPanelCollapsed((isCollapsed) => !isCollapsed)
-        }
-      />
-      <div className="app-layout">
-        <Sidebar
-          activeDirectory={activeDirectory}
-          activeMainView={activeMainView}
-          isCollapsed={isSidebarCollapsed}
-          onActiveDirectoryChange={setActiveDirectory}
-          onSelectMainView={setActiveMainView}
+    <ChatConversationProvider directoryId={activeDirectory?.directoryId}>
+      <div className={shellClasses} style={panelSizeStyle}>
+        <TopBar
+          isSidebarCollapsed={isSidebarCollapsed}
+          isRightPanelCollapsed={isRightPanelCollapsed}
+          onToggleSidebar={() =>
+            setIsSidebarCollapsed((isCollapsed) => !isCollapsed)
+          }
+          onToggleRightPanel={() =>
+            setIsRightPanelCollapsed((isCollapsed) => !isCollapsed)
+          }
         />
-        {!isSidebarCollapsed && (
-          <div
-            className="panel-resizer sidebar-resizer layout-resizer"
-            role="separator"
-            aria-label="Resize sidebar"
-            aria-orientation="vertical"
-            onPointerDown={(event) => startPanelResize("sidebar", event)}
+        <div className="app-layout">
+          <Sidebar
+            activeDirectory={activeDirectory}
+            activeMainView={activeMainView}
+            isCollapsed={isSidebarCollapsed}
+            onActiveDirectoryChange={setActiveDirectory}
+            onSelectMainView={setActiveMainView}
           />
-        )}
-        <MainContent
-          activeDirectory={activeDirectory}
-          activeView={activeMainView}
-          onSelectView={setActiveMainView}
-        />
-        {!isRightPanelCollapsed && (
-          <div
-            className="panel-resizer right-panel-resizer layout-resizer"
-            role="separator"
-            aria-label="Resize review panel"
-            aria-orientation="vertical"
-            onPointerDown={(event) => startPanelResize("right-panel", event)}
+          {!isSidebarCollapsed && (
+            <div
+              className="panel-resizer sidebar-resizer layout-resizer"
+              role="separator"
+              aria-label="Resize sidebar"
+              aria-orientation="vertical"
+              onPointerDown={(event) => startPanelResize("sidebar", event)}
+            />
+          )}
+          <MainContent
+            activeDirectory={activeDirectory}
+            activeView={activeMainView}
+            onSelectView={setActiveMainView}
           />
-        )}
-        <RightPanel isCollapsed={isRightPanelCollapsed} />
+          {!isRightPanelCollapsed && (
+            <div
+              className="panel-resizer right-panel-resizer layout-resizer"
+              role="separator"
+              aria-label="Resize review panel"
+              aria-orientation="vertical"
+              onPointerDown={(event) => startPanelResize("right-panel", event)}
+            />
+          )}
+          <RightPanel isCollapsed={isRightPanelCollapsed} />
+        </div>
       </div>
-    </div>
+    </ChatConversationProvider>
   );
 };

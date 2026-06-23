@@ -11,10 +11,10 @@ export type ChatConversationMessage = {
   responseId?: string;
   model?: string;
 };
-
 type UseChatConversationResult = {
   messages: ChatConversationMessage[];
   handleSendMessage: (message: string, options: ChatInputSendOptions) => void;
+  handleNewChat: () => void;
 };
 
 const formatMessageTime = (): string =>
@@ -29,7 +29,9 @@ const createMessageId = (role: ChatConversationMessage["role"]): string =>
 const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : "AI 响应失败，请稍后重试。";
 
-export const useChatConversation = (): UseChatConversationResult => {
+export const useChatConversation = (
+  directoryId?: string
+): UseChatConversationResult => {
   const [messages, setMessages] = useState<ChatConversationMessage[]>([]);
   const conversationIdRef = useRef<string | undefined>(undefined);
   const isSendingRef = useRef(false);
@@ -72,6 +74,7 @@ export const useChatConversation = (): UseChatConversationResult => {
             messages: [{ role: "user", content: trimmed }],
             model: options.model,
             conversationId,
+            directoryId,
           },
           (chunk) => {
             setMessages((currentMessages) =>
@@ -142,8 +145,13 @@ export const useChatConversation = (): UseChatConversationResult => {
           isSendingRef.current = false;
         });
     },
-    []
+    [directoryId]
   );
 
-  return { messages, handleSendMessage };
+  const handleNewChat = useCallback(() => {
+    setMessages([]);
+    conversationIdRef.current = undefined;
+  }, []);
+
+  return { messages, handleSendMessage, handleNewChat };
 };

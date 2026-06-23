@@ -7,6 +7,7 @@ import {
   SquarePen,
   SquareStack,
 } from "lucide-react";
+import { useChatConversationContext } from "./mainContent/chatMessages";
 
 type TopBarProps = {
   isSidebarCollapsed: boolean;
@@ -21,6 +22,7 @@ export const TopBar = ({
   onToggleSidebar,
   onToggleRightPanel,
 }: TopBarProps): React.JSX.Element => {
+  const { handleNewChat } = useChatConversationContext();
   const SidebarToggleIcon = isSidebarCollapsed ? SidebarOpen : SidebarClose;
   const sidebarToggleLabel = isSidebarCollapsed
     ? "Expand sidebar"
@@ -50,6 +52,7 @@ export const TopBar = ({
             type="button"
             aria-label="New chat"
             title="New chat"
+            onClick={handleNewChat}
           >
             <SquarePen size={16} strokeWidth={1.8} />
           </button>

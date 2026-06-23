@@ -133,6 +133,11 @@ export const loadNativeBridge = (): NativeBridge => {
           "Rust native bridge is required to delete sensitive command configs"
         );
       },
+      listChatConversations: () => {
+        throw new Error(
+          "Rust native bridge is required to list chat conversations"
+        );
+      },
       fetchAvailableModels: () => {
         throw new Error(
           "Rust native bridge is required to fetch available models"

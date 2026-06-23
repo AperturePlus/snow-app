@@ -335,6 +335,12 @@ fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
         "tool_calls_json",
         "TEXT NOT NULL DEFAULT '[]'",
     )?;
+    ensure_column(
+        connection,
+        "chat_conversations",
+        "directory_id",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
 
     Ok(())
 }

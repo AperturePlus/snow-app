@@ -99,6 +99,8 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
       typeof source.previousResponseId === "string"
         ? source.previousResponseId
         : undefined,
+    directoryId:
+      typeof source.directoryId === "string" ? source.directoryId : undefined,
   };
 };
 
@@ -284,6 +286,13 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
   ipcMain.handle("sensitive-command-configs:import-snow-cli", () =>
     readSnowCliSensitiveCommandConfig(native)
   );
+  ipcMain.handle("chat-conversations:list", (_event, directoryId: unknown) => {
+    if (typeof directoryId !== "string" || !directoryId.trim()) {
+      throw new Error("Directory ID is required to list chat conversations");
+    }
+
+    return native.listChatConversations(directoryId.trim());
+  });
   ipcMain.handle("workspace-directories:list", () =>
     native.listWorkspaceDirectories()
   );

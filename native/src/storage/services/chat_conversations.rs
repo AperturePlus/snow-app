@@ -5,6 +5,7 @@ use napi::bindgen_prelude::*;
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::super::database;
+use super::super::ChatConversationRecord;
 
 #[derive(Clone, Debug)]
 pub struct ChatContextMessage {
@@ -31,6 +32,7 @@ pub struct StoreChatExchangeInput<'a> {
     pub token_usage: ChatTokenUsage,
     pub response_thinking: &'a str,
     pub tool_calls_json: &'a str,
+    pub directory_id: &'a str,
 }
 
 pub fn resolve_conversation_id(
@@ -102,10 +104,11 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                    model,
                    last_response_id,
                    status,
+                   directory_id,
                    created_at,
                    updated_at
                  ) VALUES (
-                   ?1, ?2, ?3, ?3, '', 0, ?4, ?5, 'active', datetime('now'), datetime('now')
+                   ?1, ?2, ?3, ?3, '', 0, ?4, ?5, 'active', ?6, datetime('now'), datetime('now')
                  )
                  ON CONFLICT(conversation_id) DO NOTHING",
                 params![
@@ -114,6 +117,7 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                     title,
                     input.model,
                     input.response_id,
+                    input.directory_id,
                 ],
             )?;
 
@@ -160,6 +164,7 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                         model = ?4,
                         last_response_id = ?5,
                         status = 'active',
+                        directory_id = CASE WHEN directory_id = '' THEN ?10 ELSE directory_id END,
                         input_tokens = input_tokens + ?6,
                         output_tokens = output_tokens + ?7,
                         cache_creation_input_tokens = cache_creation_input_tokens + ?8,
@@ -176,12 +181,56 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                     input.token_usage.output_tokens,
                     input.token_usage.cache_creation_input_tokens,
                     input.token_usage.cache_read_input_tokens,
+                    input.directory_id,
                 ],
             )?;
 
             transaction.commit()
         })
         .map_err(|error| database::database_error(database_path, "store chat exchange", error))
+}
+
+pub fn list_chat_conversations(
+    database_path: &Path,
+    directory_id: &str,
+) -> Result<Vec<ChatConversationRecord>> {
+    Connection::open(database_path)
+        .and_then(|connection| {
+            let mut statement = connection.prepare(
+                "SELECT conversation_id,
+                        title,
+                        summary,
+                        last_message_preview,
+                        message_count,
+                        model,
+                        status,
+                        directory_id,
+                        created_at,
+                        updated_at
+                   FROM chat_conversations
+                  WHERE directory_id = ?1
+                    AND status = 'active'
+                  ORDER BY updated_at DESC, id DESC",
+            )?;
+
+            let rows = statement.query_map(params![directory_id], |row| {
+                Ok(ChatConversationRecord {
+                    conversation_id: row.get(0)?,
+                    title: row.get(1)?,
+                    summary: row.get(2)?,
+                    last_message_preview: row.get(3)?,
+                    message_count: row.get(4)?,
+                    model: row.get(5)?,
+                    status: row.get(6)?,
+                    directory_id: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
+                })
+            })?;
+
+            rows.collect()
+        })
+        .map_err(|error| database::database_error(database_path, "list chat conversations", error))
 }
 
 fn find_conversation_id_by_response_id(

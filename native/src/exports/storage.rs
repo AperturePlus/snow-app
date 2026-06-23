@@ -1,8 +1,9 @@
 use napi_derive::napi;
 
 use crate::storage::{
-    ApiConfigInput, ApiConfigRecord, AppStorageInfo, CodebaseSettingsInput, CodebaseSettingsRecord,
-    CustomHeaderSchemeInput, CustomHeaderSchemeRecord, McpServerConfigInput, McpServerConfigRecord,
+    ApiConfigInput, ApiConfigRecord, AppStorageInfo, ChatConversationRecord,
+    CodebaseSettingsInput, CodebaseSettingsRecord, CustomHeaderSchemeInput,
+    CustomHeaderSchemeRecord, McpServerConfigInput, McpServerConfigRecord,
     SensitiveCommandConfigInput, SensitiveCommandConfigRecord, SystemPromptItemInput,
     SystemPromptItemRecord, WorkspaceDirectoryInput, WorkspaceDirectoryRecord,
 };
@@ -134,4 +135,9 @@ pub fn upsert_sensitive_command_config(item: SensitiveCommandConfigInput) -> nap
 #[napi]
 pub fn delete_sensitive_command_config(command_id: String, scope: String) -> napi::Result<()> {
     crate::storage::delete_sensitive_command_config(command_id, scope)
+}
+
+#[napi]
+pub fn list_chat_conversations(directory_id: String) -> napi::Result<Vec<ChatConversationRecord>> {
+    crate::storage::list_chat_conversations(directory_id)
 }

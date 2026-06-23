@@ -58,6 +58,7 @@ export type ResponsesApiRequest = {
   model?: string | null;
   conversationId?: string | null;
   previousResponseId?: string | null;
+  directoryId?: string | null;
 };
 
 export type ResponsesApiResult = {
@@ -192,6 +193,19 @@ export type SensitiveCommandConfigInput = {
 
 export type SensitiveCommandConfigRecord = SensitiveCommandConfigInput & {
   id: string;
+  updatedAt: string;
+};
+
+export type ChatConversationRecord = {
+  conversationId: string;
+  title: string;
+  summary: string;
+  lastMessagePreview: string;
+  messageCount: number;
+  model: string;
+  status: string;
+  directoryId: string;
+  createdAt: string;
   updatedAt: string;
 };
 
@@ -332,6 +346,10 @@ const api = {
       "workspace-directories:select-local-directory",
       dialogTitle
     ),
+  listChatConversations: (
+    directoryId: string
+  ): Promise<ChatConversationRecord[]> =>
+    ipcRenderer.invoke("chat-conversations:list", directoryId),
   listMcpServerConfigs: (): Promise<McpServerConfigRecord[]> =>
     ipcRenderer.invoke("mcp-server-configs:list"),
   upsertMcpServerConfig: (

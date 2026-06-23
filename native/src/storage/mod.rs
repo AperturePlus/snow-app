@@ -247,6 +247,20 @@ pub struct SensitiveCommandConfigRecord {
     pub updated_at: String,
 }
 
+#[napi(object)]
+pub struct ChatConversationRecord {
+    pub conversation_id: String,
+    pub title: String,
+    pub summary: String,
+    pub last_message_preview: String,
+    pub message_count: i32,
+    pub model: String,
+    pub status: String,
+    pub directory_id: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 pub fn initialize_app_storage() -> Result<AppStorageInfo> {
     let storage_dir = ensure_storage_dir()?;
     let database_path = paths::database_file_path(&storage_dir);
@@ -392,6 +406,11 @@ pub fn delete_sensitive_command_config(command_id: String, scope: String) -> Res
         &command_id,
         &scope,
     )
+}
+
+pub fn list_chat_conversations(directory_id: String) -> Result<Vec<ChatConversationRecord>> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::list_chat_conversations(&database_path, &directory_id)
 }
 
 fn ensure_database_file() -> Result<PathBuf> {

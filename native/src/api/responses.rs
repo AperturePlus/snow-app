@@ -31,6 +31,7 @@ pub struct ResponsesApiRequest {
     pub model: Option<String>,
     pub conversation_id: Option<String>,
     pub previous_response_id: Option<String>,
+    pub directory_id: Option<String>,
 }
 
 #[napi(object)]
@@ -134,6 +135,7 @@ async fn create_response_async(
             token_usage: streamed_response.token_usage,
             response_thinking: &streamed_response.thinking,
             tool_calls_json: &streamed_response.tool_calls_json,
+            directory_id: request.directory_id.as_deref().unwrap_or(""),
         },
     )?;
 

@@ -1,7 +1,7 @@
 import type { WorkspaceDirectoryRecord } from "../../../preload";
 import { ChatInput } from "./ChatInput";
 import { EmptyGreeting } from "./EmptyGreeting";
-import { ChatMessageList, useChatConversation } from "./chatMessages";
+import { ChatMessageList, useChatConversationContext } from "./chatMessages";
 
 type ChatContentProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
@@ -10,7 +10,7 @@ type ChatContentProps = {
 export const ChatContent = ({
   activeDirectory,
 }: ChatContentProps): React.JSX.Element => {
-  const { messages, handleSendMessage } = useChatConversation();
+  const { messages, handleSendMessage } = useChatConversationContext();
   const hasMessages = messages.length > 0;
 
   return (
