@@ -47,9 +47,8 @@ export type ApiModelsConfig = {
   apiKey: string;
   requestMethod: string;
 };
-
 export type ResponsesApiMessage = {
-  role: "user" | "assistant" | "system" | "developer";
+  role: "user" | "assistant" | "system" | "developer" | "tool";
   content: string;
 };
 
@@ -61,6 +60,13 @@ export type ResponsesApiRequest = {
   directoryId?: string | null;
 };
 
+export type TokenUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+};
+
 export type ResponsesApiResult = {
   id: string;
   conversationId: string;
@@ -68,6 +74,8 @@ export type ResponsesApiResult = {
   thinking: string;
   model: string;
   status: string;
+  toolCallsJson: string;
+  tokenUsage: TokenUsage;
 };
 
 export type ResponsesApiStreamChunk = {
@@ -75,6 +83,12 @@ export type ResponsesApiStreamChunk = {
   thinkingDelta: string;
   content: string;
   thinking: string;
+};
+
+export type McpToolDefinition = {
+  name: string;
+  description: string;
+  inputSchemaJson: string;
 };
 
 export type ProxyBrowserSettings = {
@@ -207,6 +221,10 @@ export type ChatConversationRecord = {
   directoryId: string;
   createdAt: string;
   updatedAt: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
 };
 
 export type ChatConversationPage = {
@@ -222,6 +240,7 @@ export type ChatMessageRecord = {
   status: string;
   model: string;
   responseId: string;
+  toolCallsJson: string;
   createdAt: string;
 };
 
@@ -277,9 +296,11 @@ const api = {
     ipcRenderer.invoke("api-models:fetch-for-config", config),
   createResponseStream: (
     request: ResponsesApiRequest,
-    onChunk?: (chunk: ResponsesApiStreamChunk) => void
+    onChunk?: (chunk: ResponsesApiStreamChunk) => void,
+    onStreamId?: (streamId: string) => void
   ): Promise<ResponsesApiResult> => {
     const streamId = createResponseStreamId();
+    onStreamId?.(streamId);
     const handleChunk = (_event: IpcRendererEvent, payload: unknown): void => {
       if (!isRecord(payload) || payload.streamId !== streamId) {
         return;
@@ -302,6 +323,8 @@ const api = {
         );
       });
   },
+  abortResponseStream: (streamId: string): Promise<boolean> =>
+    ipcRenderer.invoke("chat:abort-response-stream", streamId),
   importSnowCliApiConfigs: (): Promise<ImportSnowCliApiConfigsResult> =>
     ipcRenderer.invoke("api-configs:import-snow-cli"),
   importSnowCliProxyConfig: (): Promise<ProxyBrowserSettings> =>
@@ -422,6 +445,10 @@ const api = {
   importSnowCliSensitiveCommandConfig: (): Promise<
     SensitiveCommandConfigRecord[]
   > => ipcRenderer.invoke("sensitive-command-configs:import-snow-cli"),
+  listMcpTools: (): Promise<McpToolDefinition[]> =>
+    ipcRenderer.invoke("mcp:list-tools"),
+  callMcpTool: (toolFullName: string, argsJson: string): Promise<string> =>
+    ipcRenderer.invoke("mcp:call-tool", toolFullName, argsJson),
   writeLog: (level: string, entry: unknown): Promise<void> =>
     ipcRenderer.invoke("debug:write-log", level, entry),
   sum: (a: number, b: number): Promise<number> =>

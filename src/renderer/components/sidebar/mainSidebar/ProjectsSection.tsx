@@ -439,7 +439,7 @@ export function ProjectsSection({
           {t("sidebar.projects", { defaultValue: "Projects" })}
         </span>
         <div
-          className="section-actions workspace-directory-actions"
+          className="section-actions workspace-directory-header-actions"
           ref={addMenuRef}
         >
           {isLoadingDirectories || isSavingDirectory ? (

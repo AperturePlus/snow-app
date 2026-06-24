@@ -4,22 +4,24 @@ use std::path::PathBuf;
 use futures::StreamExt;
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT_ENCODING, AUTHORIZATION, CONTENT_TYPE};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT_ENCODING, CONTENT_TYPE};
 use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
 
-use crate::api::config::{normalize_base_url, resolve_sdk_api_base_url};
+use crate::api::config::{
+    normalize_base_url, resolve_sdk_api_base_url, DEFAULT_GEMINI_BASE_URL, DEFAULT_OPENAI_BASE_URL,
+};
 use crate::api::conversation::{prepare_context_request, ConversationContextRequest};
 use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback, ResponsesApiStreamChunk,
     TokenUsage,
 };
-
 use crate::storage::services::chat_conversations::{
     store_chat_exchange, ChatContextMessage, ChatTokenUsage, StoreChatExchangeInput,
 };
 use crate::storage::ApiConfigRecord;
-pub async fn create_chat_completion_response_stream(
+
+pub async fn create_gemini_response_stream(
     request: ResponsesApiRequest,
     database_path: PathBuf,
     api_config: ApiConfigRecord,
@@ -27,7 +29,7 @@ pub async fn create_chat_completion_response_stream(
     on_chunk: ResponsesApiStreamCallback,
     cancel_token: CancellationToken,
 ) -> Result<ResponsesApiResult> {
-    create_chat_completion_response_async(
+    create_gemini_response_async(
         request,
         database_path,
         api_config,
@@ -38,7 +40,7 @@ pub async fn create_chat_completion_response_stream(
     .await
 }
 
-async fn create_chat_completion_response_async(
+async fn create_gemini_response_async(
     request: ResponsesApiRequest,
     database_path: PathBuf,
     api_config: ApiConfigRecord,
@@ -57,7 +59,20 @@ async fn create_chat_completion_response_async(
         ));
     }
 
-    let endpoint = resolve_chat_completions_endpoint(&api_config);
+    let model = request
+        .model
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| api_config.advanced_model.trim());
+
+    if model.is_empty() {
+        return Err(Error::from_reason(
+            "Model not configured. Please select or configure a model first.",
+        ));
+    }
+
+    let endpoint = resolve_gemini_endpoint(&api_config, &model, api_key);
     if endpoint.is_empty() {
         return Err(Error::from_reason(
             "Base URL not configured. Please configure API settings first.",
@@ -83,11 +98,10 @@ async fn create_chat_completion_response_async(
     let client = reqwest::Client::builder()
         .build()
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
-    let payload = build_chat_completions_payload(&prepared_request.messages, &request, &api_config)?;
-    let streamed_response = collect_chat_completions_stream(
+    let payload = build_gemini_payload(&prepared_request.messages, &request, &api_config)?;
+    let streamed_response = collect_gemini_stream(
         &client,
         &endpoint,
-        api_key,
         &custom_headers,
         payload,
         on_chunk,
@@ -131,100 +145,126 @@ async fn create_chat_completion_response_async(
     })
 }
 
-fn resolve_chat_completions_endpoint(api_config: &ApiConfigRecord) -> String {
+fn resolve_gemini_endpoint(api_config: &ApiConfigRecord, model: &str, api_key: &str) -> String {
     let normalized_base_url = normalize_base_url(&api_config.base_url);
     if normalized_base_url.is_empty() {
-        return normalized_base_url;
+        return String::new();
     }
 
-    if api_config.base_url_mode == "endpoint" {
-        normalized_base_url
+    let base_url = if normalized_base_url == DEFAULT_OPENAI_BASE_URL {
+        DEFAULT_GEMINI_BASE_URL.to_string()
     } else {
-        format!(
-            "{}/chat/completions",
-            resolve_sdk_api_base_url(&normalized_base_url, &api_config.base_url_mode)
-        )
+        normalized_base_url
+    };
+
+    let resolved_base = if api_config.base_url_mode == "endpoint" {
+        base_url
+    } else {
+        resolve_sdk_api_base_url(&base_url, &api_config.base_url_mode)
+    };
+
+    let clean_model = model.strip_prefix("models/").unwrap_or(model);
+
+    let mut url = format!(
+        "{}/models/{}:streamGenerateContent?alt=sse",
+        resolved_base, clean_model
+    );
+
+    if !api_key.is_empty() {
+        url.push_str(&format!("&key={}", api_key));
     }
+
+    url
 }
 
-fn build_chat_completions_payload(
+fn build_gemini_payload(
     messages: &[ChatContextMessage],
     request: &ResponsesApiRequest,
     api_config: &ApiConfigRecord,
 ) -> Result<Value> {
-    let model = request
-        .model
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| api_config.advanced_model.trim());
+    let _ = request;
 
-    if model.is_empty() {
-        return Err(Error::from_reason(
-            "Model not configured. Please select or configure a model first.",
-        ));
+    let mut system_parts = Vec::new();
+    let mut contents = Vec::new();
+
+    for message in messages {
+        let content = message.content.trim();
+        if content.is_empty() {
+            continue;
+        }
+
+        let role = message.role.trim();
+        match role {
+            "system" | "developer" => {
+                system_parts.push(content.to_string());
+            }
+            _ => {
+                contents.push(json!({
+                    "role": normalize_gemini_role(role),
+                    "parts": [{"text": content}],
+                }));
+            }
+        }
     }
 
-    let messages = messages
-        .iter()
-        .filter_map(|message| {
-            let content = message.content.trim();
-            if content.is_empty() {
-                return None;
-            }
-
-            Some(json!({
-                "role": normalize_message_role(&message.role),
-                "content": content,
-            }))
-        })
-        .collect::<Vec<_>>();
-
-    if messages.is_empty() {
+    if contents.is_empty() {
         return Err(Error::from_reason("Chat message content is required"));
     }
 
     let mut payload = json!({
-        "model": model,
-        "messages": messages,
-        "stream": true,
-        "stream_options": {
-            "include_usage": true,
-        },
+        "contents": contents,
     });
+
+    if !system_parts.is_empty() {
+        payload["systemInstruction"] = json!({
+            "parts": [{"text": system_parts.join("\n")}],
+        });
+    }
+
+    let mut generation_config = json!({});
 
     if let Some(max_tokens) = api_config.max_tokens {
         if max_tokens > 0 {
-            payload["max_tokens"] = json!(max_tokens);
+            generation_config["maxOutputTokens"] = json!(max_tokens);
         }
     }
 
-    if let Some(reasoning_effort) = build_chat_reasoning_effort(&api_config.config_json) {
-        payload["reasoning_effort"] = json!(reasoning_effort);
+    if let Some(thinking_config) = build_gemini_thinking_config(&api_config.config_json) {
+        generation_config["thinkingConfig"] = thinking_config;
     }
 
-    if let Ok(tools) = crate::mcp::tools::tools_as_openai_chat_json() {
-        if tools.as_array().is_some_and(|arr| !arr.is_empty()) {
-            payload["tools"] = tools;
+    if generation_config
+        .as_object()
+        .is_some_and(|object| !object.is_empty())
+    {
+        payload["generationConfig"] = generation_config;
+    }
+
+    if let Ok(tools) = crate::mcp::tools::tools_as_gemini_json() {
+        if let Some(obj) = tools.as_object() {
+            if !obj.is_empty() {
+                payload["tools"] = json!([tools]);
+            }
         }
     }
 
     Ok(payload)
 }
 
-fn normalize_message_role(role: &str) -> &str {
+fn normalize_gemini_role(role: &str) -> &str {
     match role.trim() {
-        "assistant" => "assistant",
-        "system" => "system",
-        "developer" => "developer",
+        "assistant" => "model",
         _ => "user",
     }
 }
 
-fn build_chat_reasoning_effort(config_json: &str) -> Option<String> {
+fn build_gemini_thinking_config(config_json: &str) -> Option<Value> {
     let parsed = serde_json::from_str::<Value>(config_json).ok()?;
-    let chat_thinking = parsed.get("snowcfg")?.get("chatThinking")?.as_object()?;
-    let enabled = chat_thinking
+    let gemini_thinking = parsed
+        .get("snowcfg")?
+        .get("geminiThinking")?
+        .as_object()?;
+    let enabled = gemini_thinking
         .get("enabled")
         .and_then(Value::as_bool)
         .unwrap_or(true);
@@ -232,15 +272,16 @@ fn build_chat_reasoning_effort(config_json: &str) -> Option<String> {
         return None;
     }
 
-    chat_thinking
-        .get("reasoning_effort")
+    let thinking_level = gemini_thinking
+        .get("thinkingLevel")
         .and_then(Value::as_str)
         .map(str::trim)
-        .filter(|value| !value.is_empty() && *value != "none")
-        .map(ToString::to_string)
+        .filter(|value| !value.is_empty() && *value != "none")?;
+
+    Some(json!({ "thinkingLevel": thinking_level }))
 }
 
-struct ChatCompletionStreamResult {
+struct GeminiStreamResult {
     id: String,
     content: String,
     thinking: String,
@@ -251,28 +292,27 @@ struct ChatCompletionStreamResult {
     raw_events: Vec<Value>,
 }
 
-async fn collect_chat_completions_stream(
+async fn collect_gemini_stream(
     client: &reqwest::Client,
     endpoint: &str,
-    api_key: &str,
     custom_headers: &HashMap<String, String>,
     payload: Value,
     on_chunk: &ResponsesApiStreamCallback,
     cancel_token: &CancellationToken,
-) -> Result<ChatCompletionStreamResult> {
+) -> Result<GeminiStreamResult> {
     let response = client
         .post(endpoint)
-        .headers(build_header_map(api_key, custom_headers)?)
+        .headers(build_header_map(custom_headers)?)
         .json(&payload)
         .send()
         .await
-        .map_err(|error| Error::from_reason(format!("Failed to create chat stream: {}", error)))?;
+        .map_err(|error| Error::from_reason(format!("Failed to create Gemini stream: {}", error)))?;
 
     let status = response.status();
     if !status.is_success() {
         let error_body = response.text().await.unwrap_or_default();
         return Err(Error::from_reason(format!(
-            "Chat completions request failed: {} {}",
+            "Gemini streamGenerateContent request failed: {} {}",
             status, error_body
         )));
     }
@@ -281,7 +321,6 @@ async fn collect_chat_completions_stream(
     let mut content_chunks = Vec::new();
     let mut thinking_chunks = Vec::new();
     let mut tool_calls = Vec::new();
-    let mut tool_call_positions_by_index: HashMap<usize, usize> = HashMap::new();
     let mut response_id = String::new();
     let mut response_model = String::new();
     let mut response_status = String::from("completed");
@@ -296,7 +335,7 @@ async fn collect_chat_completions_stream(
         }
 
         let chunk = chunk_result
-            .map_err(|error| Error::from_reason(format!("Failed to read chat stream: {}", error)))?;
+            .map_err(|error| Error::from_reason(format!("Failed to read Gemini stream: {}", error)))?;
         buffer.push_str(&String::from_utf8_lossy(&chunk));
 
         while let Some(separator_index) = buffer.find("\n\n") {
@@ -304,13 +343,12 @@ async fn collect_chat_completions_stream(
             buffer = buffer[separator_index + 2..].to_string();
             let content_start_index = content_chunks.len();
             let thinking_start_index = thinking_chunks.len();
-            process_sse_event_block(
+            process_gemini_sse_event_block(
                 &event_block,
                 &mut raw_events,
                 &mut content_chunks,
                 &mut thinking_chunks,
                 &mut tool_calls,
-                &mut tool_call_positions_by_index,
                 &mut response_id,
                 &mut response_model,
                 &mut response_status,
@@ -318,20 +356,19 @@ async fn collect_chat_completions_stream(
             )?;
             let content_delta = content_chunks[content_start_index..].join("");
             let thinking_delta = thinking_chunks[thinking_start_index..].join("");
-            emit_chat_completion_stream_chunk(on_chunk, content_delta, thinking_delta);
+            emit_stream_chunk(on_chunk, content_delta, thinking_delta);
         }
     }
 
     if response_status != "cancelled" && !buffer.trim().is_empty() {
         let content_start_index = content_chunks.len();
         let thinking_start_index = thinking_chunks.len();
-        process_sse_event_block(
+        process_gemini_sse_event_block(
             &buffer,
             &mut raw_events,
             &mut content_chunks,
             &mut thinking_chunks,
             &mut tool_calls,
-            &mut tool_call_positions_by_index,
             &mut response_id,
             &mut response_model,
             &mut response_status,
@@ -339,14 +376,14 @@ async fn collect_chat_completions_stream(
         )?;
         let content_delta = content_chunks[content_start_index..].join("");
         let thinking_delta = thinking_chunks[thinking_start_index..].join("");
-        emit_chat_completion_stream_chunk(on_chunk, content_delta, thinking_delta);
+        emit_stream_chunk(on_chunk, content_delta, thinking_delta);
     }
 
     let content = content_chunks.join("").trim().to_string();
     let thinking = thinking_chunks.join("").trim().to_string();
     let tool_calls_json = serde_json::to_string(&tool_calls).unwrap_or_else(|_| "[]".to_string());
 
-    Ok(ChatCompletionStreamResult {
+    Ok(GeminiStreamResult {
         id: response_id,
         content,
         thinking,
@@ -359,13 +396,12 @@ async fn collect_chat_completions_stream(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn process_sse_event_block(
+fn process_gemini_sse_event_block(
     event_block: &str,
     raw_events: &mut Vec<Value>,
     content_chunks: &mut Vec<String>,
     thinking_chunks: &mut Vec<String>,
     tool_calls: &mut Vec<Value>,
-    tool_call_positions_by_index: &mut HashMap<usize, usize>,
     response_id: &mut String,
     response_model: &mut String,
     response_status: &mut String,
@@ -378,19 +414,18 @@ fn process_sse_event_block(
         .collect::<Vec<_>>()
         .join("\n");
 
-    if data.trim().is_empty() || data.trim() == "[DONE]" {
+    if data.trim().is_empty() {
         return Ok(());
     }
 
     let event = serde_json::from_str::<Value>(&data).map_err(|error| {
-        Error::from_reason(format!("Failed to parse chat stream event: {}", error))
+        Error::from_reason(format!("Failed to parse Gemini stream event: {}", error))
     })?;
-    process_chat_completion_event(
+    process_gemini_event(
         &event,
         content_chunks,
         thinking_chunks,
         tool_calls,
-        tool_call_positions_by_index,
         response_id,
         response_model,
         response_status,
@@ -402,12 +437,11 @@ fn process_sse_event_block(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn process_chat_completion_event(
+fn process_gemini_event(
     event: &Value,
     content_chunks: &mut Vec<String>,
     thinking_chunks: &mut Vec<String>,
     tool_calls: &mut Vec<Value>,
-    tool_call_positions_by_index: &mut HashMap<usize, usize>,
     response_id: &mut String,
     response_model: &mut String,
     response_status: &mut String,
@@ -417,43 +451,79 @@ fn process_chat_completion_event(
         let message = error
             .get("message")
             .and_then(Value::as_str)
-            .unwrap_or("Chat completions stream failed");
+            .unwrap_or("Gemini stream failed");
         return Err(Error::from_reason(message.to_string()));
     }
 
-    if let Some(id) = read_string(event, "id") {
+    if let Some(id) = read_string(event, "responseId") {
         *response_id = id;
     }
-    if let Some(model) = read_string(event, "model") {
+    if let Some(model) = read_string(event, "modelVersion") {
         *response_model = model;
     }
-    if let Some(usage) = event.get("usage").filter(|value| !value.is_null()) {
-        *token_usage = extract_token_usage(usage);
+
+    if let Some(usage) = event
+        .get("usageMetadata")
+        .filter(|value| !value.is_null())
+    {
+        token_usage.input_tokens = read_first_i64(usage, &[&["promptTokenCount"]]);
+        token_usage.output_tokens = read_first_i64(usage, &[
+            &["candidatesTokenCount"],
+            &["totalTokenCount"],
+        ]);
+        token_usage.cache_read_input_tokens =
+            read_first_i64(usage, &[&["cachedContentTokenCount"]]);
     }
 
-    if let Some(choices) = event.get("choices").and_then(Value::as_array) {
-        for choice in choices {
-            if let Some(delta) = choice.get("delta") {
-                push_trimmed_string(delta.get("content"), content_chunks);
-                push_trimmed_string(delta.get("reasoning_content"), thinking_chunks);
-                collect_tool_calls(delta.get("tool_calls"), tool_calls, tool_call_positions_by_index, true);
+    if let Some(prompt_feedback) = event.get("promptFeedback") {
+        if let Some(block_reason) = prompt_feedback
+            .get("blockReason")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+        {
+            *response_status = block_reason.to_lowercase();
+            return Ok(());
+        }
+    }
+
+    if let Some(candidates) = event.get("candidates").and_then(Value::as_array) {
+        for candidate in candidates {
+            if let Some(content) = candidate.get("content") {
+                if let Some(parts) = content.get("parts").and_then(Value::as_array) {
+                    for part in parts {
+                        let is_thought = part
+                            .get("thought")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false);
+
+                        if let Some(text) = part
+                            .get("text")
+                            .and_then(Value::as_str)
+                            .filter(|text| !text.is_empty())
+                        {
+                            if is_thought {
+                                thinking_chunks.push(text.to_string());
+                            } else {
+                                content_chunks.push(text.to_string());
+                            }
+                        }
+
+                        if let Some(function_call) = part.get("functionCall") {
+                            tool_calls.push(function_call.clone());
+                        }
+                    }
+                }
             }
 
-            if let Some(message) = choice.get("message") {
-                push_trimmed_string(message.get("content"), content_chunks);
-                push_trimmed_string(message.get("reasoning_content"), thinking_chunks);
-                collect_tool_calls(message.get("tool_calls"), tool_calls, tool_call_positions_by_index, false);
-            }
-
-            if let Some(finish_reason) = choice
-                .get("finish_reason")
+            if let Some(finish_reason) = candidate
+                .get("finishReason")
                 .and_then(Value::as_str)
                 .filter(|value| !value.is_empty())
             {
-                *response_status = if finish_reason == "stop" {
-                    "completed".to_string()
-                } else {
-                    finish_reason.to_string()
+                *response_status = match finish_reason {
+                    "STOP" => "completed".to_string(),
+                    "MAX_TOKENS" => "max_tokens".to_string(),
+                    other => other.to_lowercase(),
                 };
             }
         }
@@ -462,12 +532,7 @@ fn process_chat_completion_event(
     Ok(())
 }
 
-/// Emit a streaming chunk to the JavaScript side via ThreadsafeFunction.
-///
-/// Only the delta strings are sent; the `content` and `thinking` fields are
-/// left empty to avoid O(n^2) data transfer. The renderer accumulates deltas
-/// locally and the final complete text arrives via the resolved Promise.
-fn emit_chat_completion_stream_chunk(
+fn emit_stream_chunk(
     on_chunk: &ResponsesApiStreamCallback,
     content_delta: String,
     thinking_delta: String,
@@ -487,16 +552,10 @@ fn emit_chat_completion_stream_chunk(
     );
 }
 
-fn build_header_map(api_key: &str, custom_headers: &HashMap<String, String>) -> Result<HeaderMap> {
+fn build_header_map(custom_headers: &HashMap<String, String>) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
-    headers.insert(
-        AUTHORIZATION,
-        HeaderValue::from_str(&format!("Bearer {}", api_key)).map_err(|error| {
-            Error::from_reason(format!("Invalid authorization header value: {}", error))
-        })?,
-    );
 
     for (key, value) in custom_headers {
         let trimmed_key = key.trim();
@@ -507,7 +566,6 @@ fn build_header_map(api_key: &str, custom_headers: &HashMap<String, String>) -> 
 
         if trimmed_key.eq_ignore_ascii_case("content-type")
             || trimmed_key.eq_ignore_ascii_case("accept-encoding")
-            || trimmed_key.eq_ignore_ascii_case("authorization")
         {
             continue;
         }
@@ -516,45 +574,15 @@ fn build_header_map(api_key: &str, custom_headers: &HashMap<String, String>) -> 
             Error::from_reason(format!("Invalid custom header '{}': {}", trimmed_key, error))
         })?;
         let header_value = HeaderValue::from_str(trimmed_value).map_err(|error| {
-            Error::from_reason(format!("Invalid custom header value for '{}': {}", trimmed_key, error))
+            Error::from_reason(format!(
+                "Invalid custom header value for '{}': {}",
+                trimmed_key, error
+            ))
         })?;
         headers.insert(header_name, header_value);
     }
 
     Ok(headers)
-}
-
-fn push_trimmed_string(value: Option<&Value>, chunks: &mut Vec<String>) {
-    if let Some(text) = value
-        .and_then(Value::as_str)
-        .filter(|text| !text.is_empty())
-    {
-        chunks.push(text.to_string());
-    }
-}
-
-fn extract_token_usage(usage: &Value) -> ChatTokenUsage {
-    ChatTokenUsage {
-        input_tokens: read_first_i64(usage, &[&["prompt_tokens"], &["input_tokens"]]),
-        output_tokens: read_first_i64(usage, &[&["completion_tokens"], &["output_tokens"]]),
-        cache_creation_input_tokens: read_first_i64(
-            usage,
-            &[
-                &["prompt_cache_creation_tokens"],
-                &["cache_creation_input_tokens"],
-                &["prompt_tokens_details", "cache_creation_input_tokens"],
-            ],
-        ),
-        cache_read_input_tokens: read_first_i64(
-            usage,
-            &[
-                &["cached_tokens"],
-                &["prompt_cache_hit_tokens"],
-                &["cache_read_input_tokens"],
-                &["prompt_tokens_details", "cached_tokens"],
-            ],
-        ),
-    }
 }
 
 fn read_first_i64(value: &Value, paths: &[&[&str]]) -> i64 {
@@ -570,87 +598,14 @@ fn read_path_i64(value: &Value, path: &[&str]) -> Option<i64> {
         current = current.get(*key)?;
     }
 
-    current
+    value_as_i64(current)
+}
+
+fn value_as_i64(value: &Value) -> Option<i64> {
+    value
         .as_i64()
-        .or_else(|| current.as_u64().and_then(|number| i64::try_from(number).ok()))
-        .or_else(|| current.as_f64().map(|number| number as i64))
-}
-
-fn collect_tool_calls(
-    value: Option<&Value>,
-    calls: &mut Vec<Value>,
-    positions_by_index: &mut HashMap<usize, usize>,
-    merge_by_index: bool,
-) {
-    let Some(value) = value else {
-        return;
-    };
-
-    match value {
-        Value::Array(items) => {
-            for item in items {
-                collect_tool_calls(Some(item), calls, positions_by_index, merge_by_index);
-            }
-        }
-        Value::Object(object) => {
-            if merge_by_index {
-                if let Some(index) = object
-                    .get("index")
-                    .and_then(Value::as_u64)
-                    .and_then(|value| usize::try_from(value).ok())
-                {
-                    if let Some(position) = positions_by_index.get(&index).copied() {
-                        if let Some(target) = calls.get_mut(position) {
-                            merge_tool_call_value(target, value);
-                            return;
-                        }
-                    }
-                    positions_by_index.insert(index, calls.len());
-                }
-            }
-
-            calls.push(value.clone());
-        }
-        _ => {}
-    }
-}
-
-fn merge_tool_call_value(target: &mut Value, delta: &Value) {
-    match (target, delta) {
-        (Value::Object(target_object), Value::Object(delta_object)) => {
-            for (key, delta_value) in delta_object {
-                if is_ignorable_tool_call_delta_value(delta_value) {
-                    continue;
-                }
-
-                if let Some(target_value) = target_object.get_mut(key) {
-                    merge_tool_call_field(key, target_value, delta_value);
-                } else {
-                    target_object.insert(key.clone(), delta_value.clone());
-                }
-            }
-        }
-        (target_value, delta_value) => {
-            if !is_ignorable_tool_call_delta_value(delta_value) {
-                *target_value = delta_value.clone();
-            }
-        }
-    }
-}
-
-fn merge_tool_call_field(key: &str, target: &mut Value, delta: &Value) {
-    if key == "arguments" {
-        if let (Value::String(target_text), Value::String(delta_text)) = (&mut *target, delta) {
-            target_text.push_str(delta_text);
-            return;
-        }
-    }
-
-    merge_tool_call_value(target, delta);
-}
-
-fn is_ignorable_tool_call_delta_value(value: &Value) -> bool {
-    value.is_null() || value.as_str().is_some_and(str::is_empty)
+        .or_else(|| value.as_u64().and_then(|number| i64::try_from(number).ok()))
+        .or_else(|| value.as_f64().map(|number| number as i64))
 }
 
 fn read_string(value: &Value, key: &str) -> Option<String> {

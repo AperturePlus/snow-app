@@ -232,7 +232,11 @@ pub fn list_chat_conversations(
                         status,
                         directory_id,
                         created_at,
-                        updated_at
+                        updated_at,
+                        input_tokens,
+                        output_tokens,
+                        cache_creation_input_tokens,
+                        cache_read_input_tokens
                    FROM chat_conversations
                   WHERE directory_id = ?1
                     AND status = 'active'
@@ -251,6 +255,10 @@ pub fn list_chat_conversations(
                     directory_id: row.get(7)?,
                     created_at: row.get(8)?,
                     updated_at: row.get(9)?,
+                    input_tokens: row.get(10)?,
+                    output_tokens: row.get(11)?,
+                    cache_creation_input_tokens: row.get(12)?,
+                    cache_read_input_tokens: row.get(13)?,
                 })
             })?;
 
@@ -289,7 +297,11 @@ pub fn list_chat_conversations_paginated(
                         status,
                         directory_id,
                         created_at,
-                        updated_at
+                        updated_at,
+                        input_tokens,
+                        output_tokens,
+                        cache_creation_input_tokens,
+                        cache_read_input_tokens
                    FROM chat_conversations
                   WHERE directory_id = ?1
                     AND status = 'active'
@@ -311,6 +323,10 @@ pub fn list_chat_conversations_paginated(
                         directory_id: row.get(7)?,
                         created_at: row.get(8)?,
                         updated_at: row.get(9)?,
+                        input_tokens: row.get(10)?,
+                        output_tokens: row.get(11)?,
+                        cache_creation_input_tokens: row.get(12)?,
+                        cache_read_input_tokens: row.get(13)?,
                     })
                 },
             )?;
@@ -340,7 +356,11 @@ pub fn list_pinned_conversations(
                         status,
                         directory_id,
                         created_at,
-                        updated_at
+                        updated_at,
+                        input_tokens,
+                        output_tokens,
+                        cache_creation_input_tokens,
+                        cache_read_input_tokens
                    FROM chat_conversations
                   WHERE directory_id = ?1
                     AND status = 'pin'
@@ -359,6 +379,10 @@ pub fn list_pinned_conversations(
                     directory_id: row.get(7)?,
                     created_at: row.get(8)?,
                     updated_at: row.get(9)?,
+                    input_tokens: row.get(10)?,
+                    output_tokens: row.get(11)?,
+                    cache_creation_input_tokens: row.get(12)?,
+                    cache_read_input_tokens: row.get(13)?,
                 })
             })?;
 
@@ -465,6 +489,7 @@ pub fn list_chat_messages(
                         status,
                         model,
                         response_id,
+                        tool_calls_json,
                         created_at
                    FROM chat_messages
                   WHERE conversation_id = ?1
@@ -480,7 +505,8 @@ pub fn list_chat_messages(
                     status: row.get(4)?,
                     model: row.get(5)?,
                     response_id: row.get(6)?,
-                    created_at: row.get(7)?,
+                    tool_calls_json: row.get(7)?,
+                    created_at: row.get(8)?,
                 })
             })?;
 
@@ -579,6 +605,7 @@ fn normalize_role(role: &str) -> &str {
         "assistant" => "assistant",
         "system" => "system",
         "developer" => "developer",
+        "tool" => "tool",
         _ => "user",
     }
 }

@@ -1,13 +1,15 @@
 import type { RefObject } from "react";
 import type { LucideIcon } from "lucide-react";
-import type { ApiConfigRecord, Model } from "../../../../preload";
+import type { ApiConfigRecord, Model, TokenUsage } from "../../../../preload";
 export type ChatInputSendOptions = {
   model?: string;
 };
-
 export type ChatInputProps = {
   placeholder?: string;
   onSend?: (message: string, options: ChatInputSendOptions) => void;
+  isStreaming?: boolean;
+  onAbort?: () => void;
+  tokenUsage?: TokenUsage | null;
 };
 
 export type RequestMethod = "chat" | "responses" | "gemini" | "anthropic";
@@ -42,6 +44,7 @@ export type ChatInputState = {
   thinkingError: string | null;
   thinkingDropdownRef: RefObject<HTMLDivElement | null>;
   labels: ChatInputLabels;
+  isStreaming: boolean;
 };
 
 export type ChatInputLabels = {
@@ -63,6 +66,7 @@ export type ChatInputActions = {
   setIsThinkingDropdownOpen: (updater: (open: boolean) => boolean) => void;
   handleChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
   handleSend: () => void;
+  handleAbort: () => void;
   handleKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   handleSelectModel: (modelId: string) => void;
   handleOpenManualMode: () => void;
@@ -76,4 +80,5 @@ export type ChatInputActions = {
 export type ChatInputViewProps = ChatInputState &
   ChatInputActions & {
     placeholder: string;
+    tokenUsage: TokenUsage | null;
   };

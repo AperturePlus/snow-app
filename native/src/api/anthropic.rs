@@ -4,22 +4,29 @@ use std::path::PathBuf;
 use futures::StreamExt;
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT_ENCODING, AUTHORIZATION, CONTENT_TYPE};
+use reqwest::header::{
+    HeaderMap, HeaderName, HeaderValue, ACCEPT_ENCODING, AUTHORIZATION, CONTENT_TYPE,
+};
 use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
 
-use crate::api::config::{normalize_base_url, resolve_sdk_api_base_url};
+use crate::api::config::{
+    normalize_base_url, resolve_sdk_api_base_url, DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_OPENAI_BASE_URL,
+};
 use crate::api::conversation::{prepare_context_request, ConversationContextRequest};
 use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback, ResponsesApiStreamChunk,
     TokenUsage,
 };
-
 use crate::storage::services::chat_conversations::{
     store_chat_exchange, ChatContextMessage, ChatTokenUsage, StoreChatExchangeInput,
 };
 use crate::storage::ApiConfigRecord;
-pub async fn create_chat_completion_response_stream(
+
+const ANTHROPIC_VERSION: &str = "2023-06-01";
+const DEFAULT_MAX_TOKENS: i32 = 8192;
+
+pub async fn create_anthropic_response_stream(
     request: ResponsesApiRequest,
     database_path: PathBuf,
     api_config: ApiConfigRecord,
@@ -27,7 +34,7 @@ pub async fn create_chat_completion_response_stream(
     on_chunk: ResponsesApiStreamCallback,
     cancel_token: CancellationToken,
 ) -> Result<ResponsesApiResult> {
-    create_chat_completion_response_async(
+    create_anthropic_response_async(
         request,
         database_path,
         api_config,
@@ -38,7 +45,7 @@ pub async fn create_chat_completion_response_stream(
     .await
 }
 
-async fn create_chat_completion_response_async(
+async fn create_anthropic_response_async(
     request: ResponsesApiRequest,
     database_path: PathBuf,
     api_config: ApiConfigRecord,
@@ -57,7 +64,7 @@ async fn create_chat_completion_response_async(
         ));
     }
 
-    let endpoint = resolve_chat_completions_endpoint(&api_config);
+    let endpoint = resolve_anthropic_endpoint(&api_config);
     if endpoint.is_empty() {
         return Err(Error::from_reason(
             "Base URL not configured. Please configure API settings first.",
@@ -83,8 +90,8 @@ async fn create_chat_completion_response_async(
     let client = reqwest::Client::builder()
         .build()
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
-    let payload = build_chat_completions_payload(&prepared_request.messages, &request, &api_config)?;
-    let streamed_response = collect_chat_completions_stream(
+    let payload = build_anthropic_payload(&prepared_request.messages, &request, &api_config)?;
+    let streamed_response = collect_anthropic_stream(
         &client,
         &endpoint,
         api_key,
@@ -131,23 +138,27 @@ async fn create_chat_completion_response_async(
     })
 }
 
-fn resolve_chat_completions_endpoint(api_config: &ApiConfigRecord) -> String {
+fn resolve_anthropic_endpoint(api_config: &ApiConfigRecord) -> String {
     let normalized_base_url = normalize_base_url(&api_config.base_url);
     if normalized_base_url.is_empty() {
-        return normalized_base_url;
+        return String::new();
     }
+
+    let base_url = if normalized_base_url == DEFAULT_OPENAI_BASE_URL {
+        DEFAULT_ANTHROPIC_BASE_URL.to_string()
+    } else {
+        normalized_base_url
+    };
 
     if api_config.base_url_mode == "endpoint" {
-        normalized_base_url
-    } else {
-        format!(
-            "{}/chat/completions",
-            resolve_sdk_api_base_url(&normalized_base_url, &api_config.base_url_mode)
-        )
+        return base_url;
     }
+
+    let resolved_base = resolve_sdk_api_base_url(&base_url, &api_config.base_url_mode);
+    format!("{}/messages", resolved_base)
 }
 
-fn build_chat_completions_payload(
+fn build_anthropic_payload(
     messages: &[ChatContextMessage],
     request: &ResponsesApiRequest,
     api_config: &ApiConfigRecord,
@@ -165,45 +176,54 @@ fn build_chat_completions_payload(
         ));
     }
 
-    let messages = messages
-        .iter()
-        .filter_map(|message| {
-            let content = message.content.trim();
-            if content.is_empty() {
-                return None;
+    let mut system_parts = Vec::new();
+    let mut anthropic_messages = Vec::new();
+
+    for message in messages {
+        let content = message.content.trim();
+        if content.is_empty() {
+            continue;
+        }
+
+        let role = message.role.trim();
+        match role {
+            "system" | "developer" => {
+                system_parts.push(content.to_string());
             }
+            _ => {
+                anthropic_messages.push(json!({
+                    "role": normalize_anthropic_role(role),
+                    "content": content,
+                }));
+            }
+        }
+    }
 
-            Some(json!({
-                "role": normalize_message_role(&message.role),
-                "content": content,
-            }))
-        })
-        .collect::<Vec<_>>();
-
-    if messages.is_empty() {
+    if anthropic_messages.is_empty() {
         return Err(Error::from_reason("Chat message content is required"));
     }
 
     let mut payload = json!({
         "model": model,
-        "messages": messages,
+        "messages": anthropic_messages,
         "stream": true,
-        "stream_options": {
-            "include_usage": true,
-        },
     });
 
-    if let Some(max_tokens) = api_config.max_tokens {
-        if max_tokens > 0 {
-            payload["max_tokens"] = json!(max_tokens);
-        }
+    let max_tokens = api_config
+        .max_tokens
+        .filter(|&v| v > 0)
+        .unwrap_or(DEFAULT_MAX_TOKENS);
+    payload["max_tokens"] = json!(max_tokens);
+
+    if !system_parts.is_empty() {
+        payload["system"] = json!(system_parts.join("\n"));
     }
 
-    if let Some(reasoning_effort) = build_chat_reasoning_effort(&api_config.config_json) {
-        payload["reasoning_effort"] = json!(reasoning_effort);
+    if let Some(thinking) = build_anthropic_thinking(&api_config.config_json) {
+        payload["thinking"] = thinking;
     }
 
-    if let Ok(tools) = crate::mcp::tools::tools_as_openai_chat_json() {
+    if let Ok(tools) = crate::mcp::tools::tools_as_anthropic_json() {
         if tools.as_array().is_some_and(|arr| !arr.is_empty()) {
             payload["tools"] = tools;
         }
@@ -212,19 +232,17 @@ fn build_chat_completions_payload(
     Ok(payload)
 }
 
-fn normalize_message_role(role: &str) -> &str {
+fn normalize_anthropic_role(role: &str) -> &str {
     match role.trim() {
         "assistant" => "assistant",
-        "system" => "system",
-        "developer" => "developer",
         _ => "user",
     }
 }
 
-fn build_chat_reasoning_effort(config_json: &str) -> Option<String> {
+fn build_anthropic_thinking(config_json: &str) -> Option<Value> {
     let parsed = serde_json::from_str::<Value>(config_json).ok()?;
-    let chat_thinking = parsed.get("snowcfg")?.get("chatThinking")?.as_object()?;
-    let enabled = chat_thinking
+    let thinking = parsed.get("snowcfg")?.get("thinking")?.as_object()?;
+    let enabled = thinking
         .get("enabled")
         .and_then(Value::as_bool)
         .unwrap_or(true);
@@ -232,15 +250,17 @@ fn build_chat_reasoning_effort(config_json: &str) -> Option<String> {
         return None;
     }
 
-    chat_thinking
-        .get("reasoning_effort")
+    let effort = thinking
+        .get("effort")
         .and_then(Value::as_str)
         .map(str::trim)
-        .filter(|value| !value.is_empty() && *value != "none")
-        .map(ToString::to_string)
+        .filter(|value| !value.is_empty() && *value != "none")?;
+    let _ = effort;
+
+    Some(json!({ "type": "adaptive" }))
 }
 
-struct ChatCompletionStreamResult {
+struct AnthropicStreamResult {
     id: String,
     content: String,
     thinking: String,
@@ -251,7 +271,7 @@ struct ChatCompletionStreamResult {
     raw_events: Vec<Value>,
 }
 
-async fn collect_chat_completions_stream(
+async fn collect_anthropic_stream(
     client: &reqwest::Client,
     endpoint: &str,
     api_key: &str,
@@ -259,20 +279,20 @@ async fn collect_chat_completions_stream(
     payload: Value,
     on_chunk: &ResponsesApiStreamCallback,
     cancel_token: &CancellationToken,
-) -> Result<ChatCompletionStreamResult> {
+) -> Result<AnthropicStreamResult> {
     let response = client
         .post(endpoint)
         .headers(build_header_map(api_key, custom_headers)?)
         .json(&payload)
         .send()
         .await
-        .map_err(|error| Error::from_reason(format!("Failed to create chat stream: {}", error)))?;
+        .map_err(|error| Error::from_reason(format!("Failed to create Anthropic stream: {}", error)))?;
 
     let status = response.status();
     if !status.is_success() {
         let error_body = response.text().await.unwrap_or_default();
         return Err(Error::from_reason(format!(
-            "Chat completions request failed: {} {}",
+            "Anthropic messages request failed: {} {}",
             status, error_body
         )));
     }
@@ -282,6 +302,7 @@ async fn collect_chat_completions_stream(
     let mut thinking_chunks = Vec::new();
     let mut tool_calls = Vec::new();
     let mut tool_call_positions_by_index: HashMap<usize, usize> = HashMap::new();
+    let mut tool_input_json_by_index: HashMap<usize, String> = HashMap::new();
     let mut response_id = String::new();
     let mut response_model = String::new();
     let mut response_status = String::from("completed");
@@ -296,7 +317,7 @@ async fn collect_chat_completions_stream(
         }
 
         let chunk = chunk_result
-            .map_err(|error| Error::from_reason(format!("Failed to read chat stream: {}", error)))?;
+            .map_err(|error| Error::from_reason(format!("Failed to read Anthropic stream: {}", error)))?;
         buffer.push_str(&String::from_utf8_lossy(&chunk));
 
         while let Some(separator_index) = buffer.find("\n\n") {
@@ -304,13 +325,14 @@ async fn collect_chat_completions_stream(
             buffer = buffer[separator_index + 2..].to_string();
             let content_start_index = content_chunks.len();
             let thinking_start_index = thinking_chunks.len();
-            process_sse_event_block(
+            process_anthropic_sse_event_block(
                 &event_block,
                 &mut raw_events,
                 &mut content_chunks,
                 &mut thinking_chunks,
                 &mut tool_calls,
                 &mut tool_call_positions_by_index,
+                &mut tool_input_json_by_index,
                 &mut response_id,
                 &mut response_model,
                 &mut response_status,
@@ -318,20 +340,21 @@ async fn collect_chat_completions_stream(
             )?;
             let content_delta = content_chunks[content_start_index..].join("");
             let thinking_delta = thinking_chunks[thinking_start_index..].join("");
-            emit_chat_completion_stream_chunk(on_chunk, content_delta, thinking_delta);
+            emit_stream_chunk(on_chunk, content_delta, thinking_delta);
         }
     }
 
     if response_status != "cancelled" && !buffer.trim().is_empty() {
         let content_start_index = content_chunks.len();
         let thinking_start_index = thinking_chunks.len();
-        process_sse_event_block(
+        process_anthropic_sse_event_block(
             &buffer,
             &mut raw_events,
             &mut content_chunks,
             &mut thinking_chunks,
             &mut tool_calls,
             &mut tool_call_positions_by_index,
+            &mut tool_input_json_by_index,
             &mut response_id,
             &mut response_model,
             &mut response_status,
@@ -339,14 +362,14 @@ async fn collect_chat_completions_stream(
         )?;
         let content_delta = content_chunks[content_start_index..].join("");
         let thinking_delta = thinking_chunks[thinking_start_index..].join("");
-        emit_chat_completion_stream_chunk(on_chunk, content_delta, thinking_delta);
+        emit_stream_chunk(on_chunk, content_delta, thinking_delta);
     }
 
     let content = content_chunks.join("").trim().to_string();
     let thinking = thinking_chunks.join("").trim().to_string();
     let tool_calls_json = serde_json::to_string(&tool_calls).unwrap_or_else(|_| "[]".to_string());
 
-    Ok(ChatCompletionStreamResult {
+    Ok(AnthropicStreamResult {
         id: response_id,
         content,
         thinking,
@@ -359,13 +382,14 @@ async fn collect_chat_completions_stream(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn process_sse_event_block(
+fn process_anthropic_sse_event_block(
     event_block: &str,
     raw_events: &mut Vec<Value>,
     content_chunks: &mut Vec<String>,
     thinking_chunks: &mut Vec<String>,
     tool_calls: &mut Vec<Value>,
     tool_call_positions_by_index: &mut HashMap<usize, usize>,
+    tool_input_json_by_index: &mut HashMap<usize, String>,
     response_id: &mut String,
     response_model: &mut String,
     response_status: &mut String,
@@ -378,19 +402,20 @@ fn process_sse_event_block(
         .collect::<Vec<_>>()
         .join("\n");
 
-    if data.trim().is_empty() || data.trim() == "[DONE]" {
+    if data.trim().is_empty() {
         return Ok(());
     }
 
     let event = serde_json::from_str::<Value>(&data).map_err(|error| {
-        Error::from_reason(format!("Failed to parse chat stream event: {}", error))
+        Error::from_reason(format!("Failed to parse Anthropic stream event: {}", error))
     })?;
-    process_chat_completion_event(
+    process_anthropic_event(
         &event,
         content_chunks,
         thinking_chunks,
         tool_calls,
         tool_call_positions_by_index,
+        tool_input_json_by_index,
         response_id,
         response_model,
         response_status,
@@ -402,72 +427,156 @@ fn process_sse_event_block(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn process_chat_completion_event(
+fn process_anthropic_event(
     event: &Value,
     content_chunks: &mut Vec<String>,
     thinking_chunks: &mut Vec<String>,
     tool_calls: &mut Vec<Value>,
     tool_call_positions_by_index: &mut HashMap<usize, usize>,
+    tool_input_json_by_index: &mut HashMap<usize, String>,
     response_id: &mut String,
     response_model: &mut String,
     response_status: &mut String,
     token_usage: &mut ChatTokenUsage,
 ) -> Result<()> {
-    if let Some(error) = event.get("error") {
-        let message = error
-            .get("message")
-            .and_then(Value::as_str)
-            .unwrap_or("Chat completions stream failed");
-        return Err(Error::from_reason(message.to_string()));
-    }
+    let event_type = event.get("type").and_then(Value::as_str).unwrap_or_default();
 
-    if let Some(id) = read_string(event, "id") {
-        *response_id = id;
-    }
-    if let Some(model) = read_string(event, "model") {
-        *response_model = model;
-    }
-    if let Some(usage) = event.get("usage").filter(|value| !value.is_null()) {
-        *token_usage = extract_token_usage(usage);
-    }
-
-    if let Some(choices) = event.get("choices").and_then(Value::as_array) {
-        for choice in choices {
-            if let Some(delta) = choice.get("delta") {
-                push_trimmed_string(delta.get("content"), content_chunks);
-                push_trimmed_string(delta.get("reasoning_content"), thinking_chunks);
-                collect_tool_calls(delta.get("tool_calls"), tool_calls, tool_call_positions_by_index, true);
-            }
-
-            if let Some(message) = choice.get("message") {
-                push_trimmed_string(message.get("content"), content_chunks);
-                push_trimmed_string(message.get("reasoning_content"), thinking_chunks);
-                collect_tool_calls(message.get("tool_calls"), tool_calls, tool_call_positions_by_index, false);
-            }
-
-            if let Some(finish_reason) = choice
-                .get("finish_reason")
-                .and_then(Value::as_str)
-                .filter(|value| !value.is_empty())
-            {
-                *response_status = if finish_reason == "stop" {
-                    "completed".to_string()
-                } else {
-                    finish_reason.to_string()
-                };
+    match event_type {
+        "message_start" => {
+            if let Some(message) = event.get("message") {
+                if let Some(id) = read_string(message, "id") {
+                    *response_id = id;
+                }
+                if let Some(model) = read_string(message, "model") {
+                    *response_model = model;
+                }
+                if let Some(usage) = message.get("usage").filter(|v| !v.is_null()) {
+                    if let Some(input_tokens) = read_path_i64(usage, &["input_tokens"]) {
+                        token_usage.input_tokens = input_tokens;
+                    }
+                    if let Some(cache_creation) =
+                        read_path_i64(usage, &["cache_creation_input_tokens"])
+                    {
+                        token_usage.cache_creation_input_tokens = cache_creation;
+                    }
+                    if let Some(cache_read) = read_path_i64(usage, &["cache_read_input_tokens"]) {
+                        token_usage.cache_read_input_tokens = cache_read;
+                    }
+                }
             }
         }
+        "content_block_start" => {
+            if let Some(content_block) = event.get("content_block") {
+                let block_type = content_block
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if block_type == "tool_use" {
+                    if let Some(index) = event
+                        .get("index")
+                        .and_then(Value::as_u64)
+                        .and_then(|value| usize::try_from(value).ok())
+                    {
+                        tool_call_positions_by_index.insert(index, tool_calls.len());
+                    }
+                    tool_calls.push(content_block.clone());
+                }
+            }
+        }
+        "content_block_delta" => {
+            if let Some(delta) = event.get("delta") {
+                let delta_type = delta
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                match delta_type {
+                    "text_delta" => {
+                        push_trimmed_string(delta.get("text"), content_chunks);
+                    }
+                    "thinking_delta" => {
+                        push_trimmed_string(delta.get("thinking"), thinking_chunks);
+                    }
+                    "input_json_delta" => {
+                        if let Some(index) = event
+                            .get("index")
+                            .and_then(Value::as_u64)
+                            .and_then(|value| usize::try_from(value).ok())
+                        {
+                            if let Some(partial_json) = delta
+                                .get("partial_json")
+                                .and_then(Value::as_str)
+                                .filter(|value| !value.is_empty())
+                            {
+                                let input_json = tool_input_json_by_index.entry(index).or_default();
+                                input_json.push_str(partial_json);
+
+                                if let Ok(input) = serde_json::from_str::<Value>(input_json.as_str()) {
+                                    if let Some(position) =
+                                        tool_call_positions_by_index.get(&index).copied()
+                                    {
+                                        if let Some(tool_call) = tool_calls
+                                            .get_mut(position)
+                                            .and_then(Value::as_object_mut)
+                                        {
+                                            tool_call.insert("input".to_string(), input);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        "message_delta" => {
+            if let Some(delta) = event.get("delta") {
+                if let Some(stop_reason) = delta
+                    .get("stop_reason")
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.is_empty())
+                {
+                    *response_status = if stop_reason == "end_turn" {
+                        "completed".to_string()
+                    } else {
+                        stop_reason.to_string()
+                    };
+                }
+            }
+            if let Some(usage) = event.get("usage").filter(|v| !v.is_null()) {
+                if let Some(output_tokens) = read_path_i64(usage, &["output_tokens"]) {
+                    token_usage.output_tokens = output_tokens;
+                }
+                if let Some(input_tokens) = read_path_i64(usage, &["input_tokens"]).filter(|n| *n > 0) {
+                    token_usage.input_tokens = input_tokens;
+                }
+                if let Some(cache_creation) =
+                    read_path_i64(usage, &["cache_creation_input_tokens"]).filter(|n| *n > 0)
+                {
+                    token_usage.cache_creation_input_tokens = cache_creation;
+                }
+                if let Some(cache_read) = read_path_i64(usage, &["cache_read_input_tokens"])
+                    .filter(|n| *n > 0)
+                {
+                    token_usage.cache_read_input_tokens = cache_read;
+                }
+            }
+        }
+        "error" => {
+            let message = event
+                .get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(Value::as_str)
+                .unwrap_or("Anthropic stream failed");
+            return Err(Error::from_reason(message.to_string()));
+        }
+        _ => {}
     }
 
     Ok(())
 }
 
-/// Emit a streaming chunk to the JavaScript side via ThreadsafeFunction.
-///
-/// Only the delta strings are sent; the `content` and `thinking` fields are
-/// left empty to avoid O(n^2) data transfer. The renderer accumulates deltas
-/// locally and the final complete text arrives via the resolved Promise.
-fn emit_chat_completion_stream_chunk(
+fn emit_stream_chunk(
     on_chunk: &ResponsesApiStreamCallback,
     content_delta: String,
     thinking_delta: String,
@@ -492,6 +601,16 @@ fn build_header_map(api_key: &str, custom_headers: &HashMap<String, String>) -> 
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
     headers.insert(
+        HeaderName::from_static("x-api-key"),
+        HeaderValue::from_str(api_key).map_err(|error| {
+            Error::from_reason(format!("Invalid API key header value: {}", error))
+        })?,
+    );
+    headers.insert(
+        HeaderName::from_static("anthropic-version"),
+        HeaderValue::from_static(ANTHROPIC_VERSION),
+    );
+    headers.insert(
         AUTHORIZATION,
         HeaderValue::from_str(&format!("Bearer {}", api_key)).map_err(|error| {
             Error::from_reason(format!("Invalid authorization header value: {}", error))
@@ -508,6 +627,8 @@ fn build_header_map(api_key: &str, custom_headers: &HashMap<String, String>) -> 
         if trimmed_key.eq_ignore_ascii_case("content-type")
             || trimmed_key.eq_ignore_ascii_case("accept-encoding")
             || trimmed_key.eq_ignore_ascii_case("authorization")
+            || trimmed_key.eq_ignore_ascii_case("x-api-key")
+            || trimmed_key.eq_ignore_ascii_case("anthropic-version")
         {
             continue;
         }
@@ -516,7 +637,10 @@ fn build_header_map(api_key: &str, custom_headers: &HashMap<String, String>) -> 
             Error::from_reason(format!("Invalid custom header '{}': {}", trimmed_key, error))
         })?;
         let header_value = HeaderValue::from_str(trimmed_value).map_err(|error| {
-            Error::from_reason(format!("Invalid custom header value for '{}': {}", trimmed_key, error))
+            Error::from_reason(format!(
+                "Invalid custom header value for '{}': {}",
+                trimmed_key, error
+            ))
         })?;
         headers.insert(header_name, header_value);
     }
@@ -533,35 +657,11 @@ fn push_trimmed_string(value: Option<&Value>, chunks: &mut Vec<String>) {
     }
 }
 
-fn extract_token_usage(usage: &Value) -> ChatTokenUsage {
-    ChatTokenUsage {
-        input_tokens: read_first_i64(usage, &[&["prompt_tokens"], &["input_tokens"]]),
-        output_tokens: read_first_i64(usage, &[&["completion_tokens"], &["output_tokens"]]),
-        cache_creation_input_tokens: read_first_i64(
-            usage,
-            &[
-                &["prompt_cache_creation_tokens"],
-                &["cache_creation_input_tokens"],
-                &["prompt_tokens_details", "cache_creation_input_tokens"],
-            ],
-        ),
-        cache_read_input_tokens: read_first_i64(
-            usage,
-            &[
-                &["cached_tokens"],
-                &["prompt_cache_hit_tokens"],
-                &["cache_read_input_tokens"],
-                &["prompt_tokens_details", "cached_tokens"],
-            ],
-        ),
-    }
-}
-
-fn read_first_i64(value: &Value, paths: &[&[&str]]) -> i64 {
-    paths
-        .iter()
-        .find_map(|path| read_path_i64(value, path).filter(|number| *number > 0))
-        .unwrap_or(0)
+fn read_string(value: &Value, key: &str) -> Option<String> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
 }
 
 fn read_path_i64(value: &Value, path: &[&str]) -> Option<i64> {
@@ -570,92 +670,12 @@ fn read_path_i64(value: &Value, path: &[&str]) -> Option<i64> {
         current = current.get(*key)?;
     }
 
-    current
-        .as_i64()
-        .or_else(|| current.as_u64().and_then(|number| i64::try_from(number).ok()))
-        .or_else(|| current.as_f64().map(|number| number as i64))
+    value_as_i64(current)
 }
 
-fn collect_tool_calls(
-    value: Option<&Value>,
-    calls: &mut Vec<Value>,
-    positions_by_index: &mut HashMap<usize, usize>,
-    merge_by_index: bool,
-) {
-    let Some(value) = value else {
-        return;
-    };
-
-    match value {
-        Value::Array(items) => {
-            for item in items {
-                collect_tool_calls(Some(item), calls, positions_by_index, merge_by_index);
-            }
-        }
-        Value::Object(object) => {
-            if merge_by_index {
-                if let Some(index) = object
-                    .get("index")
-                    .and_then(Value::as_u64)
-                    .and_then(|value| usize::try_from(value).ok())
-                {
-                    if let Some(position) = positions_by_index.get(&index).copied() {
-                        if let Some(target) = calls.get_mut(position) {
-                            merge_tool_call_value(target, value);
-                            return;
-                        }
-                    }
-                    positions_by_index.insert(index, calls.len());
-                }
-            }
-
-            calls.push(value.clone());
-        }
-        _ => {}
-    }
-}
-
-fn merge_tool_call_value(target: &mut Value, delta: &Value) {
-    match (target, delta) {
-        (Value::Object(target_object), Value::Object(delta_object)) => {
-            for (key, delta_value) in delta_object {
-                if is_ignorable_tool_call_delta_value(delta_value) {
-                    continue;
-                }
-
-                if let Some(target_value) = target_object.get_mut(key) {
-                    merge_tool_call_field(key, target_value, delta_value);
-                } else {
-                    target_object.insert(key.clone(), delta_value.clone());
-                }
-            }
-        }
-        (target_value, delta_value) => {
-            if !is_ignorable_tool_call_delta_value(delta_value) {
-                *target_value = delta_value.clone();
-            }
-        }
-    }
-}
-
-fn merge_tool_call_field(key: &str, target: &mut Value, delta: &Value) {
-    if key == "arguments" {
-        if let (Value::String(target_text), Value::String(delta_text)) = (&mut *target, delta) {
-            target_text.push_str(delta_text);
-            return;
-        }
-    }
-
-    merge_tool_call_value(target, delta);
-}
-
-fn is_ignorable_tool_call_delta_value(value: &Value) -> bool {
-    value.is_null() || value.as_str().is_some_and(str::is_empty)
-}
-
-fn read_string(value: &Value, key: &str) -> Option<String> {
+fn value_as_i64(value: &Value) -> Option<i64> {
     value
-        .get(key)
-        .and_then(Value::as_str)
-        .map(ToString::to_string)
+        .as_i64()
+        .or_else(|| value.as_u64().and_then(|number| i64::try_from(number).ok()))
+        .or_else(|| value.as_f64().map(|number| number as i64))
 }

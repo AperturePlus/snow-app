@@ -168,6 +168,10 @@ export type ChatConversationRecord = {
   directoryId: string;
   createdAt: string;
   updatedAt: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
 };
 
 export type ChatConversationPage = {
@@ -183,11 +187,11 @@ export type ChatMessageRecord = {
   status: string;
   model: string;
   responseId: string;
+  toolCallsJson: string;
   createdAt: string;
 };
-
 export type ResponsesApiMessage = {
-  role: "user" | "assistant" | "system" | "developer";
+  role: "user" | "assistant" | "system" | "developer" | "tool";
   content: string;
 };
 
@@ -199,6 +203,13 @@ export type ResponsesApiRequest = {
   directoryId?: string;
 };
 
+export type TokenUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+};
+
 export type ResponsesApiResult = {
   id: string;
   conversationId: string;
@@ -206,6 +217,8 @@ export type ResponsesApiResult = {
   thinking: string;
   model: string;
   status: string;
+  toolCallsJson: string;
+  tokenUsage: TokenUsage;
 };
 
 export type ResponsesApiStreamChunk = {
@@ -213,6 +226,12 @@ export type ResponsesApiStreamChunk = {
   thinkingDelta: string;
   content: string;
   thinking: string;
+};
+
+export type McpToolDefinition = {
+  name: string;
+  description: string;
+  inputSchemaJson: string;
 };
 
 export type NativeBridge = {
@@ -262,8 +281,12 @@ export type NativeBridge = {
   fetchAvailableModelsForConfig: (config: ApiModelsConfig) => Model[];
   createResponseStream: (
     request: ResponsesApiRequest,
-    onChunk: (chunk: ResponsesApiStreamChunk) => void
+    onChunk: (chunk: ResponsesApiStreamChunk) => void,
+    streamId: string
   ) => Promise<ResponsesApiResult>;
+  abortResponseStream: (streamId: string) => boolean;
+  listMcpTools: () => McpToolDefinition[];
+  callMcpTool: (toolFullName: string, argsJson: string) => string;
   engineInfo: () => string;
   sum: (a: number, b: number) => number;
 };

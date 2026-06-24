@@ -24,6 +24,8 @@ import {
 import type { ChatInputActions, ChatInputState } from "./types";
 type UseChatInputControllerParams = {
   onSend?: (message: string, options: { model?: string }) => void;
+  isStreaming?: boolean;
+  onAbort?: () => void;
 };
 
 type UseChatInputControllerResult = ChatInputState & ChatInputActions;
@@ -39,6 +41,8 @@ const isComposingKeyboardEvent = (
 
 export const useChatInputController = ({
   onSend,
+  isStreaming = false,
+  onAbort,
 }: UseChatInputControllerParams): UseChatInputControllerResult => {
   const { t } = useI18n();
   const [value, setValue] = useState("");
@@ -406,11 +410,13 @@ export const useChatInputController = ({
     thinkingError,
     thinkingDropdownRef,
     labels,
+    isStreaming,
     setManualValue,
     setIsManualMode,
     setIsThinkingDropdownOpen,
     handleChange,
     handleSend,
+    handleAbort: onAbort ?? (() => {}),
     handleKeyDown,
     handleSelectModel,
     handleOpenManualMode,

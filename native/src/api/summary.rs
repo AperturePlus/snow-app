@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use napi::bindgen_prelude::*;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT_ENCODING, AUTHORIZATION, CONTENT_TYPE};
 use serde_json::{json, Value};
-
 use crate::api::config::{
     get_active_api_request_context, normalize_base_url, resolve_sdk_api_base_url,
+    DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_GEMINI_BASE_URL, DEFAULT_OPENAI_BASE_URL,
 };
 use crate::storage::services::chat_conversations::{load_context_messages, update_conversation_summary};
 
@@ -39,6 +39,26 @@ pub async fn generate_conversation_summary(conversation_id: String) -> Result<St
     let summary_text = match api_config.request_method.as_str() {
         "responses" => {
             generate_summary_via_responses(
+                &api_config,
+                &api_key,
+                &custom_headers,
+                model,
+                &messages,
+            )
+            .await?
+        }
+        "anthropic" => {
+            generate_summary_via_anthropic(
+                &api_config,
+                &api_key,
+                &custom_headers,
+                model,
+                &messages,
+            )
+            .await?
+        }
+        "gemini" => {
+            generate_summary_via_gemini(
                 &api_config,
                 &api_key,
                 &custom_headers,
@@ -88,7 +108,7 @@ async fn generate_summary_via_chat(
         "model": model,
         "messages": chat_messages,
         "stream": false,
-        "max_tokens": 100,
+        "max_tokens": 4096,
     });
 
     let client = reqwest::Client::builder()
@@ -181,6 +201,321 @@ async fn generate_summary_via_responses(
     let content = extract_responses_content(&body);
 
     Ok(content)
+}
+
+async fn generate_summary_via_anthropic(
+    api_config: &crate::storage::ApiConfigRecord,
+    api_key: &str,
+    custom_headers: &HashMap<String, String>,
+    model: &str,
+    messages: &[crate::storage::services::chat_conversations::ChatContextMessage],
+) -> Result<String> {
+    let endpoint = resolve_anthropic_endpoint(api_config);
+    if endpoint.is_empty() {
+        return Err(Error::from_reason(
+            "Base URL not configured. Please configure API settings first.",
+        ));
+    }
+
+    let conversation_text = build_conversation_text(messages);
+    let payload = json!({
+        "model": model,
+        "max_tokens": 4096,
+        "stream": false,
+        "system": SUMMARY_SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": conversation_text}],
+    });
+
+    let client = reqwest::Client::builder()
+        .build()
+        .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
+
+    let response = client
+        .post(&endpoint)
+        .headers(build_anthropic_header_map(api_key, custom_headers)?)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|error| Error::from_reason(format!("Summary request failed: {}", error)))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let error_body = response.text().await.unwrap_or_default();
+        return Err(Error::from_reason(format!(
+            "Summary request failed: {} {}",
+            status, error_body
+        )));
+    }
+
+    let body: Value = response
+        .json()
+        .await
+        .map_err(|error| Error::from_reason(format!("Failed to parse summary response: {}", error)))?;
+
+    let content = extract_anthropic_content(&body);
+
+    Ok(content)
+}
+
+async fn generate_summary_via_gemini(
+    api_config: &crate::storage::ApiConfigRecord,
+    api_key: &str,
+    custom_headers: &HashMap<String, String>,
+    model: &str,
+    messages: &[crate::storage::services::chat_conversations::ChatContextMessage],
+) -> Result<String> {
+    let endpoint = resolve_gemini_endpoint(api_config, model, api_key);
+    if endpoint.is_empty() {
+        return Err(Error::from_reason(
+            "Base URL not configured. Please configure API settings first.",
+        ));
+    }
+
+    let conversation_text = build_conversation_text(messages);
+    let payload = json!({
+        "systemInstruction": {
+            "parts": [{"text": SUMMARY_SYSTEM_PROMPT}]
+        },
+        "contents": [{
+            "role": "user",
+            "parts": [{"text": conversation_text}]
+        }],
+        "generationConfig": {
+            "maxOutputTokens": 4096
+        }
+    });
+
+    let client = reqwest::Client::builder()
+        .build()
+        .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
+
+    let response = client
+        .post(&endpoint)
+        .headers(build_gemini_header_map(custom_headers)?)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|error| Error::from_reason(format!("Summary request failed: {}", error)))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let error_body = response.text().await.unwrap_or_default();
+        return Err(Error::from_reason(format!(
+            "Summary request failed: {} {}",
+            status, error_body
+        )));
+    }
+
+    let body: Value = response
+        .json()
+        .await
+        .map_err(|error| Error::from_reason(format!("Failed to parse summary response: {}", error)))?;
+
+    let content = body
+        .get("candidates")
+        .and_then(Value::as_array)
+        .and_then(|items| items.first())
+        .and_then(|item| item.get("content"))
+        .and_then(|content| content.get("parts"))
+        .and_then(Value::as_array)
+        .and_then(|parts| parts.first())
+        .and_then(|part| part.get("text"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+
+    Ok(content.to_string())
+}
+
+fn build_conversation_text(
+    messages: &[crate::storage::services::chat_conversations::ChatContextMessage],
+) -> String {
+    messages
+        .iter()
+        .filter_map(|message| {
+            let content = message.content.trim();
+            if content.is_empty() {
+                return None;
+            }
+            let role = normalize_role(&message.role);
+            Some(format!("{}: {}", role, content))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn extract_anthropic_content(body: &Value) -> String {
+    let Some(content_array) = body.get("content").and_then(Value::as_array) else {
+        return String::new();
+    };
+
+    for block in content_array {
+        let block_type = block
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if block_type == "text" {
+            if let Some(text) = block
+                .get("text")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+            {
+                return text.to_string();
+            }
+        }
+    }
+
+    for block in content_array {
+        if let Some(text) = block
+            .get("text")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+        {
+            return text.to_string();
+        }
+    }
+
+    String::new()
+}
+
+fn resolve_anthropic_endpoint(api_config: &crate::storage::ApiConfigRecord) -> String {
+    let normalized_base_url = normalize_base_url(&api_config.base_url);
+    if normalized_base_url.is_empty() {
+        return String::new();
+    }
+
+    let base_url = if normalized_base_url == DEFAULT_OPENAI_BASE_URL {
+        DEFAULT_ANTHROPIC_BASE_URL.to_string()
+    } else {
+        normalized_base_url
+    };
+
+    if api_config.base_url_mode == "endpoint" {
+        return base_url;
+    }
+
+    let resolved_base = resolve_sdk_api_base_url(&base_url, &api_config.base_url_mode);
+    format!("{}/messages", resolved_base)
+}
+
+fn resolve_gemini_endpoint(
+    api_config: &crate::storage::ApiConfigRecord,
+    model: &str,
+    api_key: &str,
+) -> String {
+    let normalized_base_url = normalize_base_url(&api_config.base_url);
+    if normalized_base_url.is_empty() {
+        return String::new();
+    }
+
+    let base_url = if normalized_base_url == DEFAULT_OPENAI_BASE_URL {
+        DEFAULT_GEMINI_BASE_URL.to_string()
+    } else {
+        normalized_base_url
+    };
+
+    let resolved_base = if api_config.base_url_mode == "endpoint" {
+        base_url
+    } else {
+        resolve_sdk_api_base_url(&base_url, &api_config.base_url_mode)
+    };
+
+    let clean_model = model.strip_prefix("models/").unwrap_or(model);
+
+    let mut url = format!(
+        "{}/models/{}:generateContent",
+        resolved_base, clean_model
+    );
+
+    if !api_key.is_empty() {
+        url.push_str(&format!("?key={}", api_key));
+    }
+
+    url
+}
+
+fn build_anthropic_header_map(
+    api_key: &str,
+    custom_headers: &HashMap<String, String>,
+) -> Result<HeaderMap> {
+    let mut headers = HeaderMap::new();
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
+    headers.insert(
+        HeaderName::from_static("x-api-key"),
+        HeaderValue::from_str(api_key).map_err(|error| {
+            Error::from_reason(format!("Invalid API key header value: {}", error))
+        })?,
+    );
+    headers.insert(
+        HeaderName::from_static("anthropic-version"),
+        HeaderValue::from_static("2023-06-01"),
+    );
+
+    for (key, value) in custom_headers {
+        let trimmed_key = key.trim();
+        let trimmed_value = value.trim();
+        if trimmed_key.is_empty() || trimmed_value.is_empty() {
+            continue;
+        }
+
+        if trimmed_key.eq_ignore_ascii_case("content-type")
+            || trimmed_key.eq_ignore_ascii_case("accept-encoding")
+            || trimmed_key.eq_ignore_ascii_case("x-api-key")
+            || trimmed_key.eq_ignore_ascii_case("anthropic-version")
+        {
+            continue;
+        }
+
+        let header_name = trimmed_key.parse::<HeaderName>().map_err(|error| {
+            Error::from_reason(format!("Invalid custom header '{}': {}", trimmed_key, error))
+        })?;
+        let header_value = HeaderValue::from_str(trimmed_value).map_err(|error| {
+            Error::from_reason(format!(
+                "Invalid custom header value for '{}': {}",
+                trimmed_key, error
+            ))
+        })?;
+        headers.insert(header_name, header_value);
+    }
+
+    Ok(headers)
+}
+
+fn build_gemini_header_map(
+    custom_headers: &HashMap<String, String>,
+) -> Result<HeaderMap> {
+    let mut headers = HeaderMap::new();
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
+
+    for (key, value) in custom_headers {
+        let trimmed_key = key.trim();
+        let trimmed_value = value.trim();
+        if trimmed_key.is_empty() || trimmed_value.is_empty() {
+            continue;
+        }
+
+        if trimmed_key.eq_ignore_ascii_case("content-type")
+            || trimmed_key.eq_ignore_ascii_case("accept-encoding")
+        {
+            continue;
+        }
+
+        let header_name = trimmed_key.parse::<HeaderName>().map_err(|error| {
+            Error::from_reason(format!("Invalid custom header '{}': {}", trimmed_key, error))
+        })?;
+        let header_value = HeaderValue::from_str(trimmed_value).map_err(|error| {
+            Error::from_reason(format!(
+                "Invalid custom header value for '{}': {}",
+                trimmed_key, error
+            ))
+        })?;
+        headers.insert(header_name, header_value);
+    }
+
+    Ok(headers)
 }
 
 fn resolve_chat_endpoint(api_config: &crate::storage::ApiConfigRecord) -> String {

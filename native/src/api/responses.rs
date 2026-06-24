@@ -9,6 +9,7 @@ use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::{json, Value};
+use tokio_util::sync::CancellationToken;
 
 use crate::api::config::{
     normalize_base_url, resolve_sdk_api_base_url, DEFAULT_OPENAI_BASE_URL,
@@ -35,6 +36,14 @@ pub struct ResponsesApiRequest {
 }
 
 #[napi(object)]
+pub struct TokenUsage {
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_creation_input_tokens: i64,
+    pub cache_read_input_tokens: i64,
+}
+
+#[napi(object)]
 pub struct ResponsesApiResult {
     pub id: String,
     pub conversation_id: String,
@@ -42,6 +51,8 @@ pub struct ResponsesApiResult {
     pub thinking: String,
     pub model: String,
     pub status: String,
+    pub tool_calls_json: String,
+    pub token_usage: TokenUsage,
 }
 
 #[napi(object)]
@@ -69,8 +80,17 @@ pub async fn create_response_stream_with_context(
     api_config: ApiConfigRecord,
     custom_headers: HashMap<String, String>,
     on_chunk: ResponsesApiStreamCallback,
+    cancel_token: CancellationToken,
 ) -> Result<ResponsesApiResult> {
-    create_response_async(request, database_path, api_config, custom_headers, &on_chunk).await
+    create_response_async(
+        request,
+        database_path,
+        api_config,
+        custom_headers,
+        &on_chunk,
+        cancel_token,
+    )
+    .await
 }
 
 async fn create_response_async(
@@ -79,6 +99,7 @@ async fn create_response_async(
     api_config: ApiConfigRecord,
     custom_headers: HashMap<String, String>,
     on_chunk: &ResponsesApiStreamCallback,
+    cancel_token: CancellationToken,
 ) -> Result<ResponsesApiResult> {
     if api_config.request_method != "responses" {
         return Err(Error::from_reason(
@@ -118,7 +139,7 @@ async fn create_response_async(
 
     let client = build_openai_client(&base_url, api_key, &custom_headers)?;
     let payload = build_responses_payload(&prepared_request.messages, &request, &api_config)?;
-    let streamed_response = collect_streaming_response(&client, payload, on_chunk).await?;
+    let streamed_response = collect_streaming_response(&client, payload, on_chunk, &cancel_token).await?;
     let raw_response_json = serde_json::to_string(&streamed_response.raw_events)
         .unwrap_or_else(|_| "[]".to_string());
 
@@ -146,6 +167,13 @@ async fn create_response_async(
         thinking: streamed_response.thinking,
         model: streamed_response.model,
         status: streamed_response.status,
+        tool_calls_json: streamed_response.tool_calls_json,
+        token_usage: TokenUsage {
+            input_tokens: streamed_response.token_usage.input_tokens,
+            output_tokens: streamed_response.token_usage.output_tokens,
+            cache_creation_input_tokens: streamed_response.token_usage.cache_creation_input_tokens,
+            cache_read_input_tokens: streamed_response.token_usage.cache_read_input_tokens,
+        },
     })
 }
 
@@ -254,6 +282,12 @@ fn build_responses_payload(
         payload["reasoning"] = reasoning;
     }
 
+    if let Ok(tools) = crate::mcp::tools::tools_as_openai_responses_json() {
+        if tools.as_array().is_some_and(|arr| !arr.is_empty()) {
+            payload["tools"] = tools;
+        }
+    }
+
     Ok(payload)
 }
 
@@ -308,6 +342,7 @@ async fn collect_streaming_response(
     client: &Client<OpenAIConfig>,
     payload: Value,
     on_chunk: &ResponsesApiStreamCallback,
+    cancel_token: &CancellationToken,
 ) -> Result<StreamingResponseResult> {
     let mut stream: ResponseValueStream = client
         .responses()
@@ -331,6 +366,11 @@ async fn collect_streaming_response(
     };
 
     while let Some(event_result) = stream.next().await {
+        if cancel_token.is_cancelled() {
+            response_status = String::from("cancelled");
+            break;
+        }
+
         let event = match event_result {
             Ok(event) => event,
             Err(error) if is_stream_ended_error(&error) => break,

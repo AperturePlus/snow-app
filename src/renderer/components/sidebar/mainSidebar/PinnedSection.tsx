@@ -23,6 +23,7 @@ export function PinnedSection({
     conversationVersion,
     refreshConversations,
     handleSelectConversation,
+    handleNewChat,
     activeConversationId,
   } = useChatConversationContext();
   const [conversations, setConversations] = useState<ChatConversationRecord[]>(
@@ -96,6 +97,9 @@ export function PinnedSection({
   ): Promise<void> => {
     try {
       await window.snow.deleteConversation(conversation.conversationId);
+      if (conversation.conversationId === activeConversationId) {
+        handleNewChat();
+      }
       refreshConversations();
     } catch {
       // 静默失败
@@ -139,7 +143,14 @@ export function PinnedSection({
               onSelect={() =>
                 void handleSelectConversation(
                   conversation.conversationId,
-                  conversation.summary || conversation.title
+                  conversation.summary || conversation.title,
+                  {
+                    inputTokens: conversation.inputTokens,
+                    outputTokens: conversation.outputTokens,
+                    cacheCreationInputTokens:
+                      conversation.cacheCreationInputTokens,
+                    cacheReadInputTokens: conversation.cacheReadInputTokens,
+                  }
                 )
               }
             />

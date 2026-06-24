@@ -1,15 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatInputSendOptions } from "../chatInput/types";
+import type { TokenUsage } from "../../../../preload";
+
+export type ToolCallInfo = {
+  name: string;
+  arguments: string;
+  callId?: string;
+  status: "pending" | "running" | "completed" | "error";
+  result?: string;
+};
 
 export type ChatConversationMessage = {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "tool";
   content: string;
   thinking?: string;
   timestamp: string;
   status?: "sending" | "sent" | "error";
   responseId?: string;
   model?: string;
+  toolCalls?: ToolCallInfo[];
+  toolCallId?: string;
+  toolName?: string;
 };
 
 type UseChatConversationResult = {
@@ -17,10 +29,17 @@ type UseChatConversationResult = {
   summary: string;
   conversationVersion: number;
   activeConversationId: string | undefined;
+  tokenUsage: TokenUsage | null;
   handleSendMessage: (message: string, options: ChatInputSendOptions) => void;
-  handleSelectConversation: (conversationId: string, title?: string) => void;
+  handleSelectConversation: (
+    conversationId: string,
+    title?: string,
+    tokenUsage?: TokenUsage | null
+  ) => void;
   handleNewChat: () => void;
   refreshConversations: () => void;
+  isStreaming: boolean;
+  handleAbort: () => void;
 };
 
 const formatMessageTime = (): string =>
@@ -35,6 +54,102 @@ const createMessageId = (role: ChatConversationMessage["role"]): string =>
 const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : "AI 响应失败，请稍后重试。";
 
+const normalizeToolCallArguments = (args: unknown): string => {
+  if (typeof args === "string") {
+    return args;
+  }
+  if (typeof args === "object" && args !== null) {
+    return JSON.stringify(args);
+  }
+  return "{}";
+};
+
+const normalizeToolCallName = (tc: Record<string, unknown>): string => {
+  const directName = typeof tc.name === "string" ? tc.name : "";
+  if (directName) {
+    return directName;
+  }
+  const func = tc.function;
+  if (typeof func === "object" && func !== null && !Array.isArray(func)) {
+    const funcRecord = func as Record<string, unknown>;
+    return typeof funcRecord.name === "string" ? funcRecord.name : "";
+  }
+  return "";
+};
+
+const normalizeToolCallArgumentsFromTc = (
+  tc: Record<string, unknown>
+): string => {
+  // OpenAI Chat Completions: arguments in tc.function.arguments (string)
+  // OpenAI Responses API: arguments in tc.arguments (object)
+  // Anthropic: input in tc.input (object)
+  // Gemini: args in tc.args (object)
+  if (typeof tc.arguments === "string" || typeof tc.arguments === "object") {
+    return normalizeToolCallArguments(tc.arguments);
+  }
+  if (typeof tc.input === "string" || typeof tc.input === "object") {
+    return normalizeToolCallArguments(tc.input);
+  }
+  if (typeof tc.args === "string" || typeof tc.args === "object") {
+    return normalizeToolCallArguments(tc.args);
+  }
+  const func = tc.function;
+  if (typeof func === "object" && func !== null && !Array.isArray(func)) {
+    const funcRecord = func as Record<string, unknown>;
+    return normalizeToolCallArguments(funcRecord.arguments);
+  }
+  return "{}";
+};
+
+const normalizeToolCallId = (
+  tc: Record<string, unknown>
+): string | undefined => {
+  if (typeof tc.call_id === "string") {
+    return tc.call_id;
+  }
+  if (typeof tc.callId === "string") {
+    return tc.callId;
+  }
+  if (typeof tc.id === "string") {
+    return tc.id;
+  }
+  return undefined;
+};
+
+const parseToolCalls = (toolCallsJson: string | undefined): ToolCallInfo[] => {
+  if (!toolCallsJson) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(toolCallsJson);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed
+        .map((tc: unknown): ToolCallInfo | null => {
+          if (typeof tc !== "object" || tc === null || Array.isArray(tc)) {
+            return null;
+          }
+          const record = tc as Record<string, unknown>;
+          const name = normalizeToolCallName(record);
+          if (!name) {
+            return null;
+          }
+          return {
+            name,
+            arguments: normalizeToolCallArgumentsFromTc(record),
+            callId: normalizeToolCallId(record),
+            status: "pending" as const,
+          };
+        })
+        .filter((tc): tc is ToolCallInfo => tc !== null);
+    }
+  } catch {
+    // Not valid JSON, no tool calls
+  }
+
+  return [];
+};
+
 export const useChatConversation = (
   directoryId?: string
 ): UseChatConversationResult => {
@@ -46,12 +161,16 @@ export const useChatConversation = (
   >(undefined);
   const conversationIdRef = useRef<string | undefined>(undefined);
   const isSendingRef = useRef(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const activeStreamIdRef = useRef<string | null>(null);
+  const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
 
   useEffect(() => {
     setMessages([]);
     setSummary("");
     setConversationVersion(0);
     setActiveConversationId(undefined);
+    setTokenUsage(null);
     conversationIdRef.current = undefined;
   }, [directoryId]);
 
@@ -83,24 +202,35 @@ export const useChatConversation = (
       const conversationId = conversationIdRef.current;
 
       isSendingRef.current = true;
+      setIsStreaming(true);
       setMessages((currentMessages) => [
         ...currentMessages,
         userMessage,
         pendingAssistantMessage,
       ]);
 
-      void window.snow
-        .createResponseStream(
+      const MAX_TOOL_ITERATIONS = 10;
+      let iteration = 0;
+
+      const runAgentLoop = async (
+        currentAssistantMessageId: string,
+        requestMessages: {
+          role: "user" | "assistant" | "system" | "developer" | "tool";
+          content: string;
+        }[],
+        currentConversationId: string | undefined
+      ): Promise<void> => {
+        const response = await window.snow.createResponseStream(
           {
-            messages: [{ role: "user", content: trimmed }],
+            messages: requestMessages,
             model: options.model,
-            conversationId,
+            conversationId: currentConversationId,
             directoryId,
           },
           (chunk) => {
             setMessages((currentMessages) =>
               currentMessages.map((currentMessage) => {
-                if (currentMessage.id !== assistantMessageId) {
+                if (currentMessage.id !== currentAssistantMessageId) {
                   return currentMessage;
                 }
 
@@ -120,53 +250,180 @@ export const useChatConversation = (
                 };
               })
             );
+          },
+          (streamId: string) => {
+            activeStreamIdRef.current = streamId;
           }
-        )
-        .then((response) => {
-          if (response.conversationId) {
-            conversationIdRef.current = response.conversationId;
-            setActiveConversationId(response.conversationId);
-          }
+        );
 
+        activeStreamIdRef.current = null;
+
+        if (response.conversationId) {
+          conversationIdRef.current = response.conversationId;
+          setActiveConversationId(response.conversationId);
+        }
+
+        if (response.tokenUsage) {
+          setTokenUsage(response.tokenUsage);
+        }
+
+        // Parse tool calls from response
+        const toolCalls = parseToolCalls(response.toolCallsJson);
+
+        // Update assistant message with final content
+        setMessages((currentMessages) =>
+          currentMessages.map((currentMessage) => {
+            if (currentMessage.id !== currentAssistantMessageId) {
+              return currentMessage;
+            }
+
+            return {
+              ...currentMessage,
+              content: response.content || currentMessage.content || "",
+              thinking:
+                response.thinking || currentMessage.thinking || undefined,
+              timestamp: formatMessageTime(),
+              status: "sent",
+              responseId: response.id,
+              model: response.model || options.model,
+              toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+            };
+          })
+        );
+
+        if (isFirstMessage && response.conversationId) {
+          setConversationVersion((version) => version + 1);
+
+          void window.snow
+            .generateConversationSummary(response.conversationId)
+            .then((generatedSummary) => {
+              if (generatedSummary) {
+                setSummary(generatedSummary);
+                setConversationVersion((version) => version + 1);
+              }
+            })
+            .catch(() => {
+              // Summary generation failure should not block the conversation
+            });
+        }
+
+        // If no tool calls, we're done
+        if (toolCalls.length === 0) {
+          return;
+        }
+
+        // Check iteration limit
+        iteration++;
+        if (iteration >= MAX_TOOL_ITERATIONS) {
+          return;
+        }
+
+        // Execute tool calls and collect results
+        const toolResults: string[] = [];
+        for (const toolCall of toolCalls) {
+          // Update tool call status to running
           setMessages((currentMessages) =>
             currentMessages.map((currentMessage) => {
-              if (currentMessage.id !== assistantMessageId) {
+              if (currentMessage.id !== currentAssistantMessageId) {
                 return currentMessage;
               }
 
-              const streamedContent = currentMessage.content;
-
               return {
                 ...currentMessage,
-                content: response.content || streamedContent || "（空响应）",
-                thinking:
-                  response.thinking || currentMessage.thinking || undefined,
-                timestamp: formatMessageTime(),
-                status: "sent",
-                responseId: response.id,
-                model: response.model || options.model,
+                toolCalls: currentMessage.toolCalls?.map((tc) =>
+                  tc.name === toolCall.name && tc.status === "pending"
+                    ? { ...tc, status: "running" as const }
+                    : tc
+                ),
               };
             })
           );
 
-          if (isFirstMessage && response.conversationId) {
-            void window.snow
-              .generateConversationSummary(response.conversationId)
-              .then((generatedSummary) => {
-                if (generatedSummary) {
-                  setSummary(generatedSummary);
-                  setConversationVersion((version) => version + 1);
-                }
-              })
-              .catch(() => {
-                // Summary generation failure should not block the conversation
-              });
+          let result: string;
+          try {
+            result = await window.snow.callMcpTool(
+              toolCall.name,
+              toolCall.arguments
+            );
+          } catch (err) {
+            result = JSON.stringify({ error: getErrorMessage(err) });
           }
-        })
+
+          // Update tool call status to completed
+          setMessages((currentMessages) =>
+            currentMessages.map((currentMessage) => {
+              if (currentMessage.id !== currentAssistantMessageId) {
+                return currentMessage;
+              }
+
+              return {
+                ...currentMessage,
+                toolCalls: currentMessage.toolCalls?.map((tc) =>
+                  tc.name === toolCall.name && tc.status === "running"
+                    ? { ...tc, status: "completed" as const, result }
+                    : tc
+                ),
+              };
+            })
+          );
+
+          toolResults.push(`[Tool: ${toolCall.name}]\n${result}`);
+        }
+
+        // Add tool results as a tool message for the next iteration
+        const toolResultMessageId = createMessageId("tool");
+        const toolResultContent = toolResults.join("\n\n");
+        const toolResultMessage: ChatConversationMessage = {
+          id: toolResultMessageId,
+          role: "tool",
+          content: toolResultContent,
+          timestamp: formatMessageTime(),
+          status: "sent",
+          toolName: toolCalls.map((tc) => tc.name).join(", "),
+        };
+
+        setMessages((currentMessages) => [
+          ...currentMessages,
+          toolResultMessage,
+        ]);
+
+        // Create new pending assistant message for next iteration
+        const newAssistantMessageId = createMessageId("assistant");
+        const newPendingAssistant: ChatConversationMessage = {
+          id: newAssistantMessageId,
+          role: "assistant",
+          content: "",
+          timestamp: formatMessageTime(),
+          status: "sending",
+          model: options.model,
+        };
+
+        setMessages((currentMessages) => [
+          ...currentMessages,
+          newPendingAssistant,
+        ]);
+
+        // Continue the loop with tool results sent as role: "tool"
+        // The Rust side (conversation.rs normalize_role) maps "tool" -> "user"
+        // when sending to the AI API, but stores it as "tool" in the database
+        await runAgentLoop(
+          newAssistantMessageId,
+          [{ role: "tool", content: toolResultContent }],
+          response.conversationId
+        );
+      };
+
+      void runAgentLoop(
+        assistantMessageId,
+        [{ role: "user", content: trimmed }],
+        conversationId
+      )
         .catch((error: unknown) => {
+          setIsStreaming(false);
+          activeStreamIdRef.current = null;
           setMessages((currentMessages) =>
             currentMessages.map((currentMessage) =>
-              currentMessage.id === assistantMessageId
+              currentMessage.status === "sending"
                 ? {
                     ...currentMessage,
                     content: getErrorMessage(error),
@@ -179,13 +436,18 @@ export const useChatConversation = (
         })
         .finally(() => {
           isSendingRef.current = false;
+          setIsStreaming(false);
         });
     },
     [directoryId]
   );
 
   const handleSelectConversation = useCallback(
-    async (conversationId: string, title?: string): Promise<void> => {
+    async (
+      conversationId: string,
+      title?: string,
+      conversationTokenUsage?: TokenUsage | null
+    ): Promise<void> => {
       const trimmedId = conversationId.trim();
       if (!trimmedId || isSendingRef.current) {
         return;
@@ -199,22 +461,38 @@ export const useChatConversation = (
       try {
         const records = await window.snow.listChatMessages(trimmedId);
         const loadedMessages: ChatConversationMessage[] = records.map(
-          (record) => ({
-            id: record.id,
-            role: record.role === "user" ? "user" : "assistant",
-            content: record.content,
-            thinking: record.thinking || undefined,
-            timestamp: record.createdAt,
-            status: record.status === "error" ? "error" : "sent",
-            responseId: record.responseId || undefined,
-            model: record.model || undefined,
-          })
+          (record) => {
+            const toolCalls = parseToolCalls(record.toolCallsJson).map(
+              (tc) => ({
+                ...tc,
+                status: "completed" as const,
+              })
+            );
+
+            return {
+              id: record.id,
+              role:
+                record.role === "user"
+                  ? "user"
+                  : record.role === "tool"
+                  ? "tool"
+                  : "assistant",
+              content: record.content,
+              thinking: record.thinking || undefined,
+              timestamp: record.createdAt,
+              status: record.status === "error" ? "error" : "sent",
+              responseId: record.responseId || undefined,
+              model: record.model || undefined,
+              toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+            };
+          }
         );
 
         conversationIdRef.current = trimmedId;
         setActiveConversationId(trimmedId);
         setMessages(loadedMessages);
         setSummary(nextTitle);
+        setTokenUsage(conversationTokenUsage ?? null);
       } catch {
         // 加载历史消息失败时静默处理，不阻断交互
       }
@@ -227,7 +505,16 @@ export const useChatConversation = (
     setSummary("");
     setConversationVersion(0);
     setActiveConversationId(undefined);
+    setTokenUsage(null);
     conversationIdRef.current = undefined;
+  }, []);
+
+  const handleAbort = useCallback(() => {
+    const streamId = activeStreamIdRef.current;
+    if (!streamId) {
+      return;
+    }
+    void window.snow.abortResponseStream(streamId);
   }, []);
 
   const refreshConversations = useCallback(() => {
@@ -239,9 +526,12 @@ export const useChatConversation = (
     summary,
     conversationVersion,
     activeConversationId,
+    tokenUsage,
     handleSendMessage,
     handleSelectConversation,
     handleNewChat,
     refreshConversations,
+    isStreaming,
+    handleAbort,
   };
 };

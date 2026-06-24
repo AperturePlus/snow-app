@@ -9,8 +9,10 @@ import {
   Loader2,
   Plus,
   RefreshCw,
+  Square,
 } from "lucide-react";
 import type { ChatInputViewProps } from "./types";
+import { TokenUsageRing } from "./TokenUsageRing";
 
 export const ChatInputView = ({
   placeholder,
@@ -37,11 +39,14 @@ export const ChatInputView = ({
   thinkingError,
   thinkingDropdownRef,
   labels,
+  isStreaming,
+  tokenUsage,
   setManualValue,
   setIsManualMode,
   setIsThinkingDropdownOpen,
   handleChange,
   handleSend,
+  handleAbort,
   handleKeyDown,
   handleSelectModel,
   handleOpenManualMode,
@@ -264,13 +269,21 @@ export const ChatInputView = ({
             </div>
           )}
         </div>
+        <TokenUsageRing
+          tokenUsage={tokenUsage}
+          maxContextTokens={activeApiConfig?.maxContextTokens ?? null}
+        />
         <button
-          className="send-btn"
-          aria-label="Send"
-          onClick={handleSend}
-          disabled={!value.trim()}
+          className={`send-btn ${isStreaming ? "abort" : ""}`}
+          aria-label={isStreaming ? "Stop generating" : "Send"}
+          onClick={isStreaming ? handleAbort : handleSend}
+          disabled={!isStreaming && !value.trim()}
         >
-          <ArrowUp size={16} />
+          {isStreaming ? (
+            <Square size={14} fill="currentColor" />
+          ) : (
+            <ArrowUp size={16} />
+          )}
         </button>
       </div>
     </div>

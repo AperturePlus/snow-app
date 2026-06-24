@@ -5,8 +5,17 @@ import type { ChatInputProps } from "./chatInput/types";
 export const ChatInput = ({
   placeholder = "Ask for follow-up changes",
   onSend,
+  isStreaming = false,
+  onAbort,
+  tokenUsage = null,
 }: ChatInputProps): React.JSX.Element => {
-  const controller = useChatInputController({ onSend });
+  const controller = useChatInputController({ onSend, isStreaming, onAbort });
 
-  return <ChatInputView placeholder={placeholder} {...controller} />;
+  return (
+    <ChatInputView
+      placeholder={placeholder}
+      {...controller}
+      tokenUsage={tokenUsage}
+    />
+  );
 };

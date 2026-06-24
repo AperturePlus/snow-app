@@ -2,8 +2,10 @@ use std::path::Path;
 
 use napi::bindgen_prelude::*;
 
+use crate::api::anthropic::create_anthropic_response_stream;
 use crate::api::chat::create_chat_completion_response_stream;
 use crate::api::config::get_active_api_request_context;
+use crate::api::gemini::create_gemini_response_stream;
 use crate::api::responses::{
     create_response_stream_with_context, ResponsesApiRequest,
     ResponsesApiResult, ResponsesApiStreamCallback,
@@ -29,10 +31,12 @@ pub struct PreparedConversationRequest {
 pub async fn create_response_stream(
     request: ResponsesApiRequest,
     on_chunk: ResponsesApiStreamCallback,
+    stream_id: String,
 ) -> Result<ResponsesApiResult> {
     let context = get_active_api_request_context()?;
+    let cancel_token = crate::api::cancel::create_and_register(&stream_id);
 
-    match context.api_config.request_method.as_str() {
+    let result = match context.api_config.request_method.as_str() {
         "chat" => {
             create_chat_completion_response_stream(
                 request,
@@ -40,6 +44,7 @@ pub async fn create_response_stream(
                 context.api_config,
                 context.custom_headers,
                 on_chunk,
+                cancel_token.clone(),
             )
             .await
         }
@@ -50,14 +55,40 @@ pub async fn create_response_stream(
                 context.api_config,
                 context.custom_headers,
                 on_chunk,
+                cancel_token.clone(),
+            )
+            .await
+        }
+        "anthropic" => {
+            create_anthropic_response_stream(
+                request,
+                context.database_path,
+                context.api_config,
+                context.custom_headers,
+                on_chunk,
+                cancel_token.clone(),
+            )
+            .await
+        }
+        "gemini" => {
+            create_gemini_response_stream(
+                request,
+                context.database_path,
+                context.api_config,
+                context.custom_headers,
+                on_chunk,
+                cancel_token.clone(),
             )
             .await
         }
         request_method => Err(Error::from_reason(format!(
-            "Unsupported chat request method '{}'. Please switch the active API request method to Chat or Responses.",
+            "Unsupported chat request method '{}'. Please switch the active API request method to Chat, Responses, Anthropic or Gemini.",
             request_method
         ))),
-    }
+    };
+
+    crate::api::cancel::unregister_stream(&stream_id);
+    result
 }
 
 pub fn prepare_context_request(
@@ -93,19 +124,12 @@ fn normalize_messages(messages: &[ChatContextMessage]) -> Vec<ChatContextMessage
                 return None;
             }
 
+            // Preserve original role (including "tool") for database storage.
+            // Each API adapter normalizes the role for its own payload.
             Some(ChatContextMessage {
-                role: normalize_role(&message.role).to_string(),
+                role: message.role.trim().to_string(),
                 content: content.to_string(),
             })
         })
         .collect()
-}
-
-fn normalize_role(role: &str) -> &str {
-    match role.trim() {
-        "assistant" => "assistant",
-        "system" => "system",
-        "developer" => "developer",
-        _ => "user",
-    }
 }

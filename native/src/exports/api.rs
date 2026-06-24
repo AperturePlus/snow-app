@@ -14,6 +14,9 @@ use crate::api::models::{
 use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback,
 };
+use crate::mcp::tools::{
+    call_mcp_tool as call_tool, list_mcp_tools as list_all_mcp_tools, McpToolDefinition,
+};
 use crate::storage::initialize_app_storage;
 
 #[napi]
@@ -33,17 +36,32 @@ pub fn fetch_available_models_for_config(config: ApiConfigForModels) -> napi::Re
 }
 
 #[napi(
-    ts_args_type = "request: ResponsesApiRequest, onChunk: (chunk: ResponsesApiStreamChunk) => void",
+    ts_args_type = "request: ResponsesApiRequest, onChunk: (chunk: ResponsesApiStreamChunk) => void, streamId: string",
     ts_return_type = "Promise<ResponsesApiResult>"
 )]
 pub async fn create_response_stream(
     request: ResponsesApiRequest,
     on_chunk: ResponsesApiStreamCallback,
+    stream_id: String,
 ) -> napi::Result<ResponsesApiResult> {
-    create_conversation_response_stream(request, on_chunk).await
+    create_conversation_response_stream(request, on_chunk, stream_id).await
 }
 
+#[napi]
+pub fn abort_response_stream(stream_id: String) -> napi::Result<bool> {
+    Ok(crate::api::cancel::cancel_stream(&stream_id))
+}
 #[napi(ts_return_type = "Promise<string>")]
 pub async fn generate_conversation_summary(conversation_id: String) -> napi::Result<String> {
     generate_summary(conversation_id).await
+}
+
+#[napi]
+pub fn list_mcp_tools() -> napi::Result<Vec<McpToolDefinition>> {
+    list_all_mcp_tools()
+}
+
+#[napi]
+pub fn call_mcp_tool(tool_full_name: String, args_json: String) -> napi::Result<String> {
+    call_tool(tool_full_name, args_json)
 }

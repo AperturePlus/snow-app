@@ -26,6 +26,7 @@ export function ChatsSection({
     conversationVersion,
     refreshConversations,
     handleSelectConversation,
+    handleNewChat,
     activeConversationId,
   } = useChatConversationContext();
   const [conversations, setConversations] = useState<ChatConversationRecord[]>(
@@ -171,6 +172,9 @@ export function ChatsSection({
   ): Promise<void> => {
     try {
       await window.snow.deleteConversation(conversation.conversationId);
+      if (conversation.conversationId === activeConversationId) {
+        handleNewChat();
+      }
       refreshConversations();
     } catch {
       // Silent fail
@@ -247,7 +251,15 @@ export function ChatsSection({
                     onSelect={() =>
                       void handleSelectConversation(
                         conversation.conversationId,
-                        conversation.summary || conversation.title
+                        conversation.summary || conversation.title,
+                        {
+                          inputTokens: conversation.inputTokens,
+                          outputTokens: conversation.outputTokens,
+                          cacheCreationInputTokens:
+                            conversation.cacheCreationInputTokens,
+                          cacheReadInputTokens:
+                            conversation.cacheReadInputTokens,
+                        }
                       )
                     }
                   />

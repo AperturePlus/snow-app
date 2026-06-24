@@ -67,7 +67,8 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
       const role =
         message.role === "assistant" ||
         message.role === "system" ||
-        message.role === "developer"
+        message.role === "developer" ||
+        message.role === "tool"
           ? message.role
           : "user";
       const content =
@@ -191,10 +192,16 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
             streamId: normalizedStreamId,
             chunk,
           });
-        }
+        },
+        normalizedStreamId
       );
     }
   );
+
+  ipcMain.handle("chat:abort-response-stream", (_event, streamId: unknown) => {
+    const normalizedStreamId = normalizeCreateResponseStreamId(streamId);
+    return native.abortResponseStream(normalizedStreamId);
+  });
 
   ipcMain.handle("proxy-browser-settings:import-snow-cli", () =>
     readSnowCliProxyConfig(native)
@@ -477,6 +484,19 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
     "debug:write-log",
     (_event, level: unknown, entry: unknown) => {
       writeLog(level as LogLevel, entry as LogEntry);
+    }
+  );
+  ipcMain.handle("mcp:list-tools", () => native.listMcpTools());
+  ipcMain.handle(
+    "mcp:call-tool",
+    (_event, toolFullName: unknown, argsJson: unknown) => {
+      if (typeof toolFullName !== "string" || !toolFullName.trim()) {
+        throw new Error("Tool full name is required");
+      }
+      if (typeof argsJson !== "string") {
+        throw new Error("Arguments JSON string is required");
+      }
+      return native.callMcpTool(toolFullName.trim(), argsJson);
     }
   );
 };

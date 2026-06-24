@@ -1,6 +1,9 @@
+pub mod anthropic;
+pub mod cancel;
 pub mod chat;
 pub mod config;
 pub mod conversation;
+pub mod gemini;
 pub mod models;
 pub mod responses;
 pub mod summary;

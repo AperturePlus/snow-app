@@ -10,7 +10,8 @@ type ChatContentProps = {
 export const ChatContent = ({
   activeDirectory,
 }: ChatContentProps): React.JSX.Element => {
-  const { messages, handleSendMessage } = useChatConversationContext();
+  const { messages, handleSendMessage, isStreaming, handleAbort, tokenUsage } =
+    useChatConversationContext();
   const hasMessages = messages.length > 0;
 
   return (
@@ -23,7 +24,12 @@ export const ChatContent = ({
         )}
       </div>
 
-      <ChatInput onSend={handleSendMessage} />
+      <ChatInput
+        onSend={handleSendMessage}
+        isStreaming={isStreaming}
+        onAbort={handleAbort}
+        tokenUsage={tokenUsage}
+      />
     </>
   );
 };

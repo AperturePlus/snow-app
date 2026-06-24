@@ -259,6 +259,10 @@ pub struct ChatConversationRecord {
     pub directory_id: String,
     pub created_at: String,
     pub updated_at: String,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_creation_input_tokens: i64,
+    pub cache_read_input_tokens: i64,
 }
 
 #[napi(object)]
@@ -276,6 +280,7 @@ pub struct ChatMessageRecord {
     pub status: String,
     pub model: String,
     pub response_id: String,
+    pub tool_calls_json: String,
     pub created_at: String,
 }
 
