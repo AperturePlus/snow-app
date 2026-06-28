@@ -2709,7 +2709,7 @@ input {
   word-break: break-all;
 }
 
-/* Tool Call Item (inline on assistant message) */
+/* Tool Call Item (collapsible, inline on assistant message) */
 .tool-calls-container {
   display: flex;
   flex-direction: column;
@@ -2731,6 +2731,27 @@ input {
   padding: 6px 10px;
   font-size: 12px;
   color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+.tool-call-header::-webkit-details-marker {
+  display: none;
+}
+
+.tool-call-item[open] .tool-call-header {
+  border-bottom: 1px solid var(--border-light);
+}
+
+.tool-call-chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+  color: var(--text-tertiary);
+}
+
+.tool-call-item[open] .tool-call-chevron {
+  transform: rotate(90deg);
 }
 
 .tool-call-name {
@@ -2780,18 +2801,27 @@ input {
   }
 }
 
-.tool-call-result {
-  padding: 0 10px 6px;
+.tool-call-body {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.tool-call-result summary {
-  cursor: pointer;
+.tool-call-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-call-section-label {
   font-size: 11px;
   color: var(--text-tertiary);
-  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
-.tool-call-result pre {
+.tool-call-section-pre {
   margin: 0;
   max-height: 300px;
   overflow: auto;

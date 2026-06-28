@@ -3,6 +3,7 @@ import { ChevronRight } from "lucide-react";
 import { useMemo } from "react";
 import { useI18n } from "../../../i18n";
 import { AiResponseActions } from "./AiResponseActions";
+import { ToolCallItem } from "./ToolCallItem";
 import type { AiResponseProps } from "./types";
 
 const markdown = new MarkdownIt({
@@ -31,17 +32,24 @@ export const AiResponse = ({
   thinking,
   sections = [],
   isStreaming = false,
+  showActions = true,
+  toolCalls = [],
 }: AiResponseProps): React.JSX.Element => {
   const { t } = useI18n();
   const normalizedThinking = thinking?.trim();
+  const normalizedSummary = summary.trim();
   const summaryClassName = `ai-message-summary ${
     isStreaming ? "is-streaming" : ""
   }`.trim();
+  const hasToolCalls = toolCalls.length > 0;
+  const isEmpty = !normalizedThinking && !normalizedSummary && !hasToolCalls;
 
   return (
     <article className="ai-message" aria-label="AI response">
       <div className="ai-message-content">
         {title ? <h2>{title}</h2> : null}
+
+        {/* 1. Thinking */}
         {normalizedThinking ? (
           <details className="ai-message-thinking">
             <summary>
@@ -58,7 +66,16 @@ export const AiResponse = ({
             />
           </details>
         ) : null}
-        <MarkdownBlock className={summaryClassName} content={summary} />
+
+        {/* 2. Body / Summary */}
+        {normalizedSummary ? (
+          <MarkdownBlock
+            className={summaryClassName}
+            content={normalizedSummary}
+          />
+        ) : null}
+
+        {/* 3. Sections */}
         {sections.map((section) => (
           <section className="ai-message-section" key={section.title}>
             <h3>{section.title}</h3>
@@ -68,8 +85,27 @@ export const AiResponse = ({
             />
           </section>
         ))}
+
+        {/* 4. Tool calls */}
+        {hasToolCalls ? (
+          <div className="tool-calls-container">
+            {toolCalls.map((toolCall, index) => (
+              <ToolCallItem
+                key={`${toolCall.name}-${index}`}
+                toolCall={toolCall}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {/* 5. Loading indicator when streaming with no content yet */}
+        {isEmpty && isStreaming ? (
+          <span className="stream-cursor" aria-hidden="true" />
+        ) : null}
       </div>
-      <AiResponseActions />
+
+      {/* 6. Actions */}
+      {showActions ? <AiResponseActions /> : null}
     </article>
   );
 };

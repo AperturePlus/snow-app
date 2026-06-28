@@ -1,6 +1,7 @@
 export { AiResponse } from "./AiResponse";
 export { AiResponseActions } from "./AiResponseActions";
 export { ChatMessageList } from "./ChatMessageList";
+export { ToolCallItem } from "./ToolCallItem";
 export { UserMessage } from "./UserMessage";
 export { UserMessageActions } from "./UserMessageActions";
 export { useChatConversation } from "./useChatConversation";

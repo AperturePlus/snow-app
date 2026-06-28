@@ -18,7 +18,7 @@ export const ChatContent = ({
     <>
       <div className="chat-area">
         {hasMessages ? (
-          <ChatMessageList messages={messages} />
+          <ChatMessageList messages={messages} isStreaming={isStreaming} />
         ) : (
           <EmptyGreeting activeDirectory={activeDirectory} />
         )}

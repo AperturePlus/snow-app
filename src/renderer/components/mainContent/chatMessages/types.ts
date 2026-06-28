@@ -1,3 +1,5 @@
+import type { ToolCallInfo } from "./useChatConversation";
+
 export type UserMessageProps = {
   content: string;
 };
@@ -13,4 +15,6 @@ export type AiResponseProps = {
   thinking?: string;
   sections?: AiResponseSection[];
   isStreaming?: boolean;
+  showActions?: boolean;
+  toolCalls?: ToolCallInfo[];
 };

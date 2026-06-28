@@ -291,22 +291,6 @@ export const useChatConversation = (
           })
         );
 
-        if (isFirstMessage && response.conversationId) {
-          setConversationVersion((version) => version + 1);
-
-          void window.snow
-            .generateConversationSummary(response.conversationId)
-            .then((generatedSummary) => {
-              if (generatedSummary) {
-                setSummary(generatedSummary);
-                setConversationVersion((version) => version + 1);
-              }
-            })
-            .catch(() => {
-              // Summary generation failure should not block the conversation
-            });
-        }
-
         // If no tool calls, we're done
         if (toolCalls.length === 0) {
           return;
@@ -437,6 +421,22 @@ export const useChatConversation = (
         .finally(() => {
           isSendingRef.current = false;
           setIsStreaming(false);
+
+          // Only generate summary and refresh conversation list
+          // after the first AI response in a new conversation.
+          if (isFirstMessage && conversationIdRef.current) {
+            void window.snow
+              .generateConversationSummary(conversationIdRef.current)
+              .then((generatedSummary) => {
+                if (generatedSummary) {
+                  setSummary(generatedSummary);
+                  setConversationVersion((version) => version + 1);
+                }
+              })
+              .catch(() => {
+                // Summary generation failure should not block the conversation
+              });
+          }
         });
     },
     [directoryId]
@@ -460,23 +460,37 @@ export const useChatConversation = (
 
       try {
         const records = await window.snow.listChatMessages(trimmedId);
-        const loadedMessages: ChatConversationMessage[] = records.map(
-          (record) => {
-            const toolCalls = parseToolCalls(record.toolCallsJson).map(
-              (tc) => ({
+
+        // Build a lookup: toolName -> result content from tool-role messages.
+        // Tool messages store content as "[Tool: name]\nresult" (joined by \n\n
+        // when multiple tools share one message).
+        const toolResultMap = new Map<string, string>();
+        for (const record of records) {
+          if (record.role === "tool" && record.content) {
+            for (const segment of record.content.split("\n\n")) {
+              const match = segment.match(/^\[Tool:\s*(.+?)\]\n([\s\S]*)$/);
+              if (match) {
+                toolResultMap.set(match[1], match[2]);
+              }
+            }
+          }
+        }
+
+        const loadedMessages: ChatConversationMessage[] = records
+          .filter((record) => record.role !== "tool")
+          .map((record) => {
+            const toolCalls = parseToolCalls(record.toolCallsJson).map((tc) => {
+              const result = toolResultMap.get(tc.name);
+              return {
                 ...tc,
                 status: "completed" as const,
-              })
-            );
+                result,
+              };
+            });
 
             return {
               id: record.id,
-              role:
-                record.role === "user"
-                  ? "user"
-                  : record.role === "tool"
-                  ? "tool"
-                  : "assistant",
+              role: record.role === "user" ? "user" : "assistant",
               content: record.content,
               thinking: record.thinking || undefined,
               timestamp: record.createdAt,
@@ -485,8 +499,7 @@ export const useChatConversation = (
               model: record.model || undefined,
               toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
             };
-          }
-        );
+          });
 
         conversationIdRef.current = trimmedId;
         setActiveConversationId(trimmedId);
