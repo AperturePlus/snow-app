@@ -449,10 +449,16 @@ pub fn list_chat_conversations_paginated(
         offset,
     )
 }
-
 pub fn list_pinned_conversations(directory_id: String) -> Result<Vec<ChatConversationRecord>> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::list_pinned_conversations(&database_path, &directory_id)
+}
+
+pub fn get_chat_conversation(
+    conversation_id: String,
+) -> Result<Option<ChatConversationRecord>> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::get_chat_conversation(&database_path, &conversation_id)
 }
 
 pub fn update_conversation_status(

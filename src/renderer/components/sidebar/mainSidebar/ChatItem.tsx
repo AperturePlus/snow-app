@@ -28,6 +28,8 @@ export function ChatItem({
   const [editingValue, setEditingValue] = useState("");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const editInputRef = useRef<HTMLInputElement>(null);
+  const isSubmittingRef = useRef(false);
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
     if (isEditing && editInputRef.current) {
@@ -38,29 +40,55 @@ export function ChatItem({
 
   const handleRenameStart = (): void => {
     setEditingValue(conversation.summary || conversation.title || "");
+    isSubmittingRef.current = false;
+    cancelledRef.current = false;
     setIsEditing(true);
   };
 
   const handleRenameSubmit = async (): Promise<void> => {
-    if (!editingValue.trim()) {
+    if (isSubmittingRef.current || cancelledRef.current) {
+      return;
+    }
+    isSubmittingRef.current = true;
+
+    const trimmed = editingValue.trim();
+    const original = conversation.summary || conversation.title || "";
+
+    if (!trimmed) {
+      setEditingValue(original);
       setIsEditing(false);
+      isSubmittingRef.current = false;
+      return;
+    }
+
+    if (trimmed === original) {
+      setIsEditing(false);
+      isSubmittingRef.current = false;
       return;
     }
 
     try {
-      await onRename(editingValue.trim());
+      await onRename(trimmed);
     } finally {
       setIsEditing(false);
+      isSubmittingRef.current = false;
     }
+  };
+
+  const handleRenameCancel = (): void => {
+    cancelledRef.current = true;
+    setIsEditing(false);
   };
 
   const handleRenameKeyDown = (
     event: React.KeyboardEvent<HTMLInputElement>
   ): void => {
     if (event.key === "Enter") {
+      event.preventDefault();
       void handleRenameSubmit();
     } else if (event.key === "Escape") {
-      setIsEditing(false);
+      event.preventDefault();
+      handleRenameCancel();
     }
   };
 

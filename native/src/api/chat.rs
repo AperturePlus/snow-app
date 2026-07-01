@@ -78,6 +78,7 @@ async fn create_chat_completion_response_async(
         previous_response_id: request.previous_response_id.as_deref(),
         messages: &request_messages,
         max_context_tokens: api_config.max_context_tokens,
+        directory_id: request.directory_id.as_deref(),
     })?;
 
     let client = reqwest::Client::builder()
@@ -260,13 +261,30 @@ async fn collect_chat_completions_stream(
     on_chunk: &ResponsesApiStreamCallback,
     cancel_token: &CancellationToken,
 ) -> Result<ChatCompletionStreamResult> {
-    let response = client
+    let send_future = client
         .post(endpoint)
         .headers(build_header_map(api_key, custom_headers)?)
         .json(&payload)
-        .send()
-        .await
-        .map_err(|error| Error::from_reason(format!("Failed to create chat stream: {}", error)))?;
+        .send();
+
+    let response = tokio::select! {
+        biased;
+        _ = cancel_token.cancelled() => {
+            return Ok(ChatCompletionStreamResult {
+                id: String::new(),
+                content: String::new(),
+                thinking: String::new(),
+                model: String::new(),
+                status: String::from("cancelled"),
+                token_usage: ChatTokenUsage::default(),
+                tool_calls_json: "[]".to_string(),
+                raw_events: Vec::new(),
+            });
+        }
+        result = send_future => {
+            result.map_err(|error| Error::from_reason(format!("Failed to create chat stream: {}", error)))?
+        }
+    };
 
     let status = response.status();
     if !status.is_success() {
@@ -288,37 +306,44 @@ async fn collect_chat_completions_stream(
     let mut token_usage = ChatTokenUsage::default();
     let mut buffer = String::new();
     let mut stream = response.bytes_stream();
+    loop {
+        tokio::select! {
+            biased;
+            _ = cancel_token.cancelled() => {
+                response_status = String::from("cancelled");
+                break;
+            }
+            chunk_result = stream.next() => {
+                let Some(chunk_result) = chunk_result else {
+                    break;
+                };
 
-    while let Some(chunk_result) = stream.next().await {
-        if cancel_token.is_cancelled() {
-            response_status = String::from("cancelled");
-            break;
-        }
+                let chunk = chunk_result
+                    .map_err(|error| Error::from_reason(format!("Failed to read chat stream: {}", error)))?;
+                buffer.push_str(&String::from_utf8_lossy(&chunk));
 
-        let chunk = chunk_result
-            .map_err(|error| Error::from_reason(format!("Failed to read chat stream: {}", error)))?;
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
-
-        while let Some(separator_index) = buffer.find("\n\n") {
-            let event_block = buffer[..separator_index].to_string();
-            buffer = buffer[separator_index + 2..].to_string();
-            let content_start_index = content_chunks.len();
-            let thinking_start_index = thinking_chunks.len();
-            process_sse_event_block(
-                &event_block,
-                &mut raw_events,
-                &mut content_chunks,
-                &mut thinking_chunks,
-                &mut tool_calls,
-                &mut tool_call_positions_by_index,
-                &mut response_id,
-                &mut response_model,
-                &mut response_status,
-                &mut token_usage,
-            )?;
-            let content_delta = content_chunks[content_start_index..].join("");
-            let thinking_delta = thinking_chunks[thinking_start_index..].join("");
-            emit_chat_completion_stream_chunk(on_chunk, content_delta, thinking_delta);
+                while let Some(separator_index) = buffer.find("\n\n") {
+                    let event_block = buffer[..separator_index].to_string();
+                    buffer = buffer[separator_index + 2..].to_string();
+                    let content_start_index = content_chunks.len();
+                    let thinking_start_index = thinking_chunks.len();
+                    process_sse_event_block(
+                        &event_block,
+                        &mut raw_events,
+                        &mut content_chunks,
+                        &mut thinking_chunks,
+                        &mut tool_calls,
+                        &mut tool_call_positions_by_index,
+                        &mut response_id,
+                        &mut response_model,
+                        &mut response_status,
+                        &mut token_usage,
+                    )?;
+                    let content_delta = content_chunks[content_start_index..].join("");
+                    let thinking_delta = thinking_chunks[thinking_start_index..].join("");
+                    emit_chat_completion_stream_chunk(on_chunk, content_delta, thinking_delta);
+                }
+            }
         }
     }
 

@@ -148,6 +148,11 @@ export const loadNativeBridge = (): NativeBridge => {
           "Rust native bridge is required to list pinned conversations"
         );
       },
+      getChatConversation: () => {
+        throw new Error(
+          "Rust native bridge is required to get chat conversation"
+        );
+      },
       updateConversationStatus: () => {
         throw new Error(
           "Rust native bridge is required to update conversation status"

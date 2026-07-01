@@ -391,6 +391,56 @@ pub fn list_pinned_conversations(
         .map_err(|error| database::database_error(database_path, "list pinned conversations", error))
 }
 
+pub fn get_chat_conversation(
+    database_path: &Path,
+    conversation_id: &str,
+) -> Result<Option<ChatConversationRecord>> {
+    Connection::open(database_path)
+        .and_then(|connection| {
+            connection
+                .query_row(
+                    "SELECT conversation_id,
+                            title,
+                            summary,
+                            last_message_preview,
+                            message_count,
+                            model,
+                            status,
+                            directory_id,
+                            created_at,
+                            updated_at,
+                            input_tokens,
+                            output_tokens,
+                            cache_creation_input_tokens,
+                            cache_read_input_tokens
+                       FROM chat_conversations
+                      WHERE conversation_id = ?1
+                      LIMIT 1",
+                    params![conversation_id],
+                    |row| {
+                        Ok(ChatConversationRecord {
+                            conversation_id: row.get(0)?,
+                            title: row.get(1)?,
+                            summary: row.get(2)?,
+                            last_message_preview: row.get(3)?,
+                            message_count: row.get(4)?,
+                            model: row.get(5)?,
+                            status: row.get(6)?,
+                            directory_id: row.get(7)?,
+                            created_at: row.get(8)?,
+                            updated_at: row.get(9)?,
+                            input_tokens: row.get(10)?,
+                            output_tokens: row.get(11)?,
+                            cache_creation_input_tokens: row.get(12)?,
+                            cache_read_input_tokens: row.get(13)?,
+                        })
+                    },
+                )
+                .optional()
+        })
+        .map_err(|error| database::database_error(database_path, "get chat conversation", error))
+}
+
 pub fn update_conversation_status(
     database_path: &Path,
     conversation_id: &str,
@@ -433,7 +483,7 @@ pub fn rename_conversation(
             connection.execute(
                 "UPDATE chat_conversations
                     SET title = ?2,
-                        summary = CASE WHEN summary = '' THEN ?2 ELSE summary END,
+                        summary = ?2,
                         updated_at = datetime('now')
                   WHERE conversation_id = ?1",
                 params![conversation_id, trimmed_title],

@@ -57,6 +57,7 @@ export const zhCN = {
   "chat.loadingModels": "正在加载模型...",
   "chat.refreshModels": "重新获取模型",
   "chat.thinkingProcess": "思考过程",
+  "chat.stopping": "正在停止...",
   "common.cancel": "取消",
   "common.confirm": "确认",
   "common.retry": "重试",

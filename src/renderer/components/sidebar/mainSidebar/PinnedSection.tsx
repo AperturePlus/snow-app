@@ -21,6 +21,7 @@ export function PinnedSection({
   const { t } = useI18n();
   const {
     conversationVersion,
+    upsertedConversation,
     refreshConversations,
     handleSelectConversation,
     handleNewChat,
@@ -67,6 +68,43 @@ export function PinnedSection({
       cancelled = true;
     };
   }, [directoryId, conversationVersion]);
+
+  useEffect(() => {
+    if (!upsertedConversation) {
+      return;
+    }
+
+    const { record: conv } = upsertedConversation;
+    if (conv.directoryId !== directoryId) {
+      return;
+    }
+
+    setConversations((prev) => {
+      const existing = prev.find(
+        (item) => item.conversationId === conv.conversationId
+      );
+
+      if (existing) {
+        // If the conversation was unpinned, remove it from the pinned list
+        if (conv.status !== "pin") {
+          return prev.filter(
+            (item) => item.conversationId !== conv.conversationId
+          );
+        }
+        // Otherwise update in place
+        return prev.map((item) =>
+          item.conversationId === conv.conversationId ? conv : item
+        );
+      }
+
+      // New pinned conversation: prepend
+      if (conv.status === "pin") {
+        return [conv, ...prev];
+      }
+
+      return prev;
+    });
+  }, [upsertedConversation, directoryId]);
 
   const showLoading = isSwitchingDirectory || (isLoading && directoryId !== "");
 

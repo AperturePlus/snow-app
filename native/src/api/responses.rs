@@ -135,6 +135,7 @@ async fn create_response_async(
         previous_response_id: request.previous_response_id.as_deref(),
         messages: &request_messages,
         max_context_tokens: api_config.max_context_tokens,
+        directory_id: request.directory_id.as_deref(),
     })?;
 
     let client = build_openai_client(&base_url, api_key, &custom_headers)?;
@@ -344,11 +345,32 @@ async fn collect_streaming_response(
     on_chunk: &ResponsesApiStreamCallback,
     cancel_token: &CancellationToken,
 ) -> Result<StreamingResponseResult> {
-    let mut stream: ResponseValueStream = client
-        .responses()
-        .create_stream_byot::<Value, Value>(payload)
-        .await
-        .map_err(|error| Error::from_reason(format!("Failed to create response stream: {}", error)))?;
+    let responses = client.responses();
+    let create_stream_future = responses.create_stream_byot::<Value, Value>(payload);
+
+    let mut stream: ResponseValueStream = tokio::select! {
+        biased;
+        _ = cancel_token.cancelled() => {
+            return Ok(StreamingResponseResult {
+                id: String::new(),
+                content: String::new(),
+                thinking: String::new(),
+                model: String::new(),
+                status: String::from("cancelled"),
+                token_usage: ChatTokenUsage {
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                },
+                tool_calls_json: "[]".to_string(),
+                raw_events: Vec::new(),
+            });
+        }
+        result = create_stream_future => {
+            result.map_err(|error| Error::from_reason(format!("Failed to create response stream: {}", error)))?
+        }
+    };
 
     let mut raw_events = Vec::new();
     let mut content_chunks = Vec::new();
@@ -365,81 +387,89 @@ async fn collect_streaming_response(
         cache_read_input_tokens: 0,
     };
 
-    while let Some(event_result) = stream.next().await {
-        if cancel_token.is_cancelled() {
-            response_status = String::from("cancelled");
-            break;
-        }
+    loop {
+        tokio::select! {
+            biased;
+            _ = cancel_token.cancelled() => {
+                response_status = String::from("cancelled");
+                break;
+            }
+            event_result = stream.next() => {
+                let Some(event_result) = event_result else {
+                    break;
+                };
 
-        let event = match event_result {
-            Ok(event) => event,
-            Err(error) if is_stream_ended_error(&error) => break,
-            Err(error) => {
-                return Err(Error::from_reason(format!(
-                    "Failed to read response stream: {}",
-                    error
-                )));
-            }
-        };
-        let event_type = event.get("type").and_then(Value::as_str).unwrap_or_default();
-
-        match event_type {
-            "response.output_text.delta" => {
-                let content_delta = read_stream_text_delta(event.get("delta"));
-                if !content_delta.is_empty() {
-                    content_chunks.push(content_delta.clone());
-                    emit_stream_chunk(on_chunk, content_delta, String::new());
-                }
-            }
-            "response.reasoning_summary_text.delta" => {
-                let thinking_delta = read_stream_text_delta(event.get("delta"));
-                if !thinking_delta.is_empty() {
-                    thinking_chunks.push(thinking_delta.clone());
-                    emit_stream_chunk(on_chunk, String::new(), thinking_delta);
-                }
-            }
-            "response.reasoning_summary.delta" => {
-                if let Some(delta) = event.get("delta") {
-                    let mut delta_chunks = Vec::new();
-                    collect_text_values(delta, &mut delta_chunks);
-                    let thinking_delta = delta_chunks.join("");
-                    if !thinking_delta.is_empty() {
-                        thinking_chunks.push(thinking_delta.clone());
-                        emit_stream_chunk(on_chunk, String::new(), thinking_delta);
+                let event = match event_result {
+                    Ok(event) => event,
+                    Err(error) if is_stream_ended_error(&error) => break,
+                    Err(error) => {
+                        return Err(Error::from_reason(format!(
+                            "Failed to read response stream: {}",
+                            error
+                        )));
                     }
-                }
-            }
-            "response.output_item.done" => {
-                collect_tool_calls(event.get("item"), &mut tool_calls);
-            }
-            "response.completed" | "response.incomplete" | "response.failed" => {
-                if let Some(response) = event.get("response") {
-                    response_id = read_response_string(response, "id").unwrap_or(response_id);
-                    response_model = read_response_string(response, "model").unwrap_or(response_model);
-                    response_status = read_response_string(response, "status").unwrap_or_else(|| {
-                        if event_type == "response.failed" {
-                            "failed".to_string()
-                        } else if event_type == "response.incomplete" {
-                            "incomplete".to_string()
-                        } else {
-                            response_status.clone()
-                        }
-                    });
-                    token_usage = extract_token_usage(response);
-                    completed_response = Some(response.clone());
-                }
-            }
-            "error" => {
-                let message = event
-                    .get("message")
-                    .and_then(Value::as_str)
-                    .unwrap_or("Responses stream failed");
-                return Err(Error::from_reason(message.to_string()));
-            }
-            _ => {}
-        }
+                };
+                let event_type = event.get("type").and_then(Value::as_str).unwrap_or_default();
 
-        raw_events.push(event);
+                match event_type {
+                    "response.output_text.delta" => {
+                        let content_delta = read_stream_text_delta(event.get("delta"));
+                        if !content_delta.is_empty() {
+                            content_chunks.push(content_delta.clone());
+                            emit_stream_chunk(on_chunk, content_delta, String::new());
+                        }
+                    }
+                    "response.reasoning_summary_text.delta" => {
+                        let thinking_delta = read_stream_text_delta(event.get("delta"));
+                        if !thinking_delta.is_empty() {
+                            thinking_chunks.push(thinking_delta.clone());
+                            emit_stream_chunk(on_chunk, String::new(), thinking_delta);
+                        }
+                    }
+                    "response.reasoning_summary.delta" => {
+                        if let Some(delta) = event.get("delta") {
+                            let mut delta_chunks = Vec::new();
+                            collect_text_values(delta, &mut delta_chunks);
+                            let thinking_delta = delta_chunks.join("");
+                            if !thinking_delta.is_empty() {
+                                thinking_chunks.push(thinking_delta.clone());
+                                emit_stream_chunk(on_chunk, String::new(), thinking_delta);
+                            }
+                        }
+                    }
+                    "response.output_item.done" => {
+                        collect_tool_calls(event.get("item"), &mut tool_calls);
+                    }
+                    "response.completed" | "response.incomplete" | "response.failed" => {
+                        if let Some(response) = event.get("response") {
+                            response_id = read_response_string(response, "id").unwrap_or(response_id);
+                            response_model = read_response_string(response, "model").unwrap_or(response_model);
+                            response_status = read_response_string(response, "status").unwrap_or_else(|| {
+                                if event_type == "response.failed" {
+                                    "failed".to_string()
+                                } else if event_type == "response.incomplete" {
+                                    "incomplete".to_string()
+                                } else {
+                                    response_status.clone()
+                                }
+                            });
+                            token_usage = extract_token_usage(response);
+                            completed_response = Some(response.clone());
+                        }
+                    }
+                    "error" => {
+                        let message = event
+                            .get("message")
+                            .and_then(Value::as_str)
+                            .unwrap_or("Responses stream failed");
+                        return Err(Error::from_reason(message.to_string()));
+                    }
+                    _ => {}
+                }
+
+                raw_events.push(event);
+            }
+        }
     }
 
     if let Some(response) = completed_response.as_ref() {

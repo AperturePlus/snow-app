@@ -158,6 +158,13 @@ pub fn list_pinned_conversations(directory_id: String) -> napi::Result<Vec<ChatC
 }
 
 #[napi]
+pub fn get_chat_conversation(
+    conversation_id: String,
+) -> napi::Result<Option<ChatConversationRecord>> {
+    crate::storage::get_chat_conversation(conversation_id)
+}
+
+#[napi]
 pub fn update_conversation_status(
     conversation_id: String,
     status: String,

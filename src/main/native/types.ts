@@ -272,6 +272,9 @@ export type NativeBridge = {
     offset: number
   ) => ChatConversationPage;
   listPinnedConversations: (directoryId: string) => ChatConversationRecord[];
+  getChatConversation: (
+    conversationId: string
+  ) => ChatConversationRecord | null;
   updateConversationStatus: (conversationId: string, status: string) => void;
   renameConversation: (conversationId: string, title: string) => void;
   deleteConversation: (conversationId: string) => void;

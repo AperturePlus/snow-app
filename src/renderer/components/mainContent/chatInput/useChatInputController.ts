@@ -20,6 +20,7 @@ import {
   isOptionValue,
   normalizeRequestMethod,
   toConfigUpdatePayload,
+  toModelUpdatePayload,
 } from "./configThinking";
 import type { ChatInputActions, ChatInputState } from "./types";
 type UseChatInputControllerParams = {
@@ -267,25 +268,62 @@ export const useChatInputController = ({
     [handleSend]
   );
 
-  const handleSelectModel = useCallback((modelId: string) => {
-    setSelectedModel(modelId);
-    setIsDropdownOpen(false);
-    setIsManualMode(false);
-  }, []);
+  const handleSelectModel = useCallback(
+    async (modelId: string) => {
+      setSelectedModel(modelId);
+      setIsDropdownOpen(false);
+      setIsManualMode(false);
+
+      if (!activeApiConfig) {
+        return;
+      }
+
+      try {
+        const updatedConfigs = await window.snow.upsertApiConfig(
+          toModelUpdatePayload(activeApiConfig, modelId)
+        );
+        const nextActiveConfig =
+          updatedConfigs.find((config) => config.isActive) ??
+          updatedConfigs[0] ??
+          null;
+        setActiveApiConfig(nextActiveConfig);
+      } catch {
+        // 保存失败时保留用户选择，不回退
+      }
+    },
+    [activeApiConfig]
+  );
 
   const handleOpenManualMode = useCallback(() => {
     setIsManualMode(true);
     setManualValue(selectedModel);
   }, [selectedModel]);
 
-  const handleConfirmManualModel = useCallback(() => {
+  const handleConfirmManualModel = useCallback(async () => {
     const trimmed = manualValue.trim();
     if (trimmed) {
       setSelectedModel(trimmed);
     }
     setIsManualMode(false);
     setIsDropdownOpen(false);
-  }, [manualValue]);
+
+    if (!activeApiConfig || !trimmed) {
+      return;
+    }
+
+    try {
+      const updatedConfigs = await window.snow.upsertApiConfig(
+        toModelUpdatePayload(activeApiConfig, trimmed)
+      );
+      const nextActiveConfig =
+        updatedConfigs.find((config) => config.isActive) ??
+        updatedConfigs[0] ??
+        null;
+      setActiveApiConfig(nextActiveConfig);
+    } catch {
+      // 保存失败时保留用户选择，不回退
+    }
+  }, [activeApiConfig, manualValue]);
 
   const handleManualKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -295,7 +333,7 @@ export const useChatInputController = ({
         }
 
         event.preventDefault();
-        handleConfirmManualModel();
+        void handleConfirmManualModel();
       } else if (event.key === "Escape") {
         setIsManualMode(false);
       }
@@ -360,7 +398,6 @@ export const useChatInputController = ({
           updatedConfigs[0] ??
           null;
         setActiveApiConfig(nextActiveConfig);
-        setSelectedModel(nextActiveConfig?.advancedModel || "");
         setThinkingValue(
           nextActiveConfig
             ? getThinkingValueFromConfig(nextActiveConfig)

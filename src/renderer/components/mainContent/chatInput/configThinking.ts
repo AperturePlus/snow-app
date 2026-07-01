@@ -1,5 +1,8 @@
 import type { ApiConfigRecord } from "../../../../preload";
-import { DEFAULT_THINKING_VALUE, THINKING_OPTIONS_BY_METHOD } from "./constants";
+import {
+  DEFAULT_THINKING_VALUE,
+  THINKING_OPTIONS_BY_METHOD,
+} from "./constants";
 import type { RequestMethod, ThinkingOption } from "./types";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -86,7 +89,9 @@ export const getThinkingValueFromConfig = (config: ApiConfigRecord): string => {
     return resolveThinkingValue(options, responsesReasoning, "effort");
   }
 
-  const chatThinking = isRecord(snowcfg.chatThinking) ? snowcfg.chatThinking : {};
+  const chatThinking = isRecord(snowcfg.chatThinking)
+    ? snowcfg.chatThinking
+    : {};
   return resolveThinkingValue(options, chatThinking, "reasoning_effort");
 };
 
@@ -143,4 +148,32 @@ export const toConfigUpdatePayload = (
   visionApiKey: "",
   visionBaseUrlMode: config.visionBaseUrlMode || "auto",
   configJson: buildConfigJsonWithThinking(config, thinkingValue),
+});
+
+const buildConfigJsonWithModel = (
+  config: ApiConfigRecord,
+  modelId: string
+): string => {
+  const parsedConfig = parseConfigJson(config.configJson);
+  const snowcfg = {
+    ...(isRecord(parsedConfig.snowcfg) ? parsedConfig.snowcfg : {}),
+    advancedModel: modelId,
+  };
+
+  return JSON.stringify({
+    ...parsedConfig,
+    snowcfg,
+  });
+};
+
+export const toModelUpdatePayload = (
+  config: ApiConfigRecord,
+  modelId: string
+): ApiConfigRecord => ({
+  ...config,
+  apiKey: "",
+  visionApiKey: "",
+  visionBaseUrlMode: config.visionBaseUrlMode || "auto",
+  advancedModel: modelId,
+  configJson: buildConfigJsonWithModel(config, modelId),
 });

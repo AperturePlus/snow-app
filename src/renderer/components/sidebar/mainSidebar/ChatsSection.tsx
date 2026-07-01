@@ -24,6 +24,7 @@ export function ChatsSection({
   const { t } = useI18n();
   const {
     conversationVersion,
+    upsertedConversation,
     refreshConversations,
     handleSelectConversation,
     handleNewChat,
@@ -88,6 +89,45 @@ export function ChatsSection({
       cancelled = true;
     };
   }, [directoryId, t, conversationVersion]);
+
+  useEffect(() => {
+    if (!upsertedConversation) {
+      return;
+    }
+
+    const { record: conv } = upsertedConversation;
+    if (conv.directoryId !== directoryId) {
+      return;
+    }
+    if (conv.status === "pin") {
+      return;
+    }
+
+    let isNew = false;
+    setConversations((prev) => {
+      const existing = prev.find(
+        (item) => item.conversationId === conv.conversationId
+      );
+
+      if (existing) {
+        return prev.map((item) =>
+          item.conversationId === conv.conversationId ? conv : item
+        );
+      }
+
+      isNew = true;
+      // New conversation: prepend and re-sort by updatedAt
+      return [conv, ...prev].sort(
+        (a, b) =>
+          b.updatedAt.localeCompare(a.updatedAt) ||
+          b.conversationId.localeCompare(a.conversationId)
+      );
+    });
+
+    if (isNew) {
+      setTotal((prev) => prev + 1);
+    }
+  }, [upsertedConversation, directoryId]);
 
   const loadMore = useCallback(async (): Promise<void> => {
     if (isLoadingMore || !hasMore || !directoryId || isLoading) {

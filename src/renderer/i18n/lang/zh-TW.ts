@@ -57,6 +57,7 @@ export const zhTW = {
   "chat.loadingModels": "正在載入模型...",
   "chat.refreshModels": "重新取得模型",
   "chat.thinkingProcess": "思考過程",
+  "chat.stopping": "正在停止...",
   "common.cancel": "取消",
   "common.confirm": "確認",
   "common.retry": "重試",

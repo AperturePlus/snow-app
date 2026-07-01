@@ -6,11 +6,13 @@ import type { ChatConversationMessage } from "./useChatConversation";
 type ChatMessageListProps = {
   messages: ChatConversationMessage[];
   isStreaming: boolean;
+  isAborting: boolean;
 };
 
 export const ChatMessageList = ({
   messages,
   isStreaming,
+  isAborting,
 }: ChatMessageListProps): React.JSX.Element => {
   const lastAssistantMessageId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -45,6 +47,7 @@ export const ChatMessageList = ({
           <div className={className} key={message.id}>
             <AiResponse
               isStreaming={message.status === "sending"}
+              isAborting={isLastAssistant && isAborting}
               summary={message.content}
               thinking={message.thinking}
               showActions={showActions}

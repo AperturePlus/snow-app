@@ -332,6 +332,15 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
     }
   );
   ipcMain.handle(
+    "chat-conversations:get",
+    (_event, conversationId: unknown) => {
+      if (typeof conversationId !== "string" || !conversationId.trim()) {
+        throw new Error("Conversation ID is required to get conversation");
+      }
+      return native.getChatConversation(conversationId.trim());
+    }
+  );
+  ipcMain.handle(
     "chat-conversations:generate-summary",
     async (_event, conversationId: unknown) => {
       if (typeof conversationId !== "string" || !conversationId.trim()) {

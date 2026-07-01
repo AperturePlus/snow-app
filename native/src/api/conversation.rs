@@ -10,9 +10,11 @@ use crate::api::responses::{
     create_response_stream_with_context, ResponsesApiRequest,
     ResponsesApiResult, ResponsesApiStreamCallback,
 };
+use crate::prompt::system_prompt::build_system_prompt;
 use crate::storage::services::chat_conversations::{
     load_context_messages, resolve_conversation_id, ChatContextMessage,
 };
+use crate::storage::services::workspace_directories::get_workspace_directory_path;
 
 pub struct ConversationContextRequest<'a> {
     pub database_path: &'a Path,
@@ -20,6 +22,7 @@ pub struct ConversationContextRequest<'a> {
     pub previous_response_id: Option<&'a str>,
     pub messages: &'a [ChatContextMessage],
     pub max_context_tokens: Option<i32>,
+    pub directory_id: Option<&'a str>,
 }
 
 pub struct PreparedConversationRequest {
@@ -105,6 +108,29 @@ pub fn prepare_context_request(
         request.previous_response_id,
     )?;
     let mut messages = load_context_messages(request.database_path, &conversation_id)?;
+
+    // Inject the built-in system prompt as the first message.
+    let working_directory = request
+        .directory_id
+        .and_then(|id| {
+            get_workspace_directory_path(request.database_path, id).ok().flatten()
+        })
+        .unwrap_or_default();
+
+    let system_prompt = build_system_prompt(&working_directory);
+    let has_existing_system = messages
+        .iter()
+        .any(|msg| msg.role.trim() == "system" || msg.role.trim() == "developer");
+
+    if !has_existing_system {
+        messages.insert(
+            0,
+            ChatContextMessage {
+                role: "system".to_string(),
+                content: system_prompt,
+            },
+        );
+    }
 
     messages.extend(current_messages.iter().cloned());
 

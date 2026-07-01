@@ -404,6 +404,10 @@ const api = {
     directoryId: string
   ): Promise<ChatConversationRecord[]> =>
     ipcRenderer.invoke("chat-conversations:list-pinned", directoryId),
+  getChatConversation: (
+    conversationId: string
+  ): Promise<ChatConversationRecord | null> =>
+    ipcRenderer.invoke("chat-conversations:get", conversationId),
   updateConversationStatus: (
     conversationId: string,
     status: string

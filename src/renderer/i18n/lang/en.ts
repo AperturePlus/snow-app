@@ -59,6 +59,7 @@ export const en = {
   "chat.loadingModels": "Loading models...",
   "chat.refreshModels": "Refresh models",
   "chat.thinkingProcess": "Thinking process",
+  "chat.stopping": "Stopping...",
   "common.cancel": "Cancel",
   "common.confirm": "Confirm",
   "common.retry": "Retry",

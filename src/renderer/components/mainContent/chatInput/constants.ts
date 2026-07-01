@@ -10,10 +10,13 @@ import {
 import type { RequestMethod, ThinkingOption } from "./types";
 
 export const MAX_TEXTAREA_ROWS = 8;
-export const DEFAULT_TEXTAREA_ROWS = 3;
+export const DEFAULT_TEXTAREA_ROWS = 2;
 export const DEFAULT_THINKING_VALUE = "high";
 
-export const THINKING_OPTIONS_BY_METHOD: Record<RequestMethod, ThinkingOption[]> = {
+export const THINKING_OPTIONS_BY_METHOD: Record<
+  RequestMethod,
+  ThinkingOption[]
+> = {
   anthropic: [
     { value: "none", label: "None", icon: CircleOff },
     { value: "low", label: "Low", icon: Gauge },

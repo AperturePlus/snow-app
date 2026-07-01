@@ -27,8 +27,9 @@ export const TokenUsageRing = ({
     const cacheCreation = tokenUsage.cacheCreationInputTokens;
     const cacheRead = tokenUsage.cacheReadInputTokens;
 
-    // cacheRead is a subset of input (e.g. OpenAI prompt_tokens_details.cached_tokens
-    // is already counted in prompt_tokens), so it must NOT be added to total.
+    // input_tokens is normalized at the Rust layer to include cache tokens for
+    // all providers (Anthropic returns them disjoint; OpenAI/Gemini already
+    // include them in prompt_tokens). So total = input + output is correct.
     const total = input + output;
 
     if (total === 0) {
@@ -42,7 +43,6 @@ export const TokenUsageRing = ({
     const remaining = CIRCUMFERENCE - filled;
 
     // Non-cached input = input minus the portion that was a cache hit.
-    // Clamped to 0 for providers where cacheRead is separate from input.
     const nonCachedInput = Math.max(0, input - cacheRead);
 
     const inputLength = filled * (nonCachedInput / total);

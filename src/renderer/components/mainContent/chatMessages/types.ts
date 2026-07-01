@@ -15,6 +15,7 @@ export type AiResponseProps = {
   thinking?: string;
   sections?: AiResponseSection[];
   isStreaming?: boolean;
+  isAborting?: boolean;
   showActions?: boolean;
   toolCalls?: ToolCallInfo[];
 };

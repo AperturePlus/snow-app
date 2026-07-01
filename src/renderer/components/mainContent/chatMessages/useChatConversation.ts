@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatInputSendOptions } from "../chatInput/types";
-import type { TokenUsage } from "../../../../preload";
+import type { ChatConversationRecord, TokenUsage } from "../../../../preload";
 
 export type ToolCallInfo = {
   name: string;
@@ -24,10 +24,16 @@ export type ChatConversationMessage = {
   toolName?: string;
 };
 
+type UpsertedConversation = {
+  record: ChatConversationRecord;
+  timestamp: number;
+};
+
 type UseChatConversationResult = {
   messages: ChatConversationMessage[];
   summary: string;
   conversationVersion: number;
+  upsertedConversation: UpsertedConversation | null;
   activeConversationId: string | undefined;
   tokenUsage: TokenUsage | null;
   handleSendMessage: (message: string, options: ChatInputSendOptions) => void;
@@ -39,6 +45,7 @@ type UseChatConversationResult = {
   handleNewChat: () => void;
   refreshConversations: () => void;
   isStreaming: boolean;
+  isAborting: boolean;
   handleAbort: () => void;
 };
 
@@ -156,12 +163,15 @@ export const useChatConversation = (
   const [messages, setMessages] = useState<ChatConversationMessage[]>([]);
   const [summary, setSummary] = useState("");
   const [conversationVersion, setConversationVersion] = useState(0);
+  const [upsertedConversation, setUpsertedConversation] =
+    useState<UpsertedConversation | null>(null);
   const [activeConversationId, setActiveConversationId] = useState<
     string | undefined
   >(undefined);
   const conversationIdRef = useRef<string | undefined>(undefined);
   const isSendingRef = useRef(false);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isAborting, setIsAborting] = useState(false);
   const activeStreamIdRef = useRef<string | null>(null);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
 
@@ -421,16 +431,44 @@ export const useChatConversation = (
         .finally(() => {
           isSendingRef.current = false;
           setIsStreaming(false);
+          setIsAborting(false);
 
-          // Only generate summary and refresh conversation list
-          // after the first AI response in a new conversation.
+          // First message: immediately upsert the new conversation into
+          // the list without waiting for the summary.
           if (isFirstMessage && conversationIdRef.current) {
+            const currentId = conversationIdRef.current;
+
             void window.snow
-              .generateConversationSummary(conversationIdRef.current)
+              .getChatConversation(currentId)
+              .then((conv) => {
+                if (conv) {
+                  setUpsertedConversation({
+                    record: conv,
+                    timestamp: Date.now(),
+                  });
+                }
+              })
+              .catch(() => {
+                // Upsert failure should not block the conversation
+              });
+
+            // Generate summary asynchronously, then upsert again to
+            // update the conversation title.
+            void window.snow
+              .generateConversationSummary(currentId)
               .then((generatedSummary) => {
                 if (generatedSummary) {
                   setSummary(generatedSummary);
-                  setConversationVersion((version) => version + 1);
+                  return window.snow.getChatConversation(currentId);
+                }
+                return null;
+              })
+              .then((updated) => {
+                if (updated) {
+                  setUpsertedConversation({
+                    record: updated,
+                    timestamp: Date.now(),
+                  });
                 }
               })
               .catch(() => {
@@ -516,7 +554,6 @@ export const useChatConversation = (
   const handleNewChat = useCallback(() => {
     setMessages([]);
     setSummary("");
-    setConversationVersion(0);
     setActiveConversationId(undefined);
     setTokenUsage(null);
     conversationIdRef.current = undefined;
@@ -527,6 +564,8 @@ export const useChatConversation = (
     if (!streamId) {
       return;
     }
+    setIsStreaming(false);
+    setIsAborting(true);
     void window.snow.abortResponseStream(streamId);
   }, []);
 
@@ -538,6 +577,7 @@ export const useChatConversation = (
     messages,
     summary,
     conversationVersion,
+    upsertedConversation,
     activeConversationId,
     tokenUsage,
     handleSendMessage,
@@ -545,6 +585,7 @@ export const useChatConversation = (
     handleNewChat,
     refreshConversations,
     isStreaming,
+    isAborting,
     handleAbort,
   };
 };
