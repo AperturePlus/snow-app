@@ -391,10 +391,13 @@ pub fn reorder_workspace_directories(items: Vec<WorkspaceDirectoryInput>) -> Res
     let database_path = ensure_database_file()?;
     services::workspace_directories::reorder_workspace_directories(&database_path, &items)
 }
-
 pub fn delete_workspace_directory(directory_id: String) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::workspace_directories::delete_workspace_directory(&database_path, &directory_id)
+}
+
+pub fn read_directory_entries(dir_path: String) -> Result<Vec<services::fs_explorer::DirectoryEntry>> {
+    services::fs_explorer::read_directory_entries(&dir_path)
 }
 
 pub fn list_mcp_server_configs() -> Result<Vec<McpServerConfigRecord>> {

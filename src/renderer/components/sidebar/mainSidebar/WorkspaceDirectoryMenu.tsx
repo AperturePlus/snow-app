@@ -1,4 +1,4 @@
-import { AlertTriangle, Ellipsis, Trash2 } from "lucide-react";
+import { AlertTriangle, Ellipsis, FileSearch, Trash2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -8,6 +8,7 @@ type WorkspaceDirectoryMenuProps = {
   disabled?: boolean;
   onDelete: () => void;
   onOpenChange?: (isOpen: boolean) => void;
+  onShowDetails?: () => void;
 };
 
 type MenuPosition = {
@@ -19,6 +20,7 @@ export function WorkspaceDirectoryMenu({
   disabled,
   onDelete,
   onOpenChange,
+  onShowDetails,
 }: WorkspaceDirectoryMenuProps): React.JSX.Element {
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
@@ -91,6 +93,12 @@ export function WorkspaceDirectoryMenu({
     setShowConfirm(true);
   };
 
+  const handleShowDetailsClick = (): void => {
+    setIsOpen(false);
+    setShowConfirm(false);
+    onShowDetails?.();
+  };
+
   const handleDeleteConfirm = (): void => {
     onDelete();
     setIsOpen(false);
@@ -156,17 +164,31 @@ export function WorkspaceDirectoryMenu({
                   </div>
                 </>
               ) : (
-                <button
-                  type="button"
-                  className="workspace-directory-menu-item danger"
-                  disabled={disabled}
-                  onClick={handleDeleteClick}
-                >
-                  <Trash2 size={13} />
-                  <span>
-                    {t("sidebar.deleteDirectory", { defaultValue: "Delete" })}
-                  </span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="workspace-directory-menu-item"
+                    onClick={handleShowDetailsClick}
+                  >
+                    <FileSearch size={13} />
+                    <span>
+                      {t("sidebar.directoryDetails", {
+                        defaultValue: "Details",
+                      })}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="workspace-directory-menu-item danger"
+                    disabled={disabled}
+                    onClick={handleDeleteClick}
+                  >
+                    <Trash2 size={13} />
+                    <span>
+                      {t("sidebar.deleteDirectory", { defaultValue: "Delete" })}
+                    </span>
+                  </button>
+                </>
               )}
             </div>,
             document.body

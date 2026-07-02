@@ -7,6 +7,7 @@ import {
   SquarePen,
   SquareStack,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { WorkspaceDirectoryRecord } from "../../preload";
 import { useChatConversationContext } from "./mainContent/chatMessages";
 
@@ -25,7 +26,45 @@ export const TopBar = ({
   onToggleSidebar,
   onToggleRightPanel,
 }: TopBarProps): React.JSX.Element => {
-  const { handleNewChat, summary } = useChatConversationContext();
+  const { handleNewChat, summary, conversationDirectoryId } =
+    useChatConversationContext();
+  const [conversationDirectoryName, setConversationDirectoryName] = useState<
+    string | undefined
+  >(undefined);
+
+  useEffect(() => {
+    if (!conversationDirectoryId) {
+      setConversationDirectoryName(undefined);
+      return;
+    }
+
+    if (conversationDirectoryId === activeDirectory?.directoryId) {
+      setConversationDirectoryName(activeDirectory.name);
+      return;
+    }
+
+    let cancelled = false;
+
+    void window.snow
+      .listWorkspaceDirectories()
+      .then((directories) => {
+        if (cancelled) {
+          return;
+        }
+        const matched = directories.find(
+          (directory) => directory.directoryId === conversationDirectoryId
+        );
+        setConversationDirectoryName(matched?.name);
+      })
+      .catch(() => {
+        // Silent fail
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationDirectoryId, activeDirectory]);
+
   const SidebarToggleIcon = isSidebarCollapsed ? SidebarOpen : SidebarClose;
   const sidebarToggleLabel = isSidebarCollapsed
     ? "Expand sidebar"
@@ -37,8 +76,12 @@ export const TopBar = ({
     ? "Expand right panel"
     : "Collapse right panel";
 
-  const headerTitle = summary || activeDirectory?.name || "New Chat";
-  const headerSubtitle = activeDirectory?.name || "";
+  const displayDirectoryName = conversationDirectoryId
+    ? conversationDirectoryName
+    : activeDirectory?.name;
+
+  const headerTitle = summary || displayDirectoryName || "New Chat";
+  const headerSubtitle = displayDirectoryName || "";
 
   return (
     <header className="top-bar">

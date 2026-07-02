@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { ChatInputSendOptions } from "../chatInput/types";
 import type { ChatConversationRecord, TokenUsage } from "../../../../preload";
 
@@ -29,25 +29,48 @@ type UpsertedConversation = {
   timestamp: number;
 };
 
+type ConversationSessionState = {
+  messages: ChatConversationMessage[];
+  summary: string;
+  isStreaming: boolean;
+  isAborting: boolean;
+  tokenUsage: TokenUsage | null;
+  directoryId?: string;
+  hasNewContent: boolean;
+};
+
+type ConversationSessionRef = {
+  streamId: string | null;
+  isSending: boolean;
+  directoryId?: string;
+};
+
 type UseChatConversationResult = {
   messages: ChatConversationMessage[];
   summary: string;
   conversationVersion: number;
   upsertedConversation: UpsertedConversation | null;
   activeConversationId: string | undefined;
+  conversationDirectoryId: string | undefined;
   tokenUsage: TokenUsage | null;
+  streamingConversationIds: Set<string>;
+  completedConversationIds: Set<string>;
   handleSendMessage: (message: string, options: ChatInputSendOptions) => void;
   handleSelectConversation: (
     conversationId: string,
     title?: string,
-    tokenUsage?: TokenUsage | null
-  ) => void;
+    tokenUsage?: TokenUsage | null,
+    directoryId?: string
+  ) => Promise<void>;
   handleNewChat: () => void;
   refreshConversations: () => void;
   isStreaming: boolean;
   isAborting: boolean;
   handleAbort: () => void;
+  abortConversation: (conversationId: string) => void;
 };
+
+const PENDING_SESSION_KEY = "__pending__";
 
 const formatMessageTime = (): string =>
   new Date().toLocaleTimeString("zh-CN", {
@@ -160,38 +183,153 @@ const parseToolCalls = (toolCallsJson: string | undefined): ToolCallInfo[] => {
 export const useChatConversation = (
   directoryId?: string
 ): UseChatConversationResult => {
-  const [messages, setMessages] = useState<ChatConversationMessage[]>([]);
-  const [summary, setSummary] = useState("");
-  const [conversationVersion, setConversationVersion] = useState(0);
-  const [upsertedConversation, setUpsertedConversation] =
-    useState<UpsertedConversation | null>(null);
+  const [sessions, setSessions] = useState<
+    Record<string, ConversationSessionState>
+  >({});
   const [activeConversationId, setActiveConversationId] = useState<
     string | undefined
   >(undefined);
-  const conversationIdRef = useRef<string | undefined>(undefined);
-  const isSendingRef = useRef(false);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [isAborting, setIsAborting] = useState(false);
-  const activeStreamIdRef = useRef<string | null>(null);
-  const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
+  const [conversationVersion, setConversationVersion] = useState(0);
+  const [upsertedConversation, setUpsertedConversation] =
+    useState<UpsertedConversation | null>(null);
+  const [streamingConversationIds, setStreamingConversationIds] = useState<
+    Set<string>
+  >(new Set());
+  const [completedConversationIds, setCompletedConversationIds] = useState<
+    Set<string>
+  >(new Set());
 
-  useEffect(() => {
-    setMessages([]);
-    setSummary("");
-    setConversationVersion(0);
-    setActiveConversationId(undefined);
-    setTokenUsage(null);
-    conversationIdRef.current = undefined;
-  }, [directoryId]);
+  const sessionsRefData = useRef<Map<string, ConversationSessionRef>>(
+    new Map()
+  );
+  const activeConversationIdRef = useRef<string | undefined>(undefined);
+
+  const setActiveId = useCallback((id: string | undefined): void => {
+    activeConversationIdRef.current = id;
+    setActiveConversationId(id);
+  }, []);
+
+  const ensureSession = useCallback((key: string, dirId?: string): void => {
+    if (!sessionsRefData.current.has(key)) {
+      sessionsRefData.current.set(key, {
+        streamId: null,
+        isSending: false,
+        directoryId: dirId,
+      });
+    }
+    setSessions((prev) => {
+      if (prev[key]) return prev;
+      return {
+        ...prev,
+        [key]: {
+          messages: [],
+          summary: "",
+          isStreaming: false,
+          isAborting: false,
+          tokenUsage: null,
+          directoryId: dirId,
+          hasNewContent: false,
+        },
+      };
+    });
+  }, []);
+
+  const updateSessionMessages = useCallback(
+    (
+      key: string,
+      updater: (
+        messages: ChatConversationMessage[]
+      ) => ChatConversationMessage[]
+    ): void => {
+      setSessions((prev) => {
+        const session = prev[key];
+        if (!session) return prev;
+        return {
+          ...prev,
+          [key]: { ...session, messages: updater(session.messages) },
+        };
+      });
+    },
+    []
+  );
+
+  const updateSessionField = useCallback(
+    <K extends keyof ConversationSessionState>(
+      key: string,
+      field: K,
+      value: ConversationSessionState[K]
+    ): void => {
+      setSessions((prev) => {
+        const session = prev[key];
+        if (!session) return prev;
+        return { ...prev, [key]: { ...session, [field]: value } };
+      });
+    },
+    []
+  );
+
+  const migrateSession = useCallback((oldKey: string, newKey: string): void => {
+    const oldRef = sessionsRefData.current.get(oldKey);
+    if (oldRef) {
+      sessionsRefData.current.set(newKey, { ...oldRef });
+      sessionsRefData.current.delete(oldKey);
+    }
+    setSessions((prev) => {
+      const oldSession = prev[oldKey];
+      if (!oldSession) return prev;
+      const next = { ...prev };
+      next[newKey] = oldSession;
+      delete next[oldKey];
+      return next;
+    });
+    setStreamingConversationIds((prev) => {
+      if (!prev.has(oldKey)) return prev;
+      const next = new Set(prev);
+      next.delete(oldKey);
+      next.add(newKey);
+      return next;
+    });
+  }, []);
+
+  const addStreamingId = useCallback((id: string): void => {
+    setStreamingConversationIds((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
+
+  const removeStreamingId = useCallback((id: string): void => {
+    setStreamingConversationIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
 
   const handleSendMessage = useCallback(
     (message: string, options: ChatInputSendOptions) => {
       const trimmed = message.trim();
-      if (!trimmed || isSendingRef.current) {
+      if (!trimmed) {
         return;
       }
 
-      const isFirstMessage = conversationIdRef.current === undefined;
+      const sessionKey = activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+      const existingRef = sessionsRefData.current.get(sessionKey);
+      if (existingRef?.isSending) {
+        return;
+      }
+
+      const isFirstMessage = activeConversationIdRef.current === undefined;
+      const sessionDirId = existingRef?.directoryId ?? directoryId;
+
+      ensureSession(sessionKey, sessionDirId);
+      const sessionRef = sessionsRefData.current.get(sessionKey);
+      if (sessionRef) {
+        sessionRef.isSending = true;
+      }
 
       const userMessage: ChatConversationMessage = {
         id: createMessageId("user"),
@@ -209,15 +347,43 @@ export const useChatConversation = (
         status: "sending",
         model: options.model,
       };
-      const conversationId = conversationIdRef.current;
 
-      isSendingRef.current = true;
-      setIsStreaming(true);
-      setMessages((currentMessages) => [
+      updateSessionField(sessionKey, "isStreaming", true);
+      addStreamingId(sessionKey);
+      updateSessionMessages(sessionKey, (currentMessages) => [
         ...currentMessages,
         userMessage,
         pendingAssistantMessage,
       ]);
+
+      // First message: immediately show a placeholder in the sidebar list
+      // so the user sees the new conversation without waiting for AI response.
+      if (isFirstMessage) {
+        const nowIso = new Date().toISOString();
+        const preview =
+          trimmed.length > 50 ? `${trimmed.slice(0, 50)}...` : trimmed;
+        setUpsertedConversation({
+          record: {
+            conversationId: PENDING_SESSION_KEY,
+            title: trimmed,
+            summary: "",
+            lastMessagePreview: preview,
+            messageCount: 1,
+            model: options.model ?? "",
+            status: "active",
+            directoryId: sessionDirId ?? "",
+            createdAt: nowIso,
+            updatedAt: nowIso,
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheCreationInputTokens: 0,
+            cacheReadInputTokens: 0,
+          },
+          timestamp: Date.now(),
+        });
+      }
+
+      let finalSessionKey = sessionKey;
 
       const MAX_TOOL_ITERATIONS = 10;
       let iteration = 0;
@@ -230,15 +396,18 @@ export const useChatConversation = (
         }[],
         currentConversationId: string | undefined
       ): Promise<void> => {
+        const iterSessionKey = currentConversationId ?? PENDING_SESSION_KEY;
+        let effectiveKey = iterSessionKey;
+
         const response = await window.snow.createResponseStream(
           {
             messages: requestMessages,
             model: options.model,
             conversationId: currentConversationId,
-            directoryId,
+            directoryId: sessionDirId,
           },
           (chunk) => {
-            setMessages((currentMessages) =>
+            updateSessionMessages(effectiveKey, (currentMessages) =>
               currentMessages.map((currentMessage) => {
                 if (currentMessage.id !== currentAssistantMessageId) {
                   return currentMessage;
@@ -262,26 +431,55 @@ export const useChatConversation = (
             );
           },
           (streamId: string) => {
-            activeStreamIdRef.current = streamId;
+            const ref = sessionsRefData.current.get(effectiveKey);
+            if (ref) {
+              ref.streamId = streamId;
+            }
           }
         );
 
-        activeStreamIdRef.current = null;
+        const ref = sessionsRefData.current.get(effectiveKey);
+        if (ref) {
+          ref.streamId = null;
+        }
 
         if (response.conversationId) {
-          conversationIdRef.current = response.conversationId;
-          setActiveConversationId(response.conversationId);
+          if (effectiveKey === PENDING_SESSION_KEY) {
+            migrateSession(PENDING_SESSION_KEY, response.conversationId);
+            effectiveKey = response.conversationId;
+            finalSessionKey = response.conversationId;
+          }
+          if (activeConversationIdRef.current === undefined) {
+            setActiveId(response.conversationId);
+          }
+          // First message: immediately upsert the new conversation into
+          // the list so it appears while AI is still responding.
+          if (isFirstMessage) {
+            void window.snow
+              .getChatConversation(response.conversationId)
+              .then((conv) => {
+                if (conv) {
+                  setUpsertedConversation({
+                    record: conv,
+                    timestamp: Date.now(),
+                  });
+                }
+              })
+              .catch(() => {
+                // Upsert failure should not block the conversation
+              });
+          }
         }
 
         if (response.tokenUsage) {
-          setTokenUsage(response.tokenUsage);
+          updateSessionField(effectiveKey, "tokenUsage", response.tokenUsage);
         }
 
         // Parse tool calls from response
         const toolCalls = parseToolCalls(response.toolCallsJson);
 
         // Update assistant message with final content
-        setMessages((currentMessages) =>
+        updateSessionMessages(effectiveKey, (currentMessages) =>
           currentMessages.map((currentMessage) => {
             if (currentMessage.id !== currentAssistantMessageId) {
               return currentMessage;
@@ -316,7 +514,7 @@ export const useChatConversation = (
         const toolResults: string[] = [];
         for (const toolCall of toolCalls) {
           // Update tool call status to running
-          setMessages((currentMessages) =>
+          updateSessionMessages(effectiveKey, (currentMessages) =>
             currentMessages.map((currentMessage) => {
               if (currentMessage.id !== currentAssistantMessageId) {
                 return currentMessage;
@@ -344,7 +542,7 @@ export const useChatConversation = (
           }
 
           // Update tool call status to completed
-          setMessages((currentMessages) =>
+          updateSessionMessages(effectiveKey, (currentMessages) =>
             currentMessages.map((currentMessage) => {
               if (currentMessage.id !== currentAssistantMessageId) {
                 return currentMessage;
@@ -376,7 +574,7 @@ export const useChatConversation = (
           toolName: toolCalls.map((tc) => tc.name).join(", "),
         };
 
-        setMessages((currentMessages) => [
+        updateSessionMessages(effectiveKey, (currentMessages) => [
           ...currentMessages,
           toolResultMessage,
         ]);
@@ -392,7 +590,7 @@ export const useChatConversation = (
           model: options.model,
         };
 
-        setMessages((currentMessages) => [
+        updateSessionMessages(effectiveKey, (currentMessages) => [
           ...currentMessages,
           newPendingAssistant,
         ]);
@@ -410,12 +608,15 @@ export const useChatConversation = (
       void runAgentLoop(
         assistantMessageId,
         [{ role: "user", content: trimmed }],
-        conversationId
+        activeConversationIdRef.current
       )
         .catch((error: unknown) => {
-          setIsStreaming(false);
-          activeStreamIdRef.current = null;
-          setMessages((currentMessages) =>
+          updateSessionField(finalSessionKey, "isStreaming", false);
+          const ref = sessionsRefData.current.get(finalSessionKey);
+          if (ref) {
+            ref.streamId = null;
+          }
+          updateSessionMessages(finalSessionKey, (currentMessages) =>
             currentMessages.map((currentMessage) =>
               currentMessage.status === "sending"
                 ? {
@@ -429,36 +630,39 @@ export const useChatConversation = (
           );
         })
         .finally(() => {
-          isSendingRef.current = false;
-          setIsStreaming(false);
-          setIsAborting(false);
+          const ref = sessionsRefData.current.get(finalSessionKey);
+          if (ref) {
+            ref.isSending = false;
+          }
+          updateSessionField(finalSessionKey, "isStreaming", false);
+          updateSessionField(finalSessionKey, "isAborting", false);
+          removeStreamingId(finalSessionKey);
 
-          // First message: immediately upsert the new conversation into
-          // the list without waiting for the summary.
-          if (isFirstMessage && conversationIdRef.current) {
-            const currentId = conversationIdRef.current;
+          // If this is a background conversation (not the active one),
+          // mark it as completed so the sidebar shows a dot indicator.
+          if (
+            finalSessionKey !== PENDING_SESSION_KEY &&
+            finalSessionKey !== activeConversationIdRef.current
+          ) {
+            updateSessionField(finalSessionKey, "hasNewContent", true);
+            setCompletedConversationIds((prev) => {
+              if (prev.has(finalSessionKey)) return prev;
+              const next = new Set(prev);
+              next.add(finalSessionKey);
+              return next;
+            });
+          }
 
-            void window.snow
-              .getChatConversation(currentId)
-              .then((conv) => {
-                if (conv) {
-                  setUpsertedConversation({
-                    record: conv,
-                    timestamp: Date.now(),
-                  });
-                }
-              })
-              .catch(() => {
-                // Upsert failure should not block the conversation
-              });
+          // First message: generate summary asynchronously, then upsert
+          // again to update the conversation title.
+          if (isFirstMessage && finalSessionKey !== PENDING_SESSION_KEY) {
+            const currentId = finalSessionKey;
 
-            // Generate summary asynchronously, then upsert again to
-            // update the conversation title.
             void window.snow
               .generateConversationSummary(currentId)
               .then((generatedSummary) => {
                 if (generatedSummary) {
-                  setSummary(generatedSummary);
+                  updateSessionField(currentId, "summary", generatedSummary);
                   return window.snow.getChatConversation(currentId);
                 }
                 return null;
@@ -477,20 +681,42 @@ export const useChatConversation = (
           }
         });
     },
-    [directoryId]
+    [
+      directoryId,
+      ensureSession,
+      updateSessionMessages,
+      updateSessionField,
+      migrateSession,
+      addStreamingId,
+      removeStreamingId,
+      setActiveId,
+    ]
   );
 
   const handleSelectConversation = useCallback(
     async (
       conversationId: string,
       title?: string,
-      conversationTokenUsage?: TokenUsage | null
+      conversationTokenUsage?: TokenUsage | null,
+      conversationDirId?: string
     ): Promise<void> => {
       const trimmedId = conversationId.trim();
-      if (!trimmedId || isSendingRef.current) {
+      if (!trimmedId || trimmedId === activeConversationIdRef.current) {
         return;
       }
-      if (trimmedId === conversationIdRef.current) {
+
+      // If session already exists, just switch the active pointer
+      // (preserves in-flight streaming without reloading from DB)
+      if (sessionsRefData.current.has(trimmedId)) {
+        setActiveId(trimmedId);
+        // Clear the "new content" indicator when user views this conversation
+        updateSessionField(trimmedId, "hasNewContent", false);
+        setCompletedConversationIds((prev) => {
+          if (!prev.has(trimmedId)) return prev;
+          const next = new Set(prev);
+          next.delete(trimmedId);
+          return next;
+        });
         return;
       }
 
@@ -539,53 +765,106 @@ export const useChatConversation = (
             };
           });
 
-        conversationIdRef.current = trimmedId;
-        setActiveConversationId(trimmedId);
-        setMessages(loadedMessages);
-        setSummary(nextTitle);
-        setTokenUsage(conversationTokenUsage ?? null);
+        sessionsRefData.current.set(trimmedId, {
+          streamId: null,
+          isSending: false,
+          directoryId: conversationDirId,
+        });
+        setSessions((prev) => ({
+          ...prev,
+          [trimmedId]: {
+            messages: loadedMessages,
+            summary: nextTitle,
+            isStreaming: false,
+            isAborting: false,
+            tokenUsage: conversationTokenUsage ?? null,
+            directoryId: conversationDirId,
+            hasNewContent: false,
+          },
+        }));
+
+        setActiveId(trimmedId);
       } catch {
         // 加载历史消息失败时静默处理，不阻断交互
       }
     },
-    []
+    [setActiveId, updateSessionField]
   );
 
-  const handleNewChat = useCallback(() => {
-    setMessages([]);
-    setSummary("");
-    setActiveConversationId(undefined);
-    setTokenUsage(null);
-    conversationIdRef.current = undefined;
-  }, []);
+  const handleNewChat = useCallback((): void => {
+    // Clear stale pending session if not actively streaming
+    const pendingRef = sessionsRefData.current.get(PENDING_SESSION_KEY);
+    if (pendingRef && !pendingRef.isSending) {
+      sessionsRefData.current.delete(PENDING_SESSION_KEY);
+      setSessions((prev) => {
+        const next = { ...prev };
+        delete next[PENDING_SESSION_KEY];
+        return next;
+      });
+    }
+    setActiveId(undefined);
+  }, [setActiveId]);
 
-  const handleAbort = useCallback(() => {
-    const streamId = activeStreamIdRef.current;
-    if (!streamId) {
+  const handleAbort = useCallback((): void => {
+    const key = activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+    const ref = sessionsRefData.current.get(key);
+    if (!ref?.streamId) {
       return;
     }
-    setIsStreaming(false);
-    setIsAborting(true);
-    void window.snow.abortResponseStream(streamId);
-  }, []);
+    updateSessionField(key, "isStreaming", false);
+    updateSessionField(key, "isAborting", true);
+    removeStreamingId(key);
+    void window.snow.abortResponseStream(ref.streamId);
+  }, [updateSessionField, removeStreamingId]);
 
-  const refreshConversations = useCallback(() => {
+  const abortConversation = useCallback(
+    (conversationId: string): void => {
+      const ref = sessionsRefData.current.get(conversationId);
+      if (ref?.streamId) {
+        void window.snow.abortResponseStream(ref.streamId);
+        ref.streamId = null;
+      }
+      if (ref) {
+        ref.isSending = false;
+      }
+      updateSessionField(conversationId, "isStreaming", false);
+      updateSessionField(conversationId, "isAborting", false);
+      removeStreamingId(conversationId);
+      // Clean up session from state and ref
+      sessionsRefData.current.delete(conversationId);
+      setSessions((prev) => {
+        const next = { ...prev };
+        delete next[conversationId];
+        return next;
+      });
+    },
+    [updateSessionField, removeStreamingId]
+  );
+
+  const refreshConversations = useCallback((): void => {
     setConversationVersion((version) => version + 1);
   }, []);
 
+  const activeKey = activeConversationId ?? PENDING_SESSION_KEY;
+  const activeSession = sessions[activeKey];
+
   return {
-    messages,
-    summary,
+    messages: activeSession?.messages ?? [],
+    summary: activeSession?.summary ?? "",
     conversationVersion,
     upsertedConversation,
     activeConversationId,
-    tokenUsage,
+    conversationDirectoryId: activeSession?.directoryId,
+    tokenUsage: activeSession?.tokenUsage ?? null,
+    streamingConversationIds,
+    completedConversationIds,
     handleSendMessage,
     handleSelectConversation,
     handleNewChat,
     refreshConversations,
-    isStreaming,
-    isAborting,
+    isStreaming: activeSession?.isStreaming ?? false,
+    isAborting: activeSession?.isAborting ?? false,
     handleAbort,
+    abortConversation,
   };
 };

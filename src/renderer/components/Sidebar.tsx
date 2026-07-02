@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { MainSidebarContent } from "./sidebar/MainSidebarContent";
+import { ProjectExplorerContent } from "./sidebar/ProjectExplorerContent";
 import { SettingsSidebarContent } from "./sidebar/SettingsSidebarContent";
 import type { SidebarContentKey, SidebarContentProps } from "./sidebar/types";
 
@@ -19,13 +20,35 @@ export const Sidebar = ({
   onSelectMainView,
 }: SidebarProps): React.JSX.Element => {
   const [activeContent, setActiveContent] = useState<SidebarContentKey>("main");
+  const [explorerDirectoryId, setExplorerDirectoryId] = useState<string | null>(
+    null
+  );
+
+  const handleSwitchContent = useCallback(
+    (content: SidebarContentKey): void => {
+      if (content === "explorer") {
+        // explorerDirectoryId is set separately via onSwitchToExplorer
+        setActiveContent("explorer");
+        return;
+      }
+      setActiveContent(content);
+    },
+    []
+  );
+
+  const handleSwitchToExplorer = useCallback((directoryId: string): void => {
+    setExplorerDirectoryId(directoryId);
+    setActiveContent("explorer");
+  }, []);
 
   const sidebarProps: SidebarContentProps = {
     activeMainView,
     activeDirectory,
+    explorerDirectoryId,
     onActiveDirectoryChange,
     onSelectMainView,
-    onSwitchContent: setActiveContent,
+    onSwitchContent: handleSwitchContent,
+    onSwitchToExplorer: handleSwitchToExplorer,
   };
 
   return (
@@ -43,6 +66,13 @@ export const Sidebar = ({
         }`}
       >
         <SettingsSidebarContent {...sidebarProps} />
+      </div>
+      <div
+        className={`sidebar-content-wrapper ${
+          activeContent === "explorer" ? "" : "is-hidden"
+        }`}
+      >
+        <ProjectExplorerContent {...sidebarProps} />
       </div>
     </aside>
   );

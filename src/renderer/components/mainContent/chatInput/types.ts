@@ -22,7 +22,7 @@ export type ThinkingOption = {
 
 export type ChatInputState = {
   value: string;
-  textareaRef: RefObject<HTMLTextAreaElement | null>;
+  textareaRef: RefObject<HTMLDivElement | null>;
   models: Model[];
   selectedModel: string;
   displayModel: string;
@@ -64,10 +64,10 @@ export type ChatInputActions = {
   setManualValue: (value: string) => void;
   setIsManualMode: (value: boolean) => void;
   setIsThinkingDropdownOpen: (updater: (open: boolean) => boolean) => void;
-  handleChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  handleChange: (value: string) => void;
   handleSend: () => void;
   handleAbort: () => void;
-  handleKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  handleKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
   handleSelectModel: (modelId: string) => Promise<void>;
   handleOpenManualMode: () => void;
   handleConfirmManualModel: () => Promise<void>;

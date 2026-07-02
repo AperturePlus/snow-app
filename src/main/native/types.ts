@@ -106,6 +106,13 @@ export type WorkspaceDirectoryRecord = WorkspaceDirectoryInput & {
   updatedAt: string;
 };
 
+export type DirectoryEntry = {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  size: number;
+};
+
 export type McpServerConfigInput = {
   serverId: string;
   scope: string;
@@ -259,6 +266,7 @@ export type NativeBridge = {
   activateWorkspaceDirectory: (directoryId: string) => void;
   reorderWorkspaceDirectories: (items: WorkspaceDirectoryInput[]) => void;
   deleteWorkspaceDirectory: (directoryId: string) => void;
+  readDirectoryEntries: (dirPath: string) => DirectoryEntry[];
   listMcpServerConfigs: () => McpServerConfigRecord[];
   upsertMcpServerConfig: (item: McpServerConfigInput) => void;
   deleteMcpServerConfig: (serverId: string) => void;

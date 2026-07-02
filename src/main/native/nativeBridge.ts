@@ -103,6 +103,11 @@ export const loadNativeBridge = (): NativeBridge => {
           "Rust native bridge is required to delete workspace directories"
         );
       },
+      readDirectoryEntries: () => {
+        throw new Error(
+          "Rust native bridge is required to read directory entries"
+        );
+      },
       listMcpServerConfigs: () => {
         throw new Error(
           "Rust native bridge is required to list MCP server configs"

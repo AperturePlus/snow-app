@@ -11,6 +11,7 @@ export function MainSidebarContent({
   activeDirectory,
   onActiveDirectoryChange,
   onSwitchContent,
+  onSwitchToExplorer,
 }: SidebarContentProps): React.JSX.Element {
   const { t } = useI18n();
   const [isSwitchingDirectory, setIsSwitchingDirectory] = useState(false);
@@ -24,6 +25,8 @@ export function MainSidebarContent({
       <ProjectsSection
         onActiveDirectoryChange={onActiveDirectoryChange}
         onSwitchingDirectoryChange={setIsSwitchingDirectory}
+        onSwitchContent={onSwitchContent}
+        onSwitchToExplorer={onSwitchToExplorer}
       />
       <ChatsSection
         activeDirectory={activeDirectory}

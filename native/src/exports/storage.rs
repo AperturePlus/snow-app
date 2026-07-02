@@ -8,6 +8,7 @@ use crate::storage::{
     SystemPromptItemInput, SystemPromptItemRecord, WorkspaceDirectoryInput,
     WorkspaceDirectoryRecord,
 };
+use crate::storage::services::fs_explorer::DirectoryEntry;
 
 #[napi]
 pub fn initialize_app_storage() -> napi::Result<AppStorageInfo> {
@@ -106,6 +107,11 @@ pub fn reorder_workspace_directories(items: Vec<WorkspaceDirectoryInput>) -> nap
 #[napi]
 pub fn delete_workspace_directory(directory_id: String) -> napi::Result<()> {
     crate::storage::delete_workspace_directory(directory_id)
+}
+
+#[napi]
+pub fn read_directory_entries(dir_path: String) -> napi::Result<Vec<DirectoryEntry>> {
+    crate::storage::read_directory_entries(dir_path)
 }
 
 #[napi]

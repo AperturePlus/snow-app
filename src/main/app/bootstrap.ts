@@ -6,6 +6,8 @@ import { registerIpcHandlers } from "../ipc/registerIpcHandlers";
 import { native } from "../native/nativeBridge";
 
 export const bootstrapApplication = (): void => {
+  app.name = "Snow App";
+
   app.whenReady().then(() => {
     initializeApplicationServices(native);
 

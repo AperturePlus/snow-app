@@ -16,6 +16,8 @@ type ProjectsSectionProps = {
     directory: WorkspaceDirectoryRecord | null
   ) => void;
   onSwitchingDirectoryChange: (isSwitchingDirectory: boolean) => void;
+  onSwitchContent?: (content: "main" | "explorer") => void;
+  onSwitchToExplorer?: (directoryId: string) => void;
 };
 
 const DIRECTORY_PAGE_SIZE = 12;
@@ -72,6 +74,8 @@ const toPersistableDirectoryInput = (
 export function ProjectsSection({
   onActiveDirectoryChange,
   onSwitchingDirectoryChange,
+  onSwitchContent,
+  onSwitchToExplorer,
 }: ProjectsSectionProps): React.JSX.Element {
   const { t } = useI18n();
   const [workspaceDirectories, setWorkspaceDirectories] = useState<
@@ -432,6 +436,18 @@ export function ProjectsSection({
     }
   };
 
+  const handleShowDetails = (directoryId: string): void => {
+    const directory = workspaceDirectories.find(
+      (d) => d.directoryId === directoryId
+    );
+
+    if (!directory) {
+      return;
+    }
+
+    onSwitchToExplorer?.(directory.directoryId);
+  };
+
   return (
     <div className="sidebar-section">
       <div className="section-header">
@@ -514,6 +530,7 @@ export function ProjectsSection({
           onDragOver={handleDirectoryDragOver}
           onDragStart={handleDirectoryDragStart}
           onDrop={handleDirectoryDrop}
+          onShowDetails={handleShowDetails}
           totalCount={workspaceDirectories.length}
           visibleDirectories={visibleDirectories}
           workspaceDirectories={workspaceDirectories}

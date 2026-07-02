@@ -1,4 +1,4 @@
-import { MessageSquareMore } from "lucide-react";
+import { Loader2, MessageSquareMore } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useI18n } from "../../../i18n";
@@ -9,6 +9,8 @@ import { formatTimeLabel, parseDbTimestamp } from "./chatTimeGroup";
 type ChatItemProps = {
   conversation: ChatConversationRecord;
   isActive?: boolean;
+  isStreaming?: boolean;
+  isCompleted?: boolean;
   onPin: () => void;
   onRename: (newTitle: string) => Promise<void>;
   onDelete: () => void;
@@ -18,6 +20,8 @@ type ChatItemProps = {
 export function ChatItem({
   conversation,
   isActive = false,
+  isStreaming = false,
+  isCompleted = false,
   onPin,
   onRename,
   onDelete,
@@ -133,8 +137,17 @@ export function ChatItem({
         }
       }}
     >
-      <span className="chat-item-icon">
-        <MessageSquareMore size={11} />
+      <span
+        className={`chat-item-icon${isStreaming ? " streaming" : ""}${
+          isCompleted && !isStreaming ? " completed" : ""
+        }`}
+      >
+        {isStreaming ? (
+          <Loader2 size={11} className="spin" />
+        ) : (
+          <MessageSquareMore size={11} />
+        )}
+        {isCompleted && !isStreaming && <span className="chat-item-badge" />}
       </span>
       <div className="chat-item-content">
         {isEditing ? (

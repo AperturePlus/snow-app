@@ -1,14 +1,16 @@
 import type { MainContentView } from "../mainContent/types";
 import type { WorkspaceDirectoryRecord } from "../../../preload";
 
-export type SidebarContentKey = "main" | "settings";
+export type SidebarContentKey = "main" | "settings" | "explorer";
 
 export type SidebarContentProps = {
   activeMainView: MainContentView;
   activeDirectory?: WorkspaceDirectoryRecord | null;
+  explorerDirectoryId?: string | null;
   onActiveDirectoryChange?: (
     directory: WorkspaceDirectoryRecord | null
   ) => void;
   onSelectMainView: (view: MainContentView) => void;
   onSwitchContent: (content: SidebarContentKey) => void;
+  onSwitchToExplorer?: (directoryId: string) => void;
 };

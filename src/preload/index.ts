@@ -166,10 +166,25 @@ export type WorkspaceDirectoryInput = {
   sortOrder: number;
   source: string;
 };
-
 export type WorkspaceDirectoryRecord = WorkspaceDirectoryInput & {
   id: string;
   updatedAt: string;
+};
+
+export type DirectoryEntry = {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  size: number;
+};
+
+export type FileSearchResult = {
+  path: string;
+  relativePath: string;
+  name: string;
+  isDirectory: boolean;
+  matchedName: boolean;
+  lineMatches: Array<{ line: number; text: string }>;
 };
 
 export type McpServerConfigInput = {
@@ -385,6 +400,25 @@ const api = {
       "workspace-directories:select-local-directory",
       dialogTitle
     ),
+  readDirectoryEntries: (dirPath: string): Promise<DirectoryEntry[]> =>
+    ipcRenderer.invoke("workspace-directories:read-entries", dirPath),
+  startDirectoryWatch: (dirPath: string): Promise<void> =>
+    ipcRenderer.invoke("workspace-directories:start-watch", dirPath),
+  stopDirectoryWatch: (dirPath: string): Promise<void> =>
+    ipcRenderer.invoke("workspace-directories:stop-watch", dirPath),
+  onDirectoryChanged: (callback: (dirPath: string) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, dirPath: string): void => {
+      callback(dirPath);
+    };
+
+    ipcRenderer.on("workspace-directories:changed", handler);
+
+    return () => {
+      ipcRenderer.removeListener("workspace-directories:changed", handler);
+    };
+  },
+  searchFiles: (dirPath: string, query: string): Promise<FileSearchResult[]> =>
+    ipcRenderer.invoke("workspace-directories:search-files", dirPath, query),
   listChatConversations: (
     directoryId: string
   ): Promise<ChatConversationRecord[]> =>

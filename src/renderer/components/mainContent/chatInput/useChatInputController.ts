@@ -47,7 +47,7 @@ export const useChatInputController = ({
 }: UseChatInputControllerParams): UseChatInputControllerResult => {
   const { t } = useI18n();
   const [value, setValue] = useState("");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = useRef<HTMLDivElement>(null);
 
   const [models, setModels] = useState<Model[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>("");
@@ -229,8 +229,8 @@ export const useChatInputController = ({
   }, []);
 
   const handleChange = useCallback(
-    (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setValue(event.target.value);
+    (nextValue: string) => {
+      setValue(nextValue);
       adjustHeight();
     },
     [adjustHeight]
@@ -246,6 +246,8 @@ export const useChatInputController = ({
     setValue("");
 
     if (textareaRef.current) {
+      textareaRef.current.innerHTML = "";
+      textareaRef.current.dataset.empty = "true";
       requestAnimationFrame(() => {
         adjustHeight();
       });
@@ -253,7 +255,7 @@ export const useChatInputController = ({
   }, [adjustHeight, onSend, selectedModel, value]);
 
   const handleKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
       if (
         event.key !== "Enter" ||
         event.shiftKey ||

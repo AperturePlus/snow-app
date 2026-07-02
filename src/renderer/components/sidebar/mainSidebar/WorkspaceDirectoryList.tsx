@@ -27,6 +27,7 @@ type WorkspaceDirectoryListProps = {
   onDragOver: (directoryId: string) => void;
   onDragStart: (directoryId: string) => void;
   onDrop: (directoryId: string) => void;
+  onShowDetails?: (directoryId: string) => void;
   totalCount: number;
   visibleDirectories: WorkspaceDirectoryRecord[];
   workspaceDirectories: WorkspaceDirectoryRecord[];
@@ -61,14 +62,15 @@ export function WorkspaceDirectoryList({
   onDragOver,
   onDragStart,
   onDrop,
+  onShowDetails,
   totalCount,
   visibleDirectories,
   workspaceDirectories,
 }: WorkspaceDirectoryListProps): React.JSX.Element {
   const { t } = useI18n();
-  const [menuOpenDirectoryId, setMenuOpenDirectoryId] = useState<
-    string | null
-  >(null);
+  const [menuOpenDirectoryId, setMenuOpenDirectoryId] = useState<string | null>(
+    null
+  );
 
   const handleDragStart = (
     event: DragEvent<HTMLDivElement>,
@@ -183,6 +185,11 @@ export function WorkspaceDirectoryList({
                     setMenuOpenDirectoryId(
                       isOpen ? directory.directoryId : null
                     )
+                  }
+                  onShowDetails={
+                    onShowDetails
+                      ? () => onShowDetails(directory.directoryId)
+                      : undefined
                   }
                 />
               </div>

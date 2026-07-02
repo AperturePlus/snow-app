@@ -29,6 +29,9 @@ export function ChatsSection({
     handleSelectConversation,
     handleNewChat,
     activeConversationId,
+    abortConversation,
+    streamingConversationIds,
+    completedConversationIds,
   } = useChatConversationContext();
   const [conversations, setConversations] = useState<ChatConversationRecord[]>(
     []
@@ -112,6 +115,16 @@ export function ChatsSection({
       if (existing) {
         return prev.map((item) =>
           item.conversationId === conv.conversationId ? conv : item
+        );
+      }
+
+      // If the real conversation arrives, replace the pending placeholder.
+      const pendingIndex = prev.findIndex(
+        (item) => item.conversationId === "__pending__"
+      );
+      if (pendingIndex >= 0) {
+        return prev.map((item, index) =>
+          index === pendingIndex ? conv : item
         );
       }
 
@@ -211,6 +224,7 @@ export function ChatsSection({
     conversation: ChatConversationRecord
   ): Promise<void> => {
     try {
+      abortConversation(conversation.conversationId);
       await window.snow.deleteConversation(conversation.conversationId);
       if (conversation.conversationId === activeConversationId) {
         handleNewChat();
@@ -283,6 +297,12 @@ export function ChatsSection({
                     isActive={
                       conversation.conversationId === activeConversationId
                     }
+                    isStreaming={streamingConversationIds.has(
+                      conversation.conversationId
+                    )}
+                    isCompleted={completedConversationIds.has(
+                      conversation.conversationId
+                    )}
                     onPin={() => void handlePin(conversation)}
                     onRename={(newTitle) =>
                       handleRename(conversation, newTitle)
@@ -299,7 +319,8 @@ export function ChatsSection({
                             conversation.cacheCreationInputTokens,
                           cacheReadInputTokens:
                             conversation.cacheReadInputTokens,
-                        }
+                        },
+                        conversation.directoryId
                       )
                     }
                   />

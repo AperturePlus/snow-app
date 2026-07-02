@@ -26,6 +26,9 @@ export function PinnedSection({
     handleSelectConversation,
     handleNewChat,
     activeConversationId,
+    abortConversation,
+    streamingConversationIds,
+    completedConversationIds,
   } = useChatConversationContext();
   const [conversations, setConversations] = useState<ChatConversationRecord[]>(
     []
@@ -134,6 +137,7 @@ export function PinnedSection({
     conversation: ChatConversationRecord
   ): Promise<void> => {
     try {
+      abortConversation(conversation.conversationId);
       await window.snow.deleteConversation(conversation.conversationId);
       if (conversation.conversationId === activeConversationId) {
         handleNewChat();
@@ -175,6 +179,12 @@ export function PinnedSection({
               key={conversation.conversationId}
               conversation={conversation}
               isActive={conversation.conversationId === activeConversationId}
+              isStreaming={streamingConversationIds.has(
+                conversation.conversationId
+              )}
+              isCompleted={completedConversationIds.has(
+                conversation.conversationId
+              )}
               onPin={() => void handleUnpin(conversation)}
               onRename={(newTitle) => handleRename(conversation, newTitle)}
               onDelete={() => void handleDelete(conversation)}
@@ -188,7 +198,8 @@ export function PinnedSection({
                     cacheCreationInputTokens:
                       conversation.cacheCreationInputTokens,
                     cacheReadInputTokens: conversation.cacheReadInputTokens,
-                  }
+                  },
+                  conversation.directoryId
                 )
               }
             />
