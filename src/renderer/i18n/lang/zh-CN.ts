@@ -431,6 +431,7 @@ export const zhCN = {
   "settings.themeSettingsInfo": "调整外观和颜色主题。",
   "settings.privacySettings": "隐私设置",
   "settings.privacySettingsInfo": "控制遥测和隐私选项。",
+  "fileMention.loading": "加载中...",
   "fileMention.searching": "搜索中...",
   "fileMention.noResults": "未找到结果",
   "fileMention.typeToSearch": "输入以搜索文件...",

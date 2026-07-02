@@ -431,6 +431,7 @@ export const zhTW = {
   "settings.themeSettingsInfo": "調整外觀和顏色主題。",
   "settings.privacySettings": "隱私設定",
   "settings.privacySettingsInfo": "控制遙測和隱私選項。",
+  "fileMention.loading": "載入中...",
   "fileMention.searching": "搜尋中...",
   "fileMention.noResults": "找不到結果",
   "fileMention.typeToSearch": "輸入以搜尋檔案...",

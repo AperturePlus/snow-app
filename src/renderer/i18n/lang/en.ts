@@ -450,6 +450,7 @@ export const en = {
   "settings.themeSettingsInfo": "Adjust appearance and color theme.",
   "settings.privacySettings": "Privacy settings",
   "settings.privacySettingsInfo": "Control telemetry and privacy options.",
+  "fileMention.loading": "Loading...",
   "fileMention.searching": "Searching...",
   "fileMention.noResults": "No results found",
   "fileMention.typeToSearch": "Type to search files...",

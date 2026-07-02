@@ -1,4 +1,4 @@
-import { Check, File, Folder, Loader2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, File, Folder, Loader2 } from "lucide-react";
 import {
   forwardRef,
   useImperativeHandle,
@@ -87,6 +87,7 @@ export const FileMentionPopup = forwardRef<
     useState<WorkspaceDirectoryRecord | null>(null);
   const [entries, setEntries] = useState<FileSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isLoadingInitial, setIsLoadingInitial] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [checkedPaths, setCheckedPaths] = useState<Set<string>>(new Set());
 
@@ -95,19 +96,56 @@ export const FileMentionPopup = forwardRef<
   const listRef = useRef<HTMLDivElement | null>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
   const lastQueryRef = useRef("");
+  const preloadedEntriesRef = useRef<FileSearchResult[]>([]);
+
+  const preloadRootEntries = useCallback(
+    async (dir: WorkspaceDirectoryRecord) => {
+      try {
+        const rawEntries = await window.snow.readDirectoryEntries(dir.path);
+        const results: FileSearchResult[] = rawEntries
+          .filter((e) => !e.name.startsWith("."))
+          .slice(0, 50)
+          .map((e) => ({
+            path: e.path,
+            relativePath: e.path.replace(dir.path + "/", ""),
+            name: e.name,
+            isDirectory: e.isDirectory,
+            matchedName: true,
+            lineMatches: [],
+          }));
+        preloadedEntriesRef.current = results;
+        setEntries(results);
+        setSelectedIndex(0);
+        setIsLoadingInitial(false);
+      } catch {
+        preloadedEntriesRef.current = [];
+        setEntries([]);
+        setIsLoadingInitial(false);
+      }
+    },
+    []
+  );
 
   const loadDirectories = useCallback(async () => {
     try {
       const dirs = await window.snow.listWorkspaceDirectories();
       const active = dirs.find((d) => d.isActive) ?? dirs[0] ?? null;
       setActiveDirectory(active);
+      if (active) {
+        await preloadRootEntries(active);
+      } else {
+        setIsLoadingInitial(false);
+      }
     } catch {
       setActiveDirectory(null);
+      setIsLoadingInitial(false);
     }
-  }, []);
+  }, [preloadRootEntries]);
 
   useEffect(() => {
     if (visible) {
+      setIsLoadingInitial(true);
+      preloadedEntriesRef.current = [];
       void loadDirectories();
       setEntries([]);
       setSelectedIndex(0);
@@ -129,8 +167,11 @@ export const FileMentionPopup = forwardRef<
 
     if (!trimmed || !activeDirectory) {
       setIsSearching(false);
-      setEntries([]);
-      setSelectedIndex(0);
+      if (preloadedEntriesRef.current.length > 0) {
+        setEntries(preloadedEntriesRef.current);
+        setSelectedIndex(0);
+      }
+      lastQueryRef.current = "";
       return;
     }
 
@@ -381,7 +422,20 @@ export const FileMentionPopup = forwardRef<
   return (
     <div className="file-mention-popup" ref={popupRef}>
       <div className="file-mention-list" ref={listRef}>
-        {isSearching && entries.length === 0 ? (
+        {isLoadingInitial ? (
+          <div className="file-mention-skeleton">
+            {Array.from({ length: 6 }, (_, i) => (
+              <div className="mention-skeleton-item" key={i}>
+                <div className="mention-skeleton-icon" />
+                <div className="mention-skeleton-line" />
+              </div>
+            ))}
+            <div className="file-mention-empty">
+              <Loader2 className="spin" size={14} />
+              <span>{t("fileMention.loading")}</span>
+            </div>
+          </div>
+        ) : isSearching && entries.length === 0 ? (
           <div className="file-mention-empty">
             <Loader2 className="spin" size={14} />
             <span>{emptyText}</span>
@@ -441,8 +495,13 @@ export const FileMentionPopup = forwardRef<
 
       <div className="file-mention-footer">
         <span className="file-mention-hint">
-          <kbd>Up</kbd>
-          <kbd>Down</kbd> {t("fileMention.navigate")}
+          <kbd className="mention-kbd-icon">
+            <ArrowUp size={10} />
+          </kbd>
+          <kbd className="mention-kbd-icon">
+            <ArrowDown size={10} />
+          </kbd>{" "}
+          {t("fileMention.navigate")}
         </span>
         <span className="file-mention-hint">
           <kbd>Space</kbd> {t("fileMention.check")}
