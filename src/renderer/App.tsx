@@ -160,7 +160,10 @@ export const App = (): React.JSX.Element => {
               onPointerDown={(event) => startPanelResize("right-panel", event)}
             />
           )}
-          <RightPanel isCollapsed={isRightPanelCollapsed} />
+          <RightPanel
+            isCollapsed={isRightPanelCollapsed}
+            activeDirectory={activeDirectory}
+          />
         </div>
       </div>
     </ChatConversationProvider>

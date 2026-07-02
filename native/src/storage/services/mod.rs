@@ -3,6 +3,8 @@ pub mod chat_conversations;
 pub mod codebase_settings;
 pub mod custom_header_schemes;
 pub mod fs_explorer;
+pub mod git;
+pub mod git_watcher;
 pub mod mcp_server_configs;
 pub mod sensitive_command_configs;
 pub mod system_prompts;

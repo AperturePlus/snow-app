@@ -199,6 +199,51 @@ export const loadNativeBridge = (): NativeBridge => {
       abortResponseStream: () => false,
       engineInfo: () => "Rust native bridge is not built yet",
       sum: (a: number, b: number) => a + b,
+      getGitStatus: () => {
+        throw new Error("Rust native bridge is required for git status");
+      },
+      getGitBranches: () => {
+        throw new Error("Rust native bridge is required for git branches");
+      },
+      gitStageFiles: () => {
+        throw new Error("Rust native bridge is required for git stage");
+      },
+      gitUnstageFiles: () => {
+        throw new Error("Rust native bridge is required for git unstage");
+      },
+      gitStageAll: () => {
+        throw new Error("Rust native bridge is required for git stage all");
+      },
+      gitUnstageAll: () => {
+        throw new Error("Rust native bridge is required for git unstage all");
+      },
+      gitCommit: () => {
+        throw new Error("Rust native bridge is required for git commit");
+      },
+      gitPush: () => {
+        throw new Error("Rust native bridge is required for git push");
+      },
+      gitPull: () => {
+        throw new Error("Rust native bridge is required for git pull");
+      },
+      gitCheckout: () => {
+        throw new Error("Rust native bridge is required for git checkout");
+      },
+      gitFileDiff: () => {
+        throw new Error("Rust native bridge is required for git file diff");
+      },
+      startGitWatch: () => {
+        throw new Error("Rust native bridge is required for git watch");
+      },
+      stopGitWatch: () => {
+        throw new Error("Rust native bridge is required to stop git watch");
+      },
+      listMcpTools: () => {
+        throw new Error("Rust native bridge is required to list MCP tools");
+      },
+      callMcpTool: () => {
+        throw new Error("Rust native bridge is required to call MCP tools");
+      },
     };
   }
 };

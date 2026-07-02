@@ -178,6 +178,59 @@ export type DirectoryEntry = {
   size: number;
 };
 
+export type GitFileStatus = {
+  path: string;
+  oldPath: string | null;
+  indexStatus: string;
+  workdirStatus: string;
+  status: string;
+};
+
+export type GitStatusResult = {
+  isRepo: boolean;
+  currentBranch: string;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  files: GitFileStatus[];
+  stagedCount: number;
+  unstagedCount: number;
+  untrackedCount: number;
+};
+
+export type GitBranch = {
+  name: string;
+  isCurrent: boolean;
+  isRemote: boolean;
+  remoteName: string | null;
+};
+
+export type GitDiffResult = {
+  content: string;
+  isBinary: boolean;
+};
+
+export type GitStageResult = {
+  success: boolean;
+  message: string;
+};
+
+export type GitCommitResult = {
+  success: boolean;
+  message: string;
+  hash: string | null;
+};
+
+export type GitPushPullResult = {
+  success: boolean;
+  message: string;
+};
+
+export type GitCheckoutResult = {
+  success: boolean;
+  message: string;
+};
+
 export type FileSearchResult = {
   path: string;
   relativePath: string;
@@ -491,6 +544,54 @@ const api = {
     ipcRenderer.invoke("debug:write-log", level, entry),
   sum: (a: number, b: number): Promise<number> =>
     ipcRenderer.invoke("native:sum", a, b),
+  // ===== Git =====
+  gitStatus: (repoPath: string): Promise<GitStatusResult> =>
+    ipcRenderer.invoke("git:status", repoPath),
+  startGitWatch: (repoPath: string): Promise<void> =>
+    ipcRenderer.invoke("git:start-watch", repoPath),
+  stopGitWatch: (repoPath: string): Promise<void> =>
+    ipcRenderer.invoke("git:stop-watch", repoPath),
+  onGitStatusChanged: (callback: (repoPath: string) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, repoPath: string): void => {
+      callback(repoPath);
+    };
+
+    ipcRenderer.on("git:status-changed", handler);
+
+    return () => {
+      ipcRenderer.removeListener("git:status-changed", handler);
+    };
+  },
+  gitBranches: (repoPath: string): Promise<GitBranch[]> =>
+    ipcRenderer.invoke("git:branches", repoPath),
+  gitStage: (repoPath: string, filePaths: string[]): Promise<GitStageResult> =>
+    ipcRenderer.invoke("git:stage", repoPath, filePaths),
+  gitUnstage: (
+    repoPath: string,
+    filePaths: string[]
+  ): Promise<GitStageResult> =>
+    ipcRenderer.invoke("git:unstage", repoPath, filePaths),
+  gitStageAll: (repoPath: string): Promise<GitStageResult> =>
+    ipcRenderer.invoke("git:stage-all", repoPath),
+  gitUnstageAll: (repoPath: string): Promise<GitStageResult> =>
+    ipcRenderer.invoke("git:unstage-all", repoPath),
+  gitCommit: (repoPath: string, message: string): Promise<GitCommitResult> =>
+    ipcRenderer.invoke("git:commit", repoPath, message),
+  gitPush: (repoPath: string): Promise<GitPushPullResult> =>
+    ipcRenderer.invoke("git:push", repoPath),
+  gitPull: (repoPath: string): Promise<GitPushPullResult> =>
+    ipcRenderer.invoke("git:pull", repoPath),
+  gitCheckout: (
+    repoPath: string,
+    branchName: string
+  ): Promise<GitCheckoutResult> =>
+    ipcRenderer.invoke("git:checkout", repoPath, branchName),
+  gitFileDiff: (
+    repoPath: string,
+    filePath: string,
+    staged: boolean
+  ): Promise<GitDiffResult> =>
+    ipcRenderer.invoke("git:file-diff", repoPath, filePath, staged),
 };
 
 contextBridge.exposeInMainWorld("snow", api);

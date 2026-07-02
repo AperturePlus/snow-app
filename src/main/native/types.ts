@@ -241,6 +241,59 @@ export type McpToolDefinition = {
   inputSchemaJson: string;
 };
 
+export type GitFileStatus = {
+  path: string;
+  oldPath: string | null;
+  indexStatus: string;
+  workdirStatus: string;
+  status: string;
+};
+
+export type GitStatusResult = {
+  isRepo: boolean;
+  currentBranch: string;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  files: GitFileStatus[];
+  stagedCount: number;
+  unstagedCount: number;
+  untrackedCount: number;
+};
+
+export type GitBranch = {
+  name: string;
+  isCurrent: boolean;
+  isRemote: boolean;
+  remoteName: string | null;
+};
+
+export type GitDiffResult = {
+  content: string;
+  isBinary: boolean;
+};
+
+export type GitStageResult = {
+  success: boolean;
+  message: string;
+};
+
+export type GitCommitResult = {
+  success: boolean;
+  message: string;
+  hash: string | null;
+};
+
+export type GitPushPullResult = {
+  success: boolean;
+  message: string;
+};
+
+export type GitCheckoutResult = {
+  success: boolean;
+  message: string;
+};
+
 export type NativeBridge = {
   initializeAppStorage: () => AppStorageInfo;
 
@@ -300,4 +353,33 @@ export type NativeBridge = {
   callMcpTool: (toolFullName: string, argsJson: string) => string;
   engineInfo: () => string;
   sum: (a: number, b: number) => number;
+  getGitStatus: (repoPath: string) => Promise<GitStatusResult>;
+  getGitBranches: (repoPath: string) => Promise<GitBranch[]>;
+  gitStageFiles: (
+    repoPath: string,
+    filePaths: string[]
+  ) => Promise<GitStageResult>;
+  gitUnstageFiles: (
+    repoPath: string,
+    filePaths: string[]
+  ) => Promise<GitStageResult>;
+  gitStageAll: (repoPath: string) => Promise<GitStageResult>;
+  gitUnstageAll: (repoPath: string) => Promise<GitStageResult>;
+  gitCommit: (repoPath: string, message: string) => Promise<GitCommitResult>;
+  gitPush: (repoPath: string) => Promise<GitPushPullResult>;
+  gitPull: (repoPath: string) => Promise<GitPushPullResult>;
+  gitCheckout: (
+    repoPath: string,
+    branchName: string
+  ) => Promise<GitCheckoutResult>;
+  gitFileDiff: (
+    repoPath: string,
+    filePath: string,
+    staged: boolean
+  ) => Promise<GitDiffResult>;
+  startGitWatch: (
+    repoPath: string,
+    onChange: (repoPath: string) => void
+  ) => void;
+  stopGitWatch: (repoPath: string) => void;
 };

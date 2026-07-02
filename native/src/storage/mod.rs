@@ -498,6 +498,52 @@ pub fn list_chat_messages(conversation_id: String) -> Result<Vec<ChatMessageReco
     services::chat_conversations::list_chat_messages(&database_path, &conversation_id)
 }
 
+// ===== Git =====
+
+pub fn get_git_status(repo_path: String) -> Result<services::git::GitStatusResult> {
+    services::git::get_git_status(&repo_path)
+}
+
+pub fn get_git_branches(repo_path: String) -> Result<Vec<services::git::GitBranch>> {
+    services::git::get_git_branches(&repo_path)
+}
+
+pub fn git_stage_files(repo_path: String, file_paths: Vec<String>) -> Result<services::git::GitStageResult> {
+    services::git::stage_files(&repo_path, &file_paths)
+}
+
+pub fn git_unstage_files(repo_path: String, file_paths: Vec<String>) -> Result<services::git::GitStageResult> {
+    services::git::unstage_files(&repo_path, &file_paths)
+}
+
+pub fn git_stage_all(repo_path: String) -> Result<services::git::GitStageResult> {
+    services::git::stage_all(&repo_path)
+}
+
+pub fn git_unstage_all(repo_path: String) -> Result<services::git::GitStageResult> {
+    services::git::unstage_all(&repo_path)
+}
+
+pub fn git_commit(repo_path: String, message: String) -> Result<services::git::GitCommitResult> {
+    services::git::commit_changes(&repo_path, &message)
+}
+
+pub fn git_push(repo_path: String) -> Result<services::git::GitPushPullResult> {
+    services::git::push_changes(&repo_path)
+}
+
+pub fn git_pull(repo_path: String) -> Result<services::git::GitPushPullResult> {
+    services::git::pull_changes(&repo_path)
+}
+
+pub fn git_checkout(repo_path: String, branch_name: String) -> Result<services::git::GitCheckoutResult> {
+    services::git::checkout_branch(&repo_path, &branch_name)
+}
+
+pub fn git_file_diff(repo_path: String, file_path: String, staged: bool) -> Result<services::git::GitDiffResult> {
+    services::git::get_file_diff(&repo_path, &file_path, staged)
+}
+
 fn ensure_database_file() -> Result<PathBuf> {
     let storage_dir = ensure_storage_dir()?;
     let database_path = paths::database_file_path(&storage_dir);

@@ -1,12 +1,4 @@
-import {
-  ChevronDown,
-  GitBranch,
-  GitPullRequest,
-  SidebarClose,
-  SidebarOpen,
-  SquarePen,
-  SquareStack,
-} from "lucide-react";
+import { GitBranch, SidebarClose, SidebarOpen, SquarePen } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { WorkspaceDirectoryRecord } from "../../preload";
 import { useChatConversationContext } from "./mainContent/chatMessages";
@@ -115,32 +107,16 @@ export const TopBar = ({
             <span className="header-subtitle">{headerSubtitle}</span>
           ) : null}
         </div>
-        <div className="header-actions">
-          <button className="icon-btn ghost" aria-label="Branch">
-            <GitBranch size={16} />
-          </button>
-          <button className="btn-commit">
-            <GitBranch size={14} />
-            <span>Commit</span>
-            <ChevronDown size={12} />
-          </button>
-          <div className="diff-stat">
-            <span className="diff-add">+938</span>
-            <span className="diff-del">-664</span>
-          </div>
-        </div>
       </div>
 
       <div className="top-bar-right">
-        <div className="panel-tab-group">
-          <button className="panel-tab">
-            <GitPullRequest size={16} />
-            <span>Review</span>
-          </button>
-          <button className="panel-tab active">
-            <SquareStack size={16} />
-            <span>Review</span>
-          </button>
+        <div className="top-bar-branch-info">
+          {activeDirectory && (
+            <span className="top-bar-branch-label">
+              <GitBranch size={13} strokeWidth={1.8} />
+              <span>{activeDirectory.name}</span>
+            </span>
+          )}
         </div>
         <button
           className="icon-btn ghost right-panel-toggle-btn"
