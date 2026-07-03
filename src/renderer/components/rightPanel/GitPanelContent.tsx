@@ -1,0 +1,130 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { MoveVertical } from "lucide-react";
+
+import type { GitDiffResult, GitFileStatus, GitStatusResult } from "./git";
+import { GitControl } from "./git";
+import type { RightPanelContentProps } from "./types";
+import { DiffViewer } from "./DiffViewer";
+
+const SPLIT_MIN = 0.15;
+const SPLIT_MAX = 0.85;
+const SPLIT_DEFAULT = 0.5;
+
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(Math.max(value, min), max);
+
+export function GitPanelContent({
+  activeDirectory,
+}: RightPanelContentProps): React.JSX.Element {
+  const [selectedFile, setSelectedFile] = useState<GitFileStatus | null>(null);
+  const [diffResult, setDiffResult] = useState<GitDiffResult | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [gitStatus, setGitStatus] = useState<GitStatusResult | null>(null);
+  const [splitRatio, setSplitRatio] = useState(SPLIT_DEFAULT);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const repoPath = activeDirectory?.path ?? null;
+
+  // Fetch diff when a file is selected
+  useEffect(() => {
+    if (!repoPath || !selectedFile) {
+      setDiffResult(null);
+      return;
+    }
+
+    setDiffLoading(true);
+    const isStaged =
+      selectedFile.indexStatus !== " " &&
+      selectedFile.indexStatus !== "?" &&
+      selectedFile.indexStatus !== "";
+
+    window.snow
+      .gitFileDiff(repoPath, selectedFile.path, isStaged)
+      .then((result) => {
+        setDiffResult(result);
+      })
+      .catch(() => {
+        setDiffResult(null);
+      })
+      .finally(() => {
+        setDiffLoading(false);
+      });
+  }, [repoPath, selectedFile]);
+
+  const startSplitResize = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>): void => {
+      event.preventDefault();
+      const container = containerRef.current;
+      if (!container) {
+        return;
+      }
+
+      const startY = event.clientY;
+      const containerHeight = container.clientHeight;
+      const startRatio = splitRatio;
+
+      const handlePointerMove = (pointerEvent: PointerEvent): void => {
+        const deltaY = pointerEvent.clientY - startY;
+        const newRatio = startRatio + deltaY / containerHeight;
+        setSplitRatio(clamp(newRatio, SPLIT_MIN, SPLIT_MAX));
+      };
+
+      const stopResize = (): void => {
+        document.removeEventListener("pointermove", handlePointerMove);
+        document.removeEventListener("pointerup", stopResize);
+        document.removeEventListener("pointercancel", stopResize);
+      };
+
+      document.addEventListener("pointermove", handlePointerMove);
+      document.addEventListener("pointerup", stopResize);
+      document.addEventListener("pointercancel", stopResize);
+    },
+    [splitRatio]
+  );
+
+  return (
+    <div className="git-panel-container" ref={containerRef}>
+      <div
+        className="git-panel-changes"
+        style={{ flexGrow: splitRatio, flexBasis: 0, flexShrink: 0 }}
+      >
+        <GitControl
+          repoPath={repoPath}
+          onFileSelect={setSelectedFile}
+          onStatusChange={setGitStatus}
+        />
+      </div>
+
+      <div
+        className="h-resizer"
+        role="separator"
+        aria-label="Resize changes and diff"
+        aria-orientation="horizontal"
+        onPointerDown={startSplitResize}
+      >
+        <MoveVertical className="h-resizer-icon" size={12} />
+      </div>
+
+      <div
+        className="git-panel-diff"
+        style={{ flexGrow: 1 - splitRatio, flexBasis: 0, flexShrink: 0 }}
+      >
+        {selectedFile ? (
+          <DiffViewer
+            selectedFile={selectedFile}
+            diffResult={diffResult}
+            diffLoading={diffLoading}
+          />
+        ) : (
+          <div className="diff-viewer">
+            <div className="diff-viewer-empty">
+              {gitStatus
+                ? "Select a file to view its diff"
+                : "No repository selected"}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

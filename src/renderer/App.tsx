@@ -39,6 +39,7 @@ export const App = (): React.JSX.Element => {
     useState<WorkspaceDirectoryRecord | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
+  const [isRightPanelFullscreen, setIsRightPanelFullscreen] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
   const [rightPanelWidth, setRightPanelWidth] = useState(
     RIGHT_PANEL_DEFAULT_WIDTH
@@ -49,6 +50,7 @@ export const App = (): React.JSX.Element => {
     "app-shell",
     isSidebarCollapsed ? "sidebar-collapsed" : "",
     isRightPanelCollapsed ? "right-panel-collapsed" : "",
+    isRightPanelFullscreen ? "right-panel-fullscreen" : "",
     activeResizeTarget ? "is-resizing" : "",
   ]
     .filter(Boolean)
@@ -128,6 +130,10 @@ export const App = (): React.JSX.Element => {
           onToggleRightPanel={() =>
             setIsRightPanelCollapsed((isCollapsed) => !isCollapsed)
           }
+          isRightPanelFullscreen={isRightPanelFullscreen}
+          onToggleRightPanelFullscreen={() =>
+            setIsRightPanelFullscreen((isFullscreen) => !isFullscreen)
+          }
         />
         <div className="app-layout">
           <Sidebar
@@ -146,12 +152,14 @@ export const App = (): React.JSX.Element => {
               onPointerDown={(event) => startPanelResize("sidebar", event)}
             />
           )}
-          <MainContent
-            activeDirectory={activeDirectory}
-            activeView={activeMainView}
-            onSelectView={setActiveMainView}
-          />
-          {!isRightPanelCollapsed && (
+          {!isRightPanelFullscreen && (
+            <MainContent
+              activeDirectory={activeDirectory}
+              activeView={activeMainView}
+              onSelectView={setActiveMainView}
+            />
+          )}
+          {!isRightPanelCollapsed && !isRightPanelFullscreen && (
             <div
               className="panel-resizer right-panel-resizer layout-resizer"
               role="separator"
@@ -162,6 +170,7 @@ export const App = (): React.JSX.Element => {
           )}
           <RightPanel
             isCollapsed={isRightPanelCollapsed}
+            isFullscreen={isRightPanelFullscreen}
             activeDirectory={activeDirectory}
           />
         </div>

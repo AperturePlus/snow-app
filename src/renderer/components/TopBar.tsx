@@ -1,4 +1,11 @@
-import { GitBranch, SidebarClose, SidebarOpen, SquarePen } from "lucide-react";
+import {
+  GitBranch,
+  Maximize2,
+  Minimize2,
+  SidebarClose,
+  SidebarOpen,
+  SquarePen,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import type { WorkspaceDirectoryRecord } from "../../preload";
 import { useChatConversationContext } from "./mainContent/chatMessages";
@@ -6,17 +13,21 @@ import { useChatConversationContext } from "./mainContent/chatMessages";
 type TopBarProps = {
   isSidebarCollapsed: boolean;
   isRightPanelCollapsed: boolean;
+  isRightPanelFullscreen: boolean;
   activeDirectory?: WorkspaceDirectoryRecord | null;
   onToggleSidebar: () => void;
   onToggleRightPanel: () => void;
+  onToggleRightPanelFullscreen: () => void;
 };
 
 export const TopBar = ({
   isSidebarCollapsed,
   isRightPanelCollapsed,
+  isRightPanelFullscreen,
   activeDirectory,
   onToggleSidebar,
   onToggleRightPanel,
+  onToggleRightPanelFullscreen,
 }: TopBarProps): React.JSX.Element => {
   const { handleNewChat, summary, conversationDirectoryId } =
     useChatConversationContext();
@@ -67,6 +78,10 @@ export const TopBar = ({
   const rightPanelToggleLabel = isRightPanelCollapsed
     ? "Expand right panel"
     : "Collapse right panel";
+  const FullscreenToggleIcon = isRightPanelFullscreen ? Minimize2 : Maximize2;
+  const fullscreenToggleLabel = isRightPanelFullscreen
+    ? "Exit right panel fullscreen"
+    : "Right panel fullscreen";
 
   const displayDirectoryName = conversationDirectoryId
     ? conversationDirectoryName
@@ -118,15 +133,26 @@ export const TopBar = ({
             </span>
           )}
         </div>
-        <button
-          className="icon-btn ghost right-panel-toggle-btn"
-          type="button"
-          aria-label={rightPanelToggleLabel}
-          title={rightPanelToggleLabel}
-          onClick={onToggleRightPanel}
-        >
-          <RightPanelToggleIcon size={16} strokeWidth={1.8} />
-        </button>
+        <div className="top-bar-right-actions">
+          <button
+            className="icon-btn ghost right-panel-toggle-btn"
+            type="button"
+            aria-label={rightPanelToggleLabel}
+            title={rightPanelToggleLabel}
+            onClick={onToggleRightPanel}
+          >
+            <RightPanelToggleIcon size={16} strokeWidth={1.8} />
+          </button>
+          <button
+            className="icon-btn ghost right-panel-fullscreen-btn"
+            type="button"
+            aria-label={fullscreenToggleLabel}
+            title={fullscreenToggleLabel}
+            onClick={onToggleRightPanelFullscreen}
+          >
+            <FullscreenToggleIcon size={16} strokeWidth={1.8} />
+          </button>
+        </div>
       </div>
     </header>
   );

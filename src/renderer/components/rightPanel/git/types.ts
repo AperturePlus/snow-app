@@ -7,4 +7,4 @@ export type {
   GitCommitResult,
   GitPushPullResult,
   GitCheckoutResult,
-} from "../../../preload";
+} from "../../../../preload";

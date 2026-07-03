@@ -497,6 +497,40 @@ pub fn pull_changes(repo_path: &str) -> Result<GitPushPullResult> {
 }
 
 pub fn checkout_branch(repo_path: &str, branch_name: &str) -> Result<GitCheckoutResult> {
+    // If the branch name contains '/', it's a remote tracking branch (e.g. "origin/main").
+    // Running `git checkout origin/main` would enter detached HEAD state.
+    // Instead, extract the local branch name and create a tracking branch.
+    if let Some(slash_idx) = branch_name.find('/') {
+        let local_name = &branch_name[slash_idx + 1..];
+
+        if !local_name.is_empty() {
+            // First, try to checkout the local branch (it may already exist).
+            if let Ok(_) = run_git(repo_path, &["checkout", local_name]) {
+                return Ok(GitCheckoutResult {
+                    success: true,
+                    message: format!("Switched to {local_name}"),
+                });
+            }
+
+            // Local branch doesn't exist; create a new tracking branch.
+            match run_git(repo_path, &["checkout", "-b", local_name, branch_name]) {
+                Ok(_) => {
+                    return Ok(GitCheckoutResult {
+                        success: true,
+                        message: format!("Switched to {local_name} (tracking {branch_name})"),
+                    })
+                }
+                Err(e) => {
+                    return Ok(GitCheckoutResult {
+                        success: false,
+                        message: format!("{e}"),
+                    })
+                }
+            }
+        }
+    }
+
+    // Local branch: checkout directly.
     match run_git(repo_path, &["checkout", branch_name]) {
         Ok(_) => Ok(GitCheckoutResult {
             success: true,
@@ -519,15 +553,33 @@ pub fn get_file_diff(repo_path: &str, file_path: &str, staged: bool) -> Result<G
     match run_git(repo_path, &args) {
         Ok(stdout) => {
             if stdout.contains("Binary files") {
-                return Ok(GitDiffResult {
-                    content: "Binary file - diff not available".to_string(),
-                    is_binary: true,
-                });
+                // Git's heuristic may falsely flag text files as binary
+                // (e.g. files containing NUL bytes). Retry with --text
+                // to force a text-mode diff.
+                let text_args: Vec<&str> = if staged {
+                    vec!["diff", "--cached", "--text", "--", file_path]
+                } else {
+                    vec!["diff", "--text", "--", file_path]
+                };
+                match run_git(repo_path, &text_args) {
+                    Ok(text_diff) if !text_diff.is_empty() => {
+                        return Ok(GitDiffResult {
+                            content: text_diff,
+                            is_binary: false,
+                        });
+                    }
+                    _ => {
+                        return Ok(GitDiffResult {
+                            content: "Binary file - diff not available".to_string(),
+                            is_binary: true,
+                        });
+                    }
+                }
             }
 
             // If no diff and not staged, try untracked file diff
             if !staged && stdout.is_empty() {
-                let no_index_args = vec!["diff", "--no-index", "/dev/null", file_path];
+                let no_index_args = vec!["diff", "--no-index", "--text", "/dev/null", file_path];
                 let full_diff = run_git(repo_path, &no_index_args).unwrap_or_default();
                 if !full_diff.is_empty() {
                     return Ok(GitDiffResult {

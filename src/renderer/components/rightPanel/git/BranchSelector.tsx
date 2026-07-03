@@ -1,6 +1,6 @@
 import { GitBranch, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { GitBranch as GitBranchType } from "../../../preload";
+import type { GitBranch as GitBranchType } from "../../../../preload";
 
 type BranchSelectorProps = {
   repoPath: string;
@@ -78,7 +78,7 @@ export const BranchSelector = ({
   const remoteBranches = branches.filter((b) => b.isRemote);
 
   return (
-    <div className="branch-selector" ref={dropdownRef}>
+    <div className="branch-selector">
       <button
         type="button"
         className="branch-selector-btn"
@@ -86,11 +86,13 @@ export const BranchSelector = ({
         title={currentBranch}
       >
         <GitBranch size={14} strokeWidth={1.8} />
-        <span className="branch-selector-name">{currentBranch || "unknown"}</span>
+        <span className="branch-selector-name">
+          {currentBranch || "unknown"}
+        </span>
         <ChevronDown size={12} strokeWidth={1.8} />
       </button>
       {isOpen && (
-        <div className="branch-dropdown">
+        <div className="branch-dropdown" ref={dropdownRef}>
           {loading ? (
             <div className="branch-dropdown-loading">Loading...</div>
           ) : (

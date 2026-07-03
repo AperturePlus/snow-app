@@ -4,7 +4,7 @@ import {
   GitCommitHorizontal,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { GitFileStatus, GitStatusResult } from "../../../preload";
+import type { GitFileStatus, GitStatusResult } from "../../../../preload";
 import { useGitStatus } from "./useGitStatus";
 import { BranchSelector } from "./BranchSelector";
 import { GitFileList } from "./GitFileList";
@@ -12,19 +12,23 @@ import { GitFileList } from "./GitFileList";
 type GitControlProps = {
   repoPath: string | undefined | null;
   onFileSelect: (file: GitFileStatus | null) => void;
-  selectedFile: GitFileStatus | null;
   onStatusChange?: (status: GitStatusResult | null) => void;
 };
+
+const isSelectedKey = (section: "staged" | "unstaged", path: string) =>
+  `${section}:${path}`;
 
 export const GitControl = ({
   repoPath,
   onFileSelect,
-  selectedFile,
   onStatusChange,
 }: GitControlProps): React.JSX.Element => {
   const { status, isLoading, error, refresh } = useGitStatus(repoPath);
   const [commitMessage, setCommitMessage] = useState("");
   const [actionInProgress, setActionInProgress] = useState(false);
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const lastClickedPathRef = useRef<string | null>(null);
+  const lastClickedSectionRef = useRef<"staged" | "unstaged" | null>(null);
   const prevStatusRef = useRef<string | null>(null);
 
   // Propagate status changes upward via ref to avoid render-cycle side effects
@@ -39,38 +43,170 @@ export const GitControl = ({
     }
   }, [status, onStatusChange]);
 
+  // Prune selectedPaths that are no longer present in the current status.
+  // Keys are stored as "section:path" composite keys.
+  useEffect(() => {
+    if (!status) {
+      return;
+    }
+    const stagedPaths = new Set(
+      status.files
+        .filter(
+          (f) =>
+            f.indexStatus !== " " &&
+            f.indexStatus !== "?" &&
+            f.indexStatus !== ""
+        )
+        .map((f) => f.path)
+    );
+    const unstagedPaths = new Set(
+      status.files
+        .filter(
+          (f) =>
+            f.workdirStatus === "?" ||
+            (f.workdirStatus !== " " && f.workdirStatus !== "")
+        )
+        .map((f) => f.path)
+    );
+    setSelectedPaths((prev) => {
+      if (prev.size === 0) {
+        return prev;
+      }
+      let changed = false;
+      const next = new Set<string>();
+      for (const key of prev) {
+        const colonIdx = key.indexOf(":");
+        if (colonIdx === -1) {
+          changed = true;
+          continue;
+        }
+        const sec = key.slice(0, colonIdx);
+        const path = key.slice(colonIdx + 1);
+        const valid =
+          (sec === "staged" && stagedPaths.has(path)) ||
+          (sec === "unstaged" && unstagedPaths.has(path));
+        if (valid) {
+          next.add(key);
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [status]);
+
   const handleStatusChange = useCallback(() => {
     refresh();
   }, [refresh]);
 
   const handleFileSelect = useCallback(
-    (file: GitFileStatus) => {
-      onFileSelect(file === selectedFile ? null : file);
+    (
+      file: GitFileStatus,
+      e: React.MouseEvent,
+      section: "staged" | "unstaged"
+    ) => {
+      const isMulti = e.metaKey || e.ctrlKey;
+      const isRange = e.shiftKey;
+      const fileLists = status?.files ?? [];
+      const key = isSelectedKey(section, file.path);
+
+      setSelectedPaths((prev) => {
+        const next = new Set(prev);
+
+        if (isRange && lastClickedPathRef.current !== null) {
+          // Range select: select all files between last clicked and current.
+          // Only operate within the same section to avoid cross-section leakage.
+          const lastKey = lastClickedPathRef.current;
+          const sameSection = lastClickedSectionRef.current === section;
+          const lastKeyPath = lastKey.includes(":")
+            ? lastKey.slice(lastKey.indexOf(":") + 1)
+            : lastKey;
+          const sectionFiles = fileLists.filter((f) =>
+            section === "staged"
+              ? f.indexStatus !== " " &&
+                f.indexStatus !== "?" &&
+                f.indexStatus !== ""
+              : f.workdirStatus === "?" ||
+                (f.workdirStatus !== " " && f.workdirStatus !== "")
+          );
+          const lastIndex = sameSection
+            ? sectionFiles.findIndex((f) => f.path === lastKeyPath)
+            : -1;
+          const currentIndex = sectionFiles.findIndex(
+            (f) => f.path === file.path
+          );
+          if (lastIndex !== -1 && currentIndex !== -1) {
+            const start = Math.min(lastIndex, currentIndex);
+            const end = Math.max(lastIndex, currentIndex);
+            // If not multi-selecting, clear previous selection first
+            if (!isMulti) {
+              next.clear();
+            }
+            for (let i = start; i <= end; i++) {
+              next.add(isSelectedKey(section, sectionFiles[i].path));
+            }
+          } else if (!isMulti) {
+            next.clear();
+            next.add(key);
+          } else {
+            next.add(key);
+          }
+          lastClickedPathRef.current = key;
+          lastClickedSectionRef.current = section;
+          return next;
+        }
+
+        if (isMulti) {
+          if (next.has(key)) {
+            next.delete(key);
+          } else {
+            next.add(key);
+          }
+        } else {
+          next.clear();
+          next.add(key);
+        }
+
+        lastClickedPathRef.current = key;
+        lastClickedSectionRef.current = section;
+        return next;
+      });
+
+      // Notify parent for diff display - send the clicked file
+      onFileSelect(file);
     },
-    [onFileSelect, selectedFile]
+    [status, onFileSelect]
   );
 
   const handleStageToggle = useCallback(
-    (file: GitFileStatus) => {
-      if (!repoPath) {
+    (files: GitFileStatus[], section: "staged" | "unstaged") => {
+      if (!repoPath || files.length === 0) {
         return;
       }
 
-      const isStaged =
-        file.indexStatus !== " " &&
-        file.indexStatus !== "?" &&
-        file.indexStatus !== "";
+      const isStaged = section === "staged";
+      const paths = files.map((f) => f.path);
 
       setActionInProgress(true);
       if (isStaged) {
         window.snow
-          .gitUnstage(repoPath, [file.path])
-          .then(() => refresh())
+          .gitUnstage(repoPath, paths)
+          .then((result) => {
+            if (result.success) {
+              setSelectedPaths(new Set());
+              refresh();
+            }
+          })
           .finally(() => setActionInProgress(false));
       } else {
         window.snow
-          .gitStage(repoPath, [file.path])
-          .then(() => refresh())
+          .gitStage(repoPath, paths)
+          .then((result) => {
+            if (result.success) {
+              setSelectedPaths(new Set());
+              refresh();
+            }
+          })
           .finally(() => setActionInProgress(false));
       }
     },
@@ -84,7 +220,10 @@ export const GitControl = ({
     setActionInProgress(true);
     window.snow
       .gitStageAll(repoPath)
-      .then(() => refresh())
+      .then(() => {
+        setSelectedPaths(new Set());
+        refresh();
+      })
       .finally(() => setActionInProgress(false));
   }, [repoPath, refresh]);
 
@@ -95,7 +234,10 @@ export const GitControl = ({
     setActionInProgress(true);
     window.snow
       .gitUnstageAll(repoPath)
-      .then(() => refresh())
+      .then(() => {
+        setSelectedPaths(new Set());
+        refresh();
+      })
       .finally(() => setActionInProgress(false));
   }, [repoPath, refresh]);
 
@@ -221,19 +363,21 @@ export const GitControl = ({
       <GitFileList
         files={unstagedFiles}
         section="unstaged"
+        selectedPaths={selectedPaths}
+        actionInProgress={actionInProgress}
         onFileSelect={handleFileSelect}
         onStageToggle={handleStageToggle}
         onStageAll={handleStageAll}
-        selectedPath={selectedFile?.path ?? null}
       />
 
       <GitFileList
         files={stagedFiles}
         section="staged"
+        selectedPaths={selectedPaths}
+        actionInProgress={actionInProgress}
         onFileSelect={handleFileSelect}
         onStageToggle={handleStageToggle}
         onUnstageAll={handleUnstageAll}
-        selectedPath={selectedFile?.path ?? null}
       />
 
       <div className="git-commit-section">

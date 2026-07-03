@@ -1,14 +1,22 @@
 import { FilePlus, FileMinus, FileEdit, FileX, Plus } from "lucide-react";
-import type { GitFileStatus } from "../../../preload";
+import type { GitFileStatus } from "../../../../preload";
 
 type GitFileListProps = {
   files: GitFileStatus[];
   section: "staged" | "unstaged";
-  onFileSelect: (file: GitFileStatus) => void;
-  onStageToggle: (file: GitFileStatus) => void;
+  selectedPaths: Set<string>;
+  actionInProgress: boolean;
+  onFileSelect: (
+    file: GitFileStatus,
+    e: React.MouseEvent,
+    section: "staged" | "unstaged"
+  ) => void;
+  onStageToggle: (
+    files: GitFileStatus[],
+    section: "staged" | "unstaged"
+  ) => void;
   onStageAll?: () => void;
   onUnstageAll?: () => void;
-  selectedPath: string | null;
 };
 
 const getStatusIcon = (status: string): React.ReactNode => {
@@ -69,11 +77,12 @@ const getStatusLabel = (status: string): string => {
 export const GitFileList = ({
   files,
   section,
+  selectedPaths,
+  actionInProgress,
   onFileSelect,
   onStageToggle,
   onStageAll,
   onUnstageAll,
-  selectedPath,
 }: GitFileListProps): React.JSX.Element => {
   const isStaged = section === "staged";
   const headerLabel = isStaged ? "Staged Changes" : "Changes";
@@ -89,29 +98,29 @@ export const GitFileList = ({
           )}
         </div>
         <div className="git-file-list-actions">
-          {isStaged ? (
-            headerCount > 0 && (
-              <button
-                type="button"
-                className="git-file-list-action"
-                onClick={onUnstageAll}
-                title="Unstage all"
-              >
-                <span>{"-"}</span>
-              </button>
-            )
-          ) : (
-            headerCount > 0 && (
-              <button
-                type="button"
-                className="git-file-list-action"
-                onClick={onStageAll}
-                title="Stage all"
-              >
-                <Plus size={13} strokeWidth={1.8} />
-              </button>
-            )
-          )}
+          {isStaged
+            ? headerCount > 0 && (
+                <button
+                  type="button"
+                  className="git-file-list-action"
+                  onClick={onUnstageAll}
+                  disabled={actionInProgress}
+                  title="Unstage all"
+                >
+                  <span>{"-"}</span>
+                </button>
+              )
+            : headerCount > 0 && (
+                <button
+                  type="button"
+                  className="git-file-list-action"
+                  onClick={onStageAll}
+                  disabled={actionInProgress}
+                  title="Stage all"
+                >
+                  <Plus size={13} strokeWidth={1.8} />
+                </button>
+              )}
         </div>
       </div>
       {files.length === 0 ? (
@@ -121,14 +130,16 @@ export const GitFileList = ({
       ) : (
         <div className="git-file-list-items">
           {files.map((file) => {
-            const isSelected = file.path === selectedPath;
+            const isSelected = selectedPaths.has(`${section}:${file.path}`);
             return (
               <div
                 key={`${section}-${file.path}`}
                 className={`git-file-item${isSelected ? " selected" : ""}`}
-                onClick={() => onFileSelect(file)}
+                onClick={(e) => onFileSelect(file, e, section)}
               >
-                <span className={`git-file-status ${getStatusColor(file.status)}`}>
+                <span
+                  className={`git-file-status ${getStatusColor(file.status)}`}
+                >
                   {getStatusLabel(file.status)}
                 </span>
                 <span className="git-file-name" title={file.path}>
@@ -139,8 +150,14 @@ export const GitFileList = ({
                   className="git-file-action"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onStageToggle(file);
+                    const filesToToggle = isSelected
+                      ? files.filter((f) =>
+                          selectedPaths.has(`${section}:${f.path}`)
+                        )
+                      : [file];
+                    onStageToggle(filesToToggle, section);
                   }}
+                  disabled={actionInProgress}
                   title={isStaged ? "Unstage file" : "Stage file"}
                 >
                   <span>{isStaged ? "-" : "+"}</span>
