@@ -7,6 +7,7 @@ import { MainContent } from "./components/MainContent";
 import { RightPanel } from "./components/RightPanel";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
+import { WindowControls } from "./components/WindowControls";
 import { ChatConversationProvider } from "./components/mainContent/chatMessages";
 import type { MainContentView } from "./components/mainContent/types";
 import type { WorkspaceDirectoryRecord } from "../preload";
@@ -46,8 +47,11 @@ export const App = (): React.JSX.Element => {
   );
   const [activeResizeTarget, setActiveResizeTarget] =
     useState<ResizeTarget | null>(null);
+  const isWindows = navigator.userAgent.includes("Win");
+
   const shellClasses = [
     "app-shell",
+    isWindows ? "is-windows" : "",
     isSidebarCollapsed ? "sidebar-collapsed" : "",
     isRightPanelCollapsed ? "right-panel-collapsed" : "",
     isRightPanelFullscreen ? "right-panel-fullscreen" : "",
@@ -120,6 +124,7 @@ export const App = (): React.JSX.Element => {
   return (
     <ChatConversationProvider directoryId={activeDirectory?.directoryId}>
       <div className={shellClasses} style={panelSizeStyle}>
+        {isWindows && <WindowControls />}
         <TopBar
           isSidebarCollapsed={isSidebarCollapsed}
           isRightPanelCollapsed={isRightPanelCollapsed}
@@ -152,14 +157,12 @@ export const App = (): React.JSX.Element => {
               onPointerDown={(event) => startPanelResize("sidebar", event)}
             />
           )}
-          {!isRightPanelFullscreen && (
-            <MainContent
-              activeDirectory={activeDirectory}
-              activeView={activeMainView}
-              onSelectView={setActiveMainView}
-            />
-          )}
-          {!isRightPanelCollapsed && !isRightPanelFullscreen && (
+          <MainContent
+            activeDirectory={activeDirectory}
+            activeView={activeMainView}
+            onSelectView={setActiveMainView}
+          />
+          {!isRightPanelCollapsed && (
             <div
               className="panel-resizer right-panel-resizer layout-resizer"
               role="separator"

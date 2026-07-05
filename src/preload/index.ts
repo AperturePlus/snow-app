@@ -592,6 +592,26 @@ const api = {
     staged: boolean
   ): Promise<GitDiffResult> =>
     ipcRenderer.invoke("git:file-diff", repoPath, filePath, staged),
+  // ===== Window Controls =====
+  minimizeWindow: (): Promise<void> => ipcRenderer.invoke("window:minimize"),
+  toggleMaximizeWindow: (): Promise<void> =>
+    ipcRenderer.invoke("window:maximize-toggle"),
+  closeWindow: (): Promise<void> => ipcRenderer.invoke("window:close"),
+  isWindowMaximized: (): Promise<boolean> =>
+    ipcRenderer.invoke("window:is-maximized"),
+  onWindowMaximizeStateChanged: (
+    callback: (isMaximized: boolean) => void
+  ): (() => void) => {
+    const handler = (_event: IpcRendererEvent, isMaximized: boolean): void => {
+      callback(isMaximized);
+    };
+
+    ipcRenderer.on("window:maximize-state-changed", handler);
+
+    return () => {
+      ipcRenderer.removeListener("window:maximize-state-changed", handler);
+    };
+  },
 };
 
 contextBridge.exposeInMainWorld("snow", api);

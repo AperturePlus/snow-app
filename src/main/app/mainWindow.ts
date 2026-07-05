@@ -2,7 +2,12 @@ import { BrowserWindow, nativeTheme, shell } from "electron";
 import { is } from "@electron-toolkit/utils";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { APP_ICON_PATH, isMacOS, macTrafficLightPosition } from "./constants";
+import {
+  APP_ICON_PATH,
+  isMacOS,
+  isWindows,
+  macTrafficLightPosition,
+} from "./constants";
 
 const getWindowBackgroundColor = (): string =>
   nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff";
@@ -17,6 +22,7 @@ export const createWindow = (): void => {
     title: "Snow App",
     icon: APP_ICON_PATH,
     titleBarStyle: isMacOS ? "hidden" : "default",
+    frame: isMacOS || isWindows ? false : true,
     ...(isMacOS ? { trafficLightPosition: macTrafficLightPosition } : {}),
     autoHideMenuBar: true,
     backgroundColor: getWindowBackgroundColor(),
@@ -51,6 +57,18 @@ export const createWindow = (): void => {
   nativeTheme.on("updated", () => {
     mainWindow.setBackgroundColor(getWindowBackgroundColor());
   });
+
+  // Windows: 通知渲染进程窗口最大化状态变化（自定义标题栏需要同步图标）
+  if (isWindows) {
+    const notifyMaximizeState = (): void => {
+      mainWindow.webContents.send(
+        "window:maximize-state-changed",
+        mainWindow.isMaximized()
+      );
+    };
+    mainWindow.on("maximize", notifyMaximizeState);
+    mainWindow.on("unmaximize", notifyMaximizeState);
+  }
 
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
