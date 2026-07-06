@@ -1,5 +1,8 @@
+import { ExternalLink } from "lucide-react";
+
+import { useI18n } from "../../i18n";
 import type { GitDiffResult, GitFileStatus } from "./git";
-import type { DiffLine } from "./types";
+import type { DiffLine, OpenDiffTabCallback } from "./types";
 
 export const parseDiffContent = (diffContent: string): DiffLine[] => {
   const lines = diffContent.split("\n");
@@ -58,13 +61,16 @@ type DiffViewerProps = {
   selectedFile: GitFileStatus;
   diffResult: GitDiffResult | null;
   diffLoading: boolean;
+  onOpenInTab?: OpenDiffTabCallback;
 };
 
 export function DiffViewer({
   selectedFile,
   diffResult,
   diffLoading,
+  onOpenInTab,
 }: DiffViewerProps): React.JSX.Element {
+  const { t } = useI18n();
   const diffLines = diffResult ? parseDiffContent(diffResult.content) : [];
 
   return (
@@ -73,11 +79,22 @@ export function DiffViewer({
         <span className="diff-viewer-file-name" title={selectedFile.path}>
           {selectedFile.path}
         </span>
+        {onOpenInTab && (
+          <button
+            type="button"
+            className="icon-btn diff-viewer-open-tab-btn"
+            title={t("rightPanel.openInNewTab")}
+            aria-label={t("rightPanel.openInNewTab")}
+            onClick={() => onOpenInTab(selectedFile, diffResult, diffLoading)}
+          >
+            <ExternalLink size={14} strokeWidth={1.8} />
+          </button>
+        )}
       </div>
       {diffLoading ? (
-        <div className="diff-viewer-loading">Loading diff...</div>
+        <div className="diff-viewer-loading">{t("rightPanel.loadingDiff")}</div>
       ) : diffResult?.isBinary ? (
-        <div className="diff-viewer-binary">Binary file</div>
+        <div className="diff-viewer-binary">{t("rightPanel.binaryFile")}</div>
       ) : diffLines.length > 0 ? (
         <div className="diff-viewer-content">
           {diffLines.map((line, i) => (
@@ -102,7 +119,9 @@ export function DiffViewer({
           ))}
         </div>
       ) : (
-        <div className="diff-viewer-empty">No changes to display</div>
+        <div className="diff-viewer-empty">
+          {t("rightPanel.noChangesToDisplay")}
+        </div>
       )}
     </div>
   );

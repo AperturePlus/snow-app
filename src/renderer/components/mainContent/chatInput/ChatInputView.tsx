@@ -4,7 +4,6 @@ import {
   Bot,
   Check,
   ChevronDown,
-  Hand,
   Keyboard,
   Loader2,
   Plus,
@@ -334,14 +333,6 @@ export const ChatInputView = ({
           <div className="toolbar-left">
             <button className="toolbar-btn" aria-label="Add attachment">
               <Plus size={16} />
-            </button>
-            <button
-              className="toolbar-btn permissions"
-              aria-label="Permissions"
-            >
-              <Hand size={14} />
-              <span>Default permissions</span>
-              <ChevronDown size={12} />
             </button>
           </div>
           <div className="toolbar-right">

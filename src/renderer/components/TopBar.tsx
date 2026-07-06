@@ -1,12 +1,15 @@
 import {
   GitBranch,
+  Globe,
   Maximize2,
   Minimize2,
+  Plus,
   SidebarClose,
   SidebarOpen,
   SquarePen,
+  Terminal,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { WorkspaceDirectoryRecord } from "../../preload";
 import { useChatConversationContext } from "./mainContent/chatMessages";
 
@@ -18,6 +21,8 @@ type TopBarProps = {
   onToggleSidebar: () => void;
   onToggleRightPanel: () => void;
   onToggleRightPanelFullscreen: () => void;
+  onOpenTerminal?: () => void;
+  onOpenBrowser?: () => void;
 };
 
 export const TopBar = ({
@@ -28,12 +33,16 @@ export const TopBar = ({
   onToggleSidebar,
   onToggleRightPanel,
   onToggleRightPanelFullscreen,
+  onOpenTerminal,
+  onOpenBrowser,
 }: TopBarProps): React.JSX.Element => {
   const { handleNewChat, summary, conversationDirectoryId } =
     useChatConversationContext();
   const [conversationDirectoryName, setConversationDirectoryName] = useState<
     string | undefined
   >(undefined);
+  const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
+  const plusMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!conversationDirectoryId) {
@@ -90,8 +99,42 @@ export const TopBar = ({
   const headerTitle = summary || displayDirectoryName || "New Chat";
   const headerSubtitle = displayDirectoryName || "";
 
+  useEffect(() => {
+    if (!isPlusMenuOpen) {
+      return undefined;
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        plusMenuRef.current &&
+        !plusMenuRef.current.contains(event.target as Node)
+      ) {
+        setIsPlusMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handleClickOutside, true);
+    return () => {
+      document.removeEventListener("pointerdown", handleClickOutside, true);
+    };
+  }, [isPlusMenuOpen]);
+
+  const plusMenuItems = [
+    { id: "terminal", label: "终端", icon: Terminal },
+    { id: "browser", label: "浏览器", icon: Globe },
+  ];
+
+  const handlePlusMenuAction = (actionId: string) => {
+    if (actionId === "terminal") {
+      onOpenTerminal?.();
+    } else if (actionId === "browser") {
+      onOpenBrowser?.();
+    }
+    setIsPlusMenuOpen(false);
+  };
+
   return (
-    <header className="top-bar">
+    <header className={`top-bar${isPlusMenuOpen ? " plus-menu-open" : ""}`}>
       <div className="top-bar-left">
         <div className="top-bar-sidebar-actions" aria-label="Sidebar actions">
           <button
@@ -134,15 +177,49 @@ export const TopBar = ({
           )}
         </div>
         <div className="top-bar-right-actions">
-          <button
-            className="icon-btn ghost right-panel-toggle-btn"
-            type="button"
-            aria-label={rightPanelToggleLabel}
-            title={rightPanelToggleLabel}
-            onClick={onToggleRightPanel}
-          >
-            <RightPanelToggleIcon size={16} strokeWidth={1.8} />
-          </button>
+          <div className="top-bar-plus-menu" ref={plusMenuRef}>
+            <button
+              className={`icon-btn ghost top-bar-plus-btn${
+                isPlusMenuOpen ? " active" : ""
+              }`}
+              type="button"
+              aria-label="New tab"
+              title="New tab"
+              aria-expanded={isPlusMenuOpen}
+              onClick={() => setIsPlusMenuOpen((open) => !open)}
+            >
+              <Plus size={16} strokeWidth={1.8} />
+            </button>
+            {isPlusMenuOpen && (
+              <div className="top-bar-plus-dropdown">
+                {plusMenuItems.map((item) => {
+                  const ItemIcon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      className="top-bar-plus-dropdown-item"
+                      type="button"
+                      onClick={() => handlePlusMenuAction(item.id)}
+                    >
+                      <ItemIcon size={15} strokeWidth={1.7} />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          {!isRightPanelFullscreen && (
+            <button
+              className="icon-btn ghost right-panel-toggle-btn"
+              type="button"
+              aria-label={rightPanelToggleLabel}
+              title={rightPanelToggleLabel}
+              onClick={onToggleRightPanel}
+            >
+              <RightPanelToggleIcon size={16} strokeWidth={1.8} />
+            </button>
+          )}
           <button
             className="icon-btn ghost right-panel-fullscreen-btn"
             type="button"

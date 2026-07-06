@@ -592,6 +592,49 @@ const api = {
     staged: boolean
   ): Promise<GitDiffResult> =>
     ipcRenderer.invoke("git:file-diff", repoPath, filePath, staged),
+  // ===== PTY =====
+  ptyCreate: (options: {
+    cwd: string;
+    cols: number;
+    rows: number;
+  }): Promise<string> => ipcRenderer.invoke("pty:create", options),
+  ptyWrite: (id: string, data: string): Promise<void> =>
+    ipcRenderer.invoke("pty:write", id, data),
+  ptyResize: (id: string, cols: number, rows: number): Promise<void> =>
+    ipcRenderer.invoke("pty:resize", id, cols, rows),
+  ptyKill: (id: string): Promise<void> => ipcRenderer.invoke("pty:kill", id),
+  onPtyOutput: (
+    callback: (data: { id: string; data: string }) => void
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      payload: { id: string; data: string }
+    ): void => {
+      callback(payload);
+    };
+
+    ipcRenderer.on("pty:output", handler);
+
+    return () => {
+      ipcRenderer.removeListener("pty:output", handler);
+    };
+  },
+  onPtyExit: (
+    callback: (data: { id: string; exitCode: number }) => void
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      payload: { id: string; exitCode: number }
+    ): void => {
+      callback(payload);
+    };
+
+    ipcRenderer.on("pty:exit", handler);
+
+    return () => {
+      ipcRenderer.removeListener("pty:exit", handler);
+    };
+  },
   // ===== Window Controls =====
   minimizeWindow: (): Promise<void> => ipcRenderer.invoke("window:minimize"),
   toggleMaximizeWindow: (): Promise<void> =>

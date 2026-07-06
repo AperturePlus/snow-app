@@ -8,6 +8,7 @@ import {
   isWindows,
   macTrafficLightPosition,
 } from "./constants";
+import { killAllPtyForWebContents } from "../pty/ptyManager";
 
 const getWindowBackgroundColor = (): string =>
   nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff";
@@ -31,6 +32,7 @@ export const createWindow = (): void => {
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true,
     },
   });
 
@@ -69,6 +71,10 @@ export const createWindow = (): void => {
     mainWindow.on("maximize", notifyMaximizeState);
     mainWindow.on("unmaximize", notifyMaximizeState);
   }
+  // Clean up PTY sessions before window is fully destroyed
+  mainWindow.on("close", () => {
+    killAllPtyForWebContents(mainWindow.webContents);
+  });
 
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();

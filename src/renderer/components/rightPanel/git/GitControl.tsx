@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GitFileStatus, GitStatusResult } from "../../../../preload";
+import { useI18n } from "../../../i18n";
 import { useGitStatus } from "./useGitStatus";
 import { BranchSelector } from "./BranchSelector";
 import { GitFileList } from "./GitFileList";
@@ -23,6 +24,7 @@ export const GitControl = ({
   onFileSelect,
   onStatusChange,
 }: GitControlProps): React.JSX.Element => {
+  const { t } = useI18n();
   const { status, isLoading, error, refresh } = useGitStatus(repoPath);
   const [commitMessage, setCommitMessage] = useState("");
   const [actionInProgress, setActionInProgress] = useState(false);
@@ -280,7 +282,7 @@ export const GitControl = ({
   if (!repoPath) {
     return (
       <div className="git-control">
-        <div className="git-control-empty">No workspace directory selected</div>
+        <div className="git-control-empty">{t("git.noWorkspaceDirectory")}</div>
       </div>
     );
   }
@@ -288,7 +290,7 @@ export const GitControl = ({
   if (isLoading && !status) {
     return (
       <div className="git-control">
-        <div className="git-control-loading">Loading git status...</div>
+        <div className="git-control-loading">{t("git.loadingStatus")}</div>
       </div>
     );
   }
@@ -296,7 +298,7 @@ export const GitControl = ({
   if (error) {
     return (
       <div className="git-control">
-        <div className="git-control-error">{error}</div>
+        <div className="git-control-error">{t(error)}</div>
       </div>
     );
   }
@@ -304,7 +306,7 @@ export const GitControl = ({
   if (!status || !status.isRepo) {
     return (
       <div className="git-control">
-        <div className="git-control-empty">Not a git repository</div>
+        <div className="git-control-empty">{t("git.notARepo")}</div>
       </div>
     );
   }
@@ -333,7 +335,7 @@ export const GitControl = ({
             className="icon-btn git-action-btn"
             onClick={handlePull}
             disabled={actionInProgress}
-            title="Pull"
+            title={t("git.pull")}
           >
             <ArrowDownToLine size={14} strokeWidth={1.8} />
           </button>
@@ -342,7 +344,7 @@ export const GitControl = ({
             className="icon-btn git-action-btn"
             onClick={handlePush}
             disabled={actionInProgress}
-            title="Push"
+            title={t("git.push")}
           >
             <ArrowUpFromLine size={14} strokeWidth={1.8} />
           </button>
@@ -352,10 +354,14 @@ export const GitControl = ({
       {(status.ahead > 0 || status.behind > 0) && (
         <div className="git-sync-status">
           {status.ahead > 0 && (
-            <span className="git-sync-ahead">{status.ahead} ahead</span>
+            <span className="git-sync-ahead">
+              {t("git.ahead", { values: { count: status.ahead } })}
+            </span>
           )}
           {status.behind > 0 && (
-            <span className="git-sync-behind">{status.behind} behind</span>
+            <span className="git-sync-behind">
+              {t("git.behind", { values: { count: status.behind } })}
+            </span>
           )}
         </div>
       )}
@@ -383,7 +389,7 @@ export const GitControl = ({
       <div className="git-commit-section">
         <textarea
           className="git-commit-input"
-          placeholder="Commit message"
+          placeholder={t("git.commitMessagePlaceholder")}
           value={commitMessage}
           onChange={(e) => setCommitMessage(e.target.value)}
           rows={2}
@@ -399,7 +405,7 @@ export const GitControl = ({
           }
         >
           <GitCommitHorizontal size={14} strokeWidth={1.8} />
-          <span>Commit</span>
+          <span>{t("git.commit")}</span>
         </button>
       </div>
     </div>

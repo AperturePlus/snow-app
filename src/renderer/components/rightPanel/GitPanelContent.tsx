@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MoveVertical } from "lucide-react";
 
+import { useI18n } from "../../i18n";
 import type { GitDiffResult, GitFileStatus, GitStatusResult } from "./git";
 import { GitControl } from "./git";
+import type { OpenDiffTabCallback } from "./types";
 import type { RightPanelContentProps } from "./types";
 import { DiffViewer } from "./DiffViewer";
 
@@ -15,7 +17,11 @@ const clamp = (value: number, min: number, max: number): number =>
 
 export function GitPanelContent({
   activeDirectory,
-}: RightPanelContentProps): React.JSX.Element {
+  onOpenInTab,
+}: RightPanelContentProps & {
+  onOpenInTab?: OpenDiffTabCallback;
+}): React.JSX.Element {
+  const { t } = useI18n();
   const [selectedFile, setSelectedFile] = useState<GitFileStatus | null>(null);
   const [diffResult, setDiffResult] = useState<GitDiffResult | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
@@ -98,7 +104,7 @@ export function GitPanelContent({
       <div
         className="h-resizer"
         role="separator"
-        aria-label="Resize changes and diff"
+        aria-label={t("rightPanel.resizeChangesAndDiff")}
         aria-orientation="horizontal"
         onPointerDown={startSplitResize}
       >
@@ -114,13 +120,14 @@ export function GitPanelContent({
             selectedFile={selectedFile}
             diffResult={diffResult}
             diffLoading={diffLoading}
+            onOpenInTab={onOpenInTab}
           />
         ) : (
           <div className="diff-viewer">
             <div className="diff-viewer-empty">
               {gitStatus
-                ? "Select a file to view its diff"
-                : "No repository selected"}
+                ? t("rightPanel.selectFileToViewDiff")
+                : t("rightPanel.noRepositorySelected")}
             </div>
           </div>
         )}

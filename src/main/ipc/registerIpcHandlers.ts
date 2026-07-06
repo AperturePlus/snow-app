@@ -40,6 +40,7 @@ import {
 } from "../settings/workspaceDirectories";
 import { readSnowCliProfiles } from "../snowCli/profiles";
 import { startDirectoryWatch, stopDirectoryWatch } from "../utils/fsWatcher";
+import { registerPtyHandlers } from "../pty/registerPtyHandlers";
 
 const CHAT_CREATE_RESPONSE_CHUNK_CHANNEL = "chat:create-response:chunk";
 
@@ -302,6 +303,8 @@ const searchInDirectory = async (
 };
 
 export const registerIpcHandlers = (native: NativeBridge): void => {
+  registerPtyHandlers();
+
   ipcMain.handle("native:engine-info", () => native.engineInfo());
   ipcMain.handle(
     "settings:get-system-setting-value",

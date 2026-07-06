@@ -1,6 +1,7 @@
 import { GitBranch, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { GitBranch as GitBranchType } from "../../../../preload";
+import { useI18n } from "../../../i18n";
 
 type BranchSelectorProps = {
   repoPath: string;
@@ -13,6 +14,7 @@ export const BranchSelector = ({
   currentBranch,
   onBranchChanged,
 }: BranchSelectorProps): React.JSX.Element => {
+  const { t } = useI18n();
   const [branches, setBranches] = useState<GitBranchType[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -87,19 +89,21 @@ export const BranchSelector = ({
       >
         <GitBranch size={14} strokeWidth={1.8} />
         <span className="branch-selector-name">
-          {currentBranch || "unknown"}
+          {currentBranch || t("git.unknownBranch")}
         </span>
         <ChevronDown size={12} strokeWidth={1.8} />
       </button>
       {isOpen && (
         <div className="branch-dropdown" ref={dropdownRef}>
           {loading ? (
-            <div className="branch-dropdown-loading">Loading...</div>
+            <div className="branch-dropdown-loading">{t("git.loading")}</div>
           ) : (
             <>
               {localBranches.length > 0 && (
                 <div className="branch-dropdown-group">
-                  <div className="branch-dropdown-label">Local</div>
+                  <div className="branch-dropdown-label">
+                    {t("git.localBranches")}
+                  </div>
                   {localBranches.map((branch) => (
                     <button
                       key={branch.name}
@@ -121,7 +125,9 @@ export const BranchSelector = ({
               )}
               {remoteBranches.length > 0 && (
                 <div className="branch-dropdown-group">
-                  <div className="branch-dropdown-label">Remote</div>
+                  <div className="branch-dropdown-label">
+                    {t("git.remoteBranches")}
+                  </div>
                   {remoteBranches.map((branch) => (
                     <button
                       key={branch.name}
@@ -142,7 +148,9 @@ export const BranchSelector = ({
                 </div>
               )}
               {branches.length === 0 && (
-                <div className="branch-dropdown-empty">No branches found</div>
+                <div className="branch-dropdown-empty">
+                  {t("git.noBranches")}
+                </div>
               )}
             </>
           )}

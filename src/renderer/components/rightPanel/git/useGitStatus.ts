@@ -45,9 +45,7 @@ export const useGitStatus = (
       }
     } catch (err) {
       if (!cancelledRef.current && myId === requestIdRef.current) {
-        setError(
-          err instanceof Error ? err.message : "Failed to get git status"
-        );
+        setError(err instanceof Error ? err.message : "git.getStatusError");
       }
     } finally {
       if (!cancelledRef.current && myId === requestIdRef.current) {

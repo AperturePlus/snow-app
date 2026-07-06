@@ -1,5 +1,6 @@
 import { FilePlus, FileMinus, FileEdit, FileX, Plus } from "lucide-react";
 import type { GitFileStatus } from "../../../../preload";
+import { useI18n } from "../../../i18n";
 
 type GitFileListProps = {
   files: GitFileStatus[];
@@ -84,8 +85,9 @@ export const GitFileList = ({
   onStageAll,
   onUnstageAll,
 }: GitFileListProps): React.JSX.Element => {
+  const { t } = useI18n();
   const isStaged = section === "staged";
-  const headerLabel = isStaged ? "Staged Changes" : "Changes";
+  const headerLabel = isStaged ? t("git.stagedChanges") : t("git.changes");
   const headerCount = files.length;
 
   return (
@@ -105,7 +107,7 @@ export const GitFileList = ({
                   className="git-file-list-action"
                   onClick={onUnstageAll}
                   disabled={actionInProgress}
-                  title="Unstage all"
+                  title={t("git.unstageAll")}
                 >
                   <span>{"-"}</span>
                 </button>
@@ -116,7 +118,7 @@ export const GitFileList = ({
                   className="git-file-list-action"
                   onClick={onStageAll}
                   disabled={actionInProgress}
-                  title="Stage all"
+                  title={t("git.stageAll")}
                 >
                   <Plus size={13} strokeWidth={1.8} />
                 </button>
@@ -125,7 +127,7 @@ export const GitFileList = ({
       </div>
       {files.length === 0 ? (
         <div className="git-file-list-empty">
-          {isStaged ? "No staged changes" : "No changes"}
+          {isStaged ? t("git.noStagedChanges") : t("git.noChanges")}
         </div>
       ) : (
         <div className="git-file-list-items">
@@ -158,7 +160,7 @@ export const GitFileList = ({
                     onStageToggle(filesToToggle, section);
                   }}
                   disabled={actionInProgress}
-                  title={isStaged ? "Unstage file" : "Stage file"}
+                  title={isStaged ? t("git.unstageFile") : t("git.stageFile")}
                 >
                   <span>{isStaged ? "-" : "+"}</span>
                 </button>
