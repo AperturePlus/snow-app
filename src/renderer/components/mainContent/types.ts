@@ -6,4 +6,5 @@ export type MainContentView =
   | "system-prompt-settings"
   | "custom-headers-settings"
   | "mcp-settings"
-  | "sensitive-command-settings";
+  | "sensitive-command-settings"
+  | "terminal-settings";

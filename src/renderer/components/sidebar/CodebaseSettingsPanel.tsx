@@ -4,9 +4,14 @@ import { AutoDismissNotice } from "../AutoDismissNotice";
 import { useI18n } from "../../i18n";
 import { CodebaseSettingsForm } from "./codebaseSettings/CodebaseSettingsForm";
 import { CodebaseSettingsSummary } from "./codebaseSettings/CodebaseSettingsSummary";
-import { DEFAULT_CODEBASE_SETTINGS } from "./codebaseSettings/codebaseSettingsConstants";
+import {
+  CODEBASE_SETTING_CODE,
+  CODEBASE_SETTING_NAME,
+  DEFAULT_CODEBASE_SETTINGS,
+} from "./codebaseSettings/codebaseSettingsConstants";
 import {
   normalizeCodebaseSettings,
+  readCodebaseSettingsJson,
   toCodebaseForm,
   toCodebaseSettings,
 } from "./codebaseSettings/codebaseSettingsUtils";
@@ -36,8 +41,12 @@ export function CodebaseSettingsPanel({
     setError("");
 
     try {
-      const settings = await window.snow.getCodebaseSettings();
-      const normalized = normalizeCodebaseSettings(settings);
+      const value = await window.snow.getSystemSettingValue(
+        CODEBASE_SETTING_CODE
+      );
+      const normalized = normalizeCodebaseSettings(
+        readCodebaseSettingsJson(value)
+      );
       setForm(toCodebaseForm(normalized));
       setLastSaved(normalized);
     } catch (e) {
@@ -153,7 +162,10 @@ export function CodebaseSettingsPanel({
       });
     }
 
-    if (Number.isInteger(maxLinesPerChunk) && overlapLines >= maxLinesPerChunk) {
+    if (
+      Number.isInteger(maxLinesPerChunk) &&
+      overlapLines >= maxLinesPerChunk
+    ) {
       return t("settings.codebaseValidationOverlapLessThanMaxLines", {
         defaultValue: "Overlap lines must be less than max lines per chunk.",
       });
@@ -215,8 +227,12 @@ export function CodebaseSettingsPanel({
     setStatus("");
 
     try {
-      const saved = await window.snow.upsertCodebaseSettings(settings);
-      const normalized = normalizeCodebaseSettings(saved);
+      await window.snow.setSystemSetting(
+        CODEBASE_SETTING_NAME,
+        CODEBASE_SETTING_CODE,
+        JSON.stringify(settings)
+      );
+      const normalized = normalizeCodebaseSettings(settings);
       setForm(toCodebaseForm(normalized));
       setLastSaved(normalized);
       setStatus(

@@ -29,6 +29,20 @@ const toNonNegativeInteger = (value: unknown, fallback: number): number => {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
 };
 
+export const readCodebaseSettingsJson = (
+  value: string | null
+): CodebaseSettingsInput => {
+  if (!value) {
+    return normalizeCodebaseSettings(null);
+  }
+
+  try {
+    return normalizeCodebaseSettings(JSON.parse(value));
+  } catch {
+    return normalizeCodebaseSettings(null);
+  }
+};
+
 export const normalizeCodebaseSettings = (
   value: unknown
 ): CodebaseSettingsInput => {

@@ -11,6 +11,7 @@ import {
   Puzzle,
   Search,
   ShieldAlert,
+  Terminal,
   Users,
 } from "lucide-react";
 import { localeLabels, useI18n, type Locale } from "../../i18n";
@@ -111,6 +112,14 @@ const SETTINGS_ITEMS: SettingsItem[] = [
     defaultDescription: "Adjust appearance and color theme.",
   },
   {
+    id: "terminal",
+    icon: Terminal,
+    labelKey: "settings.terminalSettings",
+    defaultLabel: "Terminal settings",
+    descriptionKey: "settings.terminalSettingsInfo",
+    defaultDescription: "Configure terminal shell, font, and appearance.",
+  },
+  {
     id: "privacy",
     icon: EyeOff,
     labelKey: "settings.privacySettings",
@@ -137,7 +146,8 @@ export function SettingsSidebarContent({
       activeMainView === "system-prompt-settings" ||
       activeMainView === "custom-headers-settings" ||
       activeMainView === "mcp-settings" ||
-      activeMainView === "sensitive-command-settings"
+      activeMainView === "sensitive-command-settings" ||
+      activeMainView === "terminal-settings"
     ) {
       onSelectMainView("chat");
     }
@@ -180,6 +190,8 @@ export function SettingsSidebarContent({
                   ? "mcp-settings"
                   : item.id === "sensitive-commands"
                   ? "sensitive-command-settings"
+                  : item.id === "terminal"
+                  ? "terminal-settings"
                   : null;
               const isActive = targetView === activeMainView;
 

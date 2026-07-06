@@ -1,5 +1,10 @@
-import { ArrowLeft, ArrowRight, Globe, Loader2, RotateCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import {
+  BrowserFindBar,
+  type BrowserFindResult,
+  BrowserToolbar,
+  useWebviewScreenshot,
+} from "./browser";
 
 export type BrowserPanelContentProps = {
   initialUrl: string;
@@ -19,11 +24,33 @@ const normalizeUrl = (input: string): string => {
     return trimmed;
   }
   // Looks like a domain (contains a dot, no spaces)
-  if (/^[^\s]+\.[^\s]+/.test(trimmed)) {
+  if (/^\S+\.\S+/.test(trimmed)) {
     return `https://${trimmed}`;
   }
   // Otherwise treat as a search query
   return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
+};
+
+/**
+ * Navigation error codes that are expected during normal browsing and should
+ * not surface as real failures:
+ *
+ *   -3  ERR_ABORTED  page redirected (Cloudflare challenge, Google -> localized)
+ *   -2  ERR_FAILED   request cancelled or interrupted by a redirect
+ *
+ * These fire through both the webview `did-fail-load` event and the
+ * main-process `GUEST_VIEW_MANAGER_CALL` IPC handler promise rejection.
+ */
+const SUPPRESSED_ERROR_CODES = new Set([-3, -2]);
+
+const isSuppressedNavigationError = (error: unknown): boolean => {
+  if (error instanceof Error) {
+    const code = (error as Error & { code?: string }).code;
+    if (code === "ERR_ABORTED" || code === "ERR_FAILED") {
+      return true;
+    }
+  }
+  return false;
 };
 
 export const BrowserPanelContent = ({
@@ -33,12 +60,28 @@ export const BrowserPanelContent = ({
 }: BrowserPanelContentProps): React.JSX.Element => {
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const [addressInput, setAddressInput] = useState(initialUrl || DEFAULT_URL);
-  const [currentUrl, setCurrentUrl] = useState(
+  // webviewSrc drives the <webview src={...}> attribute. It is ONLY updated on
+  // explicit user navigation (address-bar Enter), never by did-navigate.
+  //
+  // This breaks the re-navigation loop that occurs with Cloudflare challenges
+  // and other redirect-heavy pages:
+  //   redirect -> did-navigate -> setCurrentUrl -> src change
+  //   -> attribute observer -> loadURL -> redirect -> ...
+  const [webviewSrc, setWebviewSrc] = useState(
     normalizeUrl(initialUrl || DEFAULT_URL)
   );
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const { isCapturing, feedback, captureScreenshot } =
+    useWebviewScreenshot(webviewRef);
+  const [zoomFactor, setZoomFactor] = useState(1);
+  const [findVisible, setFindVisible] = useState(false);
+  const [findText, setFindText] = useState("");
+  const [findResult, setFindResult] = useState<BrowserFindResult | null>(null);
+
+  // isActive is reserved for future panel visibility optimisation.
+  void isActive;
 
   useEffect(() => {
     const webview = webviewRef.current;
@@ -51,10 +94,17 @@ export const BrowserPanelContent = ({
       setCanGoForward(webview.canGoForward());
     };
 
+    // did-navigate fires for every navigation including server-side redirects
+    // and in-page pushState. We update the address bar for display but
+    // deliberately do NOT update webviewSrc — changing src would trigger a
+    // fresh loadURL via the webview attribute observer, re-triggering the
+    // redirect and creating an infinite loop (e.g. Cloudflare challenges).
     const handleDidNavigate = (e: Electron.DidNavigateEvent): void => {
-      setCurrentUrl(e.url);
       setAddressInput(e.url);
       handleNavigationStateUpdate();
+      // Keep the menu's zoom display in sync with the webview's actual zoom
+      // (Electron persists zoom per webContents across navigations).
+      setZoomFactor(webview.getZoomFactor());
     };
 
     const handleDidStartLoading = (): void => {
@@ -76,20 +126,37 @@ export const BrowserPanelContent = ({
 
     const handleNewWindow = (e: Event & { url?: string }): void => {
       e.preventDefault();
-      // Navigate in the same webview instead of opening a new window
+      // Navigate in the same webview instead of opening a new window.
+      // We use loadURL directly and do NOT update webviewSrc, because
+      // changing src would fire a second racing loadURL call.
       if (e.url) {
         const url = normalizeUrl(e.url);
-        webview.loadURL(url);
+        Promise.resolve(webview.loadURL(url)).catch((error: unknown) => {
+          if (!isSuppressedNavigationError(error)) {
+            console.error("Failed to navigate to new window URL:", error);
+          }
+        });
       }
     };
 
-    // ERR_ABORTED (-3) is expected when a page redirects (e.g. Google -> localized).
-    // Chromium aborts the original request, which logs an error to console.
-    // Suppress it so the console stays clean.
+    // ERR_ABORTED (-3) and ERR_FAILED (-2) are expected when a page redirects
+    // (e.g. Cloudflare managed challenge, Google -> localized). Chromium aborts
+    // the original request, which fires did-fail-load. Suppress these so the
+    // console stays clean; the redirect target loads normally afterward.
     const handleDidFailLoad = (e: Event & { errorCode?: number }): void => {
-      if (e.errorCode === -3) {
+      if (
+        e.errorCode !== undefined &&
+        SUPPRESSED_ERROR_CODES.has(e.errorCode)
+      ) {
         return;
       }
+    };
+
+    const handleFoundInPage = (e: Electron.FoundInPageEvent): void => {
+      setFindResult({
+        activeMatchOrdinal: e.result.activeMatchOrdinal,
+        matches: e.result.matches,
+      });
     };
 
     webview.addEventListener("did-navigate", handleDidNavigate);
@@ -111,6 +178,7 @@ export const BrowserPanelContent = ({
       "did-fail-load",
       handleDidFailLoad as EventListener
     );
+    webview.addEventListener("found-in-page", handleFoundInPage);
 
     return () => {
       webview.removeEventListener("did-navigate", handleDidNavigate);
@@ -132,6 +200,7 @@ export const BrowserPanelContent = ({
         "did-fail-load",
         handleDidFailLoad as EventListener
       );
+      webview.removeEventListener("found-in-page", handleFoundInPage);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onTitleChange]);
@@ -142,11 +211,20 @@ export const BrowserPanelContent = ({
       return;
     }
     const url = normalizeUrl(input);
-    setCurrentUrl(url);
     setAddressInput(url);
     const webview = webviewRef.current;
-    if (webview) {
-      webview.loadURL(url);
+    if (!webview) {
+      return;
+    }
+    if (url === webviewSrc) {
+      // Same URL — src won't change, so explicitly reload.
+      webview.reload();
+    } else {
+      // Different URL — updating src triggers navigation via the webview's
+      // attribute observer. We intentionally do NOT call loadURL() directly
+      // here, as that would race with the src-triggered navigation and cause
+      // spurious ERR_ABORTED errors via GUEST_VIEW_MANAGER_CALL.
+      setWebviewSrc(url);
     }
   };
 
@@ -180,61 +258,133 @@ export const BrowserPanelContent = ({
     }
   };
 
+  const handleClearCache = async (): Promise<void> => {
+    try {
+      await window.snow.clearBrowserCache();
+    } catch (error) {
+      console.error("Failed to clear browser cache:", error);
+    }
+    // Reload ignoring cache so the effect is immediately visible.
+    webviewRef.current?.reloadIgnoringCache();
+  };
+
+  const handleClearCookies = async (): Promise<void> => {
+    try {
+      await window.snow.clearBrowserCookies();
+    } catch (error) {
+      console.error("Failed to clear browser cookies:", error);
+    }
+    webviewRef.current?.reload();
+  };
+
+  const applyZoom = (next: number): void => {
+    setZoomFactor(next);
+    webviewRef.current?.setZoomFactor(next);
+  };
+
+  const handleZoomIn = (): void => {
+    const next = Math.min(Math.round((zoomFactor + 0.1) * 100) / 100, 5);
+    applyZoom(next);
+  };
+
+  const handleZoomOut = (): void => {
+    const next = Math.max(Math.round((zoomFactor - 0.1) * 100) / 100, 0.25);
+    applyZoom(next);
+  };
+
+  const handleZoomReset = (): void => {
+    applyZoom(1);
+  };
+
+  const handleForceReload = (): void => {
+    webviewRef.current?.reloadIgnoringCache();
+  };
+
+  const handleOpenFind = (): void => {
+    setFindVisible(true);
+  };
+
+  const handleFindSearch = (text: string): void => {
+    setFindText(text);
+    const webview = webviewRef.current;
+    if (!webview) {
+      return;
+    }
+    if (text) {
+      webview.findInPage(text);
+    } else {
+      webview.stopFindInPage("clearSelection");
+      setFindResult(null);
+    }
+  };
+
+  const handleFindNext = (): void => {
+    if (!findText) {
+      return;
+    }
+    webviewRef.current?.findInPage(findText, {
+      forward: true,
+      findNext: true,
+    });
+  };
+
+  const handleFindPrev = (): void => {
+    if (!findText) {
+      return;
+    }
+    webviewRef.current?.findInPage(findText, {
+      forward: false,
+      findNext: true,
+    });
+  };
+
+  const handleFindClose = (): void => {
+    webviewRef.current?.stopFindInPage("clearSelection");
+    setFindVisible(false);
+    setFindText("");
+    setFindResult(null);
+  };
+
   return (
     <div className="browser-panel">
-      <div className="browser-toolbar">
-        <button
-          type="button"
-          className="browser-nav-btn"
-          onClick={handleBack}
-          disabled={!canGoBack}
-          aria-label="Back"
-          title="Back"
-        >
-          <ArrowLeft size={15} strokeWidth={1.8} />
-        </button>
-        <button
-          type="button"
-          className="browser-nav-btn"
-          onClick={handleForward}
-          disabled={!canGoForward}
-          aria-label="Forward"
-          title="Forward"
-        >
-          <ArrowRight size={15} strokeWidth={1.8} />
-        </button>
-        <button
-          type="button"
-          className="browser-nav-btn"
-          onClick={handleReload}
-          aria-label="Reload"
-          title="Reload"
-        >
-          {isLoading ? (
-            <Loader2 size={15} strokeWidth={1.8} className="spin-icon" />
-          ) : (
-            <RotateCw size={15} strokeWidth={1.8} />
-          )}
-        </button>
-        <div className="browser-address-bar">
-          <Globe size={13} strokeWidth={1.6} className="browser-address-icon" />
-          <input
-            type="text"
-            className="browser-address-input"
-            value={addressInput}
-            onChange={(e) => setAddressInput(e.target.value)}
-            onKeyDown={handleAddressKeyDown}
-            placeholder="Enter URL or search..."
-            spellCheck={false}
-          />
-        </div>
-      </div>
+      <BrowserToolbar
+        canGoBack={canGoBack}
+        canGoForward={canGoForward}
+        isLoading={isLoading}
+        addressInput={addressInput}
+        isCapturing={isCapturing}
+        screenshotFeedback={feedback}
+        onAddressChange={setAddressInput}
+        onAddressKeyDown={handleAddressKeyDown}
+        onBack={handleBack}
+        onForward={handleForward}
+        onReload={handleReload}
+        onScreenshot={captureScreenshot}
+        zoomFactor={zoomFactor}
+        onClearCache={handleClearCache}
+        onClearCookies={handleClearCookies}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onZoomReset={handleZoomReset}
+        onForceReload={handleForceReload}
+        onFindInPage={handleOpenFind}
+      />
       <div className="browser-content">
         <webview
           ref={webviewRef}
-          src={currentUrl}
+          src={webviewSrc}
           className="browser-webview"
         />
+        {findVisible && (
+          <BrowserFindBar
+            value={findText}
+            result={findResult}
+            onSearch={handleFindSearch}
+            onNext={handleFindNext}
+            onPrev={handleFindPrev}
+            onClose={handleFindClose}
+          />
+        )}
       </div>
     </div>
   );

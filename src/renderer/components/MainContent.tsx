@@ -5,6 +5,7 @@ import { McpSettingsPanel } from "./sidebar/McpSettingsPanel";
 import { ProxyBrowserSettingsPanel } from "./sidebar/ProxyBrowserSettingsPanel";
 import { SensitiveCommandsPanel } from "./sidebar/SensitiveCommandsPanel";
 import { SystemPromptSettingsPanel } from "./sidebar/SystemPromptSettingsPanel";
+import { TerminalSettingsPanel } from "./sidebar/TerminalSettingsPanel";
 import { ChatContent } from "./mainContent/ChatContent";
 import type { MainContentView } from "./mainContent/types";
 import type { WorkspaceDirectoryRecord } from "../../preload";
@@ -36,6 +37,8 @@ export const MainContent = ({
         <McpSettingsPanel onClose={() => onSelectView("chat")} />
       ) : activeView === "sensitive-command-settings" ? (
         <SensitiveCommandsPanel onClose={() => onSelectView("chat")} />
+      ) : activeView === "terminal-settings" ? (
+        <TerminalSettingsPanel onClose={() => onSelectView("chat")} />
       ) : (
         <ChatContent activeDirectory={activeDirectory} />
       )}

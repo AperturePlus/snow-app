@@ -131,40 +131,10 @@ fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
          );
 
-         CREATE TABLE IF NOT EXISTS codebase_settings (
-           id TEXT PRIMARY KEY NOT NULL,
-           profile_name TEXT NOT NULL UNIQUE,
-           enabled INTEGER NOT NULL DEFAULT 0,
-           enable_agent_review INTEGER NOT NULL DEFAULT 1,
-           enable_reranking INTEGER NOT NULL DEFAULT 0,
-           embedding_type TEXT NOT NULL DEFAULT 'jina',
-           embedding_model_name TEXT NOT NULL DEFAULT '',
-           embedding_base_url TEXT NOT NULL DEFAULT '',
-           embedding_api_key TEXT NOT NULL DEFAULT '',
-           embedding_dimensions INTEGER NOT NULL DEFAULT 1536,
-           batch_max_lines INTEGER NOT NULL DEFAULT 10,
-           batch_concurrency INTEGER NOT NULL DEFAULT 3,
-           chunking_max_lines_per_chunk INTEGER NOT NULL DEFAULT 200,
-           chunking_min_lines_per_chunk INTEGER NOT NULL DEFAULT 10,
-           chunking_min_chars_per_chunk INTEGER NOT NULL DEFAULT 20,
-           chunking_overlap_lines INTEGER NOT NULL DEFAULT 20,
-           reranking_model_name TEXT NOT NULL DEFAULT '',
-           reranking_base_url TEXT NOT NULL DEFAULT '',
-           reranking_api_key TEXT NOT NULL DEFAULT '',
-           reranking_context_length INTEGER NOT NULL DEFAULT 4096,
-           reranking_top_n INTEGER NOT NULL DEFAULT 5,
-           config_json TEXT NOT NULL DEFAULT '{}',
-           source TEXT NOT NULL DEFAULT 'manual',
-           created_at TEXT NOT NULL DEFAULT (datetime('now')),
-           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-         );
-
-         CREATE INDEX IF NOT EXISTS idx_api_configs_active
+CREATE INDEX IF NOT EXISTS idx_api_configs_active
            ON api_configs(is_active);
          CREATE INDEX IF NOT EXISTS idx_api_configs_source
            ON api_configs(source);
-         CREATE INDEX IF NOT EXISTS idx_codebase_settings_source
-           ON codebase_settings(source);
 
          CREATE TABLE IF NOT EXISTS system_prompts (
            id TEXT PRIMARY KEY NOT NULL,

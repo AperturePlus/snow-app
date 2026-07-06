@@ -2,6 +2,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import type { ITheme } from "@xterm/xterm";
 import { useEffect, useRef } from "react";
+import { useTerminalSettings } from "./useTerminalSettings";
 
 export type TerminalPanelContentProps = {
   cwd: string;
@@ -33,16 +34,23 @@ const getTerminalTheme = (): ITheme => {
   return lightTerminalTheme;
 };
 
+const DEFAULT_FONT_FAMILY =
+  "'SF Mono', 'Menlo', 'Consolas', 'Liberation Mono', monospace";
+
 export const TerminalPanelContent = ({
   cwd,
   isActive,
   onTitleChange,
 }: TerminalPanelContentProps): React.JSX.Element => {
+  const settings = useTerminalSettings();
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const ptyIdRef = useRef<string | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
+
+  // Only shellPath triggers PTY recreation; font settings update live.
+  const { shellPath } = settings;
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -55,10 +63,14 @@ export const TerminalPanelContent = ({
     let disposeExit: (() => void) | null = null;
     let exited = false;
 
+    const fontFamily =
+      settings.fontFamily.trim() || DEFAULT_FONT_FAMILY;
+
     const term = new Terminal({
-      fontFamily:
-        "'SF Mono', 'Menlo', 'Consolas', 'Liberation Mono', monospace",
-      fontSize: 13,
+      fontFamily,
+      fontSize: settings.fontSize,
+      fontWeight: settings.fontWeight as "normal" | "bold" | number,
+      lineHeight: settings.lineHeight,
       cursorBlink: true,
       theme: getTerminalTheme(),
     });
@@ -108,7 +120,12 @@ export const TerminalPanelContent = ({
       try {
         const cols = term.cols > 0 ? term.cols : 80;
         const rows = term.rows > 0 ? term.rows : 24;
-        const id = await window.snow.ptyCreate({ cwd, cols, rows });
+        const id = await window.snow.ptyCreate({
+          cwd,
+          cols,
+          rows,
+          shellPath: shellPath || undefined,
+        });
         if (disposed) {
           void window.snow.ptyKill(id);
           return;
@@ -175,7 +192,30 @@ export const TerminalPanelContent = ({
       cleanupRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cwd]);
+  }, [cwd, shellPath]);
+
+  // Live-update font settings without recreating the terminal / PTY.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) {
+      return;
+    }
+    term.options.fontFamily =
+      settings.fontFamily.trim() || DEFAULT_FONT_FAMILY;
+    term.options.fontSize = settings.fontSize;
+    term.options.fontWeight = settings.fontWeight as "normal" | "bold" | number;
+    term.options.lineHeight = settings.lineHeight;
+    try {
+      fitRef.current?.fit();
+    } catch {
+      // ignore
+    }
+  }, [
+    settings.fontFamily,
+    settings.fontSize,
+    settings.fontWeight,
+    settings.lineHeight,
+  ]);
 
   useEffect(() => {
     if (!isActive || !termRef.current || !fitRef.current) {

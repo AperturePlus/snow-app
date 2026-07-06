@@ -2,7 +2,7 @@ use napi_derive::napi;
 
 use crate::storage::{
     ApiConfigInput, ApiConfigRecord, AppStorageInfo, ChatConversationPage,
-    ChatConversationRecord, ChatMessageRecord, CodebaseSettingsInput, CodebaseSettingsRecord,
+    ChatConversationRecord, ChatMessageRecord,
     CustomHeaderSchemeInput, CustomHeaderSchemeRecord, McpServerConfigInput,
     McpServerConfigRecord, SensitiveCommandConfigInput, SensitiveCommandConfigRecord,
     SystemPromptItemInput, SystemPromptItemRecord, WorkspaceDirectoryInput,
@@ -42,16 +42,6 @@ pub fn upsert_api_config(config: ApiConfigInput) -> napi::Result<()> {
 #[napi]
 pub fn delete_api_config(profile_name: String) -> napi::Result<()> {
     crate::storage::delete_api_config(profile_name)
-}
-
-#[napi]
-pub fn get_codebase_settings() -> napi::Result<CodebaseSettingsRecord> {
-    crate::storage::get_codebase_settings()
-}
-
-#[napi]
-pub fn upsert_codebase_settings(settings: CodebaseSettingsInput) -> napi::Result<()> {
-    crate::storage::upsert_codebase_settings(settings)
 }
 
 #[napi]

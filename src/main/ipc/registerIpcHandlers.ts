@@ -1,4 +1,11 @@
-import { BrowserWindow, dialog, ipcMain } from "electron";
+import {
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  nativeImage,
+  session,
+} from "electron";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type {
@@ -12,11 +19,7 @@ import {
   normalizeApiConfigInput,
   toApiConfigInput,
 } from "../settings/apiConfigs";
-import {
-  normalizeCodebaseSettings,
-  persistCodebaseSettings,
-  readSnowCliCodebaseSettings,
-} from "../settings/codebaseSettings";
+import { readSnowCliCodebaseSettings } from "../settings/codebaseSettings";
 import {
   normalizeSystemPromptItem,
   readSnowCliSystemPromptConfig,
@@ -406,10 +409,6 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
     readSnowCliProxyConfig(native)
   );
 
-  ipcMain.handle("codebase-settings:get", () => native.getCodebaseSettings());
-  ipcMain.handle("codebase-settings:upsert", (_event, settings: unknown) =>
-    persistCodebaseSettings(native, normalizeCodebaseSettings(settings))
-  );
   ipcMain.handle("codebase-settings:import-snow-cli", () =>
     readSnowCliCodebaseSettings(native)
   );
@@ -685,9 +684,37 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
       return result.canceled ? null : result.filePaths[0] ?? null;
     }
   );
+  ipcMain.handle(
+    "terminal-settings:select-executable",
+    async (event, dialogTitle: unknown) => {
+      const browserWindow = BrowserWindow.fromWebContents(event.sender);
+      const title =
+        typeof dialogTitle === "string" && dialogTitle.trim()
+          ? dialogTitle.trim()
+          : "Select terminal executable";
+      const options: Electron.OpenDialogOptions = {
+        title,
+        properties: ["openFile"],
+        filters:
+          process.platform === "win32"
+            ? [
+                { name: "Applications", extensions: ["exe", "bat", "cmd"] },
+                { name: "All files", extensions: ["*"] },
+              ]
+            : [{ name: "All files", extensions: ["*"] }],
+      };
+      const result = browserWindow
+        ? await dialog.showOpenDialog(browserWindow, options)
+        : await dialog.showOpenDialog(options);
+
+      return result.canceled ? null : result.filePaths[0] ?? null;
+    }
+  );
+
   ipcMain.handle("native:sum", (_event, a: number, b: number) =>
     native.sum(a, b)
   );
+  ipcMain.handle("terminal:detect-terminals", () => native.detectTerminals());
   ipcMain.handle(
     "debug:write-log",
     (_event, level: unknown, entry: unknown) => {
@@ -920,5 +947,28 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
   ipcMain.handle("window:is-maximized", (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     return win ? win.isMaximized() : false;
+  });
+
+  // ===== Clipboard (write image) =====
+  ipcMain.handle("clipboard:write-image", (_event, dataUrl: unknown) => {
+    if (typeof dataUrl !== "string" || !dataUrl.trim()) {
+      throw new Error("Image data URL is required");
+    }
+
+    const image = nativeImage.createFromDataURL(dataUrl);
+    if (image.isEmpty()) {
+      throw new Error("Failed to create image from data URL");
+    }
+
+    clipboard.writeImage(image);
+  });
+
+  // ===== Browser (embedded webview) =====
+  ipcMain.handle("browser:clear-cache", async () => {
+    await session.defaultSession.clearCache();
+  });
+
+  ipcMain.handle("browser:clear-cookies", async () => {
+    await session.defaultSession.clearStorageData({ storages: ["cookies"] });
   });
 };

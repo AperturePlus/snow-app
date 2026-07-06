@@ -1,5 +1,8 @@
 import type { CodebaseSettingsInput } from "../../../../preload";
 
+export const CODEBASE_SETTING_NAME = "Codebase settings";
+export const CODEBASE_SETTING_CODE = "codebase_settings";
+
 export const DEFAULT_CODEBASE_SETTINGS: CodebaseSettingsInput = {
   profileName: "default",
   enabled: false,

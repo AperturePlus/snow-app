@@ -38,16 +38,6 @@ export const loadNativeBridge = (): NativeBridge => {
       deleteApiConfig: () => {
         throw new Error("Rust native bridge is required to delete API configs");
       },
-      getCodebaseSettings: () => {
-        throw new Error(
-          "Rust native bridge is required to read codebase settings"
-        );
-      },
-      upsertCodebaseSettings: () => {
-        throw new Error(
-          "Rust native bridge is required to write codebase settings"
-        );
-      },
       listSystemPrompts: () => {
         throw new Error(
           "Rust native bridge is required to list system prompts"

@@ -10,6 +10,7 @@ export type PtySessionOptions = {
   cwd: string;
   cols: number;
   rows: number;
+  shellPath?: string;
 };
 
 export type PtySession = {
@@ -90,7 +91,11 @@ export const createPtySession = (
   options: PtySessionOptions
 ): string => {
   const id = generatePtyId();
-  const shell = getShell();
+  const customShell = options.shellPath?.trim();
+  const shell =
+    customShell && existsSync(customShell) ? customShell : getShell();
+
+  const isWindows = process.platform === "win32";
 
   const pty = nodePty.spawn(shell, getShellArgs(), {
     name: "xterm-256color",
@@ -98,6 +103,11 @@ export const createPtySession = (
     rows: options.rows,
     cwd: options.cwd,
     env: sanitizeEnv(),
+    // Electron already has a console attached, so the default ConPTY kill path
+    // (which forks conpty_console_list_agent.js and calls AttachConsole) throws
+    // "AttachConsole failed". Setting useConptyDll routes kill() through a
+    // different code path that avoids the fork entirely.
+    useConptyDll: isWindows,
   });
 
   const session: PtySession = { id, pty, webContents };

@@ -99,6 +99,21 @@ export type ProxyBrowserSettings = {
   searchEngine: string;
 };
 
+export type TerminalSettings = {
+  shellPath: string;
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: string;
+  lineHeight: number;
+  proxy: string;
+};
+
+export type DetectedTerminal = {
+  name: string;
+  path: string;
+  family: "powershell" | "cmd" | "posix";
+};
+
 export type CodebaseSettingsInput = {
   profileName: string;
   enabled: boolean;
@@ -122,11 +137,6 @@ export type CodebaseSettingsInput = {
   rerankingTopN: number;
   configJson: string;
   source: string;
-};
-
-export type CodebaseSettingsRecord = CodebaseSettingsInput & {
-  id: string;
-  updatedAt: string;
 };
 
 export type SystemPromptItemInput = {
@@ -397,19 +407,18 @@ const api = {
     ipcRenderer.invoke("api-configs:import-snow-cli"),
   importSnowCliProxyConfig: (): Promise<ProxyBrowserSettings> =>
     ipcRenderer.invoke("proxy-browser-settings:import-snow-cli"),
-  getCodebaseSettings: (): Promise<CodebaseSettingsRecord> =>
-    ipcRenderer.invoke("codebase-settings:get"),
-  upsertCodebaseSettings: (
-    settings: CodebaseSettingsInput
-  ): Promise<CodebaseSettingsRecord> =>
-    ipcRenderer.invoke("codebase-settings:upsert", settings),
-  importSnowCliCodebaseSettings: (): Promise<CodebaseSettingsRecord> =>
+  importSnowCliCodebaseSettings: (): Promise<CodebaseSettingsInput> =>
     ipcRenderer.invoke("codebase-settings:import-snow-cli"),
   selectBrowserExecutable: (dialogTitle?: string): Promise<string | null> =>
     ipcRenderer.invoke(
       "proxy-browser-settings:select-browser-executable",
       dialogTitle
     ),
+  detectTerminals: (): Promise<DetectedTerminal[]> =>
+    ipcRenderer.invoke("terminal:detect-terminals"),
+  selectTerminalExecutable: (dialogTitle?: string): Promise<string | null> =>
+    ipcRenderer.invoke("terminal-settings:select-executable", dialogTitle),
+
   listSystemPrompts: (): Promise<SystemPromptItemRecord[]> =>
     ipcRenderer.invoke("system-prompts:list"),
   upsertSystemPrompt: (item: SystemPromptItemInput): Promise<void> =>
@@ -597,6 +606,7 @@ const api = {
     cwd: string;
     cols: number;
     rows: number;
+    shellPath?: string;
   }): Promise<string> => ipcRenderer.invoke("pty:create", options),
   ptyWrite: (id: string, data: string): Promise<void> =>
     ipcRenderer.invoke("pty:write", id, data),
@@ -642,6 +652,12 @@ const api = {
   closeWindow: (): Promise<void> => ipcRenderer.invoke("window:close"),
   isWindowMaximized: (): Promise<boolean> =>
     ipcRenderer.invoke("window:is-maximized"),
+  writeImageToClipboard: (dataUrl: string): Promise<void> =>
+    ipcRenderer.invoke("clipboard:write-image", dataUrl),
+  clearBrowserCache: (): Promise<void> =>
+    ipcRenderer.invoke("browser:clear-cache"),
+  clearBrowserCookies: (): Promise<void> =>
+    ipcRenderer.invoke("browser:clear-cookies"),
   onWindowMaximizeStateChanged: (
     callback: (isMaximized: boolean) => void
   ): (() => void) => {

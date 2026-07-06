@@ -1,6 +1,5 @@
 pub mod api_configs;
 pub mod chat_conversations;
-pub mod codebase_settings;
 pub mod custom_header_schemes;
 pub mod fs_explorer;
 pub mod git;

@@ -1,19 +1,13 @@
-import type {
-  CodebaseSettingsInput,
-  CodebaseSettingsRecord,
-  NativeBridge,
-} from "../native/types";
+import type { CodebaseSettingsInput, NativeBridge } from "../native/types";
 import {
   SNOW_CLI_GLOBAL_SETTINGS_FILE,
   SNOW_CLI_PROJECT_SETTINGS_FILE,
 } from "../snowCli/paths";
 import { readJsonFile } from "../utils/jsonFile";
-import {
-  isRecord,
-  toBoolean,
-  toPositiveInteger,
-  toText,
-} from "../utils/value";
+import { isRecord, toBoolean, toPositiveInteger, toText } from "../utils/value";
+
+const CODEBASE_SETTING_NAME = "Codebase settings";
+const CODEBASE_SETTING_CODE = "codebase_settings";
 
 const DEFAULT_CODEBASE_SETTINGS: CodebaseSettingsInput = {
   profileName: "default",
@@ -126,15 +120,19 @@ export const normalizeCodebaseSettings = (
 export const persistCodebaseSettings = (
   native: NativeBridge,
   settings: CodebaseSettingsInput
-): CodebaseSettingsRecord => {
+): CodebaseSettingsInput => {
   const normalized = normalizeCodebaseSettings(settings);
-  native.upsertCodebaseSettings(normalized);
-  return native.getCodebaseSettings();
+  native.setSystemSetting(
+    CODEBASE_SETTING_NAME,
+    CODEBASE_SETTING_CODE,
+    JSON.stringify(normalized)
+  );
+  return normalized;
 };
 
 export const readSnowCliCodebaseSettings = (
   native: NativeBridge
-): CodebaseSettingsRecord => {
+): CodebaseSettingsInput => {
   const globalSettings = readJsonFile(SNOW_CLI_GLOBAL_SETTINGS_FILE);
   const projectSettings = readJsonFile(SNOW_CLI_PROJECT_SETTINGS_FILE);
   const globalCodebase = getCodebaseObject(globalSettings);

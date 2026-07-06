@@ -4,8 +4,13 @@ import { initializeApplicationServices } from "./applicationServices";
 import { createWindow } from "./mainWindow";
 import { registerIpcHandlers } from "../ipc/registerIpcHandlers";
 import { native } from "../native/nativeBridge";
+import { installGuestViewErrorFilter } from "../utils/guestViewErrorFilter";
 
 export const bootstrapApplication = (): void => {
+  // Install early, before any webview is created, so that expected
+  // GUEST_VIEW_MANAGER_CALL navigation-abort errors are filtered from logs.
+  installGuestViewErrorFilter();
+
   app.name = "Snow App";
 
   app.whenReady().then(() => {

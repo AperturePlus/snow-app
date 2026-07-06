@@ -58,11 +58,6 @@ export type CodebaseSettingsInput = {
   source: string;
 };
 
-export type CodebaseSettingsRecord = CodebaseSettingsInput & {
-  id: string;
-  updatedAt: string;
-};
-
 export type SystemPromptItemInput = {
   promptId: string;
   name: string;
@@ -294,6 +289,12 @@ export type GitCheckoutResult = {
   message: string;
 };
 
+export type DetectedTerminal = {
+  name: string;
+  path: string;
+  family: string;
+};
+
 export type NativeBridge = {
   initializeAppStorage: () => AppStorageInfo;
 
@@ -306,8 +307,6 @@ export type NativeBridge = {
   listApiConfigs: () => ApiConfigRecord[];
   upsertApiConfig: (config: ApiConfigInput) => void;
   deleteApiConfig: (profileName: string) => void;
-  getCodebaseSettings: () => CodebaseSettingsRecord;
-  upsertCodebaseSettings: (settings: CodebaseSettingsInput) => void;
   listSystemPrompts: () => SystemPromptItemRecord[];
   upsertSystemPrompt: (item: SystemPromptItemInput) => void;
   deleteSystemPrompt: (promptId: string) => void;
@@ -353,6 +352,7 @@ export type NativeBridge = {
   callMcpTool: (toolFullName: string, argsJson: string) => string;
   engineInfo: () => string;
   sum: (a: number, b: number) => number;
+  detectTerminals: () => DetectedTerminal[];
   getGitStatus: (repoPath: string) => Promise<GitStatusResult>;
   getGitBranches: (repoPath: string) => Promise<GitBranch[]>;
   gitStageFiles: (

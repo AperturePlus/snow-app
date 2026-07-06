@@ -13,6 +13,14 @@ const DEFAULT_PROXY_BROWSER_SETTING_NAME: &str = "Proxy and browser settings";
 const DEFAULT_PROXY_BROWSER_SETTING_CODE: &str = "proxy_browser_settings";
 const DEFAULT_PROXY_BROWSER_SETTING_VALUE: &str = "{\"enabled\":false,\"port\":7890,\"browserPath\":\"\",\"browserDebugPort\":9222,\"searchEngine\":\"duckduckgo\"}";
 
+const DEFAULT_TERMINAL_SETTING_NAME: &str = "Terminal settings";
+const DEFAULT_TERMINAL_SETTING_CODE: &str = "terminal_settings";
+const DEFAULT_TERMINAL_SETTING_VALUE: &str = "{\"shellPath\":\"\",\"fontFamily\":\"\",\"fontSize\":14,\"fontWeight\":\"normal\",\"lineHeight\":1.2,\"proxy\":\"\"}";
+
+const DEFAULT_CODEBASE_SETTING_NAME: &str = "Codebase settings";
+const DEFAULT_CODEBASE_SETTING_CODE: &str = "codebase_settings";
+const DEFAULT_CODEBASE_SETTING_VALUE: &str = "{\"profileName\":\"default\",\"enabled\":false,\"enableAgentReview\":true,\"enableReranking\":false,\"embeddingType\":\"jina\",\"embeddingModelName\":\"\",\"embeddingBaseUrl\":\"\",\"embeddingApiKey\":\"\",\"embeddingDimensions\":1536,\"batchMaxLines\":10,\"batchConcurrency\":3,\"chunkingMaxLinesPerChunk\":200,\"chunkingMinLinesPerChunk\":10,\"chunkingMinCharsPerChunk\":20,\"chunkingOverlapLines\":20,\"rerankingModelName\":\"\",\"rerankingBaseUrl\":\"\",\"rerankingApiKey\":\"\",\"rerankingContextLength\":4096,\"rerankingTopN\":5,\"configJson\":\"{}\",\"source\":\"manual\"}";
+
 pub fn seed_default_settings(database_path: &Path) -> Result<()> {
     Connection::open(database_path)
         .and_then(|connection| seed_default_settings_with_connection(&connection))
@@ -96,6 +104,18 @@ fn seed_default_settings_with_connection(connection: &Connection) -> rusqlite::R
         DEFAULT_PROXY_BROWSER_SETTING_NAME,
         DEFAULT_PROXY_BROWSER_SETTING_CODE,
         DEFAULT_PROXY_BROWSER_SETTING_VALUE,
+    )?;
+    insert_default_setting(
+        connection,
+        DEFAULT_TERMINAL_SETTING_NAME,
+        DEFAULT_TERMINAL_SETTING_CODE,
+        DEFAULT_TERMINAL_SETTING_VALUE,
+    )?;
+    insert_default_setting(
+        connection,
+        DEFAULT_CODEBASE_SETTING_NAME,
+        DEFAULT_CODEBASE_SETTING_CODE,
+        DEFAULT_CODEBASE_SETTING_VALUE,
     )?;
 
     Ok(())

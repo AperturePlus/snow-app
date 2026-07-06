@@ -68,60 +68,6 @@ pub struct ApiConfigRecord {
 }
 
 #[napi(object)]
-pub struct CodebaseSettingsInput {
-    pub profile_name: String,
-    pub enabled: bool,
-    pub enable_agent_review: bool,
-    pub enable_reranking: bool,
-    pub embedding_type: String,
-    pub embedding_model_name: String,
-    pub embedding_base_url: String,
-    pub embedding_api_key: String,
-    pub embedding_dimensions: i32,
-    pub batch_max_lines: i32,
-    pub batch_concurrency: i32,
-    pub chunking_max_lines_per_chunk: i32,
-    pub chunking_min_lines_per_chunk: i32,
-    pub chunking_min_chars_per_chunk: i32,
-    pub chunking_overlap_lines: i32,
-    pub reranking_model_name: String,
-    pub reranking_base_url: String,
-    pub reranking_api_key: String,
-    pub reranking_context_length: i32,
-    pub reranking_top_n: i32,
-    pub config_json: String,
-    pub source: String,
-}
-
-#[napi(object)]
-pub struct CodebaseSettingsRecord {
-    pub id: String,
-    pub profile_name: String,
-    pub enabled: bool,
-    pub enable_agent_review: bool,
-    pub enable_reranking: bool,
-    pub embedding_type: String,
-    pub embedding_model_name: String,
-    pub embedding_base_url: String,
-    pub embedding_api_key: String,
-    pub embedding_dimensions: i32,
-    pub batch_max_lines: i32,
-    pub batch_concurrency: i32,
-    pub chunking_max_lines_per_chunk: i32,
-    pub chunking_min_lines_per_chunk: i32,
-    pub chunking_min_chars_per_chunk: i32,
-    pub chunking_overlap_lines: i32,
-    pub reranking_model_name: String,
-    pub reranking_base_url: String,
-    pub reranking_api_key: String,
-    pub reranking_context_length: i32,
-    pub reranking_top_n: i32,
-    pub config_json: String,
-    pub source: String,
-    pub updated_at: String,
-}
-
-#[napi(object)]
 pub struct SystemPromptItemInput {
     pub prompt_id: String,
     pub name: String,
@@ -330,16 +276,6 @@ pub fn upsert_api_config(config: ApiConfigInput) -> Result<()> {
 pub fn delete_api_config(profile_name: String) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::api_configs::delete_api_config(&database_path, &profile_name)
-}
-
-pub fn get_codebase_settings() -> Result<CodebaseSettingsRecord> {
-    let database_path = ensure_database_file()?;
-    services::codebase_settings::get_codebase_settings(&database_path)
-}
-
-pub fn upsert_codebase_settings(settings: CodebaseSettingsInput) -> Result<()> {
-    let database_path = ensure_database_file()?;
-    services::codebase_settings::upsert_codebase_settings(&database_path, &settings)
 }
 
 pub fn list_system_prompts() -> Result<Vec<SystemPromptItemRecord>> {

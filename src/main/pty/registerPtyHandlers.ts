@@ -7,9 +7,7 @@ import {
   type PtySessionOptions,
 } from "./ptyManager";
 
-const normalizePtySessionOptions = (
-  value: unknown
-): PtySessionOptions => {
+const normalizePtySessionOptions = (value: unknown): PtySessionOptions => {
   if (typeof value !== "object" || value === null) {
     throw new Error("Invalid PTY session options");
   }
@@ -17,14 +15,19 @@ const normalizePtySessionOptions = (
   const cwd = typeof obj.cwd === "string" ? obj.cwd : process.cwd();
   const cols = typeof obj.cols === "number" ? obj.cols : 80;
   const rows = typeof obj.rows === "number" ? obj.rows : 24;
-  return { cwd, cols, rows };
+  const shellPath =
+    typeof obj.shellPath === "string" ? obj.shellPath : undefined;
+  return { cwd, cols, rows, shellPath };
 };
 
 export const registerPtyHandlers = (): void => {
-  ipcMain.handle("pty:create", (event: IpcMainInvokeEvent, options: unknown) => {
-    const opts = normalizePtySessionOptions(options);
-    return createPtySession(event.sender, opts);
-  });
+  ipcMain.handle(
+    "pty:create",
+    (event: IpcMainInvokeEvent, options: unknown) => {
+      const opts = normalizePtySessionOptions(options);
+      return createPtySession(event.sender, opts);
+    }
+  );
 
   ipcMain.handle(
     "pty:write",
@@ -39,12 +42,7 @@ export const registerPtyHandlers = (): void => {
 
   ipcMain.handle(
     "pty:resize",
-    (
-      event: IpcMainInvokeEvent,
-      id: unknown,
-      cols: unknown,
-      rows: unknown
-    ) => {
+    (event: IpcMainInvokeEvent, id: unknown, cols: unknown, rows: unknown) => {
       if (
         typeof id !== "string" ||
         typeof cols !== "number" ||
