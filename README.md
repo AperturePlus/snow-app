@@ -1,2 +1,148 @@
-# snow-app
-snow-app
+# Snow App
+
+> High-performance cross-platform desktop application powered by Electron, React, TypeScript, and Rust.
+
+[中文文档](./README_zh.md)
+
+## Overview
+
+Snow App is a developer-focused desktop application that integrates AI-powered chat, terminal emulation, SSH remote management, Git tooling, and a built-in browser panel into a single unified workspace. It leverages a Rust native module for performance-critical operations such as SQLite storage, AI streaming, file watching, and HTTP requests.
+
+## Features
+
+- **AI Chat** - Streaming AI assistant with markdown rendering, syntax highlighting, and configurable system prompts
+- **Integrated Terminal** - Full PTY-based terminal emulation powered by node-pty and xterm.js
+- **SSH Management** - Connect to and manage remote servers via SSH with credential persistence
+- **Git Panel** - Visual Git diff viewer and repository management
+- **Browser Panel** - Built-in browser with proxy support for web inspection
+- **MCP Support** - Model Context Protocol integration for extensible AI tooling
+- **Codebase Explorer** - Project file tree with workspace directory management
+- **i18n** - Multi-language support with a locale system
+- **Settings Management** - Granular configuration for API keys, custom headers, proxy, sensitive commands, and more
+- **Cross-Platform** - Runs on macOS, Windows, and Linux
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Shell | Electron 37 |
+| Frontend | React 19, TypeScript 5.9 |
+| Bundler | electron-vite (Vite 4) |
+| Native | Rust 2021 Edition (napi-rs 3) |
+| Packaging | electron-builder 26 |
+| Terminal | node-pty, xterm.js 6 |
+| SSH | ssh2 |
+| Storage | rusqlite (SQLite, bundled) |
+| AI/HTTP | async-openai, reqwest |
+| Markdown | markdown-it, streaming-markdown, highlight.js |
+| Icons | lucide-react |
+
+## Project Structure
+
+```
+snow-app/
+├── src/
+│   ├── main/            # Electron main process
+│   │   ├── app/         # Application bootstrap & window management
+│   │   ├── ipc/         # IPC handler registration
+│   │   ├── native/      # Rust native bridge
+│   │   ├── pty/         # PTY & terminal management
+│   │   ├── settings/    # Configuration stores
+│   │   ├── snowCli/     # CLI path & profile management
+│   │   ├── ssh/         # SSH connection management
+│   │   └── utils/       # Shared utilities
+│   ├── preload/         # Electron preload script
+│   └── renderer/        # React frontend
+│       ├── components/  # UI components (sidebar, main content, right panel)
+│       ├── hooks/       # Custom React hooks
+│       ├── i18n/        # Internationalization
+│       └── utils/       # Frontend utilities
+├── native/              # Rust native module
+│   └── src/
+│       ├── api/         # AI API integration
+│       ├── exports/     # napi-rs export bindings
+│       ├── mcp/         # MCP protocol implementation
+│       ├── prompt/      # System prompt handling
+│       └── storage/     # SQLite persistence
+├── scripts/             # Build & utility scripts
+├── resources/           # App icons & static assets
+└── electron.vite.config.ts
+```
+
+## Prerequisites
+
+- **Node.js** >= 18
+- **Rust** (stable toolchain) - required for building the native module
+- **Cargo** - comes with Rust
+
+### Platform-Specific
+
+- **macOS**: Xcode Command Line Tools
+- **Windows**: Visual Studio Build Tools (C++ workload)
+- **Linux**: `build-essential`, `pkg-config`, and system SQLite (or use bundled)
+
+## Getting Started
+
+### Installation
+
+```bash
+npm install
+```
+
+### Development
+
+```bash
+npm run dev
+```
+
+This starts the Electron app in development mode with hot module replacement.
+
+### Build
+
+```bash
+npm run build
+```
+
+This compiles the Rust native module and bundles the Electron application via electron-vite.
+
+### Package
+
+```bash
+npm run build:app
+```
+
+This builds the app and produces a distributable package via electron-builder. Output is written to `release/`.
+
+### Type Checking
+
+```bash
+npm run check
+```
+
+Runs both TypeScript type checking (`tsc --noEmit`) and Rust checking (`cargo check`).
+
+## Available Scripts
+
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Start development server with HMR |
+| `npm run build` | Build Rust native module + Vite bundle |
+| `npm run build:app` | Build + create distributable package |
+| `npm run build:rust` | Build only the Rust native module |
+| `npm run check` | TypeScript + Rust type checking |
+| `npm run check:ts` | TypeScript type checking only |
+| `npm run preview` | Preview the production build |
+
+## Native Module
+
+The Rust native module (`snow_native`) is compiled to a Node addon (`.node`) via napi-rs. It provides:
+
+- **AI API streaming** - Async streaming responses via async-openai with bring-your-own-transport (BYOT)
+- **SQLite storage** - Embedded database via rusqlite for settings and chat history
+- **File watching** - File system monitoring via the `notify` crate
+- **HTTP client** - Full-featured HTTP client via reqwest with compression support
+- **MCP protocol** - Model Context Protocol implementation
+
+## License
+
+[MIT](./LICENSE) - Copyright (c) 2026 MayMay
