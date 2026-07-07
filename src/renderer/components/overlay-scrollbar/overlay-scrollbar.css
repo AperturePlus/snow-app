@@ -1,0 +1,72 @@
+/* ===== Overlay Scrollbar =====
+   Hides native scrollbars (which occupy document-flow space) and
+   replaces them with lightweight DOM overlay thumbs. The thumbs are
+   managed by scrollbarManager.ts — they float on top of content via
+   position: absolute + transform and never affect layout. */
+
+/* Completely hide native scrollbars on every element */
+* {
+  scrollbar-width: none;
+}
+
+::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* Track container — absolutely positioned inside the scroll host.
+   pointer-events: none so it never blocks clicks on content. */
+.os-track {
+  position: absolute;
+  pointer-events: none;
+  z-index: 9999;
+  overflow: hidden;
+  will-change: transform;
+}
+
+.os-track.os-vertical {
+  right: 0;
+  top: 0;
+  width: 10px;
+}
+
+.os-track.os-horizontal {
+  left: 0;
+  top: 0;
+  height: 10px;
+}
+
+/* Thumb — transparent by default, colored when .os-visible is active */
+.os-thumb {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 999px;
+  background-color: transparent;
+  transition: background-color 0.18s ease;
+  will-change: transform;
+}
+
+.os-track.os-vertical .os-thumb {
+  left: 2px;
+  right: 2px;
+}
+
+.os-track.os-horizontal .os-thumb {
+  top: 2px;
+  bottom: 2px;
+}
+
+/* Visible state — re-enable pointer events for drag */
+.os-track.os-visible .os-thumb {
+  pointer-events: auto;
+  background-color: var(--scrollbar-thumb);
+}
+
+.os-track.os-visible .os-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+.os-track.os-visible .os-thumb:active {
+  background-color: var(--scrollbar-thumb-active);
+}

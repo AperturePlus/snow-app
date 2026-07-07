@@ -192,6 +192,9 @@ export const loadNativeBridge = (): NativeBridge => {
       abortResponseStream: () => false,
       engineInfo: () => "Rust native bridge is not built yet",
       sum: (a: number, b: number) => a + b,
+      detectTerminals: () => {
+        throw new Error("Rust native bridge is required to detect terminals");
+      },
       getGitStatus: () => {
         throw new Error("Rust native bridge is required for git status");
       },

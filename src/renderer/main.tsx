@@ -4,6 +4,7 @@ import { App } from "./App";
 import { I18nProvider } from "./i18n";
 import "@xterm/xterm/css/xterm.css";
 import "./styles.css";
+import "./components/overlay-scrollbar/overlay-scrollbar.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

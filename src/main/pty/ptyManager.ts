@@ -2,6 +2,7 @@ import { type WebContents } from "electron";
 import { createRequire } from "node:module";
 import { chmodSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
+import type { IPty } from "node-pty";
 
 import { isSshPath, parseSshUrl } from "../ssh/sshManager";
 import { getDecryptedSecret, getSshCredential } from "../ssh/sshCredentials";
@@ -18,7 +19,7 @@ export type PtySessionOptions = {
 
 export type PtySession = {
   id: string;
-  pty: nodePty.IPty;
+  pty: IPty;
   webContents: WebContents;
 };
 

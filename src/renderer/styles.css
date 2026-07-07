@@ -116,6 +116,7 @@ button {
   padding: 0;
   margin: 0;
   color: inherit;
+  -webkit-app-region: no-drag;
 }
 
 input {
@@ -208,7 +209,7 @@ input {
   padding: 10px;
   background: var(--app-bg);
   transition: grid-template-columns 0.18s ease, column-gap 0.18s ease;
-  -webkit-app-region: no-drag;
+  -webkit-app-region: drag;
   user-select: none;
 }
 
@@ -370,11 +371,34 @@ input {
 .window-controls-bar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   height: 32px;
   flex-shrink: 0;
   background: var(--app-bg);
   -webkit-app-region: drag;
+}
+
+.window-controls-logo {
+  display: flex;
+  align-items: center;
+  padding-left: 12px;
+  -webkit-app-region: no-drag;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.window-controls-logo img {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.window-controls-buttons {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  height: 100%;
+  -webkit-app-region: no-drag;
 }
 
 .window-control-btn {
@@ -904,7 +928,6 @@ input {
   overflow-y: auto;
   padding-left: 10px;
   padding-right: 2px;
-  scrollbar-gutter: stable;
 }
 
 .workspace-directory-list::before {
@@ -1315,7 +1338,6 @@ input {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 2px 0;
-  scrollbar-gutter: stable;
 }
 
 .explorer-tree-row {
@@ -1525,7 +1547,6 @@ input {
   min-height: 0;
   overflow-y: auto;
   padding-bottom: 8px;
-  scrollbar-gutter: stable;
 }
 
 .settings-list {
@@ -1641,7 +1662,6 @@ input {
   overflow: auto;
   padding: 18px 22px;
   color: var(--text-primary);
-  scrollbar-gutter: stable;
 }
 
 .api-settings-page-header {
@@ -2261,7 +2281,6 @@ input {
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
   background: var(--bg-secondary);
-  scrollbar-gutter: stable;
 }
 
 .api-settings-tree-node {
@@ -2383,12 +2402,6 @@ input {
   background: var(--bg-secondary);
   clip-path: inset(0 round var(--radius-lg));
   contain: paint;
-  scrollbar-gutter: stable;
-}
-
-.api-settings-table-wrap::-webkit-scrollbar-track,
-.api-settings-table-wrap::-webkit-scrollbar-corner {
-  background: var(--bg-tertiary);
 }
 
 .api-settings-table {
@@ -3062,7 +3075,6 @@ input {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  scrollbar-gutter: stable;
   transition: --chat-flex-grow 0.35s ease;
 }
 
@@ -3074,7 +3086,6 @@ input {
 
 .chat-content.is-empty .chat-area {
   overflow: visible;
-  scrollbar-gutter: auto;
   justify-content: center;
 }
 /* Has-messages state: chat-area grows to fill, pushing input to bottom */
@@ -3684,8 +3695,6 @@ input {
   max-height: 200px;
   overflow-y: auto;
   overflow-x: hidden;
-  /* leave room on the right for the scrollbar gutter */
-  scrollbar-gutter: stable;
 }
 
 /* When expanded, remove height limit but keep scrolling for very long content */
@@ -5262,48 +5271,6 @@ input {
   color: var(--accent-red-text);
 }
 
-/* ===== Scrollbar ===== */
-/* Electron = Chromium only: use ::-webkit-scrollbar-* pseudo-elements for full control.
-   Do NOT set scrollbar-width / scrollbar-color on * — modern Chromium supports them
-   and they override ::-webkit-scrollbar-* styles, breaking auto-hide.
-   Auto-hide is driven by JS hook useScrollbarAutoHide which toggles `.sb-visible`
-   on scrollable elements during scroll / scrollbar-track hover. */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  min-width: 36px;
-  min-height: 36px;
-  border: 3px solid transparent;
-  border-radius: 999px;
-  background-color: transparent;
-  background-clip: padding-box;
-  transition: background-color 0.18s ease;
-}
-
-/* visible state — toggled by JS hook */
-.sb-visible::-webkit-scrollbar-thumb {
-  background-color: var(--scrollbar-thumb);
-}
-
-.sb-visible::-webkit-scrollbar-thumb:hover {
-  background-color: var(--scrollbar-thumb-hover);
-}
-
-.sb-visible::-webkit-scrollbar-thumb:active {
-  background-color: var(--scrollbar-thumb-active);
-}
-
-::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
 /* ===== Selection ===== */
 ::selection {
   background: var(--selection-bg);
@@ -5506,7 +5473,6 @@ input {
   display: flex;
   align-items: center;
   gap: 8px;
-  -webkit-app-region: no-drag;
   overflow: hidden;
   min-width: 0;
 }
@@ -5632,7 +5598,6 @@ input {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  scrollbar-gutter: stable;
 }
 
 .git-control-header {
@@ -5952,9 +5917,13 @@ input {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 .git-file-item.selected .git-file-name {
   color: var(--text-primary);
+}
+
+.git-file-name.deleted {
+  text-decoration: line-through;
+  opacity: 0.6;
 }
 
 .git-file-action {
@@ -6081,7 +6050,6 @@ input {
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.5;
-  scrollbar-gutter: stable;
 }
 
 .diff-line {
@@ -6164,23 +6132,6 @@ input {
   padding: 4px 6px;
   overflow-x: auto;
   overflow-y: hidden;
-}
-
-.right-panel-tab-list::-webkit-scrollbar {
-  height: 3px;
-}
-
-.right-panel-tab-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.right-panel-tab-list::-webkit-scrollbar-thumb {
-  background: var(--border-light);
-  border-radius: 2px;
-}
-
-.right-panel-tab-list::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
 }
 
 .right-panel-tab-item {

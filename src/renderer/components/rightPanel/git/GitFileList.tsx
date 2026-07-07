@@ -144,7 +144,12 @@ export const GitFileList = ({
                 >
                   {getStatusLabel(file.status)}
                 </span>
-                <span className="git-file-name" title={file.path}>
+                <span
+                  className={`git-file-name${
+                    file.status === "D" ? " deleted" : ""
+                  }`}
+                  title={file.path}
+                >
                   {file.path}
                 </span>
                 <button

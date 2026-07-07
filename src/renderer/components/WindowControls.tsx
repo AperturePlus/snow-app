@@ -1,5 +1,6 @@
 import { Minus, Square, X, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
+import appIcon from "../assets/app-icon.png";
 
 /**
  * Windows 自定义窗口操作栏 (最小化 / 最大化 / 关闭)
@@ -43,33 +44,38 @@ export const WindowControls = (): React.JSX.Element | null => {
 
   return (
     <div className="window-controls-bar" aria-label="Window controls">
-      <button
-        type="button"
-        className="window-control-btn minimize-btn"
-        aria-label="Minimize"
-        title="Minimize"
-        onClick={handleMinimize}
-      >
-        <Minus size={16} strokeWidth={1.5} />
-      </button>
-      <button
-        type="button"
-        className="window-control-btn maximize-btn"
-        aria-label={isMaximized ? "Restore" : "Maximize"}
-        title={isMaximized ? "Restore" : "Maximize"}
-        onClick={handleToggleMaximize}
-      >
-        <MaximizeIcon size={14} strokeWidth={1.5} />
-      </button>
-      <button
-        type="button"
-        className="window-control-btn close-btn"
-        aria-label="Close"
-        title="Close"
-        onClick={handleClose}
-      >
-        <X size={16} strokeWidth={1.5} />
-      </button>
+      <div className="window-controls-logo">
+        <img src={appIcon} alt="Snow" draggable={false} />
+      </div>
+      <div className="window-controls-buttons">
+        <button
+          type="button"
+          className="window-control-btn minimize-btn"
+          aria-label="Minimize"
+          title="Minimize"
+          onClick={handleMinimize}
+        >
+          <Minus size={16} strokeWidth={1.5} />
+        </button>
+        <button
+          type="button"
+          className="window-control-btn maximize-btn"
+          aria-label={isMaximized ? "Restore" : "Maximize"}
+          title={isMaximized ? "Restore" : "Maximize"}
+          onClick={handleToggleMaximize}
+        >
+          <MaximizeIcon size={14} strokeWidth={1.5} />
+        </button>
+        <button
+          type="button"
+          className="window-control-btn close-btn"
+          aria-label="Close"
+          title="Close"
+          onClick={handleClose}
+        >
+          <X size={16} strokeWidth={1.5} />
+        </button>
+      </div>
     </div>
   );
 };
