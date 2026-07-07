@@ -4,6 +4,9 @@ use serde_json::{json, Value};
 
 use super::builtin::{execute_builtin_tool, get_builtin_tools};
 
+// NOTE: list_mcp_tools 和 call_mcp_tool 的 #[napi] 导出在 exports/api.rs 中，
+// 此处仅保留内部函数供 exports 层调用。
+
 #[napi(object)]
 pub struct McpToolDefinition {
     pub name: String,
@@ -25,7 +28,6 @@ impl McpTool {
     }
 }
 
-#[napi]
 pub fn list_mcp_tools() -> napi::Result<Vec<McpToolDefinition>> {
     let tools = collect_all_mcp_tools()?;
 
@@ -152,7 +154,6 @@ fn load_external_mcp_tools(
 ///
 /// 对于内置服务（如 filesystem），直接在 Rust 侧执行；
 /// 对于外部 MCP 服务（未来支持），将转发到对应的 MCP 服务器。
-#[napi]
 pub fn call_mcp_tool(tool_full_name: String, args_json: String) -> napi::Result<String> {
     let args: Value = serde_json::from_str(&args_json).unwrap_or_else(|_| json!({}));
 

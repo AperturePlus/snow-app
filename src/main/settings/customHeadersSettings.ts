@@ -45,7 +45,9 @@ const normalizeHeaders = (value: unknown): Record<string, string> => {
   return headers;
 };
 
-const isLegacyHeadersRecord = (value: unknown): value is Record<string, unknown> =>
+const isLegacyHeadersRecord = (
+  value: unknown
+): value is Record<string, unknown> =>
   isRecord(value) && !("active" in value) && !("schemes" in value);
 
 const normalizeScheme = (
@@ -117,36 +119,36 @@ const toNativeInput = (
   sortOrder,
 });
 
-const persistCustomHeadersConfig = (
+const persistCustomHeadersConfig = async (
   native: NativeBridge,
   config: SnowCliCustomHeadersConfig
-): void => {
-  const existing = native.listCustomHeaderSchemes();
+): Promise<void> => {
+  const existing = await native.listCustomHeaderSchemes();
   const nextIds = new Set(config.schemes.map((scheme) => scheme.id));
 
   for (const item of existing) {
     if (!nextIds.has(item.schemeId)) {
-      native.deleteCustomHeaderScheme(item.schemeId);
+      await native.deleteCustomHeaderScheme(item.schemeId);
     }
   }
 
-  config.schemes.forEach((scheme, index) => {
-    native.upsertCustomHeaderScheme(
+  for (const [index, scheme] of config.schemes.entries()) {
+    await native.upsertCustomHeaderScheme(
       toNativeInput(scheme, scheme.id === config.active, index)
     );
-  });
+  }
 };
 
-export const readSnowCliCustomHeadersConfig = (
+export const readSnowCliCustomHeadersConfig = async (
   native: NativeBridge
-): CustomHeaderSchemeRecord[] => {
+): Promise<CustomHeaderSchemeRecord[]> => {
   if (!existsSync(SNOW_CLI_CUSTOM_HEADERS_FILE)) {
     return native.listCustomHeaderSchemes();
   }
 
   const config = readJsonFile(SNOW_CLI_CUSTOM_HEADERS_FILE);
   const normalized = normalizeConfig(config);
-  persistCustomHeadersConfig(native, normalized);
+  await persistCustomHeadersConfig(native, normalized);
   return native.listCustomHeaderSchemes();
 };
 

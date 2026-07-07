@@ -1,0 +1,33 @@
+export type ChatConversationRecord = {
+  conversationId: string;
+  title: string;
+  summary: string;
+  lastMessagePreview: string;
+  messageCount: number;
+  model: string;
+  status: string;
+  directoryId: string;
+  createdAt: string;
+  updatedAt: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+};
+
+export type ChatConversationPage = {
+  items: ChatConversationRecord[];
+  total: number;
+};
+
+export type ChatMessageRecord = {
+  id: string;
+  role: string;
+  content: string;
+  thinking: string;
+  status: string;
+  model: string;
+  responseId: string;
+  toolCallsJson: string;
+  createdAt: string;
+};

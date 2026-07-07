@@ -30,7 +30,9 @@ const toPort = (value: unknown, defaultValue: number): number => {
     : defaultValue;
 };
 
-const normalizeProxyBrowserSettings = (value: unknown): ProxyBrowserSettings => {
+const normalizeProxyBrowserSettings = (
+  value: unknown
+): ProxyBrowserSettings => {
   const source = isRecord(value) ? value : {};
 
   return {
@@ -49,11 +51,11 @@ const normalizeProxyBrowserSettings = (value: unknown): ProxyBrowserSettings => 
   };
 };
 
-const persistProxyBrowserSettings = (
+const persistProxyBrowserSettings = async (
   native: NativeBridge,
   settings: ProxyBrowserSettings
-): ProxyBrowserSettings => {
-  native.setSystemSetting(
+): Promise<ProxyBrowserSettings> => {
+  await native.setSystemSetting(
     PROXY_BROWSER_SETTING_NAME,
     PROXY_BROWSER_SETTING_CODE,
     JSON.stringify(settings)
@@ -62,9 +64,9 @@ const persistProxyBrowserSettings = (
   return settings;
 };
 
-export const readSnowCliProxyConfig = (
+export const readSnowCliProxyConfig = async (
   native: NativeBridge
-): ProxyBrowserSettings => {
+): Promise<ProxyBrowserSettings> => {
   if (!existsSync(SNOW_CLI_PROXY_CONFIG_FILE)) {
     return persistProxyBrowserSettings(native, DEFAULT_PROXY_BROWSER_SETTINGS);
   }

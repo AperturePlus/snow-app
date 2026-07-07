@@ -103,41 +103,45 @@ const toNativeInput = (
   source: SENSITIVE_COMMAND_SOURCE_SNOW_CLI,
 });
 
-const persistSensitiveCommandConfigs = (
+const persistSensitiveCommandConfigs = async (
   native: NativeBridge,
   configs: SnowCliSensitiveCommandConfig[]
-): void => {
+): Promise<void> => {
   const importKeys = new Set<string>();
 
-  configs.forEach((config) => {
+  for (const config of configs) {
     if (!config.exists) {
-      return;
+      continue;
     }
 
-    config.commands.forEach((command, index) => {
+    for (const [index, command] of config.commands.entries()) {
       const input = toNativeInput(config.scope, command, index);
       importKeys.add(`${input.scope}:${input.commandId}`);
-      native.upsertSensitiveCommandConfig(input);
-    });
-  });
+      await native.upsertSensitiveCommandConfig(input);
+    }
+  }
 
-  for (const item of native.listSensitiveCommandConfigs()) {
+  const existing = await native.listSensitiveCommandConfigs();
+  for (const item of existing) {
     const key = `${item.scope}:${item.commandId}`;
-    if (item.source === SENSITIVE_COMMAND_SOURCE_SNOW_CLI && !importKeys.has(key)) {
-      native.deleteSensitiveCommandConfig(item.commandId, item.scope);
+    if (
+      item.source === SENSITIVE_COMMAND_SOURCE_SNOW_CLI &&
+      !importKeys.has(key)
+    ) {
+      await native.deleteSensitiveCommandConfig(item.commandId, item.scope);
     }
   }
 };
 
-export const readSnowCliSensitiveCommandConfig = (
+export const readSnowCliSensitiveCommandConfig = async (
   native: NativeBridge
-): SensitiveCommandConfigRecord[] => {
+): Promise<SensitiveCommandConfigRecord[]> => {
   const configs = [
     readConfigByScope("global", SNOW_CLI_GLOBAL_SETTINGS_FILE),
     readConfigByScope("project", SNOW_CLI_PROJECT_SETTINGS_FILE),
   ];
 
-  persistSensitiveCommandConfigs(native, configs);
+  await persistSensitiveCommandConfigs(native, configs);
   return native.listSensitiveCommandConfigs();
 };
 

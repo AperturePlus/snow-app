@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
 #[napi(object)]
@@ -191,11 +192,21 @@ fn detect_posix_terminals() -> Vec<DetectedTerminal> {
 }
 
 #[napi]
-pub fn detect_terminals() -> napi::Result<Vec<DetectedTerminal>> {
-    let terminals = if is_windows() {
-        detect_windows_terminals()
-    } else {
-        detect_posix_terminals()
-    };
-    Ok(terminals)
+pub async fn detect_terminals() -> napi::Result<Vec<DetectedTerminal>> {
+    // 文件系统 I/O 操作使用 spawn_blocking 避免阻塞 Node.js 主线程
+    tokio::task::spawn_blocking(|| {
+        let terminals = if is_windows() {
+            detect_windows_terminals()
+        } else {
+            detect_posix_terminals()
+        };
+        Ok(terminals)
+    })
+    .await
+    .map_err(|e| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to detect terminals: {}", e),
+        )
+    })?
 }

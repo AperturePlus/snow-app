@@ -150,36 +150,37 @@ const toNativeInput = (
   source: MCP_SOURCE_SNOW_CLI,
 });
 
-const persistMcpConfigs = (
+const persistMcpConfigs = async (
   native: NativeBridge,
   configs: SnowCliMcpConfig[]
-): void => {
+): Promise<void> => {
   const nextIds = new Set<string>();
 
-  configs.forEach((config) => {
-    config.servers.forEach((server, index) => {
+  for (const config of configs) {
+    for (const [index, server] of config.servers.entries()) {
       const input = toNativeInput(config.scope, server, index);
       nextIds.add(input.serverId);
-      native.upsertMcpServerConfig(input);
-    });
-  });
+      await native.upsertMcpServerConfig(input);
+    }
+  }
 
-  for (const item of native.listMcpServerConfigs()) {
+  const existing = await native.listMcpServerConfigs();
+  for (const item of existing) {
     if (item.source === MCP_SOURCE_SNOW_CLI && !nextIds.has(item.serverId)) {
-      native.deleteMcpServerConfig(item.serverId);
+      await native.deleteMcpServerConfig(item.serverId);
     }
   }
 };
 
-export const readSnowCliMcpConfig = (
+export const readSnowCliMcpConfig = async (
   native: NativeBridge
-): McpServerConfigRecord[] => {
+): Promise<McpServerConfigRecord[]> => {
   const configs = [
     readConfigByScope("global", SNOW_CLI_GLOBAL_SETTINGS_FILE),
     readConfigByScope("project", SNOW_CLI_PROJECT_SETTINGS_FILE),
   ];
 
-  persistMcpConfigs(native, configs);
+  await persistMcpConfigs(native, configs);
   return native.listMcpServerConfigs();
 };
 

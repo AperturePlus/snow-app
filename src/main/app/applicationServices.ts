@@ -2,26 +2,28 @@ import { app } from "electron";
 import type { AppStorageInfo, NativeBridge } from "../native/types";
 import { createWorkspaceDirectoryInput } from "../settings/workspaceDirectories";
 
-const ensureDefaultWorkspaceDirectory = (native: NativeBridge): void => {
-  const directories = native.listWorkspaceDirectories();
+const ensureDefaultWorkspaceDirectory = async (
+  native: NativeBridge
+): Promise<void> => {
+  const directories = await native.listWorkspaceDirectories();
 
   if (directories.length === 0) {
-    native.upsertWorkspaceDirectory(
+    await native.upsertWorkspaceDirectory(
       createWorkspaceDirectoryInput(app.getPath("home"), "local", 0)
     );
     return;
   }
 
   if (!directories.some((directory) => directory.isActive)) {
-    native.activateWorkspaceDirectory(directories[0].directoryId);
+    await native.activateWorkspaceDirectory(directories[0].directoryId);
   }
 };
 
-export const initializeApplicationServices = (
+export const initializeApplicationServices = async (
   native: NativeBridge
-): AppStorageInfo => {
-  const storageInfo = native.initializeAppStorage();
-  ensureDefaultWorkspaceDirectory(native);
+): Promise<AppStorageInfo> => {
+  const storageInfo = await native.initializeAppStorage();
+  await ensureDefaultWorkspaceDirectory(native);
   console.info("Snow App storage initialized:", storageInfo.databasePath);
   return storageInfo;
 };

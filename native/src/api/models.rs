@@ -359,7 +359,6 @@ pub fn fetch_available_models(
     Ok(models)
 }
 
-#[napi]
 pub fn fetch_available_models_for_active_config() -> Result<Vec<Model>> {
     let context = get_active_api_request_context()?;
     let config = ApiConfigForModels {

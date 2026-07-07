@@ -86,28 +86,28 @@ const toNativeInput = (
   sortOrder,
 });
 
-const persistSystemPromptConfig = (
+const persistSystemPromptConfig = async (
   native: NativeBridge,
   config: SnowCliSystemPromptConfig
-): void => {
+): Promise<void> => {
   const activeSet = new Set(config.active);
-  const existing = native.listSystemPrompts();
+  const existing = await native.listSystemPrompts();
 
   for (const item of existing) {
     if (!config.prompts.some((prompt) => prompt.id === item.promptId)) {
-      native.deleteSystemPrompt(item.promptId);
+      await native.deleteSystemPrompt(item.promptId);
     }
   }
 
-  config.prompts.forEach((prompt, index) => {
+  for (const [index, prompt] of config.prompts.entries()) {
     const isActive = activeSet.has(prompt.id);
-    native.upsertSystemPrompt(toNativeInput(prompt, isActive, index));
-  });
+    await native.upsertSystemPrompt(toNativeInput(prompt, isActive, index));
+  }
 };
 
-export const readSnowCliSystemPromptConfig = (
+export const readSnowCliSystemPromptConfig = async (
   native: NativeBridge
-): SystemPromptItemRecord[] => {
+): Promise<SystemPromptItemRecord[]> => {
   if (
     !existsSync(SNOW_CLI_SYSTEM_PROMPT_JSON_FILE) &&
     existsSync(SNOW_CLI_SYSTEM_PROMPT_TXT_FILE)
@@ -120,7 +120,7 @@ export const readSnowCliSystemPromptConfig = (
           ? [{ id: "default", name: "Default", content: txtContent }]
           : [],
     };
-    persistSystemPromptConfig(native, migrated);
+    await persistSystemPromptConfig(native, migrated);
     return native.listSystemPrompts();
   }
 
@@ -130,7 +130,7 @@ export const readSnowCliSystemPromptConfig = (
 
   const config = readJsonFile(SNOW_CLI_SYSTEM_PROMPT_JSON_FILE);
   const normalized = normalizeConfig(config);
-  persistSystemPromptConfig(native, normalized);
+  await persistSystemPromptConfig(native, normalized);
   return native.listSystemPrompts();
 };
 

@@ -134,15 +134,27 @@ impl BashService {
             ("sh".to_string(), vec!["-c".to_string(), command.to_string()])
         };
 
-        let mut child = Command::new(&shell)
-            .args(&shell_args)
+        let mut cmd = Command::new(&shell);
+        cmd.args(&shell_args)
             .current_dir(working_directory)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .env("LANG", "en_US.UTF-8")
-            .env("LC_ALL", "en_US.UTF-8")
-            .spawn()
+            .env("LC_ALL", "en_US.UTF-8");
+
+        // On Windows, prevent a console window from flashing on screen
+        // when spawning processes from a GUI application.
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            // CREATE_NO_WINDOW flag (0x08000000) prevents the console window
+            // from appearing and disappearing.
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+
+        let mut child = cmd.spawn()
             .map_err(|e| {
                 Error::new(
                     Status::GenericFailure,

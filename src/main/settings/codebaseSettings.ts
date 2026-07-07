@@ -117,12 +117,12 @@ export const normalizeCodebaseSettings = (
   };
 };
 
-export const persistCodebaseSettings = (
+export const persistCodebaseSettings = async (
   native: NativeBridge,
   settings: CodebaseSettingsInput
-): CodebaseSettingsInput => {
+): Promise<CodebaseSettingsInput> => {
   const normalized = normalizeCodebaseSettings(settings);
-  native.setSystemSetting(
+  await native.setSystemSetting(
     CODEBASE_SETTING_NAME,
     CODEBASE_SETTING_CODE,
     JSON.stringify(normalized)
@@ -130,9 +130,9 @@ export const persistCodebaseSettings = (
   return normalized;
 };
 
-export const readSnowCliCodebaseSettings = (
+export const readSnowCliCodebaseSettings = async (
   native: NativeBridge
-): CodebaseSettingsInput => {
+): Promise<CodebaseSettingsInput> => {
   const globalSettings = readJsonFile(SNOW_CLI_GLOBAL_SETTINGS_FILE);
   const projectSettings = readJsonFile(SNOW_CLI_PROJECT_SETTINGS_FILE);
   const globalCodebase = getCodebaseObject(globalSettings);
@@ -174,6 +174,5 @@ export const readSnowCliCodebaseSettings = (
     }),
     source: "snow-cli",
   });
-
-  return persistCodebaseSettings(native, config);
+  return await persistCodebaseSettings(native, config);
 };

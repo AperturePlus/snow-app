@@ -14,17 +14,17 @@ export const bootstrapApplication = (): void => {
   app.name = "Snow App";
 
   app.whenReady().then(() => {
-    initializeApplicationServices(native);
+    initializeApplicationServices(native).then(() => {
+      Menu.setApplicationMenu(null);
+      nativeTheme.themeSource = "system";
 
-    Menu.setApplicationMenu(null);
-    nativeTheme.themeSource = "system";
+      if (isMacOS && app.dock) {
+        app.dock.setIcon(nativeImage.createFromPath(APP_ICON_PATH));
+      }
 
-    if (isMacOS && app.dock) {
-      app.dock.setIcon(nativeImage.createFromPath(APP_ICON_PATH));
-    }
-
-    registerIpcHandlers(native);
-    createWindow();
+      registerIpcHandlers(native);
+      createWindow();
+    });
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {

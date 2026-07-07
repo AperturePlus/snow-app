@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
 use crate::api::config::get_active_custom_headers;
@@ -20,19 +21,37 @@ use crate::mcp::tools::{
 use crate::storage::initialize_app_storage;
 
 #[napi]
-pub fn fetch_available_models() -> napi::Result<Vec<Model>> {
-    fetch_available_models_for_active_config()
+pub async fn fetch_available_models() -> napi::Result<Vec<Model>> {
+    // 使用 spawn_blocking 确保 HTTP 请求和 SQLite I/O 不阻塞 Node.js 主线程
+    tokio::task::spawn_blocking(move || fetch_available_models_for_active_config())
+        .await
+        .map_err(|e| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to execute fetch_available_models: {}", e),
+            )
+        })?
 }
 
 #[napi]
-pub fn fetch_available_models_for_config(config: ApiConfigForModels) -> napi::Result<Vec<Model>> {
-    let storage_info = initialize_app_storage()?;
-    let database_path = PathBuf::from(storage_info.database_path);
-    let custom_header_schemes =
-        crate::storage::services::custom_header_schemes::list_custom_header_schemes(&database_path)?;
-    let custom_headers = get_active_custom_headers(&custom_header_schemes);
+pub async fn fetch_available_models_for_config(config: ApiConfigForModels) -> napi::Result<Vec<Model>> {
+    // 使用 spawn_blocking 确保 HTTP 请求和 SQLite I/O 不阻塞 Node.js 主线程
+    tokio::task::spawn_blocking(move || {
+        let storage_info = initialize_app_storage()?;
+        let database_path = PathBuf::from(storage_info.database_path);
+        let custom_header_schemes =
+            crate::storage::services::custom_header_schemes::list_custom_header_schemes(&database_path)?;
+        let custom_headers = get_active_custom_headers(&custom_header_schemes);
 
-    fetch_models_with_config(&config, &custom_headers)
+        fetch_models_with_config(&config, &custom_headers)
+    })
+    .await
+    .map_err(|e| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to execute fetch_available_models_for_config: {}", e),
+        )
+    })?
 }
 
 #[napi(
@@ -57,11 +76,27 @@ pub async fn generate_conversation_summary(conversation_id: String) -> napi::Res
 }
 
 #[napi]
-pub fn list_mcp_tools() -> napi::Result<Vec<McpToolDefinition>> {
-    list_all_mcp_tools()
+pub async fn list_mcp_tools() -> napi::Result<Vec<McpToolDefinition>> {
+    // 使用 spawn_blocking 确保 SQLite I/O 不阻塞 Node.js 主线程
+    tokio::task::spawn_blocking(move || list_all_mcp_tools())
+        .await
+        .map_err(|e| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to execute list_mcp_tools: {}", e),
+            )
+        })?
 }
 
 #[napi]
-pub fn call_mcp_tool(tool_full_name: String, args_json: String) -> napi::Result<String> {
-    call_tool(tool_full_name, args_json)
+pub async fn call_mcp_tool(tool_full_name: String, args_json: String) -> napi::Result<String> {
+    // 使用 spawn_blocking 确保工具执行（如终端命令、文件操作）不阻塞 Node.js 主线程
+    tokio::task::spawn_blocking(move || call_tool(tool_full_name, args_json))
+        .await
+        .map_err(|e| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to execute call_mcp_tool: {}", e),
+            )
+        })?
 }

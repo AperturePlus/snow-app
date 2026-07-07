@@ -307,64 +307,78 @@ export type DetectedTerminal = {
 };
 
 export type NativeBridge = {
-  initializeAppStorage: () => AppStorageInfo;
+  initializeAppStorage: () => Promise<AppStorageInfo>;
 
-  getSystemSettingValue: (settingCode: string) => string | null;
+  getSystemSettingValue: (settingCode: string) => Promise<string | null>;
   setSystemSetting: (
     settingName: string,
     settingCode: string,
     settingValue: string
-  ) => void;
-  listApiConfigs: () => ApiConfigRecord[];
-  upsertApiConfig: (config: ApiConfigInput) => void;
-  deleteApiConfig: (profileName: string) => void;
-  listSystemPrompts: () => SystemPromptItemRecord[];
-  upsertSystemPrompt: (item: SystemPromptItemInput) => void;
-  deleteSystemPrompt: (promptId: string) => void;
-  listCustomHeaderSchemes: () => CustomHeaderSchemeRecord[];
-  upsertCustomHeaderScheme: (item: CustomHeaderSchemeInput) => void;
-  deleteCustomHeaderScheme: (schemeId: string) => void;
-  listWorkspaceDirectories: () => WorkspaceDirectoryRecord[];
-  upsertWorkspaceDirectory: (item: WorkspaceDirectoryInput) => void;
-  activateWorkspaceDirectory: (directoryId: string) => void;
-  reorderWorkspaceDirectories: (items: WorkspaceDirectoryInput[]) => void;
-  deleteWorkspaceDirectory: (directoryId: string) => void;
-  readDirectoryEntries: (dirPath: string) => DirectoryEntry[];
-  searchFiles: (rootDir: string, query: string) => FileSearchResult[];
-  listMcpServerConfigs: () => McpServerConfigRecord[];
-  upsertMcpServerConfig: (item: McpServerConfigInput) => void;
-  deleteMcpServerConfig: (serverId: string) => void;
-  listSensitiveCommandConfigs: () => SensitiveCommandConfigRecord[];
-  upsertSensitiveCommandConfig: (item: SensitiveCommandConfigInput) => void;
-  deleteSensitiveCommandConfig: (commandId: string, scope: string) => void;
-  listChatConversations: (directoryId: string) => ChatConversationRecord[];
+  ) => Promise<void>;
+  listApiConfigs: () => Promise<ApiConfigRecord[]>;
+  upsertApiConfig: (config: ApiConfigInput) => Promise<void>;
+  deleteApiConfig: (profileName: string) => Promise<void>;
+  listSystemPrompts: () => Promise<SystemPromptItemRecord[]>;
+  upsertSystemPrompt: (item: SystemPromptItemInput) => Promise<void>;
+  deleteSystemPrompt: (promptId: string) => Promise<void>;
+  listCustomHeaderSchemes: () => Promise<CustomHeaderSchemeRecord[]>;
+  upsertCustomHeaderScheme: (item: CustomHeaderSchemeInput) => Promise<void>;
+  deleteCustomHeaderScheme: (schemeId: string) => Promise<void>;
+  listWorkspaceDirectories: () => Promise<WorkspaceDirectoryRecord[]>;
+  upsertWorkspaceDirectory: (item: WorkspaceDirectoryInput) => Promise<void>;
+  activateWorkspaceDirectory: (directoryId: string) => Promise<void>;
+  reorderWorkspaceDirectories: (
+    items: WorkspaceDirectoryInput[]
+  ) => Promise<void>;
+  deleteWorkspaceDirectory: (directoryId: string) => Promise<void>;
+  readDirectoryEntries: (dirPath: string) => Promise<DirectoryEntry[]>;
+  searchFiles: (rootDir: string, query: string) => Promise<FileSearchResult[]>;
+  listMcpServerConfigs: () => Promise<McpServerConfigRecord[]>;
+  upsertMcpServerConfig: (item: McpServerConfigInput) => Promise<void>;
+  deleteMcpServerConfig: (serverId: string) => Promise<void>;
+  listSensitiveCommandConfigs: () => Promise<SensitiveCommandConfigRecord[]>;
+  upsertSensitiveCommandConfig: (
+    item: SensitiveCommandConfigInput
+  ) => Promise<void>;
+  deleteSensitiveCommandConfig: (
+    commandId: string,
+    scope: string
+  ) => Promise<void>;
+  listChatConversations: (
+    directoryId: string
+  ) => Promise<ChatConversationRecord[]>;
   listChatConversationsPaginated: (
     directoryId: string,
     limit: number,
     offset: number
-  ) => ChatConversationPage;
-  listPinnedConversations: (directoryId: string) => ChatConversationRecord[];
+  ) => Promise<ChatConversationPage>;
+  listPinnedConversations: (
+    directoryId: string
+  ) => Promise<ChatConversationRecord[]>;
   getChatConversation: (
     conversationId: string
-  ) => ChatConversationRecord | null;
-  updateConversationStatus: (conversationId: string, status: string) => void;
-  renameConversation: (conversationId: string, title: string) => void;
-  deleteConversation: (conversationId: string) => void;
-  listChatMessages: (conversationId: string) => ChatMessageRecord[];
+  ) => Promise<ChatConversationRecord | null>;
+  updateConversationStatus: (
+    conversationId: string,
+    status: string
+  ) => Promise<void>;
+  renameConversation: (conversationId: string, title: string) => Promise<void>;
+  deleteConversation: (conversationId: string) => Promise<void>;
+  listChatMessages: (conversationId: string) => Promise<ChatMessageRecord[]>;
   generateConversationSummary: (conversationId: string) => Promise<string>;
-  fetchAvailableModels: () => Model[];
-  fetchAvailableModelsForConfig: (config: ApiModelsConfig) => Model[];
+  fetchAvailableModels: () => Promise<Model[]>;
+  fetchAvailableModelsForConfig: (config: ApiModelsConfig) => Promise<Model[]>;
   createResponseStream: (
     request: ResponsesApiRequest,
     onChunk: (chunk: ResponsesApiStreamChunk) => void,
     streamId: string
   ) => Promise<ResponsesApiResult>;
   abortResponseStream: (streamId: string) => boolean;
-  listMcpTools: () => McpToolDefinition[];
-  callMcpTool: (toolFullName: string, argsJson: string) => string;
+  listMcpTools: () => Promise<McpToolDefinition[]>;
+  callMcpTool: (toolFullName: string, argsJson: string) => Promise<string>;
   engineInfo: () => string;
   sum: (a: number, b: number) => number;
-  detectTerminals: () => DetectedTerminal[];
+  detectTerminals: () => Promise<DetectedTerminal[]>;
   getGitStatus: (repoPath: string) => Promise<GitStatusResult>;
   getGitBranches: (repoPath: string) => Promise<GitBranch[]>;
   gitStageFiles: (
