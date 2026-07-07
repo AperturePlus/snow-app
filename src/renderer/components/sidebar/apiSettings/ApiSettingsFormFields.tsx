@@ -1,7 +1,9 @@
-import { useCallback, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useState, type ChangeEvent } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { useI18n } from "../../../i18n";
 import { ApiModelCombobox } from "./ApiModelCombobox";
+import { CustomSelect } from "../../common/CustomSelect";
+import { SystemPromptSelect } from "./SystemPromptSelect";
 import {
   DEFAULT_API_BASE_URL,
   DISABLED_STATUS_LABEL,
@@ -15,7 +17,11 @@ import {
   calculateAutoCompressThresholdTokens,
   normalizeAutoCompressThresholdPercent,
 } from "./autoCompressThreshold";
-import type { Model } from "../../../../preload";
+import type {
+  Model,
+  SystemPromptItemRecord,
+  CustomHeaderSchemeRecord,
+} from "../../../../preload";
 import type { ApiConfigFormData } from "./types";
 
 type ModelField = "advancedModel" | "basicModel";
@@ -44,6 +50,29 @@ export function ApiSettingsFormFields({
   const [loadedModelOptionsKey, setLoadedModelOptionsKey] = useState<
     string | null
   >(null);
+  const [systemPrompts, setSystemPrompts] = useState<SystemPromptItemRecord[]>(
+    []
+  );
+  const [customHeaderSchemes, setCustomHeaderSchemes] = useState<
+    CustomHeaderSchemeRecord[]
+  >([]);
+
+  const loadBindingOptions = useCallback(async () => {
+    try {
+      const [prompts, schemes] = await Promise.all([
+        window.snow.listSystemPrompts(),
+        window.snow.listCustomHeaderSchemes(),
+      ]);
+      setSystemPrompts(prompts);
+      setCustomHeaderSchemes(schemes);
+    } catch {
+      // ignore – binding selectors will just show empty option lists
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadBindingOptions();
+  }, [loadBindingOptions]);
 
   const loadModelOptions = useCallback(
     async (force = false) => {
@@ -200,14 +229,15 @@ export function ApiSettingsFormFields({
             <span>
               {t("settings.apiBaseUrlMode", { defaultValue: "Base URL mode" })}
             </span>
-            <select
+            <CustomSelect
               value={data.baseUrlMode}
-              onChange={changeField("baseUrlMode")}
+              options={[
+                { value: "auto", label: "auto" },
+                { value: "custom", label: "custom" },
+              ]}
+              onChange={(value) => onChange("baseUrlMode", value)}
               disabled={disabled}
-            >
-              <option value="auto">auto</option>
-              <option value="custom">custom</option>
-            </select>
+            />
           </label>
           <label className="api-settings-field">
             <span>{t("settings.apiKey", { defaultValue: "API key" })}</span>
@@ -235,17 +265,74 @@ export function ApiSettingsFormFields({
                 defaultValue: "Request method",
               })}
             </span>
-            <select
+            <CustomSelect
               value={data.requestMethod}
-              onChange={changeField("requestMethod")}
+              options={REQUEST_METHODS.map((method) => ({
+                value: method,
+                label: method,
+              }))}
+              onChange={(value) => onChange("requestMethod", value)}
               disabled={disabled}
-            >
-              {REQUEST_METHODS.map((method) => (
-                <option key={method} value={method}>
-                  {method}
-                </option>
-              ))}
-            </select>
+            />
+          </label>
+        </div>
+      </div>
+
+      <div className="api-settings-form-section">
+        <strong className="api-settings-form-section-title">
+          {t("settings.formPromptHeaders", {
+            defaultValue: "Prompt & Headers",
+          })}
+        </strong>
+        <div className="api-settings-form-grid">
+          <div className="api-settings-field wide">
+            <span>
+              {t("settings.apiSystemPrompts", {
+                defaultValue: "System prompts",
+              })}
+            </span>
+            <SystemPromptSelect
+              value={data.systemPromptIdsJson}
+              prompts={systemPrompts}
+              onChange={(value) => onChange("systemPromptIdsJson", value)}
+              disabled={disabled}
+            />
+            <small className="api-settings-hint-text">
+              {t("settings.apiSystemPromptsHint", {
+                defaultValue:
+                  "Leave empty to inherit global active profile setting.",
+              })}
+            </small>
+          </div>
+          <label className="api-settings-field">
+            <span>
+              {t("settings.apiCustomHeaderScheme", {
+                defaultValue: "Custom header scheme",
+              })}
+            </span>
+            <CustomSelect
+              value={data.customHeaderSchemeId}
+              options={[
+                {
+                  value: "",
+                  label: t("settings.apiHeaderSchemeInherit", {
+                    defaultValue: "Inherit global",
+                  }),
+                },
+                {
+                  value: "__DISABLED__",
+                  label: t("settings.apiHeaderSchemeDisabled", {
+                    defaultValue: "Do not use",
+                  }),
+                },
+                ...customHeaderSchemes.map((scheme) => ({
+                  value: scheme.schemeId,
+                  label: scheme.name || scheme.schemeId,
+                })),
+              ]}
+              onChange={(value) => onChange("customHeaderSchemeId", value)}
+              disabled={disabled}
+            />
           </label>
         </div>
       </div>
@@ -364,17 +451,15 @@ export function ApiSettingsFormFields({
                   defaultValue: "Vision method",
                 })}
               </span>
-              <select
+              <CustomSelect
                 value={data.visionRequestMethod}
-                onChange={changeField("visionRequestMethod")}
+                options={REQUEST_METHODS.map((method) => ({
+                  value: method,
+                  label: method,
+                }))}
+                onChange={(value) => onChange("visionRequestMethod", value)}
                 disabled={disabled}
-              >
-                {REQUEST_METHODS.map((method) => (
-                  <option key={method} value={method}>
-                    {method}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             <label className="api-settings-field">
               <span>

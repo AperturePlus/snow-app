@@ -81,6 +81,10 @@ export function TerminalSettingsPanel({
       setForm((previous) => ({ ...previous, [field]: value }));
     };
 
+  const setValue = (field: keyof TerminalSettingsFormValue, value: string) => {
+    setForm((previous) => ({ ...previous, [field]: value }));
+  };
+
   const validate = (): string | null => {
     const fontSize = Number.parseFloat(form.fontSize);
     const lineHeight = Number.parseFloat(form.lineHeight);
@@ -233,6 +237,7 @@ export function TerminalSettingsPanel({
             isSelectingExecutable={isSelectingExecutable}
             detectedTerminals={detectedTerminals}
             onUpdateField={updateField}
+            onSetValue={setValue}
             onShellPathChange={(path) =>
               setForm((previous) => ({ ...previous, shellPath: path }))
             }

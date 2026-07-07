@@ -12,6 +12,7 @@ export function MainSidebarContent({
   onActiveDirectoryChange,
   onSwitchContent,
   onSwitchToExplorer,
+  onOpenSshWizard,
 }: SidebarContentProps): React.JSX.Element {
   const { t } = useI18n();
   const [isSwitchingDirectory, setIsSwitchingDirectory] = useState(false);
@@ -27,6 +28,7 @@ export function MainSidebarContent({
         onSwitchingDirectoryChange={setIsSwitchingDirectory}
         onSwitchContent={onSwitchContent}
         onSwitchToExplorer={onSwitchToExplorer}
+        onOpenSshWizard={onOpenSshWizard}
       />
       <ChatsSection
         activeDirectory={activeDirectory}

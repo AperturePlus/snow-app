@@ -26,6 +26,7 @@
     "node-pty": "^1.1.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "ssh2": "^1.17.0",
     "streaming-markdown": "^0.2.15"
   },
   "devDependencies": {
@@ -35,6 +36,7 @@
     "@types/node": "^24.3.0",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
+    "@types/ssh2": "^1.15.5",
     "@vitejs/plugin-react": "^5.0.2",
     "electron": "^37.10.3",
     "electron-builder": "^26.0.12",
@@ -52,7 +54,9 @@
     ],
     "asarUnpack": [
       "native/*.node",
-      "node_modules/node-pty/**"
+      "node_modules/node-pty/**",
+      "node_modules/ssh2/**",
+      "node_modules/cpu-features/**"
     ],
     "directories": {
       "output": "release"
@@ -69,6 +73,8 @@
     }
   },
   "allowScripts": {
-    "node-pty@1.1.0": true
+    "node-pty@1.1.0": true,
+    "ssh2@1.17.0": true,
+    "cpu-features@0.0.10": true
   }
 }

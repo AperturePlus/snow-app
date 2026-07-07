@@ -36,6 +36,8 @@ export const toApiConfigInput = (profile: SnowCliProfile): ApiConfigInput => {
       toIntegerOrNull(snowcfg.streamIdleTimeoutSec) ?? undefined,
     enableAutoCompress: toBoolean(snowcfg.enableAutoCompress, true),
     autoCompressThreshold: autoCompressThreshold ?? undefined,
+    systemPromptIdsJson: toText(snowcfg.systemPromptIdsJson),
+    customHeaderSchemeId: toText(snowcfg.customHeaderSchemeId),
     configJson: JSON.stringify(profile.config),
     source: "snow-cli",
   };
@@ -112,6 +114,8 @@ export const normalizeApiConfigInput = (value: unknown): ApiConfigInput => {
     enableAutoCompress: toBoolean(value.enableAutoCompress, true),
     autoCompressThreshold:
       toIntegerOrNull(value.autoCompressThreshold) ?? undefined,
+    systemPromptIdsJson: toText(value.systemPromptIdsJson),
+    customHeaderSchemeId: toText(value.customHeaderSchemeId),
     configJson: toText(value.configJson, JSON.stringify(manualConfig)),
     source,
   };

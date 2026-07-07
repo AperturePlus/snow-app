@@ -33,6 +33,8 @@ export const emptyApiConfigForm = (
   streamIdleTimeoutSec: "",
   enableAutoCompress: true,
   autoCompressThreshold: String(DEFAULT_AUTO_COMPRESS_THRESHOLD_PERCENT),
+  systemPromptIdsJson: "",
+  customHeaderSchemeId: "",
 });
 
 export const parseOptionalInteger = (value: string): number | null => {
@@ -99,6 +101,8 @@ export function toApiConfigPayload(
     streamIdleTimeoutSec: parseOptionalInteger(data.streamIdleTimeoutSec),
     enableAutoCompress: data.enableAutoCompress,
     autoCompressThreshold: autoCompressThresholdTokens,
+    systemPromptIdsJson: data.systemPromptIdsJson,
+    customHeaderSchemeId: data.customHeaderSchemeId,
     configJson,
     source: "manual",
   };

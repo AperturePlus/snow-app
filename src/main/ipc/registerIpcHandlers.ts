@@ -4,9 +4,10 @@ import {
   dialog,
   ipcMain,
   nativeImage,
+  screen,
   session,
 } from "electron";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import type {
   ApiModelsConfig,
@@ -44,6 +45,21 @@ import {
 import { readSnowCliProfiles } from "../snowCli/profiles";
 import { startDirectoryWatch, stopDirectoryWatch } from "../utils/fsWatcher";
 import { registerPtyHandlers } from "../pty/registerPtyHandlers";
+import {
+  connectSsh,
+  disconnectSsh,
+  listSshDirectory,
+  parseSshUrl,
+  isSshPath,
+  type SshConnectParams,
+} from "../ssh/sshManager";
+import {
+  saveSshCredentialWithPlainSecret,
+  getSshCredential,
+  getDecryptedSecret,
+  listSshCredentials,
+  deleteSshCredential,
+} from "../ssh/sshCredentials";
 
 const CHAT_CREATE_RESPONSE_CHUNK_CHANNEL = "chat:create-response:chunk";
 
@@ -110,199 +126,6 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
     directoryId:
       typeof source.directoryId === "string" ? source.directoryId : undefined,
   };
-};
-
-// ===== File search support =====
-
-const SKIP_DIRS = new Set([
-  "node_modules",
-  ".git",
-  ".svn",
-  ".hg",
-  "dist",
-  "build",
-  ".next",
-  ".nuxt",
-  "out",
-  "coverage",
-  ".cache",
-  ".turbo",
-  ".vercel",
-]);
-
-const MAX_FILE_SIZE_BYTES = 512 * 1024; // 512 KB
-const MAX_RESULTS = 200;
-const CONTENT_PREVIEW_LINES = 3;
-const CONTENT_PREVIEW_CHARS = 200;
-
-type SearchResult = {
-  path: string;
-  relativePath: string;
-  name: string;
-  isDirectory: boolean;
-  matchedName: boolean;
-  lineMatches: Array<{ line: number; text: string }>;
-};
-
-const isTextFile = (fileName: string): boolean => {
-  const binaryExtensions = new Set([
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".gif",
-    ".bmp",
-    ".ico",
-    ".webp",
-    ".tiff",
-    ".svg",
-    ".pdf",
-    ".zip",
-    ".gz",
-    ".tar",
-    ".rar",
-    ".7z",
-    ".mp3",
-    ".mp4",
-    ".avi",
-    ".mov",
-    ".wav",
-    ".flac",
-    ".ogg",
-    ".exe",
-    ".dll",
-    ".so",
-    ".dylib",
-    ".bin",
-    ".dat",
-    ".db",
-    ".sqlite",
-    ".class",
-    ".jar",
-    ".war",
-    ".wasm",
-    ".ttf",
-    ".otf",
-    ".woff",
-    ".woff2",
-    ".eot",
-    ".psd",
-    ".ai",
-    ".sketch",
-    ".xd",
-    ".proto",
-  ]);
-  const lowerName = fileName.toLowerCase();
-  for (const ext of binaryExtensions) {
-    if (lowerName.endsWith(ext)) {
-      return false;
-    }
-  }
-  return true;
-};
-
-const searchInDirectory = async (
-  rootDir: string,
-  currentDir: string,
-  queryLower: string,
-  results: SearchResult[],
-  maxDepth: number,
-  currentDepth: number
-): Promise<void> => {
-  if (results.length >= MAX_RESULTS || currentDepth > maxDepth) {
-    return;
-  }
-
-  let entries: string[];
-  try {
-    entries = await readdir(currentDir);
-  } catch {
-    return;
-  }
-
-  for (const entry of entries) {
-    if (results.length >= MAX_RESULTS) {
-      return;
-    }
-
-    // Skip hidden files and skip dirs
-    if (entry.startsWith(".") || SKIP_DIRS.has(entry)) {
-      continue;
-    }
-
-    const fullPath = join(currentDir, entry);
-    let entryStat;
-    try {
-      entryStat = await stat(fullPath);
-    } catch {
-      continue;
-    }
-
-    if (entryStat.isDirectory()) {
-      const dirNameLower = entry.toLowerCase();
-      if (dirNameLower.includes(queryLower)) {
-        results.push({
-          path: fullPath,
-          relativePath: relative(rootDir, fullPath),
-          name: entry,
-          isDirectory: true,
-          matchedName: true,
-          lineMatches: [],
-        });
-      }
-      await searchInDirectory(
-        rootDir,
-        fullPath,
-        queryLower,
-        results,
-        maxDepth,
-        currentDepth + 1
-      );
-    } else if (entryStat.isFile()) {
-      const nameLower = entry.toLowerCase();
-      const matchedName = nameLower.includes(queryLower);
-      let lineMatches: Array<{ line: number; text: string }> = [];
-
-      if (
-        !matchedName &&
-        isTextFile(entry) &&
-        entryStat.size <= MAX_FILE_SIZE_BYTES
-      ) {
-        try {
-          const content = await readFile(fullPath, "utf-8");
-          const lines = content.split("\n");
-          for (
-            let i = 0;
-            i < lines.length && lineMatches.length < CONTENT_PREVIEW_LINES;
-            i++
-          ) {
-            if (lines[i].toLowerCase().includes(queryLower)) {
-              const trimmed = lines[i].trim();
-              lineMatches.push({
-                line: i + 1,
-                text:
-                  trimmed.length > CONTENT_PREVIEW_CHARS
-                    ? trimmed.slice(0, CONTENT_PREVIEW_CHARS) + "..."
-                    : trimmed,
-              });
-            }
-          }
-        } catch {
-          // Skip unreadable file
-        }
-      }
-
-      if (matchedName || lineMatches.length > 0) {
-        results.push({
-          path: fullPath,
-          relativePath: relative(rootDir, fullPath),
-          name: entry,
-          isDirectory: false,
-          matchedName,
-          lineMatches,
-        });
-      }
-    }
-  }
 };
 
 export const registerIpcHandlers = (native: NativeBridge): void => {
@@ -770,7 +593,7 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
 
   ipcMain.handle(
     "workspace-directories:search-files",
-    async (_event, dirPath: unknown, query: unknown) => {
+    (_event, dirPath: unknown, query: unknown) => {
       if (typeof dirPath !== "string" || !dirPath.trim()) {
         throw new Error("Directory path is required");
       }
@@ -778,18 +601,168 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
         return [];
       }
 
-      const results: SearchResult[] = [];
-      await searchInDirectory(
-        dirPath.trim(),
-        dirPath.trim(),
-        query.trim().toLowerCase(),
-        results,
-        15,
-        0
-      );
-      return results;
+      return native.searchFiles(dirPath.trim(), query.trim());
     }
   );
+
+  // ===== SSH handlers =====
+  const normalizeSshConnectParams = (value: unknown): SshConnectParams => {
+    if (typeof value !== "object" || value === null) {
+      throw new Error("SSH connect params must be an object");
+    }
+    const obj = value as Record<string, unknown>;
+    const host = typeof obj.host === "string" ? obj.host.trim() : "";
+    const port = typeof obj.port === "number" ? obj.port : 22;
+    const username =
+      typeof obj.username === "string" ? obj.username.trim() : "";
+    const authMethod =
+      obj.authMethod === "password" ||
+      obj.authMethod === "privateKey" ||
+      obj.authMethod === "agent"
+        ? (obj.authMethod as SshConnectParams["authMethod"])
+        : "password";
+
+    if (!host) {
+      throw new Error("SSH host is required");
+    }
+    if (!username) {
+      throw new Error("SSH username is required");
+    }
+
+    const result: SshConnectParams = { host, port, username, authMethod };
+    if (typeof obj.password === "string" && obj.password) {
+      result.password = obj.password;
+    }
+    if (typeof obj.privateKeyPath === "string" && obj.privateKeyPath) {
+      result.privateKeyPath = obj.privateKeyPath;
+    }
+    if (typeof obj.passphrase === "string" && obj.passphrase) {
+      result.passphrase = obj.passphrase;
+    }
+    return result;
+  };
+
+  ipcMain.handle("ssh:connect", async (_event, params: unknown) => {
+    const connectParams = normalizeSshConnectParams(params);
+    return connectSsh(connectParams);
+  });
+
+  ipcMain.handle(
+    "ssh:list-directory",
+    async (_event, sessionId: unknown, remotePath: unknown) => {
+      if (typeof sessionId !== "string" || !sessionId.trim()) {
+        throw new Error("SSH session ID is required");
+      }
+      if (typeof remotePath !== "string" || !remotePath.trim()) {
+        throw new Error("Remote directory path is required");
+      }
+      return listSshDirectory(sessionId.trim(), remotePath.trim());
+    }
+  );
+
+  ipcMain.handle("ssh:disconnect", (_event, sessionId: unknown) => {
+    if (typeof sessionId !== "string") {
+      return;
+    }
+    disconnectSsh(sessionId);
+  });
+
+  ipcMain.handle("ssh:save-credential", (_event, params: unknown) => {
+    if (typeof params !== "object" || params === null) {
+      throw new Error("SSH credential params must be an object");
+    }
+    const obj = params as Record<string, unknown>;
+    const host = typeof obj.host === "string" ? obj.host.trim() : "";
+    const port = typeof obj.port === "number" ? obj.port : 22;
+    const username =
+      typeof obj.username === "string" ? obj.username.trim() : "";
+    const authMethod =
+      obj.authMethod === "password" ||
+      obj.authMethod === "privateKey" ||
+      obj.authMethod === "agent"
+        ? (obj.authMethod as SshConnectParams["authMethod"])
+        : "password";
+
+    if (!host || !username) {
+      throw new Error("SSH host and username are required");
+    }
+
+    return saveSshCredentialWithPlainSecret({
+      host,
+      port,
+      username,
+      authMethod,
+      privateKeyPath:
+        typeof obj.privateKeyPath === "string" ? obj.privateKeyPath : undefined,
+      secret: typeof obj.secret === "string" ? obj.secret : undefined,
+    });
+  });
+
+  ipcMain.handle(
+    "ssh:get-credential",
+    (_event, host: unknown, port: unknown, username: unknown) => {
+      if (typeof host !== "string" || typeof username !== "string") {
+        return null;
+      }
+      const portNum = typeof port === "number" ? port : 22;
+      return getSshCredential(host.trim(), portNum, username.trim());
+    }
+  );
+
+  ipcMain.handle(
+    "ssh:get-decrypted-secret",
+    (_event, host: unknown, port: unknown, username: unknown) => {
+      if (typeof host !== "string" || typeof username !== "string") {
+        return null;
+      }
+      const portNum = typeof port === "number" ? port : 22;
+      return getDecryptedSecret(host.trim(), portNum, username.trim());
+    }
+  );
+
+  ipcMain.handle("ssh:list-credentials", () => listSshCredentials());
+
+  ipcMain.handle(
+    "ssh:delete-credential",
+    (_event, host: unknown, port: unknown, username: unknown) => {
+      if (typeof host !== "string" || typeof username !== "string") {
+        return;
+      }
+      const portNum = typeof port === "number" ? port : 22;
+      deleteSshCredential(host.trim(), portNum, username.trim());
+    }
+  );
+
+  ipcMain.handle(
+    "ssh:select-private-key",
+    async (event, dialogTitle: unknown) => {
+      const browserWindow = BrowserWindow.fromWebContents(event.sender);
+      const title =
+        typeof dialogTitle === "string" && dialogTitle.trim()
+          ? dialogTitle.trim()
+          : "Select private key file";
+      const homeDir = homedir();
+      const options: Electron.OpenDialogOptions = {
+        title,
+        properties: ["openFile"],
+        defaultPath: `${homeDir}/.ssh`,
+      };
+      const result = browserWindow
+        ? await dialog.showOpenDialog(browserWindow, options)
+        : await dialog.showOpenDialog(options);
+      return result.canceled ? null : result.filePaths[0] ?? null;
+    }
+  );
+
+  ipcMain.handle("ssh:parse-url", (_event, sshUrl: unknown) => {
+    if (typeof sshUrl !== "string" || !sshUrl.trim()) {
+      throw new Error("SSH URL is required");
+    }
+    if (!isSshPath(sshUrl.trim())) {
+      throw new Error("Path is not an SSH URL");
+    }
+    return parseSshUrl(sshUrl.trim());
+  });
 
   // ===== Git file watcher handlers =====
   ipcMain.handle("git:start-watch", (event, repoPath: unknown) => {
@@ -947,6 +920,48 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
   ipcMain.handle("window:is-maximized", (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     return win ? win.isMaximized() : false;
+  });
+
+  // ===== Window Drag (macOS JS drag region) =====
+  let dragInterval: NodeJS.Timeout | null = null;
+  let dragOffsetX = 0;
+  let dragOffsetY = 0;
+
+  ipcMain.handle("window:start-drag", (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) {
+      return;
+    }
+    if (dragInterval) {
+      clearInterval(dragInterval);
+    }
+    const winBounds = win.getBounds();
+    const cursor = screen.getCursorScreenPoint();
+    dragOffsetX = cursor.x - winBounds.x;
+    dragOffsetY = cursor.y - winBounds.y;
+    dragInterval = setInterval(() => {
+      if (!win || win.isDestroyed()) {
+        if (dragInterval) {
+          clearInterval(dragInterval);
+          dragInterval = null;
+        }
+        return;
+      }
+      const cur = screen.getCursorScreenPoint();
+      win.setBounds({
+        x: cur.x - dragOffsetX,
+        y: cur.y - dragOffsetY,
+        width: winBounds.width,
+        height: winBounds.height,
+      });
+    }, 16);
+  });
+
+  ipcMain.handle("window:stop-drag", (event) => {
+    if (dragInterval) {
+      clearInterval(dragInterval);
+      dragInterval = null;
+    }
   });
 
   // ===== Clipboard (write image) =====

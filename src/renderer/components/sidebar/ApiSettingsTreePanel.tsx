@@ -234,6 +234,8 @@ export function ApiSettingsTreePanel({
         config.maxContextTokens,
         config.autoCompressThreshold
       ),
+      systemPromptIdsJson: config.systemPromptIdsJson ?? "",
+      customHeaderSchemeId: config.customHeaderSchemeId ?? "",
     });
   };
 
@@ -302,6 +304,8 @@ export function ApiSettingsTreePanel({
         streamIdleTimeoutSec: config.streamIdleTimeoutSec,
         enableAutoCompress: config.enableAutoCompress,
         autoCompressThreshold: config.autoCompressThreshold,
+        systemPromptIdsJson: config.systemPromptIdsJson ?? "",
+        customHeaderSchemeId: config.customHeaderSchemeId ?? "",
         configJson: config.configJson,
         source: config.source,
       });

@@ -24,6 +24,8 @@ export type ApiConfigInput = {
   streamIdleTimeoutSec?: number;
   enableAutoCompress: boolean;
   autoCompressThreshold?: number;
+  systemPromptIdsJson: string;
+  customHeaderSchemeId: string;
   configJson: string;
   source: string;
 };
@@ -99,6 +101,15 @@ export type WorkspaceDirectoryInput = {
 export type WorkspaceDirectoryRecord = WorkspaceDirectoryInput & {
   id: string;
   updatedAt: string;
+};
+
+export type FileSearchResult = {
+  path: string;
+  relativePath: string;
+  name: string;
+  isDirectory: boolean;
+  matchedName: boolean;
+  lineMatches: Array<{ line: number; text: string }>;
 };
 
 export type DirectoryEntry = {
@@ -319,6 +330,7 @@ export type NativeBridge = {
   reorderWorkspaceDirectories: (items: WorkspaceDirectoryInput[]) => void;
   deleteWorkspaceDirectory: (directoryId: string) => void;
   readDirectoryEntries: (dirPath: string) => DirectoryEntry[];
+  searchFiles: (rootDir: string, query: string) => FileSearchResult[];
   listMcpServerConfigs: () => McpServerConfigRecord[];
   upsertMcpServerConfig: (item: McpServerConfigInput) => void;
   deleteMcpServerConfig: (serverId: string) => void;

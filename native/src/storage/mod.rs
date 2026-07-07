@@ -35,6 +35,8 @@ pub struct ApiConfigInput {
     pub stream_idle_timeout_sec: Option<i32>,
     pub enable_auto_compress: bool,
     pub auto_compress_threshold: Option<i32>,
+    pub system_prompt_ids_json: String,
+    pub custom_header_scheme_id: String,
     pub config_json: String,
     pub source: String,
 }
@@ -62,6 +64,8 @@ pub struct ApiConfigRecord {
     pub stream_idle_timeout_sec: Option<i32>,
     pub enable_auto_compress: bool,
     pub auto_compress_threshold: Option<i32>,
+    pub system_prompt_ids_json: String,
+    pub custom_header_scheme_id: String,
     pub config_json: String,
     pub source: String,
     pub updated_at: String,
@@ -331,9 +335,12 @@ pub fn delete_workspace_directory(directory_id: String) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::workspace_directories::delete_workspace_directory(&database_path, &directory_id)
 }
-
 pub fn read_directory_entries(dir_path: String) -> Result<Vec<services::fs_explorer::DirectoryEntry>> {
     services::fs_explorer::read_directory_entries(&dir_path)
+}
+
+pub fn search_files(root_dir: String, query: String) -> Result<Vec<services::fs_explorer::FileSearchResult>> {
+    services::fs_explorer::search_files(&root_dir, &query)
 }
 
 pub fn list_mcp_server_configs() -> Result<Vec<McpServerConfigRecord>> {

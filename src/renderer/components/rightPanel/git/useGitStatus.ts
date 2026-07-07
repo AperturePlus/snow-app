@@ -24,9 +24,11 @@ export const useGitStatus = (
   // and the explicit refresh already fetched the correct status.
   const lastExplicitRefreshRef = useRef(0);
 
+  const isSshPath = (path: string): boolean => path.startsWith("ssh://");
+
   const fetchStatus = useCallback(async () => {
     const path = repoPathRef.current;
-    if (!path) {
+    if (!path || isSshPath(path)) {
       setStatus(null);
       setError(null);
       return;
@@ -60,7 +62,7 @@ export const useGitStatus = (
 
     void fetchStatus();
 
-    if (repoPath) {
+    if (repoPath && !isSshPath(repoPath)) {
       void window.snow.startGitWatch(repoPath);
     }
 
@@ -99,8 +101,7 @@ export const useGitStatus = (
         clearTimeout(watcherDebounceRef.current);
         watcherDebounceRef.current = null;
       }
-
-      if (repoPath) {
+      if (repoPath && !isSshPath(repoPath)) {
         void window.snow.stopGitWatch(repoPath);
       }
     };

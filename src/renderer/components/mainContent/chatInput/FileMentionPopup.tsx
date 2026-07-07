@@ -252,7 +252,7 @@ export const FileMentionPopup = forwardRef<
           setIsSearching(false);
         }
       }
-    }, 300);
+    }, 150);
 
     return () => {
       if (searchTimerRef.current) {
@@ -446,12 +446,15 @@ export const FileMentionPopup = forwardRef<
           </div>
         ) : (
           <>
-            {entries.length > 0 && (
+            {(isSearching || entries.length > 0) && (
               <span className="file-mention-count">
-                {t("fileMention.results", {
-                  values: { count: entries.length },
-                })}
-                {checkedPaths.size > 0 &&
+                {isSearching && <Loader2 className="spin" size={11} />}
+                {entries.length > 0 &&
+                  t("fileMention.results", {
+                    values: { count: entries.length },
+                  })}
+                {entries.length > 0 &&
+                  checkedPaths.size > 0 &&
                   ` | ${t("fileMention.selected", {
                     values: { count: checkedPaths.size },
                   })}`}

@@ -36,7 +36,9 @@ export const ChatContent = ({
   );
 
   return (
-    <>
+    <div
+      className={`chat-content ${hasMessages ? "has-messages" : "is-empty"}`}
+    >
       <div className="chat-area" ref={scrollRef}>
         {hasMessages ? (
           <ChatMessageList
@@ -55,6 +57,6 @@ export const ChatContent = ({
         onAbort={handleAbort}
         tokenUsage={tokenUsage}
       />
-    </>
+    </div>
   );
 };

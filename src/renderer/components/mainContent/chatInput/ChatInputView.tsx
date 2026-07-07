@@ -11,18 +11,22 @@ import {
   Square,
 } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { ChatInputViewProps } from "./types";
 import { TokenUsageRing } from "./TokenUsageRing";
 import {
   createChipHtml,
+  createImageChipHtml,
   insertHtmlAtSelection,
   readEditableContent,
   type FileTag,
+  type ImageTag,
 } from "./fileTagUtils";
 import {
   FileMentionPopup,
   type FileMentionPopupHandle,
 } from "./FileMentionPopup";
+import { useDropdownDirection } from "./useDropdownDirection";
 
 export const ChatInputView = ({
   placeholder,
@@ -72,6 +76,21 @@ export const ChatInputView = ({
   const mentionAnchorRef = useRef<HTMLDivElement>(null);
   const mentionPopupRef = useRef<FileMentionPopupHandle>(null);
   const mentionStartOffsetRef = useRef<number>(-1);
+  const [imagePreview, setImagePreview] = useState<{
+    url: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const imagePreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const [imageLightbox, setImageLightbox] = useState<string | null>(null);
+
+  const modelDropdownDir = useDropdownDirection(dropdownRef, isDropdownOpen);
+  const thinkingDropdownDir = useDropdownDirection(
+    thinkingDropdownRef,
+    isThinkingDropdownOpen
+  );
 
   const syncContent = useCallback(() => {
     if (textareaRef.current) {
@@ -275,6 +294,74 @@ export const ChatInputView = ({
     }
   }, [isMentionOpen, handleCloseMention]);
 
+  const handlePaste = useCallback(
+    (event: React.ClipboardEvent<HTMLDivElement>) => {
+      event.preventDefault();
+
+      const items = event.clipboardData.items;
+      const imageItems: DataTransferItem[] = [];
+
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          imageItems.push(item);
+        }
+      }
+
+      if (imageItems.length > 0) {
+        for (const imageItem of imageItems) {
+          const file = imageItem.getAsFile();
+          if (!file) {
+            continue;
+          }
+
+          const reader = new FileReader();
+          reader.onload = () => {
+            const dataUrl = reader.result as string;
+            if (!dataUrl) {
+              return;
+            }
+
+            const mimeMatch = file.type.match(/^image\/([a-z]+)$/);
+            const ext = mimeMatch ? mimeMatch[1] : "png";
+            const imageTag: ImageTag = {
+              name:
+                file.name && file.name !== "image" ? file.name : `image.${ext}`,
+              dataUrl,
+            };
+
+            if (textareaRef.current) {
+              textareaRef.current.focus();
+            }
+            insertHtmlAtSelection(createImageChipHtml(imageTag));
+            syncContent();
+          };
+          reader.readAsDataURL(file);
+        }
+        return;
+      }
+
+      const text = event.clipboardData.getData("text/plain");
+      if (!text) {
+        return;
+      }
+      const selection = window.getSelection();
+      if (!selection || !selection.rangeCount) {
+        return;
+      }
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      const textNode = document.createTextNode(text);
+      range.insertNode(textNode);
+      range.setStartAfter(textNode);
+      range.setEndAfter(textNode);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      syncContent();
+      checkMentionTrigger();
+    },
+    [syncContent, checkMentionTrigger]
+  );
+
   const handleInputWithMention = useCallback(() => {
     syncContent();
     checkMentionTrigger();
@@ -303,6 +390,82 @@ export const ChatInputView = ({
     [handleKeyDown, isMentionOpen]
   );
 
+  const showImagePreview = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      const chip = target.closest(
+        "[data-image-tag='true']"
+      ) as HTMLElement | null;
+      if (!chip) {
+        if (imagePreviewTimerRef.current) {
+          clearTimeout(imagePreviewTimerRef.current);
+          imagePreviewTimerRef.current = null;
+        }
+        setImagePreview(null);
+        return;
+      }
+
+      const dataUrl = chip.dataset.imageDataUrl;
+      if (!dataUrl) {
+        if (imagePreviewTimerRef.current) {
+          clearTimeout(imagePreviewTimerRef.current);
+          imagePreviewTimerRef.current = null;
+        }
+        setImagePreview(null);
+        return;
+      }
+
+      if (imagePreviewTimerRef.current) {
+        clearTimeout(imagePreviewTimerRef.current);
+        imagePreviewTimerRef.current = null;
+      }
+
+      const rect = chip.getBoundingClientRect();
+      const PREVIEW_MAX_W = 328;
+      const halfW = PREVIEW_MAX_W / 2;
+      const clampedX = Math.max(
+        halfW + 4,
+        Math.min(rect.left + rect.width / 2, window.innerWidth - halfW - 4)
+      );
+      setImagePreview({
+        url: dataUrl,
+        x: clampedX,
+        y: rect.top,
+      });
+    },
+    []
+  );
+
+  const handleChipRemove = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      const removeBtn = target.closest("[data-chip-remove='true']");
+      if (!removeBtn) {
+        return;
+      }
+
+      const chip = removeBtn.closest(".file-chip");
+      if (chip && textareaRef.current?.contains(chip)) {
+        chip.remove();
+        syncContent();
+      }
+    },
+    [syncContent, textareaRef]
+  );
+
+  const scheduleHideImagePreview = useCallback(() => {
+    imagePreviewTimerRef.current = setTimeout(() => {
+      setImagePreview(null);
+    }, 200);
+  }, []);
+
+  const cancelHideImagePreview = useCallback(() => {
+    if (imagePreviewTimerRef.current) {
+      clearTimeout(imagePreviewTimerRef.current);
+      imagePreviewTimerRef.current = null;
+    }
+  }, []);
+
   return (
     <div className="input-area" ref={mentionAnchorRef}>
       <FileMentionPopup
@@ -325,10 +488,44 @@ export const ChatInputView = ({
           data-empty="true"
           onInput={handleInputWithMention}
           onKeyDown={handleMentionKeyDown}
+          onPaste={handlePaste}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
+          onMouseMove={showImagePreview}
+          onMouseLeave={scheduleHideImagePreview}
+          onClick={handleChipRemove}
         />
+        {imagePreview &&
+          createPortal(
+            <div
+              className="image-chip-preview"
+              style={{
+                left: imagePreview.x,
+                top: imagePreview.y,
+                transform: "translate(-50%, calc(-100% - 8px))",
+              }}
+              onMouseEnter={cancelHideImagePreview}
+              onMouseLeave={scheduleHideImagePreview}
+              onClick={() => {
+                setImageLightbox(imagePreview.url);
+                setImagePreview(null);
+              }}
+            >
+              <img src={imagePreview.url} alt="preview" />
+            </div>,
+            document.body
+          )}
+        {imageLightbox &&
+          createPortal(
+            <div
+              className="image-lightbox-overlay"
+              onClick={() => setImageLightbox(null)}
+            >
+              <img src={imageLightbox} alt="fullscreen" />
+            </div>,
+            document.body
+          )}
         <div className="input-toolbar">
           <div className="toolbar-left">
             <button className="toolbar-btn" aria-label="Add attachment">
@@ -357,7 +554,7 @@ export const ChatInputView = ({
                 <ChevronDown size={12} />
               </button>
               {isDropdownOpen && (
-                <div className="model-dropdown">
+                <div className={`model-dropdown drop-${modelDropdownDir}`}>
                   {isManualMode ? (
                     <div className="model-manual-input">
                       <div className="model-manual-header">
@@ -500,7 +697,9 @@ export const ChatInputView = ({
                 <ChevronDown size={12} />
               </button>
               {isThinkingDropdownOpen && (
-                <div className="model-dropdown thinking-dropdown">
+                <div
+                  className={`model-dropdown thinking-dropdown drop-${thinkingDropdownDir}`}
+                >
                   <div className="thinking-dropdown-header">
                     <span>Thinking strength</span>
                     <small>{requestMethod}</small>

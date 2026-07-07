@@ -98,6 +98,9 @@ export const loadNativeBridge = (): NativeBridge => {
           "Rust native bridge is required to read directory entries"
         );
       },
+      searchFiles: () => {
+        throw new Error("Rust native bridge is required to search files");
+      },
       listMcpServerConfigs: () => {
         throw new Error(
           "Rust native bridge is required to list MCP server configs"

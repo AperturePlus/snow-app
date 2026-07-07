@@ -1,6 +1,7 @@
 import { RotateCcw, Save, Loader2 } from "lucide-react";
 import { type ChangeEvent } from "react";
 import { useI18n } from "../../../i18n";
+import { CustomSelect } from "../../common/CustomSelect";
 import { EMBEDDING_TYPE_OPTIONS } from "./codebaseSettingsConstants";
 import { maskSecret } from "./codebaseSettingsUtils";
 import type { CodebaseSettingsForm as CodebaseSettingsFormValue } from "./types";
@@ -12,6 +13,7 @@ type CodebaseSettingsFormProps = {
   onUpdateField: (
     field: keyof CodebaseSettingsFormValue
   ) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
+  onSetValue: (field: keyof CodebaseSettingsFormValue, value: string) => void;
   onReset: () => void;
   onSave: () => void;
 };
@@ -21,6 +23,7 @@ export function CodebaseSettingsForm({
   isBusy,
   isSaving,
   onUpdateField,
+  onSetValue,
   onReset,
   onSave,
 }: CodebaseSettingsFormProps): React.JSX.Element {
@@ -131,17 +134,12 @@ export function CodebaseSettingsForm({
                   defaultValue: "Embedding type",
                 })}
               </span>
-              <select
+              <CustomSelect
                 value={form.embeddingType}
-                onChange={onUpdateField("embeddingType")}
+                options={EMBEDDING_TYPE_OPTIONS}
+                onChange={(value) => onSetValue("embeddingType", value)}
                 disabled={isBusy}
-              >
-                {EMBEDDING_TYPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             {renderTextInput(
               "embeddingModelName",

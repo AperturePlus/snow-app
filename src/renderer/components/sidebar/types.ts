@@ -13,4 +13,5 @@ export type SidebarContentProps = {
   onSelectMainView: (view: MainContentView) => void;
   onSwitchContent: (content: SidebarContentKey) => void;
   onSwitchToExplorer?: (directoryId: string) => void;
+  onOpenSshWizard?: () => void;
 };

@@ -3,6 +3,9 @@ import { createRequire } from "node:module";
 import { chmodSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { isSshPath, parseSshUrl } from "../ssh/sshManager";
+import { getDecryptedSecret, getSshCredential } from "../ssh/sshCredentials";
+
 const require2 = createRequire(import.meta.url);
 const nodePty = require2("node-pty") as typeof import("node-pty");
 
@@ -86,22 +89,105 @@ const ensureSpawnHelperExecutable = (): void => {
 
 ensureSpawnHelperExecutable();
 
+type SshSpawnConfig = {
+  shell: string;
+  args: string[];
+  /** Plaintext password to auto-inject when SSH prompts. Undefined = no injection. */
+  password?: string;
+  /** Plaintext passphrase for private key, auto-injected on prompt. */
+  passphrase?: string;
+};
+
+const buildSshSpawnConfig = (cwd: string): SshSpawnConfig | null => {
+  if (!isSshPath(cwd)) {
+    return null;
+  }
+
+  let parsed;
+  try {
+    parsed = parseSshUrl(cwd);
+  } catch {
+    return null;
+  }
+
+  const { host, port, username, remotePath } = parsed;
+  const sshArgs: string[] = [];
+
+  // Disable host key checking for smoother UX (can be improved later)
+  sshArgs.push("-o", "StrictHostKeyChecking=accept-new");
+  sshArgs.push("-o", "ConnectTimeout=10");
+
+  if (port !== 22) {
+    sshArgs.push("-p", String(port));
+  }
+
+  // Look up stored credentials
+  const credential = getSshCredential(host, port, username);
+  const config: SshSpawnConfig = {
+    shell: "ssh",
+    args: [...sshArgs, `${username}@${host}`],
+  };
+
+  if (credential) {
+    if (credential.authMethod === "privateKey" && credential.privateKeyPath) {
+      config.args = ["-i", credential.privateKeyPath, ...config.args];
+      // Retrieve passphrase if stored
+      const passphrase = getDecryptedSecret(host, port, username);
+      if (passphrase) {
+        config.passphrase = passphrase;
+      }
+    } else if (credential.authMethod === "password") {
+      const password = getDecryptedSecret(host, port, username);
+      if (password) {
+        config.password = password;
+      }
+    }
+    // agent auth: no extra args needed
+  }
+
+  // After connecting, cd to the remote path and start a login shell
+  if (remotePath && remotePath !== "/") {
+    config.args.push("-t", `cd '${remotePath}' && exec $SHELL -l`);
+  } else {
+    config.args.push("-t", `exec $SHELL -l`);
+  }
+
+  return config;
+};
+
 export const createPtySession = (
   webContents: WebContents,
   options: PtySessionOptions
 ): string => {
   const id = generatePtyId();
   const customShell = options.shellPath?.trim();
-  const shell =
-    customShell && existsSync(customShell) ? customShell : getShell();
-
   const isWindows = process.platform === "win32";
 
-  const pty = nodePty.spawn(shell, getShellArgs(), {
+  const sshConfig = buildSshSpawnConfig(options.cwd);
+
+  let shell: string;
+  let shellArgs: string[];
+  let spawnCwd: string | undefined;
+
+  if (sshConfig) {
+    shell = sshConfig.shell;
+    shellArgs = sshConfig.args;
+    spawnCwd = undefined; // Remote path, not a local cwd
+  } else if (customShell && existsSync(customShell)) {
+    shell = customShell;
+    shellArgs = isWindows ? [] : ["-l"];
+    spawnCwd = options.cwd || undefined;
+  } else {
+    shell = getShell();
+    shellArgs = getShellArgs();
+    spawnCwd = options.cwd || undefined;
+  }
+
+  const pty = nodePty.spawn(shell, shellArgs, {
     name: "xterm-256color",
     cols: options.cols,
     rows: options.rows,
-    cwd: options.cwd,
+    cwd: spawnCwd,
     env: sanitizeEnv(),
     // Electron already has a console attached, so the default ConPTY kill path
     // (which forks conpty_console_list_agent.js and calls AttachConsole) throws
@@ -112,6 +198,44 @@ export const createPtySession = (
 
   const session: PtySession = { id, pty, webContents };
   sessions.set(id, session);
+
+  // Password/passphrase auto-injection for SSH sessions
+  if (sshConfig && (sshConfig.password || sshConfig.passphrase)) {
+    let injectedPassword = false;
+    let injectedPassphrase = false;
+
+    const disposable = pty.onData((data: string) => {
+      const lowerData = data.toLowerCase();
+
+      if (
+        !injectedPassword &&
+        sshConfig.password &&
+        (lowerData.includes("password:") || lowerData.includes("password for"))
+      ) {
+        setTimeout(() => {
+          pty.write(sshConfig.password! + "\r");
+        }, 100);
+        injectedPassword = true;
+      }
+
+      if (
+        !injectedPassphrase &&
+        sshConfig.passphrase &&
+        (lowerData.includes("passphrase") ||
+          lowerData.includes("enter passphrase"))
+      ) {
+        setTimeout(() => {
+          pty.write(sshConfig.passphrase! + "\r");
+        }, 100);
+        injectedPassphrase = true;
+      }
+
+      // Dispose once both secrets are injected (or no longer needed)
+      if (injectedPassword && (!sshConfig.passphrase || injectedPassphrase)) {
+        disposable.dispose();
+      }
+    });
+  }
 
   pty.onData((data: string) => {
     const wc = sessions.get(id)?.webContents;

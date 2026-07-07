@@ -21,6 +21,8 @@ export type ApiConfigInput = {
   streamIdleTimeoutSec?: number | null;
   enableAutoCompress: boolean;
   autoCompressThreshold?: number | null;
+  systemPromptIdsJson: string;
+  customHeaderSchemeId: string;
   configJson: string;
   source: string;
 };
@@ -186,6 +188,42 @@ export type DirectoryEntry = {
   path: string;
   isDirectory: boolean;
   size: number;
+};
+
+export type SshAuthMethod = "password" | "privateKey" | "agent";
+
+export type SshConnectParams = {
+  host: string;
+  port: number;
+  username: string;
+  authMethod: SshAuthMethod;
+  password?: string;
+  privateKeyPath?: string;
+  passphrase?: string;
+};
+
+export type SshDirectoryEntry = {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  size: number;
+};
+
+export type SshCredentialRecord = {
+  profileKey: string;
+  host: string;
+  port: number;
+  username: string;
+  authMethod: SshAuthMethod;
+  privateKeyPath?: string;
+  encryptedSecret?: string;
+};
+
+export type ParsedSshUrl = {
+  host: string;
+  port: number;
+  username: string;
+  remotePath: string;
 };
 
 export type GitFileStatus = {
@@ -481,6 +519,48 @@ const api = {
   },
   searchFiles: (dirPath: string, query: string): Promise<FileSearchResult[]> =>
     ipcRenderer.invoke("workspace-directories:search-files", dirPath, query),
+  sshConnect: (params: SshConnectParams): Promise<string> =>
+    ipcRenderer.invoke("ssh:connect", params),
+  sshListDirectory: (
+    sessionId: string,
+    remotePath: string
+  ): Promise<SshDirectoryEntry[]> =>
+    ipcRenderer.invoke("ssh:list-directory", sessionId, remotePath),
+  sshDisconnect: (sessionId: string): Promise<void> =>
+    ipcRenderer.invoke("ssh:disconnect", sessionId),
+  sshSaveCredential: (params: {
+    host: string;
+    port: number;
+    username: string;
+    authMethod: SshAuthMethod;
+    privateKeyPath?: string;
+    secret?: string;
+  }): Promise<SshCredentialRecord> =>
+    ipcRenderer.invoke("ssh:save-credential", params),
+  sshGetCredential: (
+    host: string,
+    port: number,
+    username: string
+  ): Promise<SshCredentialRecord | null> =>
+    ipcRenderer.invoke("ssh:get-credential", host, port, username),
+  sshGetDecryptedSecret: (
+    host: string,
+    port: number,
+    username: string
+  ): Promise<string | null> =>
+    ipcRenderer.invoke("ssh:get-decrypted-secret", host, port, username),
+  sshListCredentials: (): Promise<SshCredentialRecord[]> =>
+    ipcRenderer.invoke("ssh:list-credentials"),
+  sshDeleteCredential: (
+    host: string,
+    port: number,
+    username: string
+  ): Promise<void> =>
+    ipcRenderer.invoke("ssh:delete-credential", host, port, username),
+  sshSelectPrivateKey: (dialogTitle?: string): Promise<string | null> =>
+    ipcRenderer.invoke("ssh:select-private-key", dialogTitle),
+  sshParseUrl: (sshUrl: string): Promise<ParsedSshUrl> =>
+    ipcRenderer.invoke("ssh:parse-url", sshUrl),
   listChatConversations: (
     directoryId: string
   ): Promise<ChatConversationRecord[]> =>
@@ -652,6 +732,8 @@ const api = {
   closeWindow: (): Promise<void> => ipcRenderer.invoke("window:close"),
   isWindowMaximized: (): Promise<boolean> =>
     ipcRenderer.invoke("window:is-maximized"),
+  startWindowDrag: (): Promise<void> => ipcRenderer.invoke("window:start-drag"),
+  stopWindowDrag: (): Promise<void> => ipcRenderer.invoke("window:stop-drag"),
   writeImageToClipboard: (dataUrl: string): Promise<void> =>
     ipcRenderer.invoke("clipboard:write-image", dataUrl),
   clearBrowserCache: (): Promise<void> =>

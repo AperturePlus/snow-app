@@ -1,12 +1,7 @@
-import {
-  FolderOpen,
-  Loader2,
-  MonitorCog,
-  RotateCcw,
-  Save,
-} from "lucide-react";
+import { FolderOpen, Loader2, MonitorCog, RotateCcw, Save } from "lucide-react";
 import { type ChangeEvent } from "react";
 import { useI18n } from "../../../i18n";
+import { CustomSelect } from "../../common/CustomSelect";
 import { SEARCH_ENGINE_OPTIONS } from "./proxyBrowserSettingsConstants";
 import type {
   ProxyBrowserSettingsForm as ProxyBrowserSettingsFormValue,
@@ -22,6 +17,10 @@ type ProxyBrowserSettingsFormProps = {
   onUpdateField: (
     field: keyof ProxyBrowserSettingsFormValue
   ) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
+  onSetValue: (
+    field: keyof ProxyBrowserSettingsFormValue,
+    value: string
+  ) => void;
   onReset: () => void;
   onSave: () => void;
   onSelectBrowserExecutable: () => void;
@@ -34,6 +33,7 @@ export function ProxyBrowserSettingsForm({
   isSaving,
   isSelectingBrowser,
   onUpdateField,
+  onSetValue,
   onReset,
   onSave,
   onSelectBrowserExecutable,
@@ -83,7 +83,9 @@ export function ProxyBrowserSettingsForm({
           </div>
           <div className="api-settings-form-grid">
             <label className="api-settings-field">
-              <span>{t("settings.proxyPort", { defaultValue: "Proxy port" })}</span>
+              <span>
+                {t("settings.proxyPort", { defaultValue: "Proxy port" })}
+              </span>
               <input
                 value={form.port}
                 onChange={onUpdateField("port")}
@@ -98,17 +100,12 @@ export function ProxyBrowserSettingsForm({
               <span>
                 {t("settings.searchEngine", { defaultValue: "Search engine" })}
               </span>
-              <select
+              <CustomSelect
                 value={form.searchEngine}
-                onChange={onUpdateField("searchEngine")}
+                options={SEARCH_ENGINE_OPTIONS}
+                onChange={(value) => onSetValue("searchEngine", value)}
                 disabled={isBusy}
-              >
-                {SEARCH_ENGINE_OPTIONS.map((engine) => (
-                  <option key={engine.value} value={engine.value}>
-                    {engine.label}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
           </div>
         </div>

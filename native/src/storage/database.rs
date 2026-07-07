@@ -92,7 +92,7 @@ fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
     reset_legacy_integer_primary_key_tables(connection)?;
 
     connection.execute_batch(
-        "PRAGMA user_version = 11;
+        "PRAGMA user_version = 12;
 
          CREATE TABLE IF NOT EXISTS system_settings (
            id TEXT PRIMARY KEY NOT NULL,
@@ -125,6 +125,8 @@ fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
            stream_idle_timeout_sec INTEGER,
            enable_auto_compress INTEGER NOT NULL DEFAULT 1,
            auto_compress_threshold INTEGER,
+           system_prompt_ids_json TEXT NOT NULL DEFAULT '',
+           custom_header_scheme_id TEXT NOT NULL DEFAULT '',
            config_json TEXT NOT NULL DEFAULT '{}',
            source TEXT NOT NULL DEFAULT 'manual',
            created_at TEXT NOT NULL DEFAULT (datetime('now')),

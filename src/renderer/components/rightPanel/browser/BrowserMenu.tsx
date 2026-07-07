@@ -11,6 +11,7 @@ import {
   Cookie,
   EllipsisVertical,
   Eraser,
+  Globe,
   Minus,
   Plus,
   RefreshCw,
@@ -22,6 +23,7 @@ import { useI18n } from "../../../i18n";
 
 export type BrowserMenuProps = {
   zoomFactor: number;
+  homepage: string;
   onClearCache: () => void;
   onClearCookies: () => void;
   onZoomIn: () => void;
@@ -29,6 +31,7 @@ export type BrowserMenuProps = {
   onZoomReset: () => void;
   onForceReload: () => void;
   onFindInPage: () => void;
+  onSetHomepage: (url: string) => Promise<void>;
 };
 
 type MenuPosition = {
@@ -58,10 +61,12 @@ const formatZoomPercent = (factor: number): string =>
  *     to the left of the menu.
  *   - 缩放: inline row with direct - / % (click to reset) / + controls. The
  *     menu stays open while adjusting so the user can tap +/- repeatedly.
+ *   - 设置默认起始页: inline row with click-to-edit input. Empty means blank.
  *   - 强制重新加载, 在页面中查找: one-shot action items.
  */
 export const BrowserMenu = ({
   zoomFactor,
+  homepage,
   onClearCache,
   onClearCookies,
   onZoomIn,
@@ -69,14 +74,31 @@ export const BrowserMenu = ({
   onZoomReset,
   onForceReload,
   onFindInPage,
+  onSetHomepage,
 }: BrowserMenuProps): React.JSX.Element => {
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const [isClearDataSubOpen, setIsClearDataSubOpen] = useState(false);
+  const [isHomepageEditing, setIsHomepageEditing] = useState(false);
+  const [homepageDraft, setHomepageDraft] = useState(homepage);
   const [menuPosition, setMenuPosition] = useState<MenuPosition>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const homepageInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync draft when homepage changes externally or menu reopens
+  useEffect(() => {
+    setHomepageDraft(homepage);
+  }, [homepage]);
+
+  // Focus input when entering edit mode
+  useEffect(() => {
+    if (isHomepageEditing && homepageInputRef.current) {
+      homepageInputRef.current.focus();
+      homepageInputRef.current.select();
+    }
+  }, [isHomepageEditing]);
 
   // Close on outside click / Escape. The portal lives on document.body, so we
   // must exclude clicks inside BOTH the trigger wrapper and the portaled menu.
@@ -132,6 +154,7 @@ export const BrowserMenu = ({
   const close = useCallback((): void => {
     setIsOpen(false);
     setIsClearDataSubOpen(false);
+    setIsHomepageEditing(false);
   }, []);
 
   const runAction = useCallback(
@@ -145,6 +168,26 @@ export const BrowserMenu = ({
   const handleTriggerClick = (): void => {
     setIsOpen((prev) => !prev);
     setIsClearDataSubOpen(false);
+    setIsHomepageEditing(false);
+  };
+
+  const handleSaveHomepage = useCallback(async (): Promise<void> => {
+    await onSetHomepage(homepageDraft);
+    setIsHomepageEditing(false);
+  }, [homepageDraft, onSetHomepage]);
+
+  const handleHomepageKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>
+  ): void => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      void handleSaveHomepage();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      setHomepageDraft(homepage);
+      setIsHomepageEditing(false);
+    }
   };
 
   const canZoomIn = zoomFactor < ZOOM_MAX;
@@ -258,6 +301,32 @@ export const BrowserMenu = ({
                 >
                   <Plus size={13} strokeWidth={2.2} />
                 </button>
+              </div>
+
+              <div className="browser-menu-homepage-row">
+                <Globe size={14} strokeWidth={1.8} />
+                {isHomepageEditing ? (
+                  <input
+                    ref={homepageInputRef}
+                    type="text"
+                    className="browser-menu-homepage-input"
+                    value={homepageDraft}
+                    onChange={(e) => setHomepageDraft(e.target.value)}
+                    onKeyDown={handleHomepageKeyDown}
+                    onBlur={() => void handleSaveHomepage()}
+                    placeholder={t("browser.homepagePlaceholder")}
+                    spellCheck={false}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="browser-menu-homepage-display"
+                    onClick={() => setIsHomepageEditing(true)}
+                    title={t("browser.setHomepage")}
+                  >
+                    {homepage || t("browser.homepageEmpty")}
+                  </button>
+                )}
               </div>
 
               <button

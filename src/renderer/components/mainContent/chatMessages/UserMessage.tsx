@@ -1,4 +1,4 @@
-import { File, Folder } from "lucide-react";
+import { File, Folder, Image as ImageIcon } from "lucide-react";
 import { UserMessageActions } from "./UserMessageActions";
 import type { UserMessageProps } from "./types";
 import { parseContentSegments } from "../chatInput/fileTagUtils";
@@ -15,6 +15,24 @@ export const UserMessage = ({
           {segments.map((segment, index) => {
             if (segment.type === "text") {
               return <span key={index}>{segment.content}</span>;
+            }
+
+            if (segment.type === "image") {
+              return (
+                <span
+                  className="user-message-file-chip image-chip"
+                  key={index}
+                  title={segment.tag.name}
+                >
+                  <ImageIcon
+                    size={12}
+                    className="user-message-file-chip-icon"
+                  />
+                  <span className="user-message-file-chip-name">
+                    {segment.tag.name}
+                  </span>
+                </span>
+              );
             }
 
             const { tag } = segment;

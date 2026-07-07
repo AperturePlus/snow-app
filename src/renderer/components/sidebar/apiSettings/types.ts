@@ -24,6 +24,8 @@ export type ApiConfigFormData = {
   streamIdleTimeoutSec: string;
   enableAutoCompress: boolean;
   autoCompressThreshold: string;
+  systemPromptIdsJson: string;
+  customHeaderSchemeId: string;
 };
 
 export type ApiConfigItem = ApiConfigRecord;

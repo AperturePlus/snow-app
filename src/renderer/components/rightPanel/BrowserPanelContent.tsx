@@ -3,8 +3,10 @@ import {
   BrowserFindBar,
   type BrowserFindResult,
   BrowserToolbar,
+  useBrowserHomepage,
   useWebviewScreenshot,
 } from "./browser";
+import { DEFAULT_BROWSER_HOMEPAGE } from "./browser/browserHomepageConstants";
 
 export type BrowserPanelContentProps = {
   initialUrl: string;
@@ -12,12 +14,10 @@ export type BrowserPanelContentProps = {
   onTitleChange?: (title: string) => void;
 };
 
-const DEFAULT_URL = "https://www.google.com";
-
-const normalizeUrl = (input: string): string => {
+const normalizeUrl = (input: string, homepage: string): string => {
   const trimmed = input.trim();
   if (!trimmed) {
-    return DEFAULT_URL;
+    return homepage || DEFAULT_BROWSER_HOMEPAGE;
   }
   // Already has a protocol
   if (/^https?:\/\//i.test(trimmed)) {
@@ -59,7 +59,9 @@ export const BrowserPanelContent = ({
   onTitleChange,
 }: BrowserPanelContentProps): React.JSX.Element => {
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
-  const [addressInput, setAddressInput] = useState(initialUrl || DEFAULT_URL);
+  const { homepage, setHomepage } = useBrowserHomepage();
+  const effectiveUrl = initialUrl || homepage || DEFAULT_BROWSER_HOMEPAGE;
+  const [addressInput, setAddressInput] = useState(effectiveUrl);
   // webviewSrc drives the <webview src={...}> attribute. It is ONLY updated on
   // explicit user navigation (address-bar Enter), never by did-navigate.
   //
@@ -68,7 +70,7 @@ export const BrowserPanelContent = ({
   //   redirect -> did-navigate -> setCurrentUrl -> src change
   //   -> attribute observer -> loadURL -> redirect -> ...
   const [webviewSrc, setWebviewSrc] = useState(
-    normalizeUrl(initialUrl || DEFAULT_URL)
+    normalizeUrl(effectiveUrl, homepage)
   );
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
@@ -130,7 +132,7 @@ export const BrowserPanelContent = ({
       // We use loadURL directly and do NOT update webviewSrc, because
       // changing src would fire a second racing loadURL call.
       if (e.url) {
-        const url = normalizeUrl(e.url);
+        const url = normalizeUrl(e.url, homepage);
         Promise.resolve(webview.loadURL(url)).catch((error: unknown) => {
           if (!isSuppressedNavigationError(error)) {
             console.error("Failed to navigate to new window URL:", error);
@@ -210,7 +212,7 @@ export const BrowserPanelContent = ({
     if (!input) {
       return;
     }
-    const url = normalizeUrl(input);
+    const url = normalizeUrl(input, homepage);
     setAddressInput(url);
     const webview = webviewRef.current;
     if (!webview) {
@@ -361,6 +363,7 @@ export const BrowserPanelContent = ({
         onReload={handleReload}
         onScreenshot={captureScreenshot}
         zoomFactor={zoomFactor}
+        homepage={homepage}
         onClearCache={handleClearCache}
         onClearCookies={handleClearCookies}
         onZoomIn={handleZoomIn}
@@ -368,6 +371,7 @@ export const BrowserPanelContent = ({
         onZoomReset={handleZoomReset}
         onForceReload={handleForceReload}
         onFindInPage={handleOpenFind}
+        onSetHomepage={setHomepage}
       />
       <div className="browser-content">
         <webview

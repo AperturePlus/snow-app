@@ -133,8 +133,54 @@ export const TopBar = ({
     setIsPlusMenuOpen(false);
   };
 
+  const handleHeaderMouseDown = (e: React.MouseEvent): void => {
+    if (e.button !== 0) {
+      return;
+    }
+    const target = e.target as HTMLElement;
+    if (target.closest("button, .top-bar-branch-label")) {
+      return;
+    }
+
+    const startX = e.screenX;
+    const startY = e.screenY;
+    let dragging = false;
+
+    const onMove = (ev: MouseEvent): void => {
+      const dx = Math.abs(ev.screenX - startX);
+      const dy = Math.abs(ev.screenY - startY);
+      if (!dragging && (dx > 3 || dy > 3)) {
+        dragging = true;
+        void window.snow.startWindowDrag();
+      }
+    };
+
+    const onUp = (): void => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      if (dragging) {
+        void window.snow.stopWindowDrag();
+      }
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent): void => {
+    const target = e.target as HTMLElement;
+    if (target.closest("button, .top-bar-branch-label")) {
+      return;
+    }
+    void window.snow.toggleMaximizeWindow();
+  };
+
   return (
-    <header className={`top-bar${isPlusMenuOpen ? " plus-menu-open" : ""}`}>
+    <header
+      className={`top-bar${isPlusMenuOpen ? " plus-menu-open" : ""}`}
+      onMouseDown={handleHeaderMouseDown}
+      onDoubleClick={handleDoubleClick}
+    >
       <div className="top-bar-left">
         <div className="top-bar-sidebar-actions" aria-label="Sidebar actions">
           <button

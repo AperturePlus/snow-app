@@ -13,7 +13,11 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "../../i18n";
-import type { DirectoryEntry, FileSearchResult } from "../../../preload";
+import type {
+  DirectoryEntry,
+  FileSearchResult,
+  SshConnectParams,
+} from "../../../preload";
 import type { SidebarContentProps } from "./types";
 
 type TreeNode = {
@@ -91,6 +95,8 @@ export function ProjectExplorerContent({
   const { t } = useI18n();
   const [rootPath, setRootPath] = useState<string | null>(null);
   const [rootName, setRootName] = useState("");
+  const [isSsh, setIsSsh] = useState(false);
+  const sshSessionIdRef = useRef<string | null>(null);
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
@@ -99,6 +105,9 @@ export function ProjectExplorerContent({
   const treeRef = useRef<HTMLDivElement | null>(null);
   const treeStateRef = useRef<TreeNode[]>([]);
   const rootPathRef = useRef<string | null>(null);
+  const loadChildrenRef = useRef<
+    ((parentPath: string) => Promise<void>) | null
+  >(null);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -143,17 +152,74 @@ export function ProjectExplorerContent({
       rootPathRef.current = targetDir.path;
       setRootName(targetDir.name);
 
-      const entries = await window.snow.readDirectoryEntries(targetDir.path);
-      const nodes: TreeNode[] = entries.map((entry: DirectoryEntry) => ({
-        name: entry.name,
-        path: entry.path,
-        isDirectory: entry.isDirectory,
-        size: entry.size,
-        loaded: !entry.isDirectory,
-        loading: false,
-      }));
+      const sshDir = targetDir.path.startsWith("ssh://");
+      setIsSsh(sshDir);
 
-      setTree(nodes);
+      if (sshDir) {
+        const parsed = await window.snow.sshParseUrl(targetDir.path);
+        const credential = await window.snow.sshGetCredential(
+          parsed.host,
+          parsed.port,
+          parsed.username
+        );
+
+        const connectParams: SshConnectParams = {
+          host: parsed.host,
+          port: parsed.port,
+          username: parsed.username,
+          authMethod: credential?.authMethod ?? "password",
+        };
+
+        if (credential?.privateKeyPath) {
+          connectParams.privateKeyPath = credential.privateKeyPath;
+        }
+
+        const secret = credential?.encryptedSecret
+          ? await window.snow.sshGetDecryptedSecret(
+              parsed.host,
+              parsed.port,
+              parsed.username
+            )
+          : null;
+
+        if (secret) {
+          if (connectParams.authMethod === "password") {
+            connectParams.password = secret;
+          } else {
+            connectParams.passphrase = secret;
+          }
+        }
+
+        const sessionId = await window.snow.sshConnect(connectParams);
+        sshSessionIdRef.current = sessionId;
+
+        const sshEntries = await window.snow.sshListDirectory(
+          sessionId,
+          parsed.remotePath
+        );
+        const nodes: TreeNode[] = sshEntries.map((entry) => ({
+          name: entry.name,
+          path: entry.path,
+          isDirectory: entry.isDirectory,
+          size: entry.size,
+          loaded: !entry.isDirectory,
+          loading: false,
+        }));
+
+        setTree(nodes);
+      } else {
+        const entries = await window.snow.readDirectoryEntries(targetDir.path);
+        const nodes: TreeNode[] = entries.map((entry: DirectoryEntry) => ({
+          name: entry.name,
+          path: entry.path,
+          isDirectory: entry.isDirectory,
+          size: entry.size,
+          loaded: !entry.isDirectory,
+          loading: false,
+        }));
+
+        setTree(nodes);
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -201,7 +267,7 @@ export function ProjectExplorerContent({
               return node;
             }
 
-            void loadChildren(node.path);
+            void loadChildrenRef.current?.(node.path);
             return { ...node, loading: true };
           }
 
@@ -224,7 +290,16 @@ export function ProjectExplorerContent({
   const loadChildren = useCallback(
     async (parentPath: string): Promise<void> => {
       try {
-        const entries = await window.snow.readDirectoryEntries(parentPath);
+        let entries: DirectoryEntry[];
+        if (isSsh && sshSessionIdRef.current) {
+          const sshEntries = await window.snow.sshListDirectory(
+            sshSessionIdRef.current,
+            parentPath
+          );
+          entries = sshEntries;
+        } else {
+          entries = await window.snow.readDirectoryEntries(parentPath);
+        }
         const childNodes: TreeNode[] = entries.map((entry: DirectoryEntry) => ({
           name: entry.name,
           path: entry.path,
@@ -282,8 +357,14 @@ export function ProjectExplorerContent({
         });
       }
     },
-    []
+    [isSsh]
   );
+
+  // Keep loadChildrenRef in sync so handleToggle always calls the latest
+  // version of loadChildren (which depends on isSsh and sshSessionIdRef).
+  useEffect(() => {
+    loadChildrenRef.current = loadChildren;
+  }, [loadChildren]);
 
   const handleRefresh = useCallback((): void => {
     setExpandedPaths(new Set());
@@ -436,6 +517,10 @@ export function ProjectExplorerContent({
       return;
     }
 
+    if (isSsh) {
+      return;
+    }
+
     void window.snow.startDirectoryWatch(rootPath);
 
     const unsubscribe = window.snow.onDirectoryChanged((_dirPath: string) => {
@@ -449,11 +534,20 @@ export function ProjectExplorerContent({
       unsubscribe();
       void window.snow.stopDirectoryWatch(rootPath);
     };
-  }, [rootPath, collectLoadedPaths, silentRefreshDirectory]);
+  }, [rootPath, isSsh, collectLoadedPaths, silentRefreshDirectory]);
 
   useEffect(() => {
     treeStateRef.current = tree;
   }, [tree]);
+
+  useEffect(() => {
+    return () => {
+      if (sshSessionIdRef.current) {
+        void window.snow.sshDisconnect(sshSessionIdRef.current);
+        sshSessionIdRef.current = null;
+      }
+    };
+  }, []);
 
   const flatNodes = useMemo(
     () => flattenTree(tree, expandedPaths),
@@ -524,7 +618,7 @@ export function ProjectExplorerContent({
       </div>
 
       <div className="explorer-content">
-        {rootPath ? (
+        {rootPath && !isSsh ? (
           <div className="explorer-search-bar">
             <Search size={13} strokeWidth={1.8} aria-hidden="true" />
             <input

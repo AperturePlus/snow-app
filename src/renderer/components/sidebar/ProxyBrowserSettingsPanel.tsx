@@ -80,6 +80,13 @@ export function ProxyBrowserSettingsPanel({
       setForm((previous) => ({ ...previous, [field]: value }));
     };
 
+  const setValue = (
+    field: keyof ProxyBrowserSettingsFormValue,
+    value: string
+  ) => {
+    setForm((previous) => ({ ...previous, [field]: value }));
+  };
+
   const validate = (): string | null => {
     const proxyPort = Number.parseInt(form.port, 10);
     const browserDebugPort = Number.parseInt(form.browserDebugPort, 10);
@@ -273,6 +280,7 @@ export function ProxyBrowserSettingsPanel({
         isSaving={isSaving}
         isSelectingBrowser={isSelectingBrowser}
         onUpdateField={updateField}
+        onSetValue={setValue}
         onReset={() => setForm(toProxyBrowserForm(lastSaved))}
         onSave={() => void handleSave()}
         onSelectBrowserExecutable={() => void handleSelectBrowserExecutable()}

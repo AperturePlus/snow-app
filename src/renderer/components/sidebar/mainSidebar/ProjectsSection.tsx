@@ -1,4 +1,4 @@
-import { Check, Folder, Loader2, Plus, Server, X } from "lucide-react";
+import { Folder, Loader2, Plus, Server } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "../../../i18n";
@@ -18,6 +18,7 @@ type ProjectsSectionProps = {
   onSwitchingDirectoryChange: (isSwitchingDirectory: boolean) => void;
   onSwitchContent?: (content: "main" | "explorer") => void;
   onSwitchToExplorer?: (directoryId: string) => void;
+  onOpenSshWizard?: () => void;
 };
 
 const DIRECTORY_PAGE_SIZE = 12;
@@ -76,6 +77,7 @@ export function ProjectsSection({
   onSwitchingDirectoryChange,
   onSwitchContent,
   onSwitchToExplorer,
+  onOpenSshWizard,
 }: ProjectsSectionProps): React.JSX.Element {
   const { t } = useI18n();
   const [workspaceDirectories, setWorkspaceDirectories] = useState<
@@ -88,7 +90,6 @@ export function ProjectsSection({
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [addDirectoryMode, setAddDirectoryMode] =
     useState<AddDirectoryMode>("");
-  const [sshDirectoryPath, setSshDirectoryPath] = useState("");
   const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [directoryPage, setDirectoryPage] = useState(1);
   const [draggedDirectoryId, setDraggedDirectoryId] = useState<string | null>(
@@ -98,7 +99,6 @@ export function ProjectsSection({
     null
   );
   const addMenuRef = useRef<HTMLDivElement | null>(null);
-  const sshFormRef = useRef<HTMLDivElement | null>(null);
   const directoryListRef = useRef<HTMLDivElement | null>(null);
   const directoryLoadMoreRef = useRef<HTMLDivElement | null>(null);
 
@@ -194,24 +194,19 @@ export function ProjectsSection({
   }, [hasMoreDirectories, loadNextDirectoryPage, visibleDirectories.length]);
 
   useEffect(() => {
-    if (!isAddMenuOpen && addDirectoryMode !== "ssh") {
+    if (!isAddMenuOpen) {
       return;
     }
 
     const handlePointerDown = (event: PointerEvent): void => {
       const target = event.target;
 
-      if (
-        target instanceof Node &&
-        (addMenuRef.current?.contains(target) ||
-          sshFormRef.current?.contains(target))
-      ) {
+      if (target instanceof Node && addMenuRef.current?.contains(target)) {
         return;
       }
 
       setIsAddMenuOpen(false);
       setAddDirectoryMode("");
-      setSshDirectoryPath("");
       setDirectoryError(null);
     };
 
@@ -220,7 +215,7 @@ export function ProjectsSection({
     return () => {
       window.removeEventListener("pointerdown", handlePointerDown);
     };
-  }, [addDirectoryMode, isAddMenuOpen]);
+  }, [isAddMenuOpen]);
 
   const persistWorkspaceDirectory = async (
     item: WorkspaceDirectoryInput
@@ -233,7 +228,6 @@ export function ProjectsSection({
       setWorkspaceDirectories(directories);
       setIsAddMenuOpen(false);
       setAddDirectoryMode("");
-      setSshDirectoryPath("");
     } catch (error) {
       setDirectoryError(
         error instanceof Error
@@ -255,6 +249,7 @@ export function ProjectsSection({
     setIsAddMenuOpen(false);
 
     if (mode === "ssh") {
+      onOpenSshWizard?.();
       return;
     }
 
@@ -289,30 +284,6 @@ export function ProjectsSection({
     } finally {
       setIsSavingDirectory(false);
     }
-  };
-
-  const handleAddSshDirectory = async (): Promise<void> => {
-    const trimmedPath = sshDirectoryPath.trim();
-
-    if (!trimmedPath.startsWith("ssh://")) {
-      setDirectoryError(
-        t("sidebar.sshDirectoryInvalid", {
-          defaultValue: "SSH directory must start with ssh://",
-        })
-      );
-      return;
-    }
-
-    await persistWorkspaceDirectory(
-      toWorkspaceDirectoryInput(trimmedPath, "ssh", workspaceDirectories.length)
-    );
-  };
-
-  const handleCancelSshDirectory = (): void => {
-    setIsAddMenuOpen(false);
-    setAddDirectoryMode("");
-    setSshDirectoryPath("");
-    setDirectoryError(null);
   };
 
   const handleActivateDirectory = async (
@@ -535,50 +506,6 @@ export function ProjectsSection({
           visibleDirectories={visibleDirectories}
           workspaceDirectories={workspaceDirectories}
         />
-        {addDirectoryMode === "ssh" ? (
-          <div className="workspace-directory-ssh-form" ref={sshFormRef}>
-            <input
-              aria-label={t("sidebar.sshDirectory", {
-                defaultValue: "SSH directory",
-              })}
-              disabled={isSavingDirectory}
-              onChange={(event) => setSshDirectoryPath(event.target.value)}
-              placeholder={t("sidebar.sshDirectoryPlaceholder", {
-                defaultValue: "ssh://user@host:22/path",
-              })}
-              type="text"
-              value={sshDirectoryPath}
-            />
-            <div className="workspace-directory-ssh-actions">
-              <button
-                aria-label={t("sidebar.cancelAddDirectory", {
-                  defaultValue: "Cancel add directory",
-                })}
-                className="workspace-directory-icon-btn"
-                disabled={isSavingDirectory}
-                onClick={handleCancelSshDirectory}
-                type="button"
-              >
-                <X size={14} />
-              </button>
-              <button
-                aria-label={t("sidebar.confirmAddDirectory", {
-                  defaultValue: "Confirm add directory",
-                })}
-                className="workspace-directory-icon-btn confirm"
-                disabled={isSavingDirectory || !sshDirectoryPath.trim()}
-                onClick={() => void handleAddSshDirectory()}
-                type="button"
-              >
-                {isSavingDirectory ? (
-                  <Loader2 className="spin" size={14} />
-                ) : (
-                  <Check size={14} />
-                )}
-              </button>
-            </div>
-          </div>
-        ) : null}
         {directoryError ? (
           <span className="workspace-directory-error">{directoryError}</span>
         ) : null}

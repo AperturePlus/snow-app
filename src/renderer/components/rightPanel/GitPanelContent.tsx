@@ -29,7 +29,10 @@ export function GitPanelContent({
   const [splitRatio, setSplitRatio] = useState(SPLIT_DEFAULT);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const repoPath = activeDirectory?.path ?? null;
+  const repoPath =
+    activeDirectory?.path && !activeDirectory.path.startsWith("ssh://")
+      ? activeDirectory.path
+      : null;
 
   // Fetch diff when a file is selected
   useEffect(() => {

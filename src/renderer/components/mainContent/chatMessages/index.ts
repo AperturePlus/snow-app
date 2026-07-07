@@ -1,4 +1,5 @@
 export { AiResponse } from "./AiResponse";
+export { ThinkingBlock } from "./ThinkingBlock";
 export { AiResponseActions } from "./AiResponseActions";
 export { ChatMessageList } from "./ChatMessageList";
 export { ToolCallItem } from "./ToolCallItem";

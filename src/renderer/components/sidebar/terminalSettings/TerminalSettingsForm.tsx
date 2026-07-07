@@ -1,6 +1,7 @@
 import { Loader2, RotateCcw, Save } from "lucide-react";
 import { type ChangeEvent } from "react";
 import { useI18n } from "../../../i18n";
+import { CustomSelect } from "../../common/CustomSelect";
 import { FONT_WEIGHT_OPTIONS } from "./terminalSettingsConstants";
 import { TerminalCombobox } from "./TerminalCombobox";
 import type {
@@ -17,6 +18,7 @@ type TerminalSettingsFormProps = {
   onUpdateField: (
     field: keyof TerminalSettingsFormValue
   ) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
+  onSetValue: (field: keyof TerminalSettingsFormValue, value: string) => void;
   onShellPathChange: (value: string) => void;
   onReset: () => void;
   onSave: () => void;
@@ -30,6 +32,7 @@ export function TerminalSettingsForm({
   isSelectingExecutable,
   detectedTerminals,
   onUpdateField,
+  onSetValue,
   onShellPathChange,
   onReset,
   onSave,
@@ -94,7 +97,9 @@ export function TerminalSettingsForm({
           <div className="api-settings-form-grid">
             <label className="api-settings-field wide">
               <span>
-                {t("settings.terminalFontFamily", { defaultValue: "Font family" })}
+                {t("settings.terminalFontFamily", {
+                  defaultValue: "Font family",
+                })}
               </span>
               <input
                 value={form.fontFamily}
@@ -120,23 +125,22 @@ export function TerminalSettingsForm({
             </label>
             <label className="api-settings-field">
               <span>
-                {t("settings.terminalFontWeight", { defaultValue: "Font weight" })}
+                {t("settings.terminalFontWeight", {
+                  defaultValue: "Font weight",
+                })}
               </span>
-              <select
+              <CustomSelect
                 value={form.fontWeight}
-                onChange={onUpdateField("fontWeight")}
+                options={FONT_WEIGHT_OPTIONS}
+                onChange={(value) => onSetValue("fontWeight", value)}
                 disabled={isBusy}
-              >
-                {FONT_WEIGHT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             <label className="api-settings-field">
               <span>
-                {t("settings.terminalLineHeight", { defaultValue: "Line height" })}
+                {t("settings.terminalLineHeight", {
+                  defaultValue: "Line height",
+                })}
               </span>
               <input
                 value={form.lineHeight}
@@ -155,7 +159,9 @@ export function TerminalSettingsForm({
         <div className="api-settings-form-section">
           <div className="api-settings-form-section-header">
             <strong className="api-settings-form-section-title">
-              {t("settings.terminalSectionNetwork", { defaultValue: "Network" })}
+              {t("settings.terminalSectionNetwork", {
+                defaultValue: "Network",
+              })}
             </strong>
           </div>
 
@@ -200,7 +206,9 @@ export function TerminalSettingsForm({
             <Save size={15} strokeWidth={1.9} />
           )}
           <span>
-            {t("settings.saveTerminalSettings", { defaultValue: "Save settings" })}
+            {t("settings.saveTerminalSettings", {
+              defaultValue: "Save settings",
+            })}
           </span>
         </button>
       </div>

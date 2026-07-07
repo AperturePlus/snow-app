@@ -7,3 +7,4 @@ export { BrowserMenu } from "./BrowserMenu";
 export type { BrowserMenuProps } from "./BrowserMenu";
 export { BrowserFindBar } from "./BrowserFindBar";
 export type { BrowserFindBarProps, BrowserFindResult } from "./BrowserFindBar";
+export { useBrowserHomepage } from "./useBrowserHomepage";

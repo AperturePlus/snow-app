@@ -10,6 +10,7 @@ type SidebarProps = {
   isCollapsed: boolean;
   onActiveDirectoryChange?: SidebarContentProps["onActiveDirectoryChange"];
   onSelectMainView: SidebarContentProps["onSelectMainView"];
+  onOpenSshWizard?: () => void;
 };
 
 export const Sidebar = ({
@@ -18,6 +19,7 @@ export const Sidebar = ({
   isCollapsed,
   onActiveDirectoryChange,
   onSelectMainView,
+  onOpenSshWizard,
 }: SidebarProps): React.JSX.Element => {
   const [activeContent, setActiveContent] = useState<SidebarContentKey>("main");
   const [explorerDirectoryId, setExplorerDirectoryId] = useState<string | null>(
@@ -49,6 +51,7 @@ export const Sidebar = ({
     onSelectMainView,
     onSwitchContent: handleSwitchContent,
     onSwitchToExplorer: handleSwitchToExplorer,
+    onOpenSshWizard,
   };
 
   return (

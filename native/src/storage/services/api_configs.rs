@@ -45,6 +45,8 @@ pub fn list_api_configs(database_path: &Path) -> Result<Vec<ApiConfigRecord>> {
                         stream_idle_timeout_sec,
                         enable_auto_compress,
                         auto_compress_threshold,
+                        system_prompt_ids_json,
+                        custom_header_scheme_id,
                         config_json,
                         source,
                         updated_at
@@ -79,9 +81,11 @@ pub fn list_api_configs(database_path: &Path) -> Result<Vec<ApiConfigRecord>> {
                     stream_idle_timeout_sec: row.get(18)?,
                     enable_auto_compress: enable_auto_compress != 0,
                     auto_compress_threshold: row.get(20)?,
-                    config_json: row.get(21)?,
-                    source: row.get(22)?,
-                    updated_at: row.get(23)?,
+                    system_prompt_ids_json: row.get(21)?,
+                    custom_header_scheme_id: row.get(22)?,
+                    config_json: row.get(23)?,
+                    source: row.get(24)?,
+                    updated_at: row.get(25)?,
                 })
             })?;
 
@@ -128,6 +132,8 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                    stream_idle_timeout_sec,
                    enable_auto_compress,
                    auto_compress_threshold,
+                   system_prompt_ids_json,
+                   custom_header_scheme_id,
                    config_json,
                    source,
                    created_at,
@@ -135,7 +141,7 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                  ) VALUES (
                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
                    ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
-                   ?21, ?22, ?23,
+                   ?21, ?22, ?23, ?24, ?25,
                    datetime('now'), datetime('now')
                  )
                  ON CONFLICT(profile_name) DO UPDATE SET
@@ -164,6 +170,8 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                    stream_idle_timeout_sec = excluded.stream_idle_timeout_sec,
                    enable_auto_compress = excluded.enable_auto_compress,
                    auto_compress_threshold = excluded.auto_compress_threshold,
+                   system_prompt_ids_json = excluded.system_prompt_ids_json,
+                   custom_header_scheme_id = excluded.custom_header_scheme_id,
                    config_json = excluded.config_json,
                    source = excluded.source,
                    updated_at = datetime('now')",
@@ -189,6 +197,8 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                     config.stream_idle_timeout_sec,
                     config.enable_auto_compress as i32,
                     config.auto_compress_threshold,
+                    config.system_prompt_ids_json,
+                    config.custom_header_scheme_id,
                     config.config_json,
                     config.source,
                 ],
@@ -240,6 +250,8 @@ fn seed_default_api_config_with_connection(connection: &Connection) -> rusqlite:
            vision_api_key,
            vision_request_method,
            vision_model,
+           system_prompt_ids_json,
+           custom_header_scheme_id,
            config_json,
            source,
            created_at,
@@ -247,7 +259,7 @@ fn seed_default_api_config_with_connection(connection: &Connection) -> rusqlite:
          )
          SELECT
            ?1, ?2, ?3, 1, ?4, 'auto', '', ?5, ?6, ?7, 1,
-           '', 'auto', '', ?5, '', ?8, 'default', datetime('now'), datetime('now')
+           '', 'auto', '', ?5, '', '', '', ?8, 'default', datetime('now'), datetime('now')
          WHERE NOT EXISTS (SELECT 1 FROM api_configs)",
         params![
             database::create_snowflake_id(),

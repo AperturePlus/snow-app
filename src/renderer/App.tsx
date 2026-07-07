@@ -12,6 +12,7 @@ import { TopBar } from "./components/TopBar";
 import { WindowControls } from "./components/WindowControls";
 import { ChatConversationProvider } from "./components/mainContent/chatMessages";
 import type { MainContentView } from "./components/mainContent/types";
+import { SshConnectWizard } from "./components/sidebar/mainSidebar/SshConnectWizard";
 import type { WorkspaceDirectoryRecord } from "../preload";
 import { useScrollbarAutoHide } from "./hooks/useScrollbarAutoHide";
 
@@ -50,10 +51,14 @@ export const App = (): React.JSX.Element => {
   );
   const [activeResizeTarget, setActiveResizeTarget] =
     useState<ResizeTarget | null>(null);
+  const [showSshWizard, setShowSshWizard] = useState(false);
   const isWindows = navigator.userAgent.includes("Win");
 
   const handleOpenTerminal = useCallback(() => {
-    const cwd = activeDirectory?.path ?? process.cwd();
+    const rawPath = activeDirectory?.path ?? "";
+    // Pass the full path (including ssh://) to ptyManager.
+    // ptyManager detects ssh:// and spawns an SSH session instead of a local shell.
+    const cwd = rawPath;
     if (isRightPanelCollapsed) {
       setIsRightPanelCollapsed(false);
     }
@@ -71,6 +76,32 @@ export const App = (): React.JSX.Element => {
       rightPanelRef.current?.openBrowser();
     });
   }, [isRightPanelCollapsed]);
+
+  const handleOpenSshWizard = useCallback((): void => {
+    setShowSshWizard(true);
+  }, []);
+
+  const handleSshWizardConfirm = useCallback(
+    async (sshUrl: string): Promise<void> => {
+      setShowSshWizard(false);
+      const trimmedPath = sshUrl.trim();
+      const name = trimmedPath.replace(/^ssh:\/\//, "") || trimmedPath;
+      await window.snow.upsertWorkspaceDirectory({
+        directoryId: `ssh:${trimmedPath}`,
+        name,
+        path: trimmedPath,
+        kind: "ssh",
+        isActive: true,
+        sortOrder: 0,
+        source: "manual",
+      });
+    },
+    []
+  );
+
+  const handleSshWizardCancel = useCallback((): void => {
+    setShowSshWizard(false);
+  }, []);
 
   const shellClasses = [
     "app-shell",
@@ -179,6 +210,7 @@ export const App = (): React.JSX.Element => {
             isCollapsed={isSidebarCollapsed}
             onActiveDirectoryChange={setActiveDirectory}
             onSelectMainView={setActiveMainView}
+            onOpenSshWizard={handleOpenSshWizard}
           />
           {!isSidebarCollapsed && (
             <div
@@ -210,6 +242,12 @@ export const App = (): React.JSX.Element => {
             activeDirectory={activeDirectory}
           />
         </div>
+        {showSshWizard ? (
+          <SshConnectWizard
+            onConfirm={(sshUrl) => void handleSshWizardConfirm(sshUrl)}
+            onCancel={handleSshWizardCancel}
+          />
+        ) : null}
       </div>
     </ChatConversationProvider>
   );

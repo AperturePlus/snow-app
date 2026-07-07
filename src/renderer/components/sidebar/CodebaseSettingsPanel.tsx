@@ -81,6 +81,10 @@ export function CodebaseSettingsPanel({
       setForm((previous) => ({ ...previous, [field]: value }));
     };
 
+  const setValue = (field: keyof CodebaseSettingsFormValue, value: string) => {
+    setForm((previous) => ({ ...previous, [field]: value }));
+  };
+
   const validatePositiveInteger = (
     value: string,
     message: string
@@ -349,6 +353,7 @@ export function CodebaseSettingsPanel({
         isBusy={isBusy}
         isSaving={isSaving}
         onUpdateField={updateField}
+        onSetValue={setValue}
         onReset={() => setForm(toCodebaseForm(lastSaved))}
         onSave={() => void handleSave()}
       />

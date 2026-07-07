@@ -26,6 +26,7 @@ export type BrowserToolbarProps = {
   onScreenshot: () => void;
   // Browser menu
   zoomFactor: number;
+  homepage: string;
   onClearCache: () => void;
   onClearCookies: () => void;
   onZoomIn: () => void;
@@ -33,6 +34,7 @@ export type BrowserToolbarProps = {
   onZoomReset: () => void;
   onForceReload: () => void;
   onFindInPage: () => void;
+  onSetHomepage: (url: string) => Promise<void>;
 };
 
 const buildScreenshotClassName = (feedback: ScreenshotFeedback): string => {
@@ -80,6 +82,7 @@ export const BrowserToolbar = ({
   onReload,
   onScreenshot,
   zoomFactor,
+  homepage,
   onClearCache,
   onClearCookies,
   onZoomIn,
@@ -87,6 +90,7 @@ export const BrowserToolbar = ({
   onZoomReset,
   onForceReload,
   onFindInPage,
+  onSetHomepage,
 }: BrowserToolbarProps): React.JSX.Element => {
   const { t } = useI18n();
   return (
@@ -148,6 +152,7 @@ export const BrowserToolbar = ({
       </button>
       <BrowserMenu
         zoomFactor={zoomFactor}
+        homepage={homepage}
         onClearCache={onClearCache}
         onClearCookies={onClearCookies}
         onZoomIn={onZoomIn}
@@ -155,6 +160,7 @@ export const BrowserToolbar = ({
         onZoomReset={onZoomReset}
         onForceReload={onForceReload}
         onFindInPage={onFindInPage}
+        onSetHomepage={onSetHomepage}
       />
     </div>
   );
