@@ -1,72 +1,39 @@
 /* ===== Overlay Scrollbar =====
-   Hides native scrollbars (which occupy document-flow space) and
-   replaces them with lightweight DOM overlay thumbs. The thumbs are
-   managed by scrollbarManager.ts — they float on top of content via
-   position: absolute + transform and never affect layout. */
+   Third-party scrollbar rendering is provided by OverlayScrollbars.
+   This file only adapts its theme to the app color variables. */
 
-/* Completely hide native scrollbars on every element */
-* {
-  scrollbar-width: none;
+.os-theme-snow {
+  box-sizing: border-box;
+  --os-size: 10px;
+  --os-padding-perpendicular: 2px;
+  --os-padding-axis: 2px;
+  --os-track-border-radius: 999px;
+  --os-track-bg: transparent;
+  --os-track-bg-hover: transparent;
+  --os-track-bg-active: transparent;
+  --os-track-border: none;
+  --os-track-border-hover: none;
+  --os-track-border-active: none;
+  --os-handle-border-radius: 999px;
+  --os-handle-bg: var(--scrollbar-thumb);
+  --os-handle-bg-hover: var(--scrollbar-thumb-hover);
+  --os-handle-bg-active: var(--scrollbar-thumb-active);
+  --os-handle-border: none;
+  --os-handle-border-hover: none;
+  --os-handle-border-active: none;
+  --os-handle-min-size: 36px;
+  --os-handle-max-size: none;
+  --os-handle-perpendicular-size: 100%;
+  --os-handle-perpendicular-size-hover: 100%;
+  --os-handle-perpendicular-size-active: 100%;
+  --os-handle-interactive-area-offset: 4px;
 }
 
-::-webkit-scrollbar {
-  width: 0 !important;
-  height: 0 !important;
-  display: none !important;
-}
-
-/* Track container — absolutely positioned inside the scroll host.
-   pointer-events: none so it never blocks clicks on content. */
-.os-track {
-  position: absolute;
-  pointer-events: none;
+.os-theme-snow.os-scrollbar {
   z-index: 9999;
-  overflow: hidden;
-  will-change: transform;
 }
 
-.os-track.os-vertical {
-  right: 0;
-  top: 0;
-  width: 10px;
-}
-
-.os-track.os-horizontal {
-  left: 0;
-  top: 0;
-  height: 10px;
-}
-
-/* Thumb — transparent by default, colored when .os-visible is active */
-.os-thumb {
-  position: absolute;
-  pointer-events: none;
-  border-radius: 999px;
-  background-color: transparent;
-  transition: background-color 0.18s ease;
-  will-change: transform;
-}
-
-.os-track.os-vertical .os-thumb {
-  left: 2px;
-  right: 2px;
-}
-
-.os-track.os-horizontal .os-thumb {
-  top: 2px;
-  bottom: 2px;
-}
-
-/* Visible state — re-enable pointer events for drag */
-.os-track.os-visible .os-thumb {
-  pointer-events: auto;
-  background-color: var(--scrollbar-thumb);
-}
-
-.os-track.os-visible .os-thumb:hover {
-  background-color: var(--scrollbar-thumb-hover);
-}
-
-.os-track.os-visible .os-thumb:active {
-  background-color: var(--scrollbar-thumb-active);
+.os-theme-snow .os-scrollbar-handle {
+  transition: opacity 0.15s ease, background-color 0.18s ease,
+    border-color 0.18s ease, width 0.15s ease, height 0.15s ease;
 }

@@ -7,7 +7,7 @@ import {
   FileText,
   Hash,
 } from "lucide-react";
-import type { ToolCallInfo } from "./useChatConversation";
+import type { ToolCallInfo } from "../useChatConversation";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
 
 type FilesystemReadToolCallProps = {
