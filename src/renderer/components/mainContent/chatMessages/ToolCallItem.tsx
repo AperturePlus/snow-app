@@ -7,7 +7,12 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 import type { ToolCallInfo } from "./useChatConversation";
-import { FilesystemReadToolCall } from "./toolCallRenderers";
+import {
+  FilesystemReadToolCall,
+  FilesystemEditToolCall,
+  FilesystemCreateToolCall,
+} from "./toolCallRenderers";
+import { ToolNameBadge } from "./toolCallRenderers/shared/ToolNameBadge";
 
 type ToolCallItemProps = {
   toolCall: ToolCallInfo;
@@ -31,6 +36,14 @@ export const ToolCallItem = ({
   // Delegate to specialized renderers based on tool name
   if (toolCall.name === "mcp__filesystem__read") {
     return <FilesystemReadToolCall toolCall={toolCall} />;
+  }
+
+  if (toolCall.name === "mcp__filesystem__replace_edit") {
+    return <FilesystemEditToolCall toolCall={toolCall} />;
+  }
+
+  if (toolCall.name === "mcp__filesystem__create") {
+    return <FilesystemCreateToolCall toolCall={toolCall} />;
   }
 
   const iconName = toolCall.name.replace(/^mcp__.*__/, "");
@@ -65,7 +78,7 @@ export const ToolCallItem = ({
           }
           aria-hidden="true"
         />
-        <span className="tool-call-name">{iconName}</span>
+        <ToolNameBadge name={iconName} />
         <span
           className={`tool-call-status tool-call-status-${toolCall.status}`}
         >

@@ -6,9 +6,20 @@ import type { IPty } from "node-pty";
 
 import { isSshPath, parseSshUrl } from "../ssh/sshManager";
 import { getDecryptedSecret, getSshCredential } from "../ssh/sshCredentials";
+import { ensureConptyDll } from "./conptyDllHelper";
 
 const require2 = createRequire(import.meta.url);
-const nodePty = require2("node-pty") as typeof import("node-pty");
+
+// Lazy-load node-pty to avoid blocking module loading and window creation.
+// The native conpty.node binding is heavy and only needed when a terminal
+// session is actually spawned.
+let _nodePty: typeof import("node-pty") | null = null;
+const getNodePty = (): typeof import("node-pty") => {
+  if (!_nodePty) {
+    _nodePty = require2("node-pty") as typeof import("node-pty");
+  }
+  return _nodePty;
+};
 
 export type PtySessionOptions = {
   cwd: string;
@@ -89,6 +100,14 @@ const ensureSpawnHelperExecutable = (): void => {
 };
 
 ensureSpawnHelperExecutable();
+
+/**
+ * Whether the bundled conpty.dll is available for useConptyDll mode.
+ * When true, kill() avoids forking conpty_console_list_agent.js (which
+ * triggers AttachConsole failures in Electron). Falls back to false when
+ * the DLL cannot be located or copied, degrading to kernel32 ConPTY.
+ */
+const conptyDllAvailable = ensureConptyDll();
 
 type SshSpawnConfig = {
   shell: string;
@@ -184,7 +203,7 @@ export const createPtySession = (
     spawnCwd = options.cwd || undefined;
   }
 
-  const pty = nodePty.spawn(shell, shellArgs, {
+  const pty = getNodePty().spawn(shell, shellArgs, {
     name: "xterm-256color",
     cols: options.cols,
     rows: options.rows,
@@ -193,8 +212,10 @@ export const createPtySession = (
     // Electron already has a console attached, so the default ConPTY kill path
     // (which forks conpty_console_list_agent.js and calls AttachConsole) throws
     // "AttachConsole failed". Setting useConptyDll routes kill() through a
-    // different code path that avoids the fork entirely.
-    useConptyDll: isWindows,
+    // different code path that avoids the fork entirely. Falls back to false
+    // when conpty.dll is unavailable (ensureConptyDll could not locate or copy
+    // it), degrading to kernel32 ConPTY with a delayed kill cleanup.
+    useConptyDll: conptyDllAvailable,
   });
 
   const session: PtySession = { id, pty, webContents };

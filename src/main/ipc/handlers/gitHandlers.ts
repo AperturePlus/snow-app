@@ -133,4 +133,17 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       );
     }
   );
+
+  ipcMain.handle(
+    "git:discard",
+    async (_event, repoPath: unknown, filePaths: unknown) => {
+      if (typeof repoPath !== "string" || !repoPath.trim()) {
+        throw new Error("Repository path is required");
+      }
+      const paths = Array.isArray(filePaths)
+        ? filePaths.filter((f): f is string => typeof f === "string")
+        : [];
+      return native.gitDiscardChanges(repoPath.trim(), paths);
+    }
+  );
 };

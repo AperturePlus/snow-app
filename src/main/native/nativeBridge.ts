@@ -1,12 +1,37 @@
 import { app } from "electron";
 import { join } from "node:path";
 import type { NativeBridge } from "./types";
+import { storageReady } from "../app/storageReady";
+
+/**
+ * Wraps a native binding in a Proxy that awaits `storageReady` before
+ * invoking any method. This lets the window appear instantly while the
+ * Rust SQLite database initialises in the background — IPC handlers
+ * that call native methods will simply pause until storage is ready,
+ * without each handler needing its own guard.
+ */
+const wrapWithStorageGate = <T extends object>(binding: T): T => {
+  return new Proxy(binding, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (typeof value !== "function") {
+        return value;
+      }
+      return (...args: unknown[]) =>
+        storageReady.then(() => value.apply(target, args));
+    },
+  }) as T;
+};
+
+let rawBinding: NativeBridge | null = null;
 
 export const loadNativeBridge = (): NativeBridge => {
   try {
     const nativeEntry = join(app.getAppPath(), "native", "index.cjs");
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    return require(nativeEntry) as NativeBridge;
+    const binding = require(nativeEntry);
+    rawBinding = binding as NativeBridge;
+    return wrapWithStorageGate(binding) as NativeBridge;
   } catch (error) {
     console.warn(
       "Native Rust bridge is unavailable, using development fallback.",
@@ -242,6 +267,9 @@ export const loadNativeBridge = (): NativeBridge => {
       gitFileDiff: () => {
         throw new Error("Rust native bridge is required for git file diff");
       },
+      gitDiscardChanges: () => {
+        throw new Error("Rust native bridge is required for git discard");
+      },
       startGitWatch: () => {
         throw new Error("Rust native bridge is required for git watch");
       },
@@ -260,4 +288,39 @@ export const loadNativeBridge = (): NativeBridge => {
   }
 };
 
-export const native = loadNativeBridge();
+let actualNative: NativeBridge | null = null;
+
+/**
+ * Lazily loads the native binding on first access. This defers the
+ * expensive require() of the ~12 MB Rust .node file until the first
+ * method call, so module loading and window creation are not blocked.
+ */
+const ensureNativeLoaded = (): NativeBridge => {
+  if (!actualNative) {
+    actualNative = loadNativeBridge();
+  }
+  return actualNative;
+};
+
+/**
+ * Lazy Proxy: defers .node file loading until first property access.
+ * The inner Proxy from wrapWithStorageGate still gates on
+ * storageReady for individual method calls.
+ */
+export const native = new Proxy({} as NativeBridge, {
+  get(_target, prop) {
+    const actual = ensureNativeLoaded();
+    const value = (actual as Record<string | symbol, unknown>)[prop];
+    return typeof value === "function" ? value.bind(actual) : value;
+  },
+}) as NativeBridge;
+
+/**
+ * Returns the raw (un-proxied) native binding. Used by
+ * `initializeApplicationServices` to bootstrap storage without
+ * deadlocking on the `storageReady` gate that the Proxy enforces.
+ */
+export const getRawNative = (): NativeBridge => {
+  ensureNativeLoaded();
+  return rawBinding ?? native;
+};

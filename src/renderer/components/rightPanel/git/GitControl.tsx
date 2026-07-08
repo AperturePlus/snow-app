@@ -4,6 +4,7 @@ import {
   GitCommitHorizontal,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ConfirmDialog } from "../../common/ConfirmDialog";
 import type { GitFileStatus, GitStatusResult } from "../../../../preload";
 import { useI18n } from "../../../i18n";
 import { useGitStatus } from "./useGitStatus";
@@ -29,6 +30,7 @@ export const GitControl = ({
   const [commitMessage, setCommitMessage] = useState("");
   const [actionInProgress, setActionInProgress] = useState(false);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const [discardTarget, setDiscardTarget] = useState<GitFileStatus[]>([]);
   const lastClickedPathRef = useRef<string | null>(null);
   const lastClickedSectionRef = useRef<"staged" | "unstaged" | null>(null);
   const prevStatusRef = useRef<string | null>(null);
@@ -279,6 +281,33 @@ export const GitControl = ({
       .finally(() => setActionInProgress(false));
   }, [repoPath, refresh]);
 
+  const handleDiscardRequest = useCallback((files: GitFileStatus[]) => {
+    if (files.length === 0) {
+      return;
+    }
+    setDiscardTarget(files);
+  }, []);
+
+  const handleDiscardConfirm = useCallback(() => {
+    if (!repoPath || discardTarget.length === 0) {
+      return;
+    }
+    const paths = discardTarget.map((f) => f.path);
+    setDiscardTarget([]);
+    setActionInProgress(true);
+    window.snow
+      .gitDiscardChanges(repoPath, paths)
+      .then(() => {
+        setSelectedPaths(new Set());
+        refresh();
+      })
+      .finally(() => setActionInProgress(false));
+  }, [repoPath, discardTarget, refresh]);
+
+  const handleDiscardCancel = useCallback(() => {
+    setDiscardTarget([]);
+  }, []);
+
   if (!repoPath) {
     return (
       <div className="git-control">
@@ -374,6 +403,7 @@ export const GitControl = ({
         onFileSelect={handleFileSelect}
         onStageToggle={handleStageToggle}
         onStageAll={handleStageAll}
+        onDiscard={handleDiscardRequest}
       />
 
       <GitFileList
@@ -408,6 +438,18 @@ export const GitControl = ({
           <span>{t("git.commit")}</span>
         </button>
       </div>
+
+      <ConfirmDialog
+        open={discardTarget.length > 0}
+        title={t("git.discardTitle")}
+        message={t("git.discardConfirm", {
+          values: { count: discardTarget.length },
+        })}
+        confirmLabel={t("git.discardConfirmBtn")}
+        cancelLabel={t("git.discardCancelBtn")}
+        onConfirm={handleDiscardConfirm}
+        onCancel={handleDiscardCancel}
+      />
     </div>
   );
 };

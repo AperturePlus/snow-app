@@ -19,7 +19,6 @@ export const createWindow = (): void => {
     height: 900,
     minWidth: 960,
     minHeight: 600,
-    show: false,
     title: "Snow App",
     icon: APP_ICON_PATH,
     titleBarStyle: isMacOS ? "hidden" : "default",
@@ -33,6 +32,7 @@ export const createWindow = (): void => {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
+      spellcheck: false,
     },
   });
 
@@ -74,10 +74,6 @@ export const createWindow = (): void => {
   // Clean up PTY sessions before window is fully destroyed
   mainWindow.on("close", () => {
     killAllPtyForWebContents(mainWindow.webContents);
-  });
-
-  mainWindow.once("ready-to-show", () => {
-    mainWindow.show();
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

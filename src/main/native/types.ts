@@ -414,6 +414,10 @@ export type NativeBridge = {
     filePath: string,
     staged: boolean
   ) => Promise<GitDiffResult>;
+  gitDiscardChanges: (
+    repoPath: string,
+    filePaths: string[]
+  ) => Promise<GitStageResult>;
   startGitWatch: (
     repoPath: string,
     onChange: (repoPath: string) => void

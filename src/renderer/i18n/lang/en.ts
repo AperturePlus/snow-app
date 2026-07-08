@@ -595,6 +595,12 @@ export const en = {
   "git.noChanges": "No changes",
   "git.unstageFile": "Unstage file",
   "git.stageFile": "Stage file",
+  "git.discardFile": "Discard changes",
+  "git.discardTitle": "Discard Changes",
+  "git.discardConfirm":
+    "Are you sure you want to discard changes to {{count}} file(s)? This action cannot be undone.",
+  "git.discardConfirmBtn": "Discard",
+  "git.discardCancelBtn": "Cancel",
   "git.unknownBranch": "unknown",
   "git.loading": "Loading...",
   "git.localBranches": "Local",

@@ -126,6 +126,9 @@ export class ScrollbarManager {
     if (!host.isConnected) return false;
     if (this.isOverlayScrollbarsInternalElement(host)) return false;
     if (OverlayScrollbars(host)) return false;
+    // OverlayScrollbars restructures the host DOM, which breaks
+    // contentEditable input handling — skip those elements entirely.
+    if (host.isContentEditable) return false;
 
     const style = getComputedStyle(host);
     return (

@@ -9,7 +9,12 @@
     "dev": "electron-vite dev 2>&1 | node scripts/filter-ime-noise.cjs",
     "build": "npm run build:rust && electron-vite build",
     "build:app": "npm run build && electron-builder",
+    "build:win": "npm run build && electron-builder --win nsis portable",
+    "build:mac": "npm run build && electron-builder --mac dmg zip",
+    "build:linux": "npm run build && electron-builder --linux AppImage deb",
+    "build:all": "npm run build && electron-builder -mwl",
     "build:rust": "node scripts/build-native.cjs",
+    "postinstall": "node scripts/patch-spectre.cjs && node scripts/ensure-conpty-dll.cjs",
     "check": "npm run check:ts && cargo check --manifest-path native/Cargo.toml",
     "check:ts": "tsc --noEmit",
     "preview": "electron-vite preview"
@@ -52,7 +57,20 @@
       "out/**",
       "native/*.node",
       "native/index.cjs",
-      "package.json"
+      "package.json",
+      "!native/snow_native.*.*.node",
+      "!**/node_modules/node-pty/build/deps/**",
+      "!**/node_modules/node-pty/build/Release/*.iobj",
+      "!**/node_modules/node-pty/build/Release/*.ipdb",
+      "!**/node_modules/node-pty/build/Release/*.lib",
+      "!**/node_modules/node-pty/build/Release/*.exp",
+      "!**/node_modules/node-pty/build/Release/*.tlog",
+      "!**/node_modules/node-pty/build/Release/*.recipe",
+      "!**/node_modules/node-pty/build/Release/*.lastbuildstate",
+      "!**/node_modules/node-pty/build/Release/*.xml",
+      "!**/node_modules/node-pty/prebuilds/win32-arm64/**",
+      "!**/node_modules/node-pty/prebuilds/darwin-*/**",
+      "!**/node_modules/node-pty/third_party/conpty/**/win10-arm64/**"
     ],
     "asarUnpack": [
       "native/*.node",
@@ -69,6 +87,15 @@
     },
     "win": {
       "icon": "resources/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Snow App"
     },
     "linux": {
       "icon": "resources/icon.png"

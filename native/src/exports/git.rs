@@ -65,6 +65,14 @@ pub async fn git_file_diff(
     crate::storage::services::git::get_file_diff(&repo_path, &file_path, staged)
 }
 
+#[napi]
+pub async fn git_discard_changes(
+    repo_path: String,
+    file_paths: Vec<String>,
+) -> napi::Result<GitStageResult> {
+    crate::storage::services::git::discard_changes(&repo_path, &file_paths)
+}
+
 #[napi(
     ts_args_type = "repoPath: string, onChange: (repoPath: string) => void",
     ts_return_type = "void"

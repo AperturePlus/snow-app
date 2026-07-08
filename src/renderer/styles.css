@@ -3217,6 +3217,12 @@ input {
   white-space: pre-wrap;
 }
 
+@media (prefers-color-scheme: dark) {
+  .user-message-bubble {
+    background: #2e2e2e;
+  }
+}
+
 .user-message-bubble p {
   margin: 0;
 }
@@ -3901,6 +3907,14 @@ input {
   gap: 8px;
 }
 
+.tool-call-file-path {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-tertiary);
+  word-break: break-all;
+  user-select: text;
+}
+
 .tool-call-section {
   display: flex;
   flex-direction: column;
@@ -3925,8 +3939,11 @@ input {
   word-break: break-all;
 }
 
-/* Filesystem Read Tool Call */
+/* Tool name badge with icon */
 .tool-call-tool-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: 11px;
   font-weight: 500;
   color: var(--text-tertiary);
@@ -3935,6 +3952,11 @@ input {
   border-radius: var(--radius-sm);
   flex-shrink: 0;
   font-family: var(--font-mono);
+}
+
+.tool-call-tool-name-icon {
+  flex-shrink: 0;
+  opacity: 0.7;
 }
 
 .tool-call-line-range {
@@ -4022,6 +4044,123 @@ input {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+/* Filesystem Edit / Create Tool Call */
+.tool-call-diff-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+
+.tool-call-diff-add {
+  color: var(--accent-green-text);
+}
+
+.tool-call-diff-del {
+  color: var(--accent-red-text);
+}
+
+.tool-call-diff-content {
+  max-height: 400px;
+  overflow: auto;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.tool-call-diff-content .diff-line {
+  display: flex;
+  align-items: flex-start;
+  min-height: 18px;
+  padding: 0 6px;
+}
+
+.tool-call-diff-content .diff-linenum {
+  display: inline-block;
+  width: 26px;
+  padding: 0 4px 0 2px;
+  text-align: right;
+  flex-shrink: 0;
+  user-select: none;
+  color: var(--text-muted);
+  font-size: 10.5px;
+}
+
+.tool-call-diff-content .diff-marker {
+  display: inline-block;
+  width: 14px;
+  padding: 0 2px;
+  text-align: center;
+  flex-shrink: 0;
+  user-select: none;
+  color: var(--text-muted);
+}
+
+.tool-call-diff-content .diff-line.add .diff-marker {
+  color: var(--accent-green);
+}
+
+.tool-call-diff-content .diff-line.del .diff-marker {
+  color: var(--accent-red);
+}
+
+.tool-call-diff-content .diff-code {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding: 0;
+  padding-right: 4px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.tool-call-diff-content .diff-line.add .diff-code {
+  color: var(--accent-green-text);
+}
+
+.tool-call-diff-content .diff-line.del .diff-code {
+  color: var(--accent-red-text);
+}
+
+.tool-call-diff-more {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  border-top: 1px solid var(--border-light);
+}
+
+.tool-call-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+}
+
+.tool-call-meta-label {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.tool-call-meta-value {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.tool-call-success-row {
+  font-size: 11.5px;
+  color: var(--accent-green-text);
+  padding: 4px 0;
 }
 
 /* File Changes Card */
@@ -4232,6 +4371,32 @@ input {
   outline: 2px dashed var(--accent-color, #3b82f6);
   outline-offset: -2px;
   border-radius: var(--radius-md);
+}
+
+/* Native scrollbar styling for contentEditable input — OverlayScrollbars
+   is skipped for contentEditable elements (breaks input), so we style
+   the native scrollbar to match the os-theme-snow overlay theme. */
+.input-field-editable::-webkit-scrollbar {
+  width: 10px;
+}
+.input-field-editable::-webkit-scrollbar-track {
+  background: transparent;
+}
+.input-field-editable::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.input-field-editable::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+.input-field-editable::-webkit-scrollbar-thumb:active {
+  background-color: var(--scrollbar-thumb-active);
+}
+.input-field-editable {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
 /* ===== File Chip (input + message) ===== */
@@ -6168,6 +6333,96 @@ input {
 .git-file-action:hover {
   background: var(--bg-active);
   color: var(--text-primary);
+}
+
+.git-discard-action:hover {
+  color: var(--accent-red-text);
+}
+
+/* ===== Confirm Dialog ===== */
+
+.confirm-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+}
+
+.confirm-dialog {
+  display: flex;
+  width: 400px;
+  max-width: 90vw;
+  flex-direction: column;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-xl);
+  outline: none;
+}
+
+.confirm-dialog-header {
+  display: flex;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.confirm-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.confirm-dialog-body {
+  padding: 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 16px 14px;
+}
+
+.confirm-dialog-btn {
+  padding: 6px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.confirm-dialog-btn.cancel {
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.confirm-dialog-btn.cancel:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.confirm-dialog-btn.confirm {
+  border: none;
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+}
+
+.confirm-dialog-btn.confirm:hover {
+  background: var(--accent-red-text);
+  color: #fff;
 }
 
 /* Commit Section */

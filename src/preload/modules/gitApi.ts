@@ -57,4 +57,9 @@ export const gitApi = {
     staged: boolean
   ): Promise<GitDiffResult> =>
     ipcRenderer.invoke("git:file-diff", repoPath, filePath, staged),
+  gitDiscardChanges: (
+    repoPath: string,
+    filePaths: string[]
+  ): Promise<GitStageResult> =>
+    ipcRenderer.invoke("git:discard", repoPath, filePaths),
 };

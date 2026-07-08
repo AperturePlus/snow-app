@@ -1,4 +1,11 @@
-import { FilePlus, FileMinus, FileEdit, FileX, Plus } from "lucide-react";
+import {
+  FilePlus,
+  FileMinus,
+  FileEdit,
+  FileX,
+  Plus,
+  Undo2,
+} from "lucide-react";
 import type { GitFileStatus } from "../../../../preload";
 import { useI18n } from "../../../i18n";
 import { getFileTypeIcon } from "../../../utils/fileIcons";
@@ -19,6 +26,7 @@ type GitFileListProps = {
   ) => void;
   onStageAll?: () => void;
   onUnstageAll?: () => void;
+  onDiscard?: (files: GitFileStatus[]) => void;
 };
 
 const getStatusIcon = (status: string): React.ReactNode => {
@@ -85,6 +93,7 @@ export const GitFileList = ({
   onStageToggle,
   onStageAll,
   onUnstageAll,
+  onDiscard,
 }: GitFileListProps): React.JSX.Element => {
   const { t } = useI18n();
   const isStaged = section === "staged";
@@ -176,6 +185,25 @@ export const GitFileList = ({
                 >
                   <span>{isStaged ? "-" : "+"}</span>
                 </button>
+                {!isStaged && onDiscard && (
+                  <button
+                    type="button"
+                    className="git-file-action git-discard-action"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const filesToDiscard = isSelected
+                        ? files.filter((f) =>
+                            selectedPaths.has(`${section}:${f.path}`)
+                          )
+                        : [file];
+                      onDiscard(filesToDiscard);
+                    }}
+                    disabled={actionInProgress}
+                    title={t("git.discardFile")}
+                  >
+                    <Undo2 size={12} strokeWidth={1.8} />
+                  </button>
+                )}
               </div>
             );
           })}

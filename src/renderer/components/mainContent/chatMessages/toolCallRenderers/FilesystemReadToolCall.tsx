@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { ToolCallInfo } from "../useChatConversation";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
+import { ToolNameBadge } from "./shared/ToolNameBadge";
 
 type FilesystemReadToolCallProps = {
   toolCall: ToolCallInfo;
@@ -99,14 +100,6 @@ const parseResult = (
   }
 };
 
-const formatPath = (filePath: string): string => {
-  const parts = filePath.split("/");
-  if (parts.length <= 3) {
-    return filePath;
-  }
-  return `.../${parts.slice(-2).join("/")}`;
-};
-
 const getLineRangeLabel = (
   parsedArgs: ParsedArgs | null,
   parsedResult: ParsedResult
@@ -157,8 +150,7 @@ export const FilesystemReadToolCall = ({
 
   const rangeLabel = getLineRangeLabel(parsedArgs, parsedResult);
   const filePath = parsedArgs?.filePath ?? "read";
-  const fileName = filePath.split("/").filter(Boolean).pop() || filePath;
-  const displayPath = formatPath(filePath);
+  const fileName = filePath.split(/[\\/]/).filter(Boolean).pop() || filePath;
 
   const hasError = parsedResult.type === "error";
 
@@ -170,15 +162,15 @@ export const FilesystemReadToolCall = ({
           size={14}
           aria-hidden="true"
         />
+        <ToolNameBadge name="read" category="read" />
         {getFileTypeIcon(fileName, isDirectory, false, {
           size: 14,
           className:
             toolCall.status === "running" ? "tool-call-icon-spinning" : "",
           "aria-hidden": true,
         })}
-        <span className="tool-call-tool-name">read</span>
         <span className="tool-call-name" title={filePath}>
-          {displayPath}
+          {fileName}
         </span>
         {rangeLabel ? (
           <span className="tool-call-line-range">
@@ -193,6 +185,7 @@ export const FilesystemReadToolCall = ({
         </span>
       </summary>
       <div className="tool-call-body">
+        <div className="tool-call-file-path">{filePath}</div>
         {hasError ? (
           <div className="tool-call-error">
             <AlertCircle size={12} aria-hidden="true" />
