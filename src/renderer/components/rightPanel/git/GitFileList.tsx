@@ -1,6 +1,7 @@
 import { FilePlus, FileMinus, FileEdit, FileX, Plus } from "lucide-react";
 import type { GitFileStatus } from "../../../../preload";
 import { useI18n } from "../../../i18n";
+import { getFileTypeIcon } from "../../../utils/fileIcons";
 
 type GitFileListProps = {
   files: GitFileStatus[];
@@ -150,6 +151,12 @@ export const GitFileList = ({
                   }`}
                   title={file.path}
                 >
+                  {getFileTypeIcon(
+                    file.path.split("/").pop() ?? file.path,
+                    false,
+                    false,
+                    { size: 13, className: "git-file-type-icon" }
+                  )}
                   {file.path}
                 </span>
                 <button

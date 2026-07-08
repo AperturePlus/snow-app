@@ -100,6 +100,25 @@ fn run_git(repo_path: &str, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// Like `run_git` but returns stdout regardless of exit code.
+///
+/// `git diff --no-index` exits with code 1 when the two files differ,
+/// which is the normal (expected) case for new/untracked files.
+/// Using `run_git` would treat that as an error and discard the stdout.
+fn run_git_raw(repo_path: &str, args: &[&str]) -> Result<String> {
+    let mut cmd = Command::new("git");
+    cmd.args(args).current_dir(repo_path);
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd
+        .output()
+        .map_err(|e| Error::from_reason(format!("Failed to execute git: {e}")))?;
+
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
 fn is_git_repo(repo_path: &str) -> bool {
     Path::new(repo_path).join(".git").exists()
 }
@@ -577,10 +596,14 @@ pub fn get_file_diff(repo_path: &str, file_path: &str, staged: bool) -> Result<G
                 }
             }
 
-            // If no diff and not staged, try untracked file diff
+            // If no diff and not staged, the file may be untracked (new).
+            // `git diff --no-index /dev/null <file>` generates a diff showing
+            // the entire file as additions.  It exits with code 1 when the
+            // files differ (the normal case), so we must use `run_git_raw`
+            // which ignores the exit code and returns stdout.
             if !staged && stdout.is_empty() {
                 let no_index_args = vec!["diff", "--no-index", "--text", "/dev/null", file_path];
-                let full_diff = run_git(repo_path, &no_index_args).unwrap_or_default();
+                let full_diff = run_git_raw(repo_path, &no_index_args).unwrap_or_default();
                 if !full_diff.is_empty() {
                     return Ok(GitDiffResult {
                         content: full_diff,

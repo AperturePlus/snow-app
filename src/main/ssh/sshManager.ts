@@ -172,6 +172,36 @@ export const listSshDirectory = (
   });
 };
 
+export const readSshFile = (
+  sessionId: string,
+  remotePath: string
+): Promise<Buffer> => {
+  return new Promise((resolve, reject) => {
+    const session = sessions.get(sessionId);
+    if (!session) {
+      reject(new Error("SSH session not found. Please reconnect."));
+      return;
+    }
+
+    const chunks: Buffer[] = [];
+    const stream = session.sftp.createReadStream(remotePath);
+
+    stream.on("data", (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
+
+    stream.on("end", () => {
+      resolve(Buffer.concat(chunks));
+    });
+
+    stream.on("error", (err: Error) => {
+      reject(new Error(`Failed to read remote file: ${err.message}`));
+    });
+
+    stream.read();
+  });
+};
+
 export const disconnectSsh = (sessionId: string): void => {
   const session = sessions.get(sessionId);
   if (!session) {

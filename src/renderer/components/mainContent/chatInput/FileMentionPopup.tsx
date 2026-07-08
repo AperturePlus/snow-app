@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Check, File, Folder, Loader2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Loader2 } from "lucide-react";
 import {
   forwardRef,
   useImperativeHandle,
@@ -14,6 +14,7 @@ import type {
   WorkspaceDirectoryRecord,
 } from "../../../../preload";
 import { useI18n } from "../../../i18n";
+import { getFileTypeIcon } from "../../../utils/fileIcons";
 import type { FileTag } from "./fileTagUtils";
 
 export type FileMentionPopupHandle = {
@@ -478,11 +479,10 @@ export const FileMentionPopup = forwardRef<
                   <span className="mention-entry-check">
                     {isChecked && <Check size={13} />}
                   </span>
-                  {entry.isDirectory ? (
-                    <Folder size={14} className="mention-entry-icon" />
-                  ) : (
-                    <File size={14} className="mention-entry-icon" />
-                  )}
+                  {getFileTypeIcon(entry.name, entry.isDirectory, false, {
+                    size: 14,
+                    className: "mention-entry-icon",
+                  })}
                   <span className="mention-entry-name">{entry.name}</span>
                   {entry.relativePath && (
                     <span className="mention-entry-path">

@@ -338,9 +338,12 @@ pub fn delete_workspace_directory(directory_id: String) -> Result<()> {
 pub fn read_directory_entries(dir_path: String) -> Result<Vec<services::fs_explorer::DirectoryEntry>> {
     services::fs_explorer::read_directory_entries(&dir_path)
 }
-
 pub fn search_files(root_dir: String, query: String) -> Result<Vec<services::fs_explorer::FileSearchResult>> {
     services::fs_explorer::search_files(&root_dir, &query)
+}
+
+pub fn read_file_content(file_path: String) -> Result<services::fs_explorer::FileContentResult> {
+    services::fs_explorer::read_file_content(&file_path)
 }
 
 pub fn list_mcp_server_configs() -> Result<Vec<McpServerConfigRecord>> {

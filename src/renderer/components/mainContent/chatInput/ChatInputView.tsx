@@ -6,12 +6,13 @@ import {
   ChevronDown,
   Keyboard,
   Loader2,
-  Plus,
+  Paperclip,
   RefreshCw,
   Square,
 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useI18n } from "../../../i18n";
 import type { ChatInputViewProps } from "./types";
 import { TokenUsageRing } from "./TokenUsageRing";
 import {
@@ -27,6 +28,7 @@ import {
   type FileMentionPopupHandle,
 } from "./FileMentionPopup";
 import { useDropdownDirection } from "./useDropdownDirection";
+import { PlusMenu, type PlusMenuSection } from "./PlusMenu";
 
 export const ChatInputView = ({
   placeholder,
@@ -70,6 +72,7 @@ export const ChatInputView = ({
   handleToggleModelDropdown,
   handleSelectThinking,
 }: ChatInputViewProps): React.JSX.Element => {
+  const { t } = useI18n();
   const isDraggingOverRef = useRef(false);
   const [isMentionOpen, setIsMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
@@ -466,6 +469,43 @@ export const ChatInputView = ({
     }
   }, []);
 
+  const handleSelectFilesAndFolders = useCallback(async () => {
+    try {
+      const selected = await window.snow.selectFiles(
+        t("plusMenu.selectFilesTitle")
+      );
+      if (!selected || selected.length === 0) {
+        return;
+      }
+      const tags: FileTag[] = selected.map((item) => {
+        const path = item.path;
+        const name = path.split("/").filter(Boolean).pop() || path;
+        return { path, name, isDirectory: item.isDirectory };
+      });
+      insertFileTags(tags);
+    } catch {
+      // dialog cancelled or error
+    }
+  }, [insertFileTags, t]);
+
+  const plusMenuSections = useMemo<PlusMenuSection[]>(
+    () => [
+      {
+        id: "add",
+        label: t("plusMenu.sectionAdd"),
+        items: [
+          {
+            id: "files-and-folders",
+            label: t("plusMenu.filesAndFolders"),
+            icon: Paperclip,
+            onSelect: () => void handleSelectFilesAndFolders(),
+          },
+        ],
+      },
+    ],
+    [t, handleSelectFilesAndFolders]
+  );
+
   return (
     <div className="input-area" ref={mentionAnchorRef}>
       <FileMentionPopup
@@ -528,9 +568,7 @@ export const ChatInputView = ({
           )}
         <div className="input-toolbar">
           <div className="toolbar-left">
-            <button className="toolbar-btn" aria-label="Add attachment">
-              <Plus size={16} />
-            </button>
+            <PlusMenu sections={plusMenuSections} />
           </div>
           <div className="toolbar-right">
             <div className="model-selector" ref={dropdownRef}>

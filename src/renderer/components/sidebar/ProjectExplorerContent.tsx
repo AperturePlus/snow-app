@@ -2,9 +2,6 @@ import {
   ArrowLeft,
   ChevronDown,
   ChevronRight,
-  File,
-  Folder,
-  FolderOpen,
   Loader2,
   RefreshCw,
   Search,
@@ -13,6 +10,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "../../i18n";
+import { getFileTypeIcon } from "../../utils/fileIcons";
 import type {
   DirectoryEntry,
   FileSearchResult,
@@ -65,15 +63,10 @@ const getFileIcon = (
   node: TreeNode,
   isExpanded: boolean
 ): React.JSX.Element => {
-  if (node.isDirectory) {
-    return isExpanded ? (
-      <FolderOpen className="tree-icon" size={14} />
-    ) : (
-      <Folder className="tree-icon" size={14} />
-    );
-  }
-
-  return <File className="tree-icon" size={14} />;
+  return getFileTypeIcon(node.name, node.isDirectory, isExpanded, {
+    className: "tree-icon",
+    size: 14,
+  });
 };
 
 const formatSize = (bytes: number): string => {
@@ -90,6 +83,7 @@ const formatSize = (bytes: number): string => {
 
 export function ProjectExplorerContent({
   onSwitchContent,
+  onOpenFile,
   explorerDirectoryId,
 }: SidebarContentProps): React.JSX.Element {
   const { t } = useI18n();
@@ -651,7 +645,7 @@ export function ProjectExplorerContent({
 
         {rootPath ? (
           <div className="explorer-root-info">
-            <FolderOpen size={13} />
+            {getFileTypeIcon(rootName, true, true, { size: 13 })}
             <span className="explorer-root-name">{rootName}</span>
             <span className="explorer-root-path" title={rootPath}>
               {rootPath}
@@ -693,10 +687,14 @@ export function ProjectExplorerContent({
                     }
                     onClick={() => {
                       setSelectedPath(result.path);
+                      onOpenFile?.(result.path, result.name);
                     }}
                     title={result.path}
                   >
-                    <File className="tree-icon" size={13} />
+                    {getFileTypeIcon(result.name, false, false, {
+                      className: "tree-icon",
+                      size: 13,
+                    })}
                     <div className="explorer-search-result-info">
                       <span className="explorer-search-result-name">
                         {result.name}
@@ -749,6 +747,8 @@ export function ProjectExplorerContent({
                       setSelectedPath(node.path);
                       if (hasChildren) {
                         void handleToggle(node.path);
+                      } else {
+                        onOpenFile?.(node.path, node.name);
                       }
                     }}
                     style={{ paddingLeft: `${depth * 14 + 8}px` }}

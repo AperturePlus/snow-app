@@ -77,6 +77,18 @@ export const App = (): React.JSX.Element => {
     });
   }, [isRightPanelCollapsed]);
 
+  const handleOpenFile = useCallback(
+    (filePath: string, fileName: string) => {
+      if (isRightPanelCollapsed) {
+        setIsRightPanelCollapsed(false);
+      }
+      requestAnimationFrame(() => {
+        rightPanelRef.current?.openFile(filePath, fileName);
+      });
+    },
+    [isRightPanelCollapsed]
+  );
+
   const handleOpenSshWizard = useCallback((): void => {
     setShowSshWizard(true);
   }, []);
@@ -211,6 +223,7 @@ export const App = (): React.JSX.Element => {
             onActiveDirectoryChange={setActiveDirectory}
             onSelectMainView={setActiveMainView}
             onOpenSshWizard={handleOpenSshWizard}
+            onOpenFile={handleOpenFile}
           />
           {!isSidebarCollapsed && (
             <div

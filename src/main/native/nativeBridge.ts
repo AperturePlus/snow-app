@@ -22,15 +22,11 @@ export const loadNativeBridge = (): NativeBridge => {
         ),
       getSystemSettingValue: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to read system settings"
-          )
+          new Error("Rust native bridge is required to read system settings")
         ),
       setSystemSetting: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to write system settings"
-          )
+          new Error("Rust native bridge is required to write system settings")
         ),
       listApiConfigs: () =>
         Promise.reject(
@@ -46,21 +42,15 @@ export const loadNativeBridge = (): NativeBridge => {
         ),
       listSystemPrompts: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to list system prompts"
-          )
+          new Error("Rust native bridge is required to list system prompts")
         ),
       upsertSystemPrompt: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to write system prompts"
-          )
+          new Error("Rust native bridge is required to write system prompts")
         ),
       deleteSystemPrompt: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to delete system prompts"
-          )
+          new Error("Rust native bridge is required to delete system prompts")
         ),
       listCustomHeaderSchemes: () =>
         Promise.reject(
@@ -112,9 +102,11 @@ export const loadNativeBridge = (): NativeBridge => {
         ),
       readDirectoryEntries: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to read directory entries"
-          )
+          new Error("Rust native bridge is required to read directory entries")
+        ),
+      readFileContent: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to read file content")
         ),
       searchFiles: () =>
         Promise.reject(
@@ -122,9 +114,7 @@ export const loadNativeBridge = (): NativeBridge => {
         ),
       listMcpServerConfigs: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to list MCP server configs"
-          )
+          new Error("Rust native bridge is required to list MCP server configs")
         ),
       upsertMcpServerConfig: () =>
         Promise.reject(
@@ -158,9 +148,7 @@ export const loadNativeBridge = (): NativeBridge => {
         ),
       listChatConversations: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to list chat conversations"
-          )
+          new Error("Rust native bridge is required to list chat conversations")
         ),
       listChatConversationsPaginated: () =>
         Promise.reject(
@@ -176,9 +164,7 @@ export const loadNativeBridge = (): NativeBridge => {
         ),
       getChatConversation: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to get chat conversation"
-          )
+          new Error("Rust native bridge is required to get chat conversation")
         ),
       updateConversationStatus: () =>
         Promise.reject(
@@ -188,15 +174,11 @@ export const loadNativeBridge = (): NativeBridge => {
         ),
       renameConversation: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to rename conversation"
-          )
+          new Error("Rust native bridge is required to rename conversation")
         ),
       deleteConversation: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to delete conversation"
-          )
+          new Error("Rust native bridge is required to delete conversation")
         ),
       listChatMessages: () =>
         Promise.reject(
@@ -210,15 +192,11 @@ export const loadNativeBridge = (): NativeBridge => {
         ),
       fetchAvailableModels: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to fetch available models"
-          )
+          new Error("Rust native bridge is required to fetch available models")
         ),
       fetchAvailableModelsForConfig: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to fetch available models"
-          )
+          new Error("Rust native bridge is required to fetch available models")
         ),
       createResponseStream: () =>
         Promise.reject(

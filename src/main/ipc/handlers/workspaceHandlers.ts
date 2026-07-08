@@ -1,4 +1,5 @@
 import { BrowserWindow, dialog, ipcMain } from "electron";
+import { promises as fs } from "fs";
 import type { NativeBridge } from "../../native/types";
 import {
   normalizeWorkspaceDirectory,
@@ -92,6 +93,16 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
   );
 
   ipcMain.handle(
+    "workspace-directories:read-file",
+    (_event, filePath: unknown) => {
+      if (typeof filePath !== "string" || !filePath.trim()) {
+        throw new Error("File path is required");
+      }
+      return native.readFileContent(filePath.trim());
+    }
+  );
+
+  ipcMain.handle(
     "workspace-directories:start-watch",
     (_event, dirPath: unknown) => {
       if (typeof dirPath !== "string" || !dirPath.trim()) {
@@ -124,6 +135,42 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
       }
 
       return native.searchFiles(dirPath.trim(), query.trim());
+    }
+  );
+
+  // ===== File picker dialog (multi-select) =====
+  ipcMain.handle(
+    "workspace-directories:select-files",
+    async (event, dialogTitle: unknown) => {
+      const browserWindow = BrowserWindow.fromWebContents(event.sender);
+      const title =
+        typeof dialogTitle === "string" && dialogTitle.trim()
+          ? dialogTitle.trim()
+          : "Select files and folders";
+      const options: Electron.OpenDialogOptions = {
+        title,
+        properties: ["openFile", "openDirectory", "multiSelections"],
+      };
+      const result = browserWindow
+        ? await dialog.showOpenDialog(browserWindow, options)
+        : await dialog.showOpenDialog(options);
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return null;
+      }
+
+      const entries = await Promise.all(
+        result.filePaths.map(async (path) => {
+          try {
+            const stat = await fs.stat(path);
+            return { path, isDirectory: stat.isDirectory() };
+          } catch {
+            return { path, isDirectory: false };
+          }
+        })
+      );
+
+      return entries;
     }
   );
 

@@ -9,7 +9,7 @@ use crate::storage::{
     SystemPromptItemInput, SystemPromptItemRecord, WorkspaceDirectoryInput,
     WorkspaceDirectoryRecord,
 };
-use crate::storage::services::fs_explorer::{DirectoryEntry, FileSearchResult};
+use crate::storage::services::fs_explorer::{DirectoryEntry, FileContentResult, FileSearchResult};
 
 // ============================================================================
 // 所有 storage NAPI 函数均使用 async + spawn_blocking 模式，
@@ -151,6 +151,13 @@ pub async fn read_directory_entries(dir_path: String) -> napi::Result<Vec<Direct
 #[napi]
 pub async fn search_files(root_dir: String, query: String) -> napi::Result<Vec<FileSearchResult>> {
     tokio::task::spawn_blocking(move || crate::storage::search_files(root_dir, query))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn read_file_content(file_path: String) -> napi::Result<FileContentResult> {
+    tokio::task::spawn_blocking(move || crate::storage::read_file_content(file_path))
         .await
         .map_err(map_spawn_error)?
 }

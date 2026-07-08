@@ -30,3 +30,13 @@ export type FileSearchResult = {
   matchedName: boolean;
   lineMatches: Array<{ line: number; text: string }>;
 };
+
+export type FileContentResult = {
+  content: string;
+  isBinary: boolean;
+  isImage: boolean;
+  isSvg: boolean;
+  mimeType: string;
+  encoding: string;
+  size: number;
+};

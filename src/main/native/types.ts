@@ -119,6 +119,16 @@ export type DirectoryEntry = {
   size: number;
 };
 
+export type FileContentResult = {
+  content: string;
+  isBinary: boolean;
+  isImage: boolean;
+  isSvg: boolean;
+  mimeType: string;
+  encoding: string;
+  size: number;
+};
+
 export type McpServerConfigInput = {
   serverId: string;
   scope: string;
@@ -332,6 +342,7 @@ export type NativeBridge = {
   ) => Promise<void>;
   deleteWorkspaceDirectory: (directoryId: string) => Promise<void>;
   readDirectoryEntries: (dirPath: string) => Promise<DirectoryEntry[]>;
+  readFileContent: (filePath: string) => Promise<FileContentResult>;
   searchFiles: (rootDir: string, query: string) => Promise<FileSearchResult[]>;
   listMcpServerConfigs: () => Promise<McpServerConfigRecord[]>;
   upsertMcpServerConfig: (item: McpServerConfigInput) => Promise<void>;

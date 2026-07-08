@@ -201,7 +201,7 @@ export const TopBar = ({
                       type="button"
                       onClick={() => handlePlusMenuAction(item.id)}
                     >
-                      <ItemIcon size={15} strokeWidth={1.7} />
+                      <ItemIcon size={13} strokeWidth={1.8} />
                       <span>{item.label}</span>
                     </button>
                   );

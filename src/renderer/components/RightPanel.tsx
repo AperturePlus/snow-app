@@ -11,11 +11,13 @@ import {
 import { useI18n } from "../i18n";
 import { GitPanelContent } from "./rightPanel/GitPanelContent";
 import { DiffViewer } from "./rightPanel/DiffViewer";
+import { FileViewerContent } from "./rightPanel/FileViewerContent";
 import { TerminalPanelContent } from "./rightPanel/TerminalPanelContent";
 import { BrowserPanelContent } from "./rightPanel/BrowserPanelContent";
 import type {
   BrowserTabData,
   DiffTabData,
+  FileViewerTabData,
   OpenDiffTabCallback,
   RightPanelContentProps,
   RightPanelTab,
@@ -27,6 +29,7 @@ const GIT_TAB_ID = "git";
 export type RightPanelRef = {
   openTerminal: (cwd: string) => void;
   openBrowser: (url?: string) => void;
+  openFile: (filePath: string, fileName: string) => void;
 };
 
 type RightPanelProps = RightPanelContentProps & {
@@ -134,6 +137,32 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       []
     );
 
+    const handleOpenFileTab = useCallback(
+      (filePath: string, fileName: string) => {
+        const tabId = `file:${filePath}`;
+        setTabs((prev) => {
+          const existing = prev.find((t) => t.id === tabId);
+          if (existing) {
+            return prev;
+          }
+          const fileData: FileViewerTabData = {
+            filePath,
+            fileName,
+            isSsh: false,
+          };
+          const newTab: RightPanelTab = {
+            id: tabId,
+            type: "file",
+            title: fileName,
+            data: fileData,
+          };
+          return [...prev, newTab];
+        });
+        setActiveTabId(tabId);
+      },
+      []
+    );
+
     useImperativeHandle(
       ref,
       () => ({
@@ -143,8 +172,11 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         openBrowser: (url?: string) => {
           handleOpenBrowserTab(url);
         },
+        openFile: (filePath: string, fileName: string) => {
+          handleOpenFileTab(filePath, fileName);
+        },
       }),
-      [handleOpenTerminalTab, handleOpenBrowserTab]
+      [handleOpenTerminalTab, handleOpenBrowserTab, handleOpenFileTab]
     );
 
     const handleCloseTab = useCallback((tabId: string) => {
@@ -239,6 +271,21 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             diffResult={diffData.diffResult}
             diffLoading={diffData.diffLoading}
             onOpenInTab={handleOpenDiffTab}
+          />
+        );
+      }
+
+      if (tab.type === "file") {
+        const fileData = tab.data as FileViewerTabData;
+        if (!fileData) {
+          return null;
+        }
+        return (
+          <FileViewerContent
+            filePath={fileData.filePath}
+            fileName={fileData.fileName}
+            isSsh={fileData.isSsh}
+            sshSessionId={fileData.sshSessionId}
           />
         );
       }

@@ -6,7 +6,7 @@
  * DOM-based overlay thumb elements that float on top of content.
  *
  * Features:
- * - Auto-hide (visible while scrolling / hovering near the edge)
+ * - Auto-hide (visible while scrolling / hovering over the scroll container)
  * - Drag-to-scroll via pointer events
  * - Dynamic content detection (MutationObserver + ResizeObserver)
  * - Vertical and horizontal scrollbars
@@ -16,7 +16,6 @@
 const MIN_THUMB = 36;
 const TRACK_SIZE = 10;
 const FADE_MS = 600;
-const HOVER_ZONE = 12;
 
 interface Instance {
   host: HTMLElement;
@@ -117,7 +116,12 @@ export class ScrollbarManager {
       const cs = getComputedStyle(el);
       const oy = cs.overflowY;
       const ox = cs.overflowX;
-      if (oy !== "auto" && oy !== "scroll" && ox !== "auto" && ox !== "scroll") {
+      if (
+        oy !== "auto" &&
+        oy !== "scroll" &&
+        ox !== "auto" &&
+        ox !== "scroll"
+      ) {
         continue;
       }
 
@@ -176,10 +180,10 @@ export class ScrollbarManager {
     };
 
     vThumb.addEventListener("pointerdown", (e) =>
-      this.onThumbDown(e, inst, "vertical"),
+      this.onThumbDown(e, inst, "vertical")
     );
     hThumb.addEventListener("pointerdown", (e) =>
-      this.onThumbDown(e, inst, "horizontal"),
+      this.onThumbDown(e, inst, "horizontal")
     );
 
     this.instances.set(host, inst);
@@ -230,7 +234,7 @@ export class ScrollbarManager {
 
       const thumbH = Math.max(
         MIN_THUMB,
-        (clientHeight / scrollHeight) * clientHeight,
+        (clientHeight / scrollHeight) * clientHeight
       );
       const maxTop = scrollHeight - clientHeight;
       const thumbY =
@@ -248,11 +252,13 @@ export class ScrollbarManager {
     if (canH) {
       hTrack.style.display = "";
       hTrack.style.width = `${clientWidth}px`;
-      hTrack.style.transform = `translate(${scrollLeft}px, ${scrollTop + clientHeight - TRACK_SIZE}px)`;
+      hTrack.style.transform = `translate(${scrollLeft}px, ${
+        scrollTop + clientHeight - TRACK_SIZE
+      }px)`;
 
       const thumbW = Math.max(
         MIN_THUMB,
-        (clientWidth / scrollWidth) * clientWidth,
+        (clientWidth / scrollWidth) * clientWidth
       );
       const maxLeft = scrollWidth - clientWidth;
       const thumbX =
@@ -295,7 +301,15 @@ export class ScrollbarManager {
     if (!inst) return;
     this.requestUpdate(inst);
     this.show(inst);
-    this.scheduleHide(inst);
+    const r = inst.host.getBoundingClientRect();
+    const mouseOver =
+      this.lastMouseX >= r.left &&
+      this.lastMouseX <= r.right &&
+      this.lastMouseY >= r.top &&
+      this.lastMouseY <= r.bottom;
+    if (!mouseOver) {
+      this.scheduleHide(inst);
+    }
   };
 
   /** Window-level scroll (reposition overlays when viewport shifts). */
@@ -332,17 +346,9 @@ export class ScrollbarManager {
       const inst = this.instances.get(node);
       if (inst) {
         const r = node.getBoundingClientRect();
-        const inV =
-          x >= r.right - HOVER_ZONE &&
-          x <= r.right &&
-          y >= r.top &&
-          y <= r.bottom;
-        const inH =
-          y >= r.bottom - HOVER_ZONE &&
-          y <= r.bottom &&
-          x >= r.left &&
-          x <= r.right;
-        if (inV || inH) {
+        const inside =
+          x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+        if (inside) {
           newHover.add(inst);
           this.show(inst);
         }
@@ -368,7 +374,7 @@ export class ScrollbarManager {
   private onThumbDown(
     e: PointerEvent,
     inst: Instance,
-    orientation: "vertical" | "horizontal",
+    orientation: "vertical" | "horizontal"
   ): void {
     e.preventDefault();
     e.stopPropagation();
@@ -402,29 +408,32 @@ export class ScrollbarManager {
       const r = inst.host.getBoundingClientRect();
       const thumbH = Math.max(
         MIN_THUMB,
-        (clientHeight / scrollHeight) * r.height,
+        (clientHeight / scrollHeight) * r.height
       );
       const trackRange = r.height - thumbH;
       if (trackRange <= 0) return;
       const maxScroll = scrollHeight - clientHeight;
       inst.host.scrollTop = Math.max(
         0,
-        Math.min(maxScroll, inst.dragStartScrollTop + (dy / trackRange) * maxScroll),
+        Math.min(
+          maxScroll,
+          inst.dragStartScrollTop + (dy / trackRange) * maxScroll
+        )
       );
     } else {
       const dx = e.clientX - inst.dragStartX;
       const { scrollWidth, clientWidth } = inst.host;
       const r = inst.host.getBoundingClientRect();
-      const thumbW = Math.max(
-        MIN_THUMB,
-        (clientWidth / scrollWidth) * r.width,
-      );
+      const thumbW = Math.max(MIN_THUMB, (clientWidth / scrollWidth) * r.width);
       const trackRange = r.width - thumbW;
       if (trackRange <= 0) return;
       const maxScroll = scrollWidth - clientWidth;
       inst.host.scrollLeft = Math.max(
         0,
-        Math.min(maxScroll, inst.dragStartScrollLeft + (dx / trackRange) * maxScroll),
+        Math.min(
+          maxScroll,
+          inst.dragStartScrollLeft + (dx / trackRange) * maxScroll
+        )
       );
     }
 

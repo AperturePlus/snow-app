@@ -7,8 +7,10 @@ import {
   listSshDirectory,
   parseSshUrl,
   isSshPath,
+  readSshFile,
   type SshConnectParams,
 } from "../../ssh/sshManager";
+import { processFileContent } from "../../utils/fileReader";
 import {
   saveSshCredentialWithPlainSecret,
   getSshCredential,
@@ -69,6 +71,20 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
         throw new Error("Remote directory path is required");
       }
       return listSshDirectory(sessionId.trim(), remotePath.trim());
+    }
+  );
+
+  ipcMain.handle(
+    "ssh:read-file",
+    async (_event, sessionId: unknown, remotePath: unknown) => {
+      if (typeof sessionId !== "string" || !sessionId.trim()) {
+        throw new Error("SSH session ID is required");
+      }
+      if (typeof remotePath !== "string" || !remotePath.trim()) {
+        throw new Error("Remote file path is required");
+      }
+      const buffer = await readSshFile(sessionId.trim(), remotePath.trim());
+      return processFileContent(remotePath.trim(), buffer);
     }
   );
 

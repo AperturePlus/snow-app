@@ -1,5 +1,6 @@
 import { ipcRenderer } from "electron";
 import type {
+  FileContentResult,
   ParsedSshUrl,
   SshConnectParams,
   SshCredentialRecord,
@@ -15,6 +16,11 @@ export const sshApi = {
     remotePath: string
   ): Promise<SshDirectoryEntry[]> =>
     ipcRenderer.invoke("ssh:list-directory", sessionId, remotePath),
+  sshReadFile: (
+    sessionId: string,
+    remotePath: string
+  ): Promise<FileContentResult> =>
+    ipcRenderer.invoke("ssh:read-file", sessionId, remotePath),
   sshDisconnect: (sessionId: string): Promise<void> =>
     ipcRenderer.invoke("ssh:disconnect", sessionId),
   sshSaveCredential: (params: {
