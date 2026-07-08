@@ -80,7 +80,9 @@ export function SshConnectWizard({
   const [entriesError, setEntriesError] = useState<string | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
-  const [savedCredentials, setSavedCredentials] = useState<CredentialOption[]>([]);
+  const [savedCredentials, setSavedCredentials] = useState<CredentialOption[]>(
+    []
+  );
   const [showSavedList, setShowSavedList] = useState(false);
   const wizardRef = useRef<HTMLDivElement | null>(null);
 
@@ -218,9 +220,7 @@ export function SshConnectWizard({
 
       if (rememberCredential) {
         const secret =
-          authMethod === "password"
-            ? password
-            : passphrase || undefined;
+          authMethod === "password" ? password : passphrase || undefined;
         await window.snow.sshSaveCredential({
           host: host.trim(),
           port,
@@ -476,9 +476,13 @@ export function SshConnectWizard({
                   defaultValue: "Authentication method",
                 })}
               </label>
-              <div className="ssh-wizard-auth-tabs">
+              <div className="ssh-wizard-segmented">
+                <div
+                  className="ssh-wizard-segmented-indicator"
+                  data-pos={authMethod}
+                />
                 <button
-                  className={`ssh-wizard-auth-tab${
+                  className={`ssh-wizard-segmented-item${
                     authMethod === "password" ? " active" : ""
                   }`}
                   onClick={() => setAuthMethod("password")}
@@ -492,7 +496,7 @@ export function SshConnectWizard({
                   </span>
                 </button>
                 <button
-                  className={`ssh-wizard-auth-tab${
+                  className={`ssh-wizard-segmented-item${
                     authMethod === "privateKey" ? " active" : ""
                   }`}
                   onClick={() => setAuthMethod("privateKey")}
@@ -506,7 +510,7 @@ export function SshConnectWizard({
                   </span>
                 </button>
                 <button
-                  className={`ssh-wizard-auth-tab${
+                  className={`ssh-wizard-segmented-item${
                     authMethod === "agent" ? " active" : ""
                   }`}
                   onClick={() => setAuthMethod("agent")}
@@ -597,19 +601,24 @@ export function SshConnectWizard({
                       onClick={() => setShowPassphrase((v) => !v)}
                       type="button"
                     >
-                      {showPassphrase ? <EyeOff size={13} /> : <Eye size={13} />}
+                      {showPassphrase ? (
+                        <EyeOff size={13} />
+                      ) : (
+                        <Eye size={13} />
+                      )}
                     </button>
                   </div>
                 </div>
               </>
             ) : null}
 
-            <label className="ssh-wizard-checkbox">
+            <label className="toggle-switch">
               <input
+                type="checkbox"
                 checked={rememberCredential}
                 onChange={(e) => setRememberCredential(e.target.checked)}
-                type="checkbox"
               />
+              <span className="toggle-slider" />
               <span>
                 {t("sidebar.sshRememberCredential", {
                   defaultValue: "Remember credentials (encrypted)",
@@ -687,7 +696,10 @@ export function SshConnectWizard({
                     >
                       {entry.isDirectory ? (
                         isSelected ? (
-                          <FolderOpen size={14} className="ssh-wizard-entry-icon" />
+                          <FolderOpen
+                            size={14}
+                            className="ssh-wizard-entry-icon"
+                          />
                         ) : (
                           <Folder size={14} className="ssh-wizard-entry-icon" />
                         )
@@ -702,8 +714,8 @@ export function SshConnectWizard({
                           {entry.size < 1024
                             ? `${entry.size} B`
                             : entry.size < 1024 * 1024
-                              ? `${(entry.size / 1024).toFixed(1)} KB`
-                              : `${(entry.size / (1024 * 1024)).toFixed(1)} MB`}
+                            ? `${(entry.size / 1024).toFixed(1)} KB`
+                            : `${(entry.size / (1024 * 1024)).toFixed(1)} MB`}
                         </span>
                       ) : null}
                     </div>
@@ -725,7 +737,7 @@ export function SshConnectWizard({
 
         <div className="ssh-wizard-footer">
           <button
-            className="ssh-wizard-btn secondary"
+            className="api-settings-form-btn secondary"
             onClick={handleCancel}
             type="button"
           >
@@ -733,19 +745,17 @@ export function SshConnectWizard({
           </button>
           {step === "browse" ? (
             <button
-              className="ssh-wizard-btn secondary"
+              className="api-settings-form-btn secondary"
               onClick={handleBack}
               type="button"
             >
               <ArrowLeft size={14} />
-              <span>
-                {t("sidebar.sshBack", { defaultValue: "Back" })}
-              </span>
+              <span>{t("sidebar.sshBack", { defaultValue: "Back" })}</span>
             </button>
           ) : null}
           {step === "connect" ? (
             <button
-              className="ssh-wizard-btn primary"
+              className="api-settings-form-btn primary"
               disabled={!canConnect || isConnecting}
               onClick={() => void handleConnect()}
               type="button"
@@ -761,7 +771,7 @@ export function SshConnectWizard({
             </button>
           ) : (
             <button
-              className="ssh-wizard-btn primary"
+              className="api-settings-form-btn primary"
               disabled={!selectedPath}
               onClick={handleConfirm}
               type="button"

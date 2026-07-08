@@ -1,6 +1,13 @@
-import { CheckCircle, ChevronRight, Loader2, AlertCircle, Wrench } from "lucide-react";
+import {
+  CheckCircle,
+  ChevronRight,
+  Loader2,
+  AlertCircle,
+  Wrench,
+} from "lucide-react";
 import { useMemo } from "react";
 import type { ToolCallInfo } from "./useChatConversation";
+import { FilesystemReadToolCall } from "./toolCallRenderers";
 
 type ToolCallItemProps = {
   toolCall: ToolCallInfo;
@@ -18,7 +25,14 @@ const formatArguments = (args: string): string => {
   }
 };
 
-export const ToolCallItem = ({ toolCall }: ToolCallItemProps): React.JSX.Element => {
+export const ToolCallItem = ({
+  toolCall,
+}: ToolCallItemProps): React.JSX.Element => {
+  // Delegate to specialized renderers based on tool name
+  if (toolCall.name === "mcp__filesystem__read") {
+    return <FilesystemReadToolCall toolCall={toolCall} />;
+  }
+
   const iconName = toolCall.name.replace(/^mcp__.*__/, "");
   const StatusIcon =
     toolCall.status === "completed"
@@ -52,7 +66,9 @@ export const ToolCallItem = ({ toolCall }: ToolCallItemProps): React.JSX.Element
           aria-hidden="true"
         />
         <span className="tool-call-name">{iconName}</span>
-        <span className={`tool-call-status tool-call-status-${toolCall.status}`}>
+        <span
+          className={`tool-call-status tool-call-status-${toolCall.status}`}
+        >
           {toolCall.status}
         </span>
       </summary>

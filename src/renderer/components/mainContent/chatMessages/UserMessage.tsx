@@ -1,7 +1,7 @@
-import { File, Folder, Image as ImageIcon } from "lucide-react";
 import { UserMessageActions } from "./UserMessageActions";
 import type { UserMessageProps } from "./types";
 import { parseContentSegments } from "../chatInput/fileTagUtils";
+import { getFileTypeIcon } from "../../../utils/fileIcons";
 
 export const UserMessage = ({
   content,
@@ -24,10 +24,10 @@ export const UserMessage = ({
                   key={index}
                   title={segment.tag.name}
                 >
-                  <ImageIcon
-                    size={12}
-                    className="user-message-file-chip-icon"
-                  />
+                  {getFileTypeIcon(segment.tag.name, false, false, {
+                    size: 12,
+                    className: "user-message-file-chip-icon",
+                  })}
                   <span className="user-message-file-chip-name">
                     {segment.tag.name}
                   </span>
@@ -42,11 +42,10 @@ export const UserMessage = ({
                 key={index}
                 title={tag.path}
               >
-                {tag.isDirectory ? (
-                  <Folder size={12} className="user-message-file-chip-icon" />
-                ) : (
-                  <File size={12} className="user-message-file-chip-icon" />
-                )}
+                {getFileTypeIcon(tag.name, tag.isDirectory, false, {
+                  size: 12,
+                  className: "user-message-file-chip-icon",
+                })}
                 <span className="user-message-file-chip-name">{tag.name}</span>
               </span>
             );

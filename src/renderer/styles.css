@@ -3925,6 +3925,105 @@ input {
   word-break: break-all;
 }
 
+/* Filesystem Read Tool Call */
+.tool-call-tool-name {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  background: var(--bg-active);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+}
+
+.tool-call-line-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.tool-call-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--accent-red-text);
+  background: var(--accent-red-bg);
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.tool-call-error svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.tool-call-dir-listing {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 300px;
+  overflow: auto;
+}
+
+.tool-call-dir-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+
+.tool-call-dir-entry:hover {
+  background: var(--bg-hover);
+}
+
+.tool-call-dir-entry svg {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.tool-call-file-result {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-call-file-meta {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  padding: 2px 0;
+}
+
+.tool-call-file-content {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  white-space: pre;
+  overflow: auto;
+  max-height: 400px;
+}
+
+.tool-call-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 /* File Changes Card */
 .file-changes-card {
   border: 1px solid var(--border-color);
@@ -6974,49 +7073,71 @@ input {
   color: var(--text-primary);
 }
 
-.ssh-wizard-auth-tabs {
+.ssh-wizard-segmented {
+  position: relative;
   display: flex;
-  gap: 4px;
+  gap: 0;
+  padding: 3px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
 }
 
-.ssh-wizard-auth-tab {
+.ssh-wizard-segmented-indicator {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / 3);
+  height: calc(100% - 6px);
+  border-radius: calc(var(--radius-md) - 2px);
+  background: var(--bg-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 0;
+}
+
+.ssh-wizard-segmented-indicator[data-pos="password"] {
+  transform: translateX(0%);
+}
+
+.ssh-wizard-segmented-indicator[data-pos="privateKey"] {
+  transform: translateX(100%);
+}
+
+.ssh-wizard-segmented-indicator[data-pos="agent"] {
+  transform: translateX(200%);
+}
+
+.ssh-wizard-segmented-item {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
   flex: 1;
   padding: 6px 8px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  background: var(--bg-secondary);
+  border: none;
+  background: transparent;
   color: var(--text-muted);
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  transition: color 0.15s;
 }
 
-.ssh-wizard-auth-tab:hover {
-  background: var(--bg-hover);
+.ssh-wizard-segmented-item:hover {
   color: var(--text-secondary);
 }
 
-.ssh-wizard-auth-tab.active {
-  border-color: var(--accent-blue);
-  background: var(--accent-blue-bg);
-  color: var(--accent-blue-text);
+.ssh-wizard-segmented-item.active {
+  color: var(--text-primary);
+  font-weight: 500;
 }
 
-.ssh-wizard-checkbox {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.ssh-wizard-body .toggle-switch {
+  margin-top: 4px;
   font-size: 12px;
   color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.ssh-wizard-checkbox input {
-  margin: 0;
-  cursor: pointer;
 }
 
 .ssh-wizard-error {
@@ -7171,39 +7292,10 @@ input {
   border-top: 1px solid var(--border-color);
 }
 
-.ssh-wizard-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.ssh-wizard-footer .api-settings-form-btn {
   padding: 7px 14px;
-  border: none;
-  border-radius: var(--radius-md);
   font-size: 12.5px;
   font-weight: 500;
-  cursor: pointer;
-  transition: background 0.12s, opacity 0.12s;
-}
-
-.ssh-wizard-btn.secondary {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
-.ssh-wizard-btn.secondary:hover {
-  background: var(--bg-hover);
-}
-
-.ssh-wizard-btn.primary {
-  background: var(--accent-blue);
-  color: #fff;
-}
-
-.ssh-wizard-btn.primary:hover:not(:disabled) {
-  opacity: 0.9;
-}
-.ssh-wizard-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 /* ===== File Viewer ===== */

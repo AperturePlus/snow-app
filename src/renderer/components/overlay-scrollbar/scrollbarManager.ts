@@ -223,22 +223,34 @@ export class ScrollbarManager {
       return;
     }
 
-    // --- vertical ---
-    const { scrollTop, scrollHeight, clientHeight } = host;
+    const {
+      scrollTop,
+      scrollHeight,
+      clientHeight,
+      scrollLeft,
+      scrollWidth,
+      clientWidth,
+    } = host;
     const canV = scrollHeight > clientHeight + 1;
+    const canH = scrollWidth > clientWidth + 1;
 
+    // --- vertical ---
     if (canV) {
       vTrack.style.display = "";
-      vTrack.style.height = `${clientHeight}px`;
-      vTrack.style.transform = `translateY(${scrollTop}px)`;
+      // When both scrollbars are visible, leave room for the horizontal
+      // track at the bottom so they don't overlap at the corner.
+      const trackH = canH ? clientHeight - TRACK_SIZE : clientHeight;
+      vTrack.style.height = `${trackH}px`;
+      // translateX(scrollLeft) counteracts horizontal scrolling so the
+      // track stays pinned to the right edge of the visible viewport.
+      vTrack.style.transform = `translate(${scrollLeft}px, ${scrollTop}px)`;
 
       const thumbH = Math.max(
         MIN_THUMB,
-        (clientHeight / scrollHeight) * clientHeight
+        (clientHeight / scrollHeight) * trackH
       );
       const maxTop = scrollHeight - clientHeight;
-      const thumbY =
-        maxTop > 0 ? (scrollTop / maxTop) * (clientHeight - thumbH) : 0;
+      const thumbY = maxTop > 0 ? (scrollTop / maxTop) * (trackH - thumbH) : 0;
       vThumb.style.height = `${thumbH}px`;
       vThumb.style.transform = `translateY(${thumbY}px)`;
     } else {
@@ -246,23 +258,20 @@ export class ScrollbarManager {
     }
 
     // --- horizontal ---
-    const { scrollLeft, scrollWidth, clientWidth } = host;
-    const canH = scrollWidth > clientWidth + 1;
-
     if (canH) {
       hTrack.style.display = "";
-      hTrack.style.width = `${clientWidth}px`;
+      // When both scrollbars are visible, leave room for the vertical
+      // track on the right so they don't overlap at the corner.
+      const trackW = canV ? clientWidth - TRACK_SIZE : clientWidth;
+      hTrack.style.width = `${trackW}px`;
       hTrack.style.transform = `translate(${scrollLeft}px, ${
         scrollTop + clientHeight - TRACK_SIZE
       }px)`;
 
-      const thumbW = Math.max(
-        MIN_THUMB,
-        (clientWidth / scrollWidth) * clientWidth
-      );
+      const thumbW = Math.max(MIN_THUMB, (clientWidth / scrollWidth) * trackW);
       const maxLeft = scrollWidth - clientWidth;
       const thumbX =
-        maxLeft > 0 ? (scrollLeft / maxLeft) * (clientWidth - thumbW) : 0;
+        maxLeft > 0 ? (scrollLeft / maxLeft) * (trackW - thumbW) : 0;
       hThumb.style.width = `${thumbW}px`;
       hThumb.style.transform = `translateX(${thumbX}px)`;
     } else {
@@ -299,7 +308,9 @@ export class ScrollbarManager {
     if (t === document || !(t instanceof HTMLElement)) return;
     const inst = this.instances.get(t);
     if (!inst) return;
-    this.requestUpdate(inst);
+    // Synchronous update — no rAF deferral so the thumb tracks
+    // the scroll position without a 1-frame visual lag.
+    this.update(inst);
     this.show(inst);
     const r = inst.host.getBoundingClientRect();
     const mouseOver =
@@ -314,8 +325,9 @@ export class ScrollbarManager {
 
   /** Window-level scroll (reposition overlays when viewport shifts). */
   private onWindowScroll = (): void => {
+    // Synchronous update so overlays track viewport shifts without lag.
     for (const inst of this.instances.values()) {
-      this.requestUpdate(inst);
+      this.update(inst);
     }
   };
 
@@ -437,7 +449,9 @@ export class ScrollbarManager {
       );
     }
 
-    this.requestUpdate(inst);
+    // Synchronous update during drag — avoid rAF delay so the thumb
+    // stays glued to the pointer position while dragging.
+    this.update(inst);
   };
 
   private onPointerUp = (): void => {

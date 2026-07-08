@@ -86,12 +86,14 @@ import {
   SiFsharp,
   SiJulia,
 } from "react-icons/si";
+import { renderToStaticMarkup } from "react-dom/server";
 import type { ComponentType } from "react";
 
 type IconProps = {
   size?: number | string;
   className?: string;
   style?: React.CSSProperties;
+  [key: string]: unknown;
 };
 
 type IconConfig = {
@@ -99,15 +101,12 @@ type IconConfig = {
   color?: string;
 };
 
-const si = (
-  icon: ComponentType<IconProps>,
-  color?: string
-): IconConfig => ({ component: icon, color });
+const si = (icon: ComponentType<IconProps>, color?: string): IconConfig => ({
+  component: icon,
+  color,
+});
 
-const li = (
-  icon: ComponentType<LucideProps>,
-  color?: string
-): IconConfig => ({
+const li = (icon: ComponentType<LucideProps>, color?: string): IconConfig => ({
   component: icon as unknown as ComponentType<IconProps>,
   color,
 });
@@ -288,15 +287,15 @@ const FILENAME_MAP: Record<string, IconConfig> = {
   "prettier.config.cjs": si(SiPrettier, "#f7b93e"),
   ".npmrc": si(SiNpm, "#cb3837"),
   ".editorconfig": si(SiEditorconfig, "#a0a0a0"),
-  "dockerfile": si(SiDocker, "#2496ed"),
+  dockerfile: si(SiDocker, "#2496ed"),
   "dockerfile.dev": si(SiDocker, "#2496ed"),
   "dockerfile.prod": si(SiDocker, "#2496ed"),
   "dockerfile.production": si(SiDocker, "#2496ed"),
   ".dockerignore": si(SiDocker, "#2496ed"),
-  "license": li(FileText, "#6c757d"),
+  license: li(FileText, "#6c757d"),
   "license.md": li(FileText, "#6c757d"),
   "license.txt": li(FileText, "#6c757d"),
-  "makefile": si(SiMake, "#427819"),
+  makefile: si(SiMake, "#427819"),
   "cmakelists.txt": si(SiCmake, "#064f8c"),
   "package.json": si(SiNpm, "#cb3837"),
   "package-lock.json": li(FileLock, "#8b8f9a"),
@@ -347,7 +346,7 @@ const FILENAME_MAP: Record<string, IconConfig> = {
   "docker-compose.ci.yml": si(SiDocker, "#2496ed"),
   "docker-compose.override.yml": si(SiDocker, "#2496ed"),
   ".travis.yml": li(FileCog, "#3eaa3e"),
-  "Procfile": li(FileCog, "#6c757d"),
+  Procfile: li(FileCog, "#6c757d"),
   "vercel.json": li(FileCog, "#000000"),
   "netlify.toml": li(FileCog, "#00c7b7"),
   "firebase.json": li(FileCog, "#ffca28"),
@@ -359,12 +358,12 @@ const FILENAME_MAP: Record<string, IconConfig> = {
   "Cargo.lock": li(FileLock, "#8b8f9a"),
   "go.mod": si(SiGo, "#00add8"),
   "go.sum": li(FileLock, "#8b8f9a"),
-  "Gemfile": si(SiRuby, "#cc342d"),
+  Gemfile: si(SiRuby, "#cc342d"),
   "Gemfile.lock": li(FileLock, "#8b8f9a"),
   "requirements.txt": si(SiPython, "#3776ab"),
   "setup.py": si(SiPython, "#3776ab"),
   "pyproject.toml": si(SiPython, "#3776ab"),
-  "Pipfile": si(SiPython, "#3776ab"),
+  Pipfile: si(SiPython, "#3776ab"),
   "Pipfile.lock": li(FileLock, "#8b8f9a"),
   "composer.json": si(SiPhp, "#777bb4"),
   "composer.lock": li(FileLock, "#8b8f9a"),
@@ -385,44 +384,72 @@ const getExtension = (name: string): string => {
   return lower.slice(dotIndex + 1);
 };
 
+export const getIconConfig = (
+  name: string,
+  isDirectory: boolean = false,
+  isExpanded: boolean = false
+): IconConfig => {
+  if (isDirectory) {
+    return li(isExpanded ? FolderOpen : Folder, "#dcb67a");
+  }
+
+  const lowerName = name.toLowerCase();
+  if (FILENAME_MAP[lowerName]) {
+    return FILENAME_MAP[lowerName];
+  }
+
+  const ext = getExtension(name);
+  if (ext && EXTENSION_MAP[ext]) {
+    return EXTENSION_MAP[ext];
+  }
+
+  return li(File, "#6c757d");
+};
+
 export const getFileTypeIcon = (
   name: string,
   isDirectory: boolean = false,
   isExpanded: boolean = false,
   props?: LucideProps
 ): React.JSX.Element => {
-  const config: IconConfig = (() => {
-    if (isDirectory) {
-      return li(isExpanded ? FolderOpen : Folder, "#dcb67a");
-    }
-
-    const lowerName = name.toLowerCase();
-    if (FILENAME_MAP[lowerName]) {
-      return FILENAME_MAP[lowerName];
-    }
-
-    const ext = getExtension(name);
-    if (ext && EXTENSION_MAP[ext]) {
-      return EXTENSION_MAP[ext];
-    }
-
-    return li(File, "#6c757d");
-  })();
-
-  const { component: IconComponent, color } = config;
+  const { component: IconComponent, color } = getIconConfig(
+    name,
+    isDirectory,
+    isExpanded
+  );
 
   const style: React.CSSProperties = { ...props?.style };
   if (color) {
     style.color = color;
   }
 
+  const { size, className, style: _style, ...rest } = props ?? {};
+
   return (
-    <IconComponent
-      size={props?.size}
-      className={props?.className}
-      style={style}
-    />
+    <IconComponent size={size} className={className} style={style} {...rest} />
   );
+};
+
+export const getFileTypeIconHtml = (
+  name: string,
+  isDirectory: boolean = false,
+  isExpanded: boolean = false,
+  size: number = 12
+): string => {
+  const { component: IconComponent, color } = getIconConfig(
+    name,
+    isDirectory,
+    isExpanded
+  );
+
+  const style: React.CSSProperties = {};
+  if (color) {
+    style.color = color;
+  }
+
+  return renderToStaticMarkup(
+    <IconComponent size={size} style={style} />
+  ).replace(/class="/g, 'class="file-chip-icon-inner ');
 };
 
 export { File, Folder, FolderOpen, FileCode, FileJson, FileText, FileImage };
