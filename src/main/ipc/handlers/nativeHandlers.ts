@@ -48,4 +48,47 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       return native.callMcpTool(toolFullName.trim(), argsJson);
     }
   );
+
+  ipcMain.handle("checkpoint:create", (_event, workDir: unknown) => {
+    if (typeof workDir !== "string" || !workDir.trim()) {
+      throw new Error(
+        "Working directory path is required to create checkpoint"
+      );
+    }
+    return native.createCheckpoint(workDir);
+  });
+  ipcMain.handle(
+    "checkpoint:restore",
+    (_event, checkpointId: unknown, workDir: unknown) => {
+      if (typeof checkpointId !== "string" || !checkpointId.trim()) {
+        throw new Error("Checkpoint id is required to restore checkpoint");
+      }
+      if (typeof workDir !== "string" || !workDir.trim()) {
+        throw new Error(
+          "Working directory path is required to restore checkpoint"
+        );
+      }
+      return native.restoreCheckpoint(checkpointId.trim(), workDir);
+    }
+  );
+  ipcMain.handle("checkpoint:delete", (_event, checkpointId: unknown) => {
+    if (typeof checkpointId !== "string" || !checkpointId.trim()) {
+      throw new Error("Checkpoint id is required to delete checkpoint");
+    }
+    return native.deleteCheckpoint(checkpointId.trim());
+  });
+  ipcMain.handle(
+    "checkpoint:list-changes",
+    (_event, checkpointId: unknown, workDir: unknown) => {
+      if (typeof checkpointId !== "string" || !checkpointId.trim()) {
+        throw new Error("Checkpoint id is required to list changes");
+      }
+      if (typeof workDir !== "string" || !workDir.trim()) {
+        throw new Error(
+          "Working directory path is required to list checkpoint changes"
+        );
+      }
+      return native.listCheckpointChanges(checkpointId.trim(), workDir);
+    }
+  );
 };

@@ -6506,6 +6506,101 @@ input {
   color: #fff;
 }
 
+/* Rollback Confirm Dialog */
+.rollback-confirm-dialog {
+  width: 520px;
+  max-height: 80vh;
+}
+
+.rollback-change-summary {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rollback-change-summary span {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.rollback-change-added {
+  color: #2ea043;
+  background: rgba(46, 160, 67, 0.12);
+}
+
+.rollback-change-modified {
+  color: #d29922;
+  background: rgba(210, 153, 34, 0.12);
+}
+
+.rollback-change-deleted {
+  color: #f85149;
+  background: rgba(248, 81, 73, 0.12);
+}
+
+.rollback-change-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+
+.rollback-change-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.rollback-change-item:last-child {
+  border-bottom: none;
+}
+
+.rollback-change-icon {
+  flex-shrink: 0;
+}
+
+.rollback-change-icon.rollback-change-added {
+  color: #2ea043;
+}
+
+.rollback-change-icon.rollback-change-modified {
+  color: #d29922;
+}
+
+.rollback-change-icon.rollback-change-deleted {
+  color: #f85149;
+}
+
+.rollback-change-type {
+  flex-shrink: 0;
+  width: 36px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.rollback-change-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-family: var(--font-mono, monospace);
+}
+
+.rollback-change-more {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
 /* Commit Section */
 .git-commit-section {
   display: flex;

@@ -53,6 +53,15 @@ export const conversationApi = {
       sourceConversationId,
       upToResponseId
     ),
+  truncateConversation: (
+    conversationId: string,
+    responseId: string
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "chat-conversations:truncate",
+      conversationId,
+      responseId
+    ),
   generateConversationSummary: (conversationId: string): Promise<string> =>
     ipcRenderer.invoke("chat-conversations:generate-summary", conversationId),
 };

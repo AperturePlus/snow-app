@@ -760,6 +760,92 @@ pub fn fork_conversation(
         })
 }
 
+pub fn truncate_conversation_from_response(
+    database_path: &Path,
+    conversation_id: &str,
+    response_id: &str,
+) -> Result<()> {
+    let mut connection = Connection::open(database_path)
+        .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
+
+    // Locate the assistant message row that produced `response_id`.
+    let target_id: Option<String> = transaction
+        .query_row(
+            "SELECT id FROM chat_messages
+              WHERE conversation_id = ?1 AND response_id = ?2
+              LIMIT 1",
+            params![conversation_id, response_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
+
+    let target_id = match target_id {
+        Some(id) => id,
+        None => return Ok(()),
+    };
+
+    // Each store_chat_exchange call inserts request message(s) (response_id='')
+    // immediately followed by the assistant response. Find the request message
+    // from the same exchange — the row with the largest id below the assistant
+    // response that has an empty response_id.
+    let request_id: Option<String> = transaction
+        .query_row(
+            "SELECT id FROM chat_messages
+              WHERE conversation_id = ?1 AND id < ?2 AND response_id = ''
+              ORDER BY id DESC
+              LIMIT 1",
+            params![conversation_id, target_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
+
+    let delete_from = request_id.unwrap_or_else(|| target_id.clone());
+
+    // Delete the user message, the assistant response, and everything after.
+    transaction
+        .execute(
+            "DELETE FROM chat_messages
+              WHERE conversation_id = ?1 AND id >= ?2",
+            params![conversation_id, delete_from],
+        )
+        .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
+
+    // Refresh conversation metadata so the sidebar stays consistent.
+    transaction
+        .execute(
+            "UPDATE chat_conversations
+                SET message_count = (
+                      SELECT COUNT(*) FROM chat_messages WHERE conversation_id = ?1
+                    ),
+                    last_message_preview = COALESCE(
+                      (SELECT content FROM chat_messages
+                        WHERE conversation_id = ?1 ORDER BY id DESC LIMIT 1),
+                      ''
+                    ),
+                    last_response_id = COALESCE(
+                      (SELECT response_id FROM chat_messages
+                        WHERE conversation_id = ?1 AND response_id <> ''
+                        ORDER BY id DESC LIMIT 1),
+                      ''
+                    ),
+                    updated_at = datetime('now')
+              WHERE conversation_id = ?1",
+            params![conversation_id],
+        )
+        .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
+
+    transaction
+        .commit()
+        .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
+
+    Ok(())
+}
+
 fn find_conversation_id_by_response_id(
     database_path: &Path,
     response_id: &str,

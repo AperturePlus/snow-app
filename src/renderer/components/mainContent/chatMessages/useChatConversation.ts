@@ -1,6 +1,10 @@
 import { useCallback, useRef, useState } from "react";
 import type { ChatInputSendOptions } from "../chatInput/types";
-import type { ChatConversationRecord, TokenUsage } from "../../../../preload";
+import type {
+  ChatConversationRecord,
+  CheckpointFileChange,
+  TokenUsage,
+} from "../../../../preload";
 
 export type ToolCallInfo = {
   name: string;
@@ -22,6 +26,9 @@ export type ChatConversationMessage = {
   toolCalls?: ToolCallInfo[];
   toolCallId?: string;
   toolName?: string;
+  /** File-system checkpoint id created when the user sent this message.
+   *  Used by rollback to restore the working directory to its pre-AI state. */
+  checkpointId?: string;
 };
 
 type UpsertedConversation = {
@@ -45,6 +52,16 @@ type ConversationSessionRef = {
   streamId: string | null;
   isSending: boolean;
   directoryId?: string;
+};
+
+type RollbackPreview = {
+  messageId: string;
+  messageContent: string;
+  changes: CheckpointFileChange[];
+  checkpointId?: string;
+  convId?: string;
+  responseId?: string;
+  isFirstMessage: boolean;
 };
 
 type UseChatConversationResult = {
@@ -76,6 +93,12 @@ type UseChatConversationResult = {
     conversationId: string,
     upToResponseId: string
   ) => Promise<void>;
+  draftToRestore: string | null;
+  clearDraftToRestore: () => void;
+  handleRollback: (messageId: string) => void;
+  rollbackPreview: RollbackPreview | null;
+  confirmRollback: () => void;
+  cancelRollback: () => void;
 };
 
 const PENDING_SESSION_KEY = "__pending__";
@@ -189,7 +212,8 @@ const parseToolCalls = (toolCallsJson: string | undefined): ToolCallInfo[] => {
 };
 
 export const useChatConversation = (
-  directoryId?: string
+  directoryId?: string,
+  directoryPath?: string
 ): UseChatConversationResult => {
   const [sessions, setSessions] = useState<
     Record<string, ConversationSessionState>
@@ -206,11 +230,18 @@ export const useChatConversation = (
   const [completedConversationIds, setCompletedConversationIds] = useState<
     Set<string>
   >(new Set());
+  const [draftToRestore, setDraftToRestore] = useState<string | null>(null);
+  const [rollbackPreview, setRollbackPreview] =
+    useState<RollbackPreview | null>(null);
 
   const sessionsRefData = useRef<Map<string, ConversationSessionRef>>(
     new Map()
   );
   const activeConversationIdRef = useRef<string | undefined>(undefined);
+  // Keep a ref to the latest sessions so async callbacks (e.g. handleRollback)
+  // can read the current messages without stale closures.
+  const sessionsRef = useRef<Record<string, ConversationSessionState>>({});
+  sessionsRef.current = sessions;
 
   const setActiveId = useCallback((id: string | undefined): void => {
     activeConversationIdRef.current = id;
@@ -615,11 +646,31 @@ export const useChatConversation = (
         );
       };
 
-      void runAgentLoop(
-        assistantMessageId,
-        [{ role: "user", content: trimmed }],
-        activeConversationIdRef.current
-      )
+      // Create a file-system checkpoint before the AI loop starts so that
+      // rollback can restore the working directory to this pre-AI state.
+      // The checkpoint is awaited before runAgentLoop to guarantee the AI
+      // cannot modify files before the snapshot is captured.
+      const initCheckpointAndRun = async (): Promise<void> => {
+        if (directoryPath && !directoryPath.startsWith("ssh://")) {
+          try {
+            const cpId = await window.snow.createCheckpoint(directoryPath);
+            updateSessionMessages(sessionKey, (currentMessages) =>
+              currentMessages.map((m) =>
+                m.id === userMessage.id ? { ...m, checkpointId: cpId } : m
+              )
+            );
+          } catch {
+            // Best effort — continue without a checkpoint
+          }
+        }
+        await runAgentLoop(
+          assistantMessageId,
+          [{ role: "user", content: trimmed }],
+          activeConversationIdRef.current
+        );
+      };
+
+      void initCheckpointAndRun()
         .catch((error: unknown) => {
           updateSessionField(finalSessionKey, "isStreaming", false);
           const ref = sessionsRefData.current.get(finalSessionKey);
@@ -693,6 +744,7 @@ export const useChatConversation = (
     },
     [
       directoryId,
+      directoryPath,
       ensureSession,
       updateSessionMessages,
       updateSessionField,
@@ -897,6 +949,168 @@ export const useChatConversation = (
     [handleSelectConversation]
   );
 
+  const clearDraftToRestore = useCallback((): void => {
+    setDraftToRestore(null);
+  }, []);
+
+  const handleRollback = useCallback(
+    (messageId: string): void => {
+      const key = activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+
+      // Abort any in-flight stream before rolling back.
+      const ref = sessionsRefData.current.get(key);
+      if (ref?.streamId) {
+        void window.snow.abortResponseStream(ref.streamId);
+        ref.streamId = null;
+      }
+      if (ref) {
+        ref.isSending = false;
+      }
+      updateSessionField(key, "isStreaming", false);
+      updateSessionField(key, "isAborting", false);
+      removeStreamingId(key);
+
+      const session = sessionsRef.current[key];
+      if (!session) {
+        return;
+      }
+
+      const messages = session.messages;
+      const targetIndex = messages.findIndex((m) => m.id === messageId);
+      if (targetIndex === -1) {
+        return;
+      }
+
+      const targetMessage = messages[targetIndex];
+      const messageContent = targetMessage.content;
+      const checkpointId = targetMessage.checkpointId;
+      const convId = key !== PENDING_SESSION_KEY ? key : undefined;
+
+      // Determine if this is the first user message — rolling back to it
+      // means the entire conversation should be deleted.
+      const hasUserMessageBefore = messages
+        .slice(0, targetIndex)
+        .some((m) => m.role === "user");
+      const isFirstMessage = !hasUserMessageBefore;
+
+      // Find the responseId of the first assistant message after the target.
+      let responseId: string | undefined;
+      for (let i = targetIndex + 1; i < messages.length; i++) {
+        if (messages[i].role === "assistant" && messages[i].responseId) {
+          responseId = messages[i].responseId;
+          break;
+        }
+      }
+
+      // Compute file changes for the confirmation dialog. This is async but
+      // we set the preview state once the diff is ready.
+      const computeAndPreview = async (): Promise<void> => {
+        let changes: CheckpointFileChange[] = [];
+        if (
+          checkpointId &&
+          directoryPath &&
+          !directoryPath.startsWith("ssh://")
+        ) {
+          try {
+            changes = await window.snow.listCheckpointChanges(
+              checkpointId,
+              directoryPath
+            );
+          } catch {
+            // Best effort — show dialog without changes on error
+          }
+        }
+
+        setRollbackPreview({
+          messageId,
+          messageContent,
+          changes,
+          checkpointId,
+          convId,
+          responseId,
+          isFirstMessage,
+        });
+      };
+
+      void computeAndPreview();
+    },
+    [directoryPath, updateSessionField, removeStreamingId]
+  );
+
+  const confirmRollback = useCallback((): void => {
+    const preview = rollbackPreview;
+    if (!preview) {
+      return;
+    }
+
+    const key = activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+    const {
+      messageId,
+      messageContent,
+      checkpointId,
+      convId,
+      responseId,
+      isFirstMessage,
+    } = preview;
+
+    // Truncate UI state: remove the target message and everything after.
+    updateSessionMessages(key, (currentMessages) => {
+      const idx = currentMessages.findIndex((m) => m.id === messageId);
+      if (idx === -1) {
+        return currentMessages;
+      }
+      return currentMessages.slice(0, idx);
+    });
+
+    // Restore file-system checkpoint (undo AI file modifications).
+    if (checkpointId && directoryPath && !directoryPath.startsWith("ssh://")) {
+      void window.snow
+        .restoreCheckpoint(checkpointId, directoryPath)
+        .catch(() => {
+          // Best effort — file restore failure should not block message rollback
+        });
+    }
+
+    if (isFirstMessage && convId) {
+      // Rolling back to the first user message — delete the entire
+      // conversation from the DB and clear the session.
+      void window.snow
+        .deleteConversation(convId)
+        .then(() => {
+          refreshConversations();
+        })
+        .catch(() => {
+          // Best effort
+        });
+      sessionsRefData.current.delete(key);
+      setSessions((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      setActiveId(undefined);
+    } else if (convId && responseId) {
+      // Truncate DB messages from the exchange onward.
+      void window.snow.truncateConversation(convId, responseId).catch(() => {
+        // Best effort — DB truncation failure should not block the UI
+      });
+    }
+
+    // Write the rolled-back message content back into the input box.
+    setDraftToRestore(messageContent);
+    setRollbackPreview(null);
+  }, [
+    rollbackPreview,
+    directoryPath,
+    updateSessionMessages,
+    refreshConversations,
+    setActiveId,
+  ]);
+
+  const cancelRollback = useCallback((): void => {
+    setRollbackPreview(null);
+  }, []);
+
   const activeKey = activeConversationId ?? PENDING_SESSION_KEY;
   const activeSession = sessions[activeKey];
 
@@ -921,5 +1135,11 @@ export const useChatConversation = (
     handleAbort,
     abortConversation,
     handleForkConversation,
+    draftToRestore,
+    clearDraftToRestore,
+    handleRollback,
+    rollbackPreview,
+    confirmRollback,
+    cancelRollback,
   };
 };

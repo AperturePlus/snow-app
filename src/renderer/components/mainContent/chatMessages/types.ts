@@ -2,6 +2,7 @@ import type { ToolCallInfo } from "./useChatConversation";
 
 export type UserMessageProps = {
   content: string;
+  onRollback: () => void;
 };
 
 export type AiResponseSection = {

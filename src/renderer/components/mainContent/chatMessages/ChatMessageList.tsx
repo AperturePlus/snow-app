@@ -22,6 +22,7 @@ export const ChatMessageList = ({
     activeConversationId,
     handleForkConversation,
     handleSelectConversation,
+    handleRollback,
     forkedFromConversationId,
     forkMessageCount,
   } = useChatConversationContext();
@@ -101,7 +102,13 @@ export const ChatMessageList = ({
     message: ChatConversationMessage
   ): React.JSX.Element | null => {
     if (message.role === "user") {
-      return <UserMessage content={message.content} key={message.id} />;
+      return (
+        <UserMessage
+          content={message.content}
+          onRollback={() => handleRollback(message.id)}
+          key={message.id}
+        />
+      );
     }
 
     // Skip standalone tool messages — their results are already

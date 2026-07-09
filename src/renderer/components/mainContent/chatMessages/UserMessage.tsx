@@ -5,6 +5,7 @@ import { getFileTypeIcon } from "../../../utils/fileIcons";
 
 export const UserMessage = ({
   content,
+  onRollback,
 }: UserMessageProps): React.JSX.Element => {
   const segments = parseContentSegments(content);
 
@@ -52,7 +53,7 @@ export const UserMessage = ({
           })}
         </p>
       </article>
-      <UserMessageActions />
+      <UserMessageActions content={content} onRollback={onRollback} />
     </div>
   );
 };

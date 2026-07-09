@@ -6,6 +6,17 @@ export const systemApi = {
     ipcRenderer.invoke("mcp:list-tools"),
   callMcpTool: (toolFullName: string, argsJson: string): Promise<string> =>
     ipcRenderer.invoke("mcp:call-tool", toolFullName, argsJson),
+  createCheckpoint: (workDir: string): Promise<string> =>
+    ipcRenderer.invoke("checkpoint:create", workDir),
+  restoreCheckpoint: (checkpointId: string, workDir: string): Promise<void> =>
+    ipcRenderer.invoke("checkpoint:restore", checkpointId, workDir),
+  deleteCheckpoint: (checkpointId: string): Promise<void> =>
+    ipcRenderer.invoke("checkpoint:delete", checkpointId),
+  listCheckpointChanges: (
+    checkpointId: string,
+    workDir: string
+  ): Promise<CheckpointFileChange[]> =>
+    ipcRenderer.invoke("checkpoint:list-changes", checkpointId, workDir),
   writeLog: (level: string, entry: unknown): Promise<void> =>
     ipcRenderer.invoke("debug:write-log", level, entry),
   sum: (a: number, b: number): Promise<number> =>

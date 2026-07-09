@@ -3,6 +3,7 @@ import type { WorkspaceDirectoryRecord } from "../../../preload";
 import { ChatInput } from "./ChatInput";
 import { EmptyGreeting } from "./EmptyGreeting";
 import { ChatMessageList, useChatConversationContext } from "./chatMessages";
+import { RollbackConfirmDialog } from "./chatMessages/RollbackConfirmDialog";
 import type { ChatInputSendOptions } from "./chatInput/types";
 
 type ChatContentProps = {
@@ -21,6 +22,9 @@ export const ChatContent = ({
     tokenUsage,
     draftToRestore,
     clearDraftToRestore,
+    rollbackPreview,
+    confirmRollback,
+    cancelRollback,
   } = useChatConversationContext();
   const hasMessages = messages.length > 0;
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -61,6 +65,15 @@ export const ChatContent = ({
         draftToRestore={draftToRestore}
         onDraftRestored={clearDraftToRestore}
       />
+
+      {rollbackPreview ? (
+        <RollbackConfirmDialog
+          changes={rollbackPreview.changes}
+          isFirstMessage={rollbackPreview.isFirstMessage}
+          onConfirm={confirmRollback}
+          onCancel={cancelRollback}
+        />
+      ) : null}
     </div>
   );
 };

@@ -318,6 +318,11 @@ export type DetectedTerminal = {
   family: string;
 };
 
+export type CheckpointFileChange = {
+  path: string;
+  changeType: string;
+};
+
 export type NativeBridge = {
   initializeAppStorage: () => Promise<AppStorageInfo>;
 
@@ -429,4 +434,15 @@ export type NativeBridge = {
     onChange: (repoPath: string) => void
   ) => void;
   stopGitWatch: (repoPath: string) => void;
+  createCheckpoint: (workDir: string) => Promise<string>;
+  restoreCheckpoint: (checkpointId: string, workDir: string) => Promise<void>;
+  deleteCheckpoint: (checkpointId: string) => Promise<void>;
+  listCheckpointChanges: (
+    checkpointId: string,
+    workDir: string
+  ) => Promise<CheckpointFileChange[]>;
+  truncateConversationFromResponse: (
+    conversationId: string,
+    responseId: string
+  ) => Promise<void>;
 };

@@ -85,6 +85,22 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
     }
   );
   ipcMain.handle(
+    "chat-conversations:truncate",
+    async (_event, conversationId: unknown, responseId: unknown) => {
+      if (typeof conversationId !== "string" || !conversationId.trim()) {
+        throw new Error("Conversation ID is required to truncate");
+      }
+      if (typeof responseId !== "string" || !responseId.trim()) {
+        throw new Error("Response ID is required to truncate conversation");
+      }
+
+      await native.truncateConversationFromResponse(
+        conversationId.trim(),
+        responseId.trim()
+      );
+    }
+  );
+  ipcMain.handle(
     "chat-conversations:update-status",
     async (_event, conversationId: unknown, status: unknown) => {
       if (typeof conversationId !== "string" || !conversationId.trim()) {

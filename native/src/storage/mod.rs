@@ -456,6 +456,18 @@ pub fn fork_conversation(
     )
 }
 
+pub fn truncate_conversation_from_response(
+    conversation_id: String,
+    response_id: String,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::truncate_conversation_from_response(
+        &database_path,
+        &conversation_id,
+        &response_id,
+    )
+}
+
 fn ensure_database_file() -> Result<PathBuf> {
     let storage_dir = ensure_storage_dir()?;
     let database_path = paths::database_file_path(&storage_dir);

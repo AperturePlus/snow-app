@@ -288,6 +288,26 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to call MCP tools")
         ),
+      createCheckpoint: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to create checkpoint")
+        ),
+      restoreCheckpoint: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to restore checkpoint")
+        ),
+      deleteCheckpoint: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to delete checkpoint")
+        ),
+      listCheckpointChanges: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to list checkpoint changes")
+        ),
+      truncateConversationFromResponse: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to truncate conversation")
+        ),
     };
   }
 };

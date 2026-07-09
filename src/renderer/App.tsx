@@ -195,7 +195,10 @@ export const App = (): React.JSX.Element => {
   };
 
   return (
-    <ChatConversationProvider directoryId={activeDirectory?.directoryId}>
+    <ChatConversationProvider
+      directoryId={activeDirectory?.directoryId}
+      directoryPath={activeDirectory?.path}
+    >
       <div className={shellClasses} style={panelSizeStyle}>
         {isWindows && <WindowControls />}
         <TopBar

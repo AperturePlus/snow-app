@@ -10,11 +10,13 @@ const ChatConversationContext = createContext<
 export const ChatConversationProvider = ({
   children,
   directoryId,
+  directoryPath,
 }: {
   children: ReactNode;
   directoryId?: string;
+  directoryPath?: string;
 }): React.JSX.Element => {
-  const conversation = useChatConversation(directoryId);
+  const conversation = useChatConversation(directoryId, directoryPath);
 
   return (
     <ChatConversationContext.Provider value={conversation}>
