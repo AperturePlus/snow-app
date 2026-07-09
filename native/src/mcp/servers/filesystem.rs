@@ -107,7 +107,10 @@ impl McpService for FilesystemService {
             "create" => self.execute_create(args),
             _ => Err(Error::new(
                 Status::GenericFailure,
-                format!("Unknown tool: {}", tool_name),
+                format!(
+                    "Unknown tool: \"{}\" for MCP server \"filesystem\". Available tools: [mcp__filesystem__read, mcp__filesystem__replace_edit, mcp__filesystem__create]",
+                    tool_name
+                ),
             )),
         }
     }
@@ -118,7 +121,16 @@ impl FilesystemService {
         let file_path = args
             .get("filePath")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| Error::new(Status::InvalidArg, "filePath is required".to_string()))?;
+            .ok_or_else(|| {
+                let keys: Vec<String> = args.as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
+                Error::new(
+                    Status::InvalidArg,
+                    format!(
+                        "filePath is required for tool \"mcp__filesystem__read\". Received keys: [{}]. Please provide a valid file path.",
+                        keys.join(", ")
+                    ),
+                )
+            })?;
 
         let start_line = args.get("startLine").and_then(|v| v.as_u64());
         let end_line = args.get("endLine").and_then(|v| v.as_u64());
@@ -187,7 +199,16 @@ impl FilesystemService {
         let file_path = args
             .get("filePath")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| Error::new(Status::InvalidArg, "filePath is required".to_string()))?;
+            .ok_or_else(|| {
+                let keys: Vec<String> = args.as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
+                Error::new(
+                    Status::InvalidArg,
+                    format!(
+                        "filePath is required for tool \"mcp__filesystem__replace_edit\". Received keys: [{}]. Please provide a valid file path.",
+                        keys.join(", ")
+                    ),
+                )
+            })?;
 
         let search_content = args
             .get("searchContent")
@@ -195,7 +216,7 @@ impl FilesystemService {
             .ok_or_else(|| {
                 Error::new(
                     Status::InvalidArg,
-                    "searchContent is required".to_string(),
+                    "searchContent is required for tool \"mcp__filesystem__replace_edit\". Please provide the content to search for in the file.".to_string(),
                 )
             })?;
 
@@ -205,7 +226,7 @@ impl FilesystemService {
             .ok_or_else(|| {
                 Error::new(
                     Status::InvalidArg,
-                    "replaceContent is required".to_string(),
+                    "replaceContent is required for tool \"mcp__filesystem__replace_edit\". Please provide the new content to replace with.".to_string(),
                 )
             })?;
 
@@ -275,12 +296,21 @@ impl FilesystemService {
         let file_path = args
             .get("filePath")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| Error::new(Status::InvalidArg, "filePath is required".to_string()))?;
+            .ok_or_else(|| {
+                let keys: Vec<String> = args.as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
+                Error::new(
+                    Status::InvalidArg,
+                    format!(
+                        "filePath is required for tool \"mcp__filesystem__create\". Received keys: [{}]. Please provide a valid file path.",
+                        keys.join(", ")
+                    ),
+                )
+            })?;
 
         let content = args
             .get("content")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| Error::new(Status::InvalidArg, "content is required".to_string()))?;
+            .ok_or_else(|| Error::new(Status::InvalidArg, "content is required for tool \"mcp__filesystem__create\". Please provide the content to write to the file.".to_string()))?;
 
         let overwrite = args
             .get("overwrite")

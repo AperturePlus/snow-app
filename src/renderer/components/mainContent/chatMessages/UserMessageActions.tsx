@@ -1,4 +1,5 @@
-import { Copy, Undo2 } from "lucide-react";
+import { useState } from "react";
+import { Check, Copy, Undo2 } from "lucide-react";
 
 type UserMessageActionsProps = {
   content: string;
@@ -9,8 +10,13 @@ export const UserMessageActions = ({
   content,
   onRollback,
 }: UserMessageActionsProps): React.JSX.Element => {
+  const [copied, setCopied] = useState(false);
+
   const handleCopy = (): void => {
-    void navigator.clipboard.writeText(content);
+    navigator.clipboard.writeText(content).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    });
   };
 
   return (
@@ -21,7 +27,11 @@ export const UserMessageActions = ({
         aria-label="Copy user message"
         onClick={handleCopy}
       >
-        <Copy size={15} strokeWidth={1.8} />
+        {copied ? (
+          <Check size={15} strokeWidth={1.8} />
+        ) : (
+          <Copy size={15} strokeWidth={1.8} />
+        )}
       </button>
       <button
         className="user-message-action-btn"

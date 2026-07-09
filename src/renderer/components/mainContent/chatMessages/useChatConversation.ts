@@ -125,15 +125,26 @@ const normalizeToolCallArguments = (args: unknown): string => {
   return "{}";
 };
 
+const isValidToolName = (name: string): boolean => {
+  // Valid format: mcp__{server_id}__{tool_name}
+  const parts = name.split("__");
+  return (
+    parts.length === 3 &&
+    parts[0] === "mcp" &&
+    parts[1].length > 0 &&
+    parts[2].length > 0
+  );
+};
+
 const normalizeToolCallName = (tc: Record<string, unknown>): string => {
-  const directName = typeof tc.name === "string" ? tc.name : "";
+  const directName = typeof tc.name === "string" ? tc.name.trim() : "";
   if (directName) {
     return directName;
   }
   const func = tc.function;
   if (typeof func === "object" && func !== null && !Array.isArray(func)) {
     const funcRecord = func as Record<string, unknown>;
-    return typeof funcRecord.name === "string" ? funcRecord.name : "";
+    return typeof funcRecord.name === "string" ? funcRecord.name.trim() : "";
   }
   return "";
 };
@@ -209,6 +220,41 @@ const parseToolCalls = (toolCallsJson: string | undefined): ToolCallInfo[] => {
   }
 
   return [];
+};
+
+/**
+ * Validate tool call before execution. Returns an error message string if
+ * the tool call should not be executed, or null if it is valid.
+ *
+ * When the AI provides malformed tool names or invalid JSON arguments, we
+ * return a descriptive error instead of calling the Rust backend. This error
+ * is fed back into the conversation so the AI can self-correct in the next
+ * iteration of the agent loop.
+ */
+const validateToolCall = (toolCall: ToolCallInfo): string | null => {
+  if (!isValidToolName(toolCall.name)) {
+    return JSON.stringify({
+      error: `Invalid tool name format: "${toolCall.name}". Tool names must follow the format "mcp__{server}__{tool}". Please check the available tool definitions and use the correct full name.`,
+    });
+  }
+
+  // Validate that arguments is parseable JSON
+  if (toolCall.arguments) {
+    try {
+      JSON.parse(toolCall.arguments);
+    } catch {
+      return JSON.stringify({
+        error: `Arguments for tool "${
+          toolCall.name
+        }" is not valid JSON: ${toolCall.arguments.slice(
+          0,
+          200
+        )}. Please provide arguments as a valid JSON object.`,
+      });
+    }
+  }
+
+  return null;
 };
 
 export const useChatConversation = (
@@ -489,9 +535,13 @@ export const useChatConversation = (
             migrateSession(PENDING_SESSION_KEY, response.conversationId);
             effectiveKey = response.conversationId;
             finalSessionKey = response.conversationId;
-          }
-          if (activeConversationIdRef.current === undefined) {
-            setActiveId(response.conversationId);
+            // Only set active conversation on the first iteration when
+            // migrating from pending. Subsequent tool iterations must NOT
+            // override the active conversation — the user may have switched
+            // to a different conversation while tools are running.
+            if (activeConversationIdRef.current === undefined) {
+              setActiveId(response.conversationId);
+            }
           }
           // First message: immediately upsert the new conversation into
           // the list so it appears while AI is still responding.
@@ -573,13 +623,22 @@ export const useChatConversation = (
           );
 
           let result: string;
-          try {
-            result = await window.snow.callMcpTool(
-              toolCall.name,
-              toolCall.arguments
-            );
-          } catch (err) {
-            result = JSON.stringify({ error: getErrorMessage(err) });
+          // Validate tool call before sending to Rust backend.
+          // If the AI provided a malformed tool name or invalid JSON arguments,
+          // return a descriptive error so the AI can self-correct in the next
+          // iteration instead of triggering a confusing backend error.
+          const validationError = validateToolCall(toolCall);
+          if (validationError) {
+            result = validationError;
+          } else {
+            try {
+              result = await window.snow.callMcpTool(
+                toolCall.name,
+                toolCall.arguments
+              );
+            } catch (err) {
+              result = JSON.stringify({ error: getErrorMessage(err) });
+            }
           }
 
           // Update tool call status to completed

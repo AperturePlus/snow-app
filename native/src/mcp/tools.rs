@@ -155,7 +155,25 @@ fn load_external_mcp_tools(
 /// 对于内置服务（如 filesystem），直接在 Rust 侧执行；
 /// 对于外部 MCP 服务（未来支持），将转发到对应的 MCP 服务器。
 pub fn call_mcp_tool(tool_full_name: String, args_json: String) -> napi::Result<String> {
-    let args: Value = serde_json::from_str(&args_json).unwrap_or_else(|_| json!({}));
+    let args: Value = match serde_json::from_str(&args_json) {
+        Ok(parsed) => parsed,
+        Err(e) => {
+            // Return a descriptive error so the AI can self-correct
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!(
+                    "Failed to parse arguments JSON for tool \"{}\": {}. Received: {}",
+                    tool_full_name,
+                    e,
+                    if args_json.len() > 200 {
+                        format!("{}...", &args_json[..200])
+                    } else {
+                        args_json.clone()
+                    }
+                ),
+            ));
+        }
+    };
 
     // 尝试内置工具执行
     let result = execute_builtin_tool(&tool_full_name, &args)?;

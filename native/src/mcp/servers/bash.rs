@@ -70,7 +70,10 @@ impl McpService for BashService {
             "terminal-execute" => self.execute_terminal(args),
             _ => Err(Error::new(
                 Status::GenericFailure,
-                format!("Unknown tool: {}", tool_name),
+                format!(
+                    "Unknown tool: \"{}\" for MCP server \"bash\". Available tools: [mcp__bash__terminal-execute]",
+                    tool_name
+                ),
             )),
         }
     }
