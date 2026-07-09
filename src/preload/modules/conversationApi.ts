@@ -53,31 +53,6 @@ export const conversationApi = {
       sourceConversationId,
       upToResponseId
     ),
-  truncateChatMessagesFromUserIndex: (
-    conversationId: string,
-    userMessageIndex: number
-  ): Promise<void> =>
-    ipcRenderer.invoke(
-      "chat-conversations:truncate-from-user-index",
-      conversationId,
-      userMessageIndex
-    ),
-  beginCheckpoint: (conversationId: string, messageId: string): Promise<void> =>
-    ipcRenderer.invoke("checkpoint:begin", conversationId, messageId),
-  migrateCheckpoint: (
-    oldConversationId: string,
-    newConversationId: string
-  ): Promise<void> =>
-    ipcRenderer.invoke(
-      "checkpoint:migrate",
-      oldConversationId,
-      newConversationId
-    ),
-  restoreCheckpoint: (
-    conversationId: string,
-    messageId: string
-  ): Promise<string> =>
-    ipcRenderer.invoke("checkpoint:restore", conversationId, messageId),
   generateConversationSummary: (conversationId: string): Promise<string> =>
     ipcRenderer.invoke("chat-conversations:generate-summary", conversationId),
 };

@@ -287,60 +287,6 @@ pub async fn fork_conversation(
     .map_err(map_spawn_error)?
 }
 
-#[napi]
-pub async fn truncate_chat_messages_from_user_index(
-    conversation_id: String,
-    user_message_index: i32,
-) -> napi::Result<()> {
-    tokio::task::spawn_blocking(move || {
-        crate::storage::truncate_chat_messages_from_user_index(conversation_id, user_message_index)
-    })
-    .await
-    .map_err(map_spawn_error)?
-}
-
-#[napi]
-pub async fn begin_checkpoint(
-    conversation_id: String,
-    message_id: String,
-) -> napi::Result<()> {
-    tokio::task::spawn_blocking(move || {
-        crate::mcp::checkpoint::begin_checkpoint(conversation_id, message_id)
-    })
-    .await
-    .map_err(map_spawn_error)?
-}
-
-#[napi]
-pub async fn migrate_checkpoint(
-    old_conversation_id: String,
-    new_conversation_id: String,
-) -> napi::Result<()> {
-    tokio::task::spawn_blocking(move || {
-        crate::mcp::checkpoint::migrate_checkpoint(old_conversation_id, new_conversation_id)
-    })
-    .await
-    .map_err(map_spawn_error)?
-}
-
-#[napi]
-pub async fn restore_checkpoint(
-    conversation_id: String,
-    message_id: String,
-) -> napi::Result<String> {
-    tokio::task::spawn_blocking(move || {
-        let result = crate::mcp::checkpoint::restore_checkpoint(conversation_id, message_id)?;
-        serde_json::to_string(&result).map_err(|error| {
-            Error::new(
-                Status::GenericFailure,
-                format!("Failed to serialize restore result: {error}"),
-            )
-        })
-    })
-    .await
-    .map_err(map_spawn_error)?
-}
-
 /// 将 tokio JoinError 转换为 napi Error
 fn map_spawn_error(e: tokio::task::JoinError) -> Error {
     Error::new(

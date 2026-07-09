@@ -76,9 +76,6 @@ type UseChatConversationResult = {
     conversationId: string,
     upToResponseId: string
   ) => Promise<void>;
-  handleRollbackMessage: (messageId: string) => Promise<void>;
-  draftToRestore: string | null;
-  clearDraftToRestore: () => void;
 };
 
 const PENDING_SESSION_KEY = "__pending__";
@@ -209,7 +206,6 @@ export const useChatConversation = (
   const [completedConversationIds, setCompletedConversationIds] = useState<
     Set<string>
   >(new Set());
-  const [draftToRestore, setDraftToRestore] = useState<string | null>(null);
 
   const sessionsRefData = useRef<Map<string, ConversationSessionRef>>(
     new Map()
@@ -368,12 +364,6 @@ export const useChatConversation = (
         pendingAssistantMessage,
       ]);
 
-      // Create a filesystem checkpoint bound to this user message so later
-      // AI Loop file mutations can be fully rolled back.
-      void window.snow.beginCheckpoint(sessionKey, userMessage.id).catch(() => {
-        // Checkpoint failure must not block the conversation.
-      });
-
       // First message: immediately show a placeholder in the sidebar list
       // so the user sees the new conversation without waiting for AI response.
       if (isFirstMessage) {
@@ -466,11 +456,6 @@ export const useChatConversation = (
         if (response.conversationId) {
           if (effectiveKey === PENDING_SESSION_KEY) {
             migrateSession(PENDING_SESSION_KEY, response.conversationId);
-            void window.snow
-              .migrateCheckpoint(PENDING_SESSION_KEY, response.conversationId)
-              .catch(() => {
-                // Checkpoint migration failure should not block the conversation.
-              });
             effectiveKey = response.conversationId;
             finalSessionKey = response.conversationId;
           }
@@ -912,102 +897,6 @@ export const useChatConversation = (
     [handleSelectConversation]
   );
 
-  const clearDraftToRestore = useCallback((): void => {
-    setDraftToRestore(null);
-  }, []);
-
-  const handleRollbackMessage = useCallback(
-    async (messageId: string): Promise<void> => {
-      const trimmedMessageId = messageId.trim();
-      if (!trimmedMessageId) {
-        return;
-      }
-
-      const sessionKey = activeConversationIdRef.current ?? PENDING_SESSION_KEY;
-      const session = sessions[sessionKey];
-      if (!session) {
-        return;
-      }
-
-      // Abort any in-flight stream before mutating history.
-      const ref = sessionsRefData.current.get(sessionKey);
-      if (ref?.streamId) {
-        void window.snow.abortResponseStream(ref.streamId);
-        ref.streamId = null;
-      }
-      if (ref) {
-        ref.isSending = false;
-      }
-      updateSessionField(sessionKey, "isStreaming", false);
-      updateSessionField(sessionKey, "isAborting", false);
-      removeStreamingId(sessionKey);
-
-      const messageIndex = session.messages.findIndex(
-        (message) => message.id === trimmedMessageId
-      );
-      if (messageIndex < 0) {
-        return;
-      }
-
-      const targetMessage = session.messages[messageIndex];
-      if (targetMessage.role !== "user") {
-        return;
-      }
-
-      // Count user messages before this one so DB truncation can locate
-      // the corresponding row by order (frontend IDs differ from DB IDs).
-      let userMessageIndex = 0;
-      for (let i = 0; i < messageIndex; i++) {
-        if (session.messages[i].role === "user") {
-          userMessageIndex++;
-        }
-      }
-
-      const draftContent = targetMessage.content;
-      const conversationIdForApi =
-        sessionKey === PENDING_SESSION_KEY
-          ? undefined
-          : activeConversationIdRef.current;
-
-      // Restore filesystem first so file state is consistent even if
-      // message truncation fails.
-      try {
-        await window.snow.restoreCheckpoint(
-          conversationIdForApi ?? sessionKey,
-          trimmedMessageId
-        );
-      } catch {
-        // Best-effort: continue truncating messages.
-      }
-
-      if (conversationIdForApi) {
-        try {
-          await window.snow.truncateChatMessagesFromUserIndex(
-            conversationIdForApi,
-            userMessageIndex
-          );
-          const updated = await window.snow.getChatConversation(
-            conversationIdForApi
-          );
-          if (updated) {
-            setUpsertedConversation({
-              record: updated,
-              timestamp: Date.now(),
-            });
-          }
-        } catch {
-          // DB truncation failure should not leave the UI stuck.
-        }
-      }
-
-      updateSessionMessages(sessionKey, (currentMessages) =>
-        currentMessages.slice(0, messageIndex)
-      );
-      setDraftToRestore(draftContent);
-    },
-    [sessions, updateSessionField, updateSessionMessages, removeStreamingId]
-  );
-
   const activeKey = activeConversationId ?? PENDING_SESSION_KEY;
   const activeSession = sessions[activeKey];
 
@@ -1032,8 +921,5 @@ export const useChatConversation = (
     handleAbort,
     abortConversation,
     handleForkConversation,
-    handleRollbackMessage,
-    draftToRestore,
-    clearDraftToRestore,
   };
 };

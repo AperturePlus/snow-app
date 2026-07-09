@@ -456,18 +456,6 @@ pub fn fork_conversation(
     )
 }
 
-pub fn truncate_chat_messages_from_user_index(
-    conversation_id: String,
-    user_message_index: i32,
-) -> Result<()> {
-    let database_path = ensure_database_file()?;
-    services::chat_conversations::truncate_chat_messages_from_user_index(
-        &database_path,
-        &conversation_id,
-        user_message_index,
-    )
-}
-
 fn ensure_database_file() -> Result<PathBuf> {
     let storage_dir = ensure_storage_dir()?;
     let database_path = paths::database_file_path(&storage_dir);

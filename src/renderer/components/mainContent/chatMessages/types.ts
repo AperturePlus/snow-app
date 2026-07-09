@@ -2,9 +2,6 @@ import type { ToolCallInfo } from "./useChatConversation";
 
 export type UserMessageProps = {
   content: string;
-  messageId: string;
-  onRollback?: (messageId: string) => void;
-  rollbackDisabled?: boolean;
 };
 
 export type AiResponseSection = {

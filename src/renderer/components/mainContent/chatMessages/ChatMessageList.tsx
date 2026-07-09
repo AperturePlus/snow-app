@@ -101,17 +101,7 @@ export const ChatMessageList = ({
     message: ChatConversationMessage
   ): React.JSX.Element | null => {
     if (message.role === "user") {
-      return (
-        <UserMessage
-          content={message.content}
-          key={message.id}
-          messageId={message.id}
-          onRollback={(id) => {
-            void handleRollbackMessage(id);
-          }}
-          rollbackDisabled={conversationStreaming || isStreaming}
-        />
-      );
+      return <UserMessage content={message.content} key={message.id} />;
     }
 
     // Skip standalone tool messages — their results are already

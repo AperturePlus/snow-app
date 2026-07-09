@@ -382,19 +382,6 @@ export type NativeBridge = {
     sourceConversationId: string,
     upToResponseId: string
   ) => Promise<ChatConversationRecord>;
-  truncateChatMessagesFromUserIndex: (
-    conversationId: string,
-    userMessageIndex: number
-  ) => Promise<void>;
-  beginCheckpoint: (conversationId: string, messageId: string) => Promise<void>;
-  migrateCheckpoint: (
-    oldConversationId: string,
-    newConversationId: string
-  ) => Promise<void>;
-  restoreCheckpoint: (
-    conversationId: string,
-    messageId: string
-  ) => Promise<string>;
   generateConversationSummary: (conversationId: string) => Promise<string>;
   fetchAvailableModels: () => Promise<Model[]>;
   fetchAvailableModelsForConfig: (config: ApiModelsConfig) => Promise<Model[]>;
