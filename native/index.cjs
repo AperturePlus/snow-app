@@ -6,8 +6,8 @@ const nativeDir = __dirname
 const platformMap = {
   'win32-x64': 'win32-x64-msvc',
   'win32-arm64': 'win32-arm64-msvc',
-  'darwin-x64': 'darwin-x64',
-  'darwin-arm64': 'darwin-arm64',
+  'darwin-x64': ['darwin-universal', 'darwin-x64'],
+  'darwin-arm64': ['darwin-universal', 'darwin-arm64'],
   'linux-x64': 'linux-x64-gnu',
   'linux-arm64': 'linux-arm64-gnu'
 }
@@ -26,9 +26,14 @@ const nodeFiles = readdirSync(nativeDir)
   .filter((file) => file.endsWith('.node'))
   .map((file) => join(nativeDir, file))
 
-const platformCandidates = platformName
+const platformNames = platformName
+  ? Array.isArray(platformName)
+    ? platformName
+    : [platformName]
+  : []
+const platformCandidates = platformNames.length
   ? nodeFiles
-      .filter((file) => file.includes(`snow_native.${platformName}`))
+      .filter((file) => platformNames.some((name) => file.includes(`snow_native.${name}`)))
       .sort((left, right) => statSync(right).mtimeMs - statSync(left).mtimeMs)
   : []
 

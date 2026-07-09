@@ -44,6 +44,15 @@ export const conversationApi = {
     ipcRenderer.invoke("chat-conversations:delete", conversationId),
   listChatMessages: (conversationId: string): Promise<ChatMessageRecord[]> =>
     ipcRenderer.invoke("chat-conversations:list-messages", conversationId),
+  forkConversation: (
+    sourceConversationId: string,
+    upToResponseId: string
+  ): Promise<ChatConversationRecord> =>
+    ipcRenderer.invoke(
+      "chat-conversations:fork",
+      sourceConversationId,
+      upToResponseId
+    ),
   generateConversationSummary: (conversationId: string): Promise<string> =>
     ipcRenderer.invoke("chat-conversations:generate-summary", conversationId),
 };

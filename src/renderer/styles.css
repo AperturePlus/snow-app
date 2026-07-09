@@ -652,17 +652,23 @@ input {
   gap: 8px;
   width: 100%;
   padding: 7px 8px;
+  margin-bottom: 2px;
   border: none;
   border-radius: var(--radius-sm, 6px);
   background: transparent;
   color: var(--text-primary);
   cursor: pointer;
-  text-align: left;
-  transition: background 0.12s ease;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+  position: relative;
 }
 .chat-item:hover,
 .chat-item.menu-open {
   background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+}
+.chat-item.active {
+  background: var(--bg-active, rgba(255, 255, 255, 0.05));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 .chat-item-icon {
@@ -687,6 +693,11 @@ input {
 .chat-item-icon.completed {
   border-color: var(--accent, #3b82f6);
   color: var(--accent, #3b82f6);
+}
+
+.chat-item-icon.forked {
+  border-color: var(--text-muted);
+  color: var(--text-muted);
 }
 
 .chat-item-badge {
@@ -3296,6 +3307,37 @@ input {
   color: var(--text-secondary);
 }
 
+.chat-fork-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 4px;
+}
+
+.chat-fork-divider-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+}
+
+.chat-fork-divider-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--accent-blue-text, var(--text-link, #3b82f6));
+  white-space: nowrap;
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 0;
+  transition: opacity 0.12s;
+}
+
+.chat-fork-divider-link:hover {
+  opacity: 0.7;
+}
+
 .ai-message h2,
 .ai-message h3,
 .ai-message p,
@@ -3362,6 +3404,45 @@ input {
 
 .ai-message a:hover {
   text-decoration: underline;
+}
+
+/* Table */
+.ai-message table {
+  width: 100%;
+  margin: 0 0 14px;
+  border-collapse: collapse;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.ai-message thead {
+  background: var(--bg-active);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.ai-message th {
+  padding: 8px 12px;
+  font-weight: 680;
+  text-align: left;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.ai-message td {
+  padding: 7px 12px;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border-light);
+}
+
+.ai-message tbody tr:nth-child(odd) {
+  background: transparent;
+}
+
+.ai-message tbody tr:nth-child(even) {
+  background: var(--bg-tertiary);
 }
 
 /* Inline code */

@@ -18,4 +18,7 @@ export type AiResponseProps = {
   isAborting?: boolean;
   showActions?: boolean;
   toolCalls?: ToolCallInfo[];
+  conversationId?: string;
+  responseId?: string;
+  onFork?: (conversationId: string, upToResponseId: string) => void;
 };

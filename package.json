@@ -11,6 +11,9 @@
     "build:app": "npm run build && electron-builder",
     "build:win": "npm run build && electron-builder --win nsis portable",
     "build:mac": "npm run build && electron-builder --mac dmg zip",
+    "build:mac:arm64": "npm run build && electron-builder --mac dmg zip --arm64",
+    "build:mac:x64": "npm run build && electron-builder --mac dmg zip --x64",
+    "build:mac:universal": "npm run build && electron-builder --mac dmg zip --universal",
     "build:linux": "npm run build && electron-builder --linux AppImage deb",
     "build:all": "npm run build && electron-builder -mwl",
     "build:rust": "node scripts/build-native.cjs",
@@ -69,7 +72,6 @@
       "!**/node_modules/node-pty/build/Release/*.lastbuildstate",
       "!**/node_modules/node-pty/build/Release/*.xml",
       "!**/node_modules/node-pty/prebuilds/win32-arm64/**",
-      "!**/node_modules/node-pty/prebuilds/darwin-*/**",
       "!**/node_modules/node-pty/third_party/conpty/**/win10-arm64/**"
     ],
     "asarUnpack": [
@@ -83,7 +85,14 @@
     },
     "mac": {
       "category": "public.app-category.developer-tools",
-      "icon": "resources/icon.icns"
+      "icon": "resources/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "arch": [
+        "universal"
+      ]
     },
     "win": {
       "icon": "resources/icon.ico"

@@ -275,6 +275,18 @@ pub async fn list_chat_messages(conversation_id: String) -> napi::Result<Vec<Cha
         .map_err(map_spawn_error)?
 }
 
+#[napi]
+pub async fn fork_conversation(
+    source_conversation_id: String,
+    up_to_response_id: String,
+) -> napi::Result<ChatConversationRecord> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::fork_conversation(source_conversation_id, up_to_response_id)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
 /// 将 tokio JoinError 转换为 napi Error
 fn map_spawn_error(e: tokio::task::JoinError) -> Error {
     Error::new(

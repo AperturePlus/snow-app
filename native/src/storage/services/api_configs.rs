@@ -8,11 +8,12 @@ use super::super::{ApiConfigInput, ApiConfigRecord};
 
 const DEFAULT_PROFILE_NAME: &str = "default";
 const DEFAULT_DISPLAY_NAME: &str = "Default API";
-const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
+const DEFAULT_BASE_URL: &str = "https://api.deepseek.com/v1";
 const DEFAULT_REQUEST_METHOD: &str = "chat";
-const DEFAULT_ADVANCED_MODEL: &str = "gpt-4.1";
-const DEFAULT_BASIC_MODEL: &str = "gpt-4.1-mini";
-const DEFAULT_CONFIG_JSON: &str = "{\"snowcfg\":{\"baseUrl\":\"https://api.openai.com/v1\",\"baseUrlMode\":\"auto\",\"requestMethod\":\"chat\",\"advancedModel\":\"gpt-4.1\",\"basicModel\":\"gpt-4.1-mini\",\"supportsVision\":true}}";
+const DEFAULT_ADVANCED_MODEL: &str = "deepseek-v4-pro";
+const DEFAULT_BASIC_MODEL: &str = "deepseek-v4-flash";
+const DEFAULT_MAX_CONTEXT_TOKENS: i32 = 256000;
+const DEFAULT_CONFIG_JSON: &str = "{\"snowcfg\":{\"baseUrl\":\"https://api.deepseek.com/v1\",\"baseUrlMode\":\"auto\",\"requestMethod\":\"chat\",\"advancedModel\":\"deepseek-v4-pro\",\"basicModel\":\"deepseek-v4-flash\",\"supportsVision\":false}}";
 
 pub fn seed_default_api_config(database_path: &Path) -> Result<()> {
     Connection::open(database_path)
@@ -250,6 +251,7 @@ fn seed_default_api_config_with_connection(connection: &Connection) -> rusqlite:
            vision_api_key,
            vision_request_method,
            vision_model,
+           max_context_tokens,
            system_prompt_ids_json,
            custom_header_scheme_id,
            config_json,
@@ -259,7 +261,7 @@ fn seed_default_api_config_with_connection(connection: &Connection) -> rusqlite:
          )
          SELECT
            ?1, ?2, ?3, 1, ?4, 'auto', '', ?5, ?6, ?7, 1,
-           '', 'auto', '', ?5, '', '', '', ?8, 'default', datetime('now'), datetime('now')
+           '', 'auto', '', ?5, '', ?9, '', '', ?8, 'default', datetime('now'), datetime('now')
          WHERE NOT EXISTS (SELECT 1 FROM api_configs)",
         params![
             database::create_snowflake_id(),
@@ -270,6 +272,7 @@ fn seed_default_api_config_with_connection(connection: &Connection) -> rusqlite:
             DEFAULT_ADVANCED_MODEL,
             DEFAULT_BASIC_MODEL,
             DEFAULT_CONFIG_JSON,
+            DEFAULT_MAX_CONTEXT_TOKENS,
         ],
     )?;
 

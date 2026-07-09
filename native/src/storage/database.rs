@@ -241,6 +241,9 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            output_tokens INTEGER NOT NULL DEFAULT 0,
            cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
            cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
+           directory_id TEXT NOT NULL DEFAULT '',
+           forked_from_conversation_id TEXT NOT NULL DEFAULT '',
+           fork_message_count INTEGER NOT NULL DEFAULT 0,
            created_at TEXT NOT NULL DEFAULT (datetime('now')),
            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
          );
@@ -306,12 +309,6 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
         "chat_messages",
         "tool_calls_json",
         "TEXT NOT NULL DEFAULT '[]'",
-    )?;
-    ensure_column(
-        connection,
-        "chat_conversations",
-        "directory_id",
-        "TEXT NOT NULL DEFAULT ''",
     )?;
 
     Ok(())

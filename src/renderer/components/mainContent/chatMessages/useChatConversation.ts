@@ -37,6 +37,8 @@ type ConversationSessionState = {
   tokenUsage: TokenUsage | null;
   directoryId?: string;
   hasNewContent: boolean;
+  forkedFromConversationId?: string;
+  forkMessageCount?: number;
 };
 
 type ConversationSessionRef = {
@@ -53,6 +55,8 @@ type UseChatConversationResult = {
   activeConversationId: string | undefined;
   conversationDirectoryId: string | undefined;
   tokenUsage: TokenUsage | null;
+  forkedFromConversationId: string | undefined;
+  forkMessageCount: number | undefined;
   streamingConversationIds: Set<string>;
   completedConversationIds: Set<string>;
   handleSendMessage: (message: string, options: ChatInputSendOptions) => void;
@@ -68,6 +72,10 @@ type UseChatConversationResult = {
   isAborting: boolean;
   handleAbort: () => void;
   abortConversation: (conversationId: string) => void;
+  handleForkConversation: (
+    conversationId: string,
+    upToResponseId: string
+  ) => Promise<void>;
 };
 
 const PENDING_SESSION_KEY = "__pending__";
@@ -372,6 +380,8 @@ export const useChatConversation = (
             model: options.model ?? "",
             status: "active",
             directoryId: sessionDirId ?? "",
+            forkedFromConversationId: "",
+            forkMessageCount: 0,
             createdAt: nowIso,
             updatedAt: nowIso,
             inputTokens: 0,
@@ -723,7 +733,10 @@ export const useChatConversation = (
       const nextTitle = title?.trim() ?? "";
 
       try {
-        const records = await window.snow.listChatMessages(trimmedId);
+        const [records, conversationRecord] = await Promise.all([
+          window.snow.listChatMessages(trimmedId),
+          window.snow.getChatConversation(trimmedId),
+        ]);
 
         // Build a lookup: toolName -> result content from tool-role messages.
         // Tool messages store content as "[Tool: name]\nresult" (joined by \n\n
@@ -780,6 +793,9 @@ export const useChatConversation = (
             tokenUsage: conversationTokenUsage ?? null,
             directoryId: conversationDirId,
             hasNewContent: false,
+            forkedFromConversationId:
+              conversationRecord?.forkedFromConversationId || undefined,
+            forkMessageCount: conversationRecord?.forkMessageCount || undefined,
           },
         }));
 
@@ -845,6 +861,42 @@ export const useChatConversation = (
     setConversationVersion((version) => version + 1);
   }, []);
 
+  const handleForkConversation = useCallback(
+    async (conversationId: string, upToResponseId: string): Promise<void> => {
+      const trimmedId = conversationId.trim();
+      if (!trimmedId) return;
+
+      try {
+        const forkedRecord = await window.snow.forkConversation(
+          trimmedId,
+          upToResponseId.trim()
+        );
+
+        // Refresh sidebar list so the new forked conversation appears
+        setUpsertedConversation({
+          record: forkedRecord,
+          timestamp: Date.now(),
+        });
+
+        // Switch to the new forked conversation
+        await handleSelectConversation(
+          forkedRecord.conversationId,
+          forkedRecord.summary || forkedRecord.title,
+          {
+            inputTokens: forkedRecord.inputTokens,
+            outputTokens: forkedRecord.outputTokens,
+            cacheCreationInputTokens: forkedRecord.cacheCreationInputTokens,
+            cacheReadInputTokens: forkedRecord.cacheReadInputTokens,
+          },
+          forkedRecord.directoryId
+        );
+      } catch {
+        // Fork failure should not block the UI
+      }
+    },
+    [handleSelectConversation]
+  );
+
   const activeKey = activeConversationId ?? PENDING_SESSION_KEY;
   const activeSession = sessions[activeKey];
 
@@ -856,6 +908,8 @@ export const useChatConversation = (
     activeConversationId,
     conversationDirectoryId: activeSession?.directoryId,
     tokenUsage: activeSession?.tokenUsage ?? null,
+    forkedFromConversationId: activeSession?.forkedFromConversationId,
+    forkMessageCount: activeSession?.forkMessageCount,
     streamingConversationIds,
     completedConversationIds,
     handleSendMessage,
@@ -866,5 +920,6 @@ export const useChatConversation = (
     isAborting: activeSession?.isAborting ?? false,
     handleAbort,
     abortConversation,
+    handleForkConversation,
   };
 };

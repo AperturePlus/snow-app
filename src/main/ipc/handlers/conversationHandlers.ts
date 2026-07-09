@@ -69,6 +69,22 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
     }
   );
   ipcMain.handle(
+    "chat-conversations:fork",
+    async (_event, sourceConversationId: unknown, upToResponseId: unknown) => {
+      if (
+        typeof sourceConversationId !== "string" ||
+        !sourceConversationId.trim()
+      ) {
+        throw new Error("Source conversation ID is required to fork");
+      }
+
+      const responseId =
+        typeof upToResponseId === "string" ? upToResponseId.trim() : "";
+
+      return native.forkConversation(sourceConversationId.trim(), responseId);
+    }
+  );
+  ipcMain.handle(
     "chat-conversations:update-status",
     async (_event, conversationId: unknown, status: unknown) => {
       if (typeof conversationId !== "string" || !conversationId.trim()) {

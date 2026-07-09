@@ -209,6 +209,10 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to list chat messages")
         ),
+      forkConversation: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to fork conversation")
+        ),
       generateConversationSummary: () =>
         Promise.reject(
           new Error(

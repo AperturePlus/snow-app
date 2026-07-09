@@ -7,6 +7,8 @@ export type ChatConversationRecord = {
   model: string;
   status: string;
   directoryId: string;
+  forkedFromConversationId: string;
+  forkMessageCount: number;
   createdAt: string;
   updatedAt: string;
   inputTokens: number;

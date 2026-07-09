@@ -1,4 +1,4 @@
-import { Loader2, MessageSquareMore } from "lucide-react";
+import { GitFork, Loader2, MessageSquareMore } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useI18n } from "../../../i18n";
@@ -97,6 +97,7 @@ export function ChatItem({
   };
 
   const isPinned = conversation.status === "pin";
+  const isForked = conversation.forkedFromConversationId !== "";
   const displayName =
     conversation.summary ||
     conversation.title ||
@@ -140,10 +141,12 @@ export function ChatItem({
       <span
         className={`chat-item-icon${isStreaming ? " streaming" : ""}${
           isCompleted && !isStreaming ? " completed" : ""
-        }`}
+        }${isForked ? " forked" : ""}`}
       >
         {isStreaming ? (
           <Loader2 size={11} className="spin" />
+        ) : isForked ? (
+          <GitFork size={11} />
         ) : (
           <MessageSquareMore size={11} />
         )}

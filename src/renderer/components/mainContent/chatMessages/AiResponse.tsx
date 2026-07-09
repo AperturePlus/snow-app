@@ -15,6 +15,9 @@ export const AiResponse = ({
   isAborting = false,
   showActions = true,
   toolCalls = [],
+  conversationId,
+  responseId,
+  onFork,
 }: AiResponseProps): React.JSX.Element => {
   const { t } = useI18n();
   const normalizedThinking = thinking?.trim();
@@ -78,7 +81,14 @@ export const AiResponse = ({
       </div>
 
       {/* 6. Actions */}
-      {showActions ? <AiResponseActions /> : null}
+      {showActions && conversationId && onFork ? (
+        <AiResponseActions
+          content={normalizedSummary}
+          conversationId={conversationId}
+          responseId={responseId}
+          onFork={onFork}
+        />
+      ) : null}
     </article>
   );
 };

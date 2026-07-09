@@ -59,9 +59,13 @@ export const BrowserPanelContent = ({
   onTitleChange,
 }: BrowserPanelContentProps): React.JSX.Element => {
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
-  const { homepage, setHomepage } = useBrowserHomepage();
-  const effectiveUrl = initialUrl || homepage || DEFAULT_BROWSER_HOMEPAGE;
-  const [addressInput, setAddressInput] = useState(effectiveUrl);
+  const { homepage, loaded, setHomepage } = useBrowserHomepage();
+  // When an explicit initialUrl is provided, use it immediately. Otherwise,
+  // leave the address bar and webview src empty until the homepage has been
+  // loaded from the database — otherwise the default google fallback is used
+  // before the real homepage arrives (useState only evaluates its initial
+  // value once, so the late-arriving homepage would be ignored).
+  const [addressInput, setAddressInput] = useState(initialUrl || "");
   // webviewSrc drives the <webview src={...}> attribute. It is ONLY updated on
   // explicit user navigation (address-bar Enter), never by did-navigate.
   //
@@ -70,8 +74,21 @@ export const BrowserPanelContent = ({
   //   redirect -> did-navigate -> setCurrentUrl -> src change
   //   -> attribute observer -> loadURL -> redirect -> ...
   const [webviewSrc, setWebviewSrc] = useState(
-    normalizeUrl(effectiveUrl, homepage)
+    initialUrl ? normalizeUrl(initialUrl, homepage) : ""
   );
+
+  // Once the homepage finishes loading from the database (and no explicit
+  // initialUrl was given), navigate to the real homepage. Without this, the
+  // webview would stay on the default google fallback because useState only
+  // evaluates its initial value once.
+  useEffect(() => {
+    if (loaded && !initialUrl && !webviewSrc) {
+      const url = homepage || DEFAULT_BROWSER_HOMEPAGE;
+      const normalized = normalizeUrl(url, homepage);
+      setWebviewSrc(normalized);
+      setAddressInput(normalized);
+    }
+  }, [loaded, initialUrl, homepage, webviewSrc]);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [isLoading, setIsLoading] = useState(false);

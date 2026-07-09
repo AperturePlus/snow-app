@@ -207,6 +207,8 @@ pub struct ChatConversationRecord {
     pub model: String,
     pub status: String,
     pub directory_id: String,
+    pub forked_from_conversation_id: String,
+    pub fork_message_count: i32,
     pub created_at: String,
     pub updated_at: String,
     pub input_tokens: i64,
@@ -438,10 +440,20 @@ pub fn delete_conversation(conversation_id: String) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::delete_conversation(&database_path, &conversation_id)
 }
-
 pub fn list_chat_messages(conversation_id: String) -> Result<Vec<ChatMessageRecord>> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::list_chat_messages(&database_path, &conversation_id)
+}
+pub fn fork_conversation(
+    source_conversation_id: String,
+    up_to_response_id: String,
+) -> Result<ChatConversationRecord> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::fork_conversation(
+        &database_path,
+        &source_conversation_id,
+        &up_to_response_id,
+    )
 }
 
 fn ensure_database_file() -> Result<PathBuf> {

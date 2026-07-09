@@ -15,11 +15,14 @@ const BROWSER_HOMEPAGE_CHANGED_EVENT = "browser-homepage-changed";
  */
 export function useBrowserHomepage(): {
   homepage: string;
+  /** True once the initial async load from the database has settled. */
+  loaded: boolean;
   setHomepage: (url: string) => Promise<void>;
 } {
   const [homepage, setHomepageState] = useState<string>(
     DEFAULT_BROWSER_HOMEPAGE
   );
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let disposed = false;
@@ -31,10 +34,12 @@ export function useBrowserHomepage(): {
         );
         if (!disposed) {
           setHomepageState(readBrowserHomepageJson(value));
+          setLoaded(true);
         }
       } catch {
         if (!disposed) {
           setHomepageState(DEFAULT_BROWSER_HOMEPAGE);
+          setLoaded(true);
         }
       }
     };
@@ -67,7 +72,7 @@ export function useBrowserHomepage(): {
     window.dispatchEvent(new Event(BROWSER_HOMEPAGE_CHANGED_EVENT));
   }, []);
 
-  return { homepage, setHomepage };
+  return { homepage, loaded, setHomepage };
 }
 
 /**

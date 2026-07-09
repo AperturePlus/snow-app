@@ -189,6 +189,8 @@ export type ChatConversationRecord = {
   model: string;
   status: string;
   directoryId: string;
+  forkedFromConversationId: string;
+  forkMessageCount: number;
   createdAt: string;
   updatedAt: string;
   inputTokens: number;
@@ -376,6 +378,10 @@ export type NativeBridge = {
   renameConversation: (conversationId: string, title: string) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
   listChatMessages: (conversationId: string) => Promise<ChatMessageRecord[]>;
+  forkConversation: (
+    sourceConversationId: string,
+    upToResponseId: string
+  ) => Promise<ChatConversationRecord>;
   generateConversationSummary: (conversationId: string) => Promise<string>;
   fetchAvailableModels: () => Promise<Model[]>;
   fetchAvailableModelsForConfig: (config: ApiModelsConfig) => Promise<Model[]>;
