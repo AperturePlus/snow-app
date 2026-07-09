@@ -10,6 +10,8 @@ export type ChatInputProps = {
   isStreaming?: boolean;
   onAbort?: () => void;
   tokenUsage?: TokenUsage | null;
+  draftToRestore?: string | null;
+  onDraftRestored?: () => void;
 };
 
 export type RequestMethod = "chat" | "responses" | "gemini" | "anthropic";

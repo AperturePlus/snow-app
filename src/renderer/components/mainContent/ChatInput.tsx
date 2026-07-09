@@ -9,9 +9,17 @@ export const ChatInput = ({
   isStreaming = false,
   onAbort,
   tokenUsage = null,
+  draftToRestore = null,
+  onDraftRestored,
 }: ChatInputProps): React.JSX.Element => {
   const { t } = useI18n();
-  const controller = useChatInputController({ onSend, isStreaming, onAbort });
+  const controller = useChatInputController({
+    onSend,
+    isStreaming,
+    onAbort,
+    draftToRestore,
+    onDraftRestored,
+  });
 
   return (
     <ChatInputView

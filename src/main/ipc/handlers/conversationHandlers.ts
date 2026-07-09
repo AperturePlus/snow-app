@@ -123,4 +123,71 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
       await native.deleteConversation(conversationId.trim());
     }
   );
+
+  ipcMain.handle(
+    "chat-conversations:truncate-from-user-index",
+    async (_event, conversationId: unknown, userMessageIndex: unknown) => {
+      if (typeof conversationId !== "string" || !conversationId.trim()) {
+        throw new Error(
+          "Conversation ID is required to truncate chat messages"
+        );
+      }
+      if (
+        typeof userMessageIndex !== "number" ||
+        !Number.isFinite(userMessageIndex)
+      ) {
+        throw new Error("User message index is required");
+      }
+
+      await native.truncateChatMessagesFromUserIndex(
+        conversationId.trim(),
+        Math.floor(userMessageIndex)
+      );
+    }
+  );
+
+  ipcMain.handle(
+    "checkpoint:begin",
+    async (_event, conversationId: unknown, messageId: unknown) => {
+      if (typeof conversationId !== "string" || !conversationId.trim()) {
+        throw new Error("Conversation ID is required to begin checkpoint");
+      }
+      if (typeof messageId !== "string" || !messageId.trim()) {
+        throw new Error("Message ID is required to begin checkpoint");
+      }
+
+      await native.beginCheckpoint(conversationId.trim(), messageId.trim());
+    }
+  );
+
+  ipcMain.handle(
+    "checkpoint:migrate",
+    async (_event, oldConversationId: unknown, newConversationId: unknown) => {
+      if (typeof oldConversationId !== "string" || !oldConversationId.trim()) {
+        throw new Error("Old conversation ID is required to migrate checkpoint");
+      }
+      if (typeof newConversationId !== "string" || !newConversationId.trim()) {
+        throw new Error("New conversation ID is required to migrate checkpoint");
+      }
+
+      await native.migrateCheckpoint(
+        oldConversationId.trim(),
+        newConversationId.trim()
+      );
+    }
+  );
+
+  ipcMain.handle(
+    "checkpoint:restore",
+    async (_event, conversationId: unknown, messageId: unknown) => {
+      if (typeof conversationId !== "string" || !conversationId.trim()) {
+        throw new Error("Conversation ID is required to restore checkpoint");
+      }
+      if (typeof messageId !== "string" || !messageId.trim()) {
+        throw new Error("Message ID is required to restore checkpoint");
+      }
+
+      return native.restoreCheckpoint(conversationId.trim(), messageId.trim());
+    }
+  );
 };

@@ -23,10 +23,17 @@ import {
   toModelUpdatePayload,
 } from "./configThinking";
 import type { ChatInputActions, ChatInputState } from "./types";
+import {
+  createChipHtml,
+  createImageChipHtml,
+  parseContentSegments,
+} from "./fileTagUtils";
 type UseChatInputControllerParams = {
   onSend?: (message: string, options: { model?: string }) => void;
   isStreaming?: boolean;
   onAbort?: () => void;
+  draftToRestore?: string | null;
+  onDraftRestored?: () => void;
 };
 
 type UseChatInputControllerResult = ChatInputState & ChatInputActions;
@@ -44,6 +51,8 @@ export const useChatInputController = ({
   onSend,
   isStreaming = false,
   onAbort,
+  draftToRestore = null,
+  onDraftRestored,
 }: UseChatInputControllerParams): UseChatInputControllerResult => {
   const { t } = useI18n();
   const [value, setValue] = useState("");
@@ -227,6 +236,51 @@ export const useChatInputController = ({
       maxHeight
     )}px`;
   }, []);
+
+  useEffect(() => {
+    if (draftToRestore === null) {
+      return;
+    }
+
+    setValue(draftToRestore);
+
+    const textarea = textareaRef.current;
+    if (textarea) {
+      const segments = parseContentSegments(draftToRestore);
+      const html = segments
+        .map((segment) => {
+          if (segment.type === "text") {
+            return segment.content
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;")
+              .replace(/\n/g, "<br>");
+          }
+          if (segment.type === "image") {
+            return createImageChipHtml(segment.tag);
+          }
+          return createChipHtml(segment.tag);
+        })
+        .join("");
+
+      textarea.innerHTML = html;
+      textarea.dataset.empty = draftToRestore.trim() === "" ? "true" : "false";
+      requestAnimationFrame(() => {
+        adjustHeight();
+        textarea.focus();
+        const selection = window.getSelection();
+        if (selection) {
+          const range = document.createRange();
+          range.selectNodeContents(textarea);
+          range.collapse(false);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+      });
+    }
+
+    onDraftRestored?.();
+  }, [draftToRestore, onDraftRestored, adjustHeight]);
 
   const handleChange = useCallback(
     (nextValue: string) => {

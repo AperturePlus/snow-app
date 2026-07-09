@@ -213,6 +213,22 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to fork conversation")
         ),
+      truncateChatMessagesFromUserIndex: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to truncate chat messages")
+        ),
+      beginCheckpoint: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to begin checkpoint")
+        ),
+      migrateCheckpoint: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to migrate checkpoint")
+        ),
+      restoreCheckpoint: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to restore checkpoint")
+        ),
       generateConversationSummary: () =>
         Promise.reject(
           new Error(

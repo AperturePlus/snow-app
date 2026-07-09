@@ -100,6 +100,8 @@ export const zhCN = {
   "chat.collapse": "收起",
   "chat.stopping": "正在停止...",
   "chat.copyResponse": "复制",
+  "chat.copyUserMessage": "复制",
+  "chat.rollbackMessage": "回滚",
   "chat.forkConversation": "分支",
   "chat.forkedFromConversation": "从对话中派生",
   "common.cancel": "取消",

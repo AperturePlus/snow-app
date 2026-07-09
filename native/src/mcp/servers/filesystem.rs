@@ -215,6 +215,8 @@ impl FilesystemService {
             .map(|o| o as usize)
             .unwrap_or(1);
 
+        crate::mcp::checkpoint::snapshot_before_write(file_path);
+
         let content = fs::read_to_string(file_path).map_err(|e| {
             Error::new(
                 Status::GenericFailure,
@@ -295,6 +297,8 @@ impl FilesystemService {
                 format!("File already exists: {}", file_path),
             ));
         }
+
+        crate::mcp::checkpoint::snapshot_before_write(file_path);
 
         if let Some(parent) = path.parent() {
             if !parent.exists() {

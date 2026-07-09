@@ -102,6 +102,8 @@ export const en = {
   "chat.collapse": "Collapse",
   "chat.stopping": "Stopping...",
   "chat.copyResponse": "Copy",
+  "chat.copyUserMessage": "Copy",
+  "chat.rollbackMessage": "Rollback",
   "chat.forkConversation": "Fork",
   "chat.forkedFromConversation": "Forked from conversation",
   "common.cancel": "Cancel",

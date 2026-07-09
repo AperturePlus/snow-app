@@ -19,6 +19,8 @@ export const ChatContent = ({
     isAborting,
     handleAbort,
     tokenUsage,
+    draftToRestore,
+    clearDraftToRestore,
   } = useChatConversationContext();
   const hasMessages = messages.length > 0;
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -56,6 +58,8 @@ export const ChatContent = ({
         isStreaming={isStreaming}
         onAbort={handleAbort}
         tokenUsage={tokenUsage}
+        draftToRestore={draftToRestore}
+        onDraftRestored={clearDraftToRestore}
       />
     </div>
   );
