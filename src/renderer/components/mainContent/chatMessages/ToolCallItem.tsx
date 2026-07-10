@@ -5,9 +5,9 @@ import {
   AlertCircle,
   Wrench,
 } from "lucide-react";
-import { useMemo } from "react";
 import type { ToolCallInfo } from "./useChatConversation";
 import {
+  BashToolCall,
   FilesystemReadToolCall,
   FilesystemEditToolCall,
   FilesystemCreateToolCall,
@@ -46,6 +46,10 @@ export const ToolCallItem = ({
     return <FilesystemCreateToolCall toolCall={toolCall} />;
   }
 
+  if (toolCall.name === "mcp__bash__terminal-execute") {
+    return <BashToolCall toolCall={toolCall} />;
+  }
+
   const iconName = toolCall.name.replace(/^mcp__.*__/, "");
   const StatusIcon =
     toolCall.status === "completed"
@@ -55,12 +59,7 @@ export const ToolCallItem = ({
       : toolCall.status === "error"
       ? AlertCircle
       : Wrench;
-
-  const formattedArgs = useMemo(
-    () => formatArguments(toolCall.arguments),
-    [toolCall.arguments]
-  );
-
+  const formattedArgs = formatArguments(toolCall.arguments);
   const hasBody = Boolean(formattedArgs || toolCall.result);
 
   return (

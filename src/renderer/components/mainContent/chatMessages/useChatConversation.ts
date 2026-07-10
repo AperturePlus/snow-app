@@ -232,6 +232,40 @@ const parseToolCalls = (toolCallsJson: string | undefined): ToolCallInfo[] => {
   return [];
 };
 
+const isSameToolCall = (
+  candidate: ToolCallInfo,
+  target: ToolCallInfo
+): boolean =>
+  target.callId
+    ? candidate.callId === target.callId
+    : candidate.name === target.name &&
+      candidate.arguments === target.arguments;
+
+const updateFirstMatchingToolCall = (
+  toolCalls: ToolCallInfo[] | undefined,
+  target: ToolCallInfo,
+  expectedStatus: ToolCallInfo["status"],
+  update: (toolCall: ToolCallInfo) => ToolCallInfo
+): ToolCallInfo[] | undefined => {
+  if (!toolCalls) {
+    return undefined;
+  }
+
+  let hasUpdated = false;
+  return toolCalls.map((toolCall) => {
+    if (
+      hasUpdated ||
+      toolCall.status !== expectedStatus ||
+      !isSameToolCall(toolCall, target)
+    ) {
+      return toolCall;
+    }
+
+    hasUpdated = true;
+    return update(toolCall);
+  });
+};
+
 /**
  * Validate tool call before execution. Returns an error message string if
  * the tool call should not be executed, or null if it is valid.
@@ -626,10 +660,14 @@ export const useChatConversation = (
 
               return {
                 ...currentMessage,
-                toolCalls: currentMessage.toolCalls?.map((tc) =>
-                  tc.name === toolCall.name && tc.status === "pending"
-                    ? { ...tc, status: "running" as const }
-                    : tc
+                toolCalls: updateFirstMatchingToolCall(
+                  currentMessage.toolCalls,
+                  toolCall,
+                  "pending",
+                  (currentToolCall) => ({
+                    ...currentToolCall,
+                    status: "running" as const,
+                  })
                 ),
               };
             })
@@ -667,16 +705,24 @@ export const useChatConversation = (
 
               return {
                 ...currentMessage,
-                toolCalls: currentMessage.toolCalls?.map((tc) =>
-                  tc.name === toolCall.name && tc.status === "running"
-                    ? { ...tc, status: "completed" as const, result }
-                    : tc
+                toolCalls: updateFirstMatchingToolCall(
+                  currentMessage.toolCalls,
+                  toolCall,
+                  "running",
+                  (currentToolCall) => ({
+                    ...currentToolCall,
+                    status: "completed" as const,
+                    result,
+                  })
                 ),
               };
             })
           );
 
-          toolResults.push(`[Tool: ${toolCall.name}]\n${result}`);
+          const toolResultIdentifier = toolCall.callId
+            ? `${toolCall.name}#${toolCall.callId}`
+            : toolCall.name;
+          toolResults.push(`[Tool: ${toolResultIdentifier}]\n${result}`);
         }
 
         // Add tool results as a tool message for the next iteration
@@ -872,29 +918,50 @@ export const useChatConversation = (
           window.snow.getChatConversation(trimmedId),
         ]);
 
-        // Build a lookup: toolName -> result content from tool-role messages.
-        // Tool messages store content as "[Tool: name]\nresult" (joined by \n\n
-        // when multiple tools share one message).
-        const toolResultMap = new Map<string, string>();
+        // Build ordered result queues from tool-role messages. New records include
+        // callId in the identifier; legacy records are consumed by tool name order.
+        const toolResultQueues = new Map<string, string[]>();
         for (const record of records) {
           if (record.role === "tool" && record.content) {
             for (const segment of record.content.split("\n\n")) {
               const match = segment.match(/^\[Tool:\s*(.+?)\]\n([\s\S]*)$/);
               if (match) {
-                toolResultMap.set(match[1], match[2]);
+                const queue = toolResultQueues.get(match[1]) ?? [];
+                queue.push(match[2]);
+                toolResultQueues.set(match[1], queue);
               }
             }
           }
         }
 
+        const consumeToolResult = (
+          toolCall: ToolCallInfo
+        ): string | undefined => {
+          const identifiers = toolCall.callId
+            ? [`${toolCall.name}#${toolCall.callId}`, toolCall.name]
+            : [toolCall.name];
+
+          for (const identifier of identifiers) {
+            const queue = toolResultQueues.get(identifier);
+            if (queue && queue.length > 0) {
+              return queue.shift();
+            }
+          }
+
+          return undefined;
+        };
+
         const loadedMessages: ChatConversationMessage[] = records
           .filter((record) => record.role !== "tool")
           .map((record) => {
             const toolCalls = parseToolCalls(record.toolCallsJson).map((tc) => {
-              const result = toolResultMap.get(tc.name);
+              const result = consumeToolResult(tc);
               return {
                 ...tc,
-                status: "completed" as const,
+                status:
+                  result === undefined
+                    ? ("error" as const)
+                    : ("completed" as const),
                 result,
               };
             });
