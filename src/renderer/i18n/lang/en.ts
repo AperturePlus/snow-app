@@ -136,6 +136,7 @@ export const en = {
   "toolCall.bash.executedAt": "Executed",
   "toolCall.bash.stdout": "Standard output",
   "toolCall.bash.stderr": "Standard error",
+  "toolCall.bash.liveOutput": "Live",
   "toolCall.bash.outputLines": "{{count}} line(s)",
   "toolCall.bash.noOutput": "Command completed without output",
   "toolCall.bash.result": "Result",

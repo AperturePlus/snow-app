@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   ChevronRight,
@@ -175,17 +175,35 @@ export const BashToolCall = ({
       : date.toLocaleString(locale);
   }, [locale, parsedResult]);
 
-  const stdoutLineCount =
+  const isRunning = toolCall.status === "running";
+  const displayStdout =
     parsedResult.type === "success"
-      ? getOutputLineCount(parsedResult.stdout)
-      : 0;
-  const stderrLineCount =
+      ? parsedResult.stdout
+      : toolCall.streamingStdout ?? "";
+  const displayStderr =
     parsedResult.type === "success"
-      ? getOutputLineCount(parsedResult.stderr)
-      : 0;
+      ? parsedResult.stderr
+      : toolCall.streamingStderr ?? "";
+  const hasStreamedOutput = Boolean(
+    toolCall.streamingStdout || toolCall.streamingStderr
+  );
+  const hasVisibleOutput = Boolean(displayStdout || displayStderr);
+  const stdoutLineCount = getOutputLineCount(displayStdout);
+  const stderrLineCount = getOutputLineCount(displayStderr);
+  const [isOpen, setIsOpen] = useState(isRunning);
+
+  useEffect(() => {
+    if (isRunning) {
+      setIsOpen(true);
+    }
+  }, [isRunning]);
 
   return (
-    <details className="tool-call-item tool-call-bash">
+    <details
+      className="tool-call-item tool-call-bash"
+      open={isOpen}
+      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+    >
       <summary className="tool-call-header">
         <ChevronRight
           className="tool-call-chevron"
@@ -193,13 +211,15 @@ export const BashToolCall = ({
           aria-hidden="true"
         />
         <ToolNameBadge name={t("toolCall.bash.name")} category="terminal" />
-        <SquareTerminal
-          size={14}
-          className={
-            toolCall.status === "running" ? "tool-call-icon-spinning" : ""
-          }
-          aria-hidden="true"
-        />
+        {isRunning ? (
+          <Loader2
+            size={14}
+            className="tool-call-icon-spinning"
+            aria-hidden="true"
+          />
+        ) : (
+          <SquareTerminal size={14} aria-hidden="true" />
+        )}
         <span className="tool-call-name" title={command}>
           {commandSummary}
         </span>
@@ -302,9 +322,14 @@ export const BashToolCall = ({
           </div>
         ) : null}
 
-        {parsedResult.type === "success" ? (
-          <div className="tool-call-bash-results">
-            {parsedResult.stdout ? (
+        {hasVisibleOutput ? (
+          <div
+            className={`tool-call-bash-results ${
+              isRunning ? "tool-call-bash-results-live" : ""
+            }`}
+            aria-live={isRunning ? "polite" : undefined}
+          >
+            {displayStdout ? (
               <section
                 className="tool-call-bash-output"
                 aria-label={t("toolCall.bash.stdout")}
@@ -312,18 +337,25 @@ export const BashToolCall = ({
                 <div className="tool-call-bash-output-header">
                   <span>{t("toolCall.bash.stdout")}</span>
                   <span>
+                    {isRunning ? `${t("toolCall.bash.liveOutput")} · ` : ""}
                     {t("toolCall.bash.outputLines", {
                       values: { count: stdoutLineCount },
                     })}
                   </span>
                 </div>
                 <pre className="tool-call-bash-output-pre">
-                  {parsedResult.stdout}
+                  {displayStdout}
+                  {isRunning && toolCall.streamingStdout ? (
+                    <span
+                      className="tool-call-bash-stream-cursor"
+                      aria-hidden="true"
+                    />
+                  ) : null}
                 </pre>
               </section>
             ) : null}
 
-            {parsedResult.stderr ? (
+            {displayStderr ? (
               <section
                 className="tool-call-bash-output tool-call-bash-stderr"
                 aria-label={t("toolCall.bash.stderr")}
@@ -331,22 +363,27 @@ export const BashToolCall = ({
                 <div className="tool-call-bash-output-header">
                   <span>{t("toolCall.bash.stderr")}</span>
                   <span>
+                    {isRunning ? `${t("toolCall.bash.liveOutput")} · ` : ""}
                     {t("toolCall.bash.outputLines", {
                       values: { count: stderrLineCount },
                     })}
                   </span>
                 </div>
                 <pre className="tool-call-bash-output-pre">
-                  {parsedResult.stderr}
+                  {displayStderr}
+                  {isRunning && toolCall.streamingStderr ? (
+                    <span
+                      className="tool-call-bash-stream-cursor"
+                      aria-hidden="true"
+                    />
+                  ) : null}
                 </pre>
               </section>
             ) : null}
-
-            {!parsedResult.stdout && !parsedResult.stderr ? (
-              <div className="tool-call-bash-empty-output">
-                {t("toolCall.bash.noOutput")}
-              </div>
-            ) : null}
+          </div>
+        ) : parsedResult.type === "success" ? (
+          <div className="tool-call-bash-empty-output">
+            {t("toolCall.bash.noOutput")}
           </div>
         ) : null}
 
@@ -359,12 +396,16 @@ export const BashToolCall = ({
           </section>
         ) : null}
 
-        {parsedResult.type === "empty" ? (
-          <div className="tool-call-bash-pending">
-            {toolCall.status === "running" ? (
+        {parsedResult.type === "empty" && !hasStreamedOutput ? (
+          <div
+            className={`tool-call-bash-pending ${
+              isRunning ? "tool-call-bash-pending-running" : ""
+            }`}
+          >
+            {isRunning ? (
               <Loader2
                 className="tool-call-icon-spinning"
-                size={13}
+                size={14}
                 aria-hidden="true"
               />
             ) : toolCall.status === "error" ? (
@@ -373,6 +414,13 @@ export const BashToolCall = ({
               <Clock3 size={13} aria-hidden="true" />
             )}
             <span>{emptyStateLabel}</span>
+            {isRunning ? (
+              <span className="tool-call-bash-loading-dots" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </span>
+            ) : null}
           </div>
         ) : null}
       </div>

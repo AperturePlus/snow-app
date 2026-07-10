@@ -261,6 +261,11 @@ export type McpToolDefinition = {
   inputSchemaJson: string;
 };
 
+export type BashStreamChunk = {
+  stream: "stdout" | "stderr";
+  data: string;
+};
+
 export type GitFileStatus = {
   path: string;
   oldPath: string | null;
@@ -407,8 +412,9 @@ export type NativeBridge = {
   callMcpTool: (
     toolFullName: string,
     argsJson: string,
-    checkpointIds?: string[],
-    checkpointWorkDir?: string
+    checkpointIds: string[] | undefined,
+    checkpointWorkDir: string | undefined,
+    onChunk: (chunk: BashStreamChunk) => void
   ) => Promise<string>;
   engineInfo: () => string;
   sum: (a: number, b: number) => number;

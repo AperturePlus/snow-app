@@ -134,6 +134,7 @@ export const zhTW = {
   "toolCall.bash.executedAt": "執行時間",
   "toolCall.bash.stdout": "標準輸出",
   "toolCall.bash.stderr": "標準錯誤",
+  "toolCall.bash.liveOutput": "即時輸出",
   "toolCall.bash.outputLines": "{{count}} 行",
   "toolCall.bash.noOutput": "命令執行完成，無輸出",
   "toolCall.bash.result": "執行結果",

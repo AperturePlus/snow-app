@@ -1,10 +1,12 @@
 import { ipcMain } from "electron";
-import type { NativeBridge } from "../../native/types";
+import type { BashStreamChunk, NativeBridge } from "../../native/types";
 import {
   writeLog,
   type LogEntry,
   type LogLevel,
 } from "../../../utils/snowLogger";
+
+const MCP_TOOL_CHUNK_CHANNEL = "mcp:call-tool:chunk";
 
 export const registerNativeHandlers = (native: NativeBridge): void => {
   ipcMain.handle("native:engine-info", () => native.engineInfo());
@@ -39,11 +41,12 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   ipcMain.handle(
     "mcp:call-tool",
     async (
-      _event,
+      event,
       toolFullName: unknown,
       argsJson: unknown,
       checkpointIds: unknown,
-      checkpointWorkDir: unknown
+      checkpointWorkDir: unknown,
+      streamId: unknown
     ) => {
       if (typeof toolFullName !== "string" || !toolFullName.trim()) {
         throw new Error("Tool full name is required");
@@ -64,11 +67,26 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       ) {
         throw new Error("Checkpoint working directory must be a string");
       }
+      if (typeof streamId !== "string" || !streamId.trim()) {
+        throw new Error("Tool stream ID is required");
+      }
+
+      const normalizedStreamId = streamId.trim();
       return native.callMcpTool(
         toolFullName.trim(),
         argsJson,
         (checkpointIds as string[] | undefined)?.map((id) => id.trim()),
-        (checkpointWorkDir as string | undefined)?.trim()
+        (checkpointWorkDir as string | undefined)?.trim(),
+        (chunk: BashStreamChunk) => {
+          if (event.sender.isDestroyed()) {
+            return;
+          }
+
+          event.sender.send(MCP_TOOL_CHUNK_CHANNEL, {
+            streamId: normalizedStreamId,
+            chunk,
+          });
+        }
       );
     }
   );

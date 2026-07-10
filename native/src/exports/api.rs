@@ -15,6 +15,7 @@ use crate::api::models::{
 use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback,
 };
+use crate::mcp::servers::bash::BashStreamCallback;
 use crate::mcp::tools::{
     call_mcp_tool as call_tool, list_mcp_tools as list_all_mcp_tools, McpToolDefinition,
 };
@@ -88,27 +89,23 @@ pub async fn list_mcp_tools() -> napi::Result<Vec<McpToolDefinition>> {
         })?
 }
 
-#[napi]
+#[napi(
+    ts_args_type = "toolFullName: string, argsJson: string, checkpointIds: string[] | undefined, checkpointWorkDir: string | undefined, onChunk: (chunk: BashStreamChunk) => void",
+    ts_return_type = "Promise<string>"
+)]
 pub async fn call_mcp_tool(
     tool_full_name: String,
     args_json: String,
     checkpoint_ids: Option<Vec<String>>,
     checkpoint_work_dir: Option<String>,
+    on_chunk: BashStreamCallback,
 ) -> napi::Result<String> {
-    // 工具执行和增量检查点 I/O 全部运行于阻塞线程池，避免阻塞 Node.js。
-    tokio::task::spawn_blocking(move || {
-        call_tool(
-            tool_full_name,
-            args_json,
-            checkpoint_ids.unwrap_or_default(),
-            checkpoint_work_dir,
-        )
-    })
+    call_tool(
+        tool_full_name,
+        args_json,
+        checkpoint_ids.unwrap_or_default(),
+        checkpoint_work_dir,
+        on_chunk,
+    )
     .await
-    .map_err(|error| {
-        Error::new(
-            Status::GenericFailure,
-            format!("Failed to execute call_mcp_tool: {error}"),
-        )
-    })?
 }

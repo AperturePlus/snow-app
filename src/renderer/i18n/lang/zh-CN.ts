@@ -134,6 +134,7 @@ export const zhCN = {
   "toolCall.bash.executedAt": "执行时间",
   "toolCall.bash.stdout": "标准输出",
   "toolCall.bash.stderr": "标准错误",
+  "toolCall.bash.liveOutput": "实时输出",
   "toolCall.bash.outputLines": "{{count}} 行",
   "toolCall.bash.noOutput": "命令执行完成，无输出",
   "toolCall.bash.result": "执行结果",

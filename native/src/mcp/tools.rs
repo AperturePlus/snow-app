@@ -3,6 +3,7 @@ use napi_derive::napi;
 use serde_json::{json, Value};
 
 use super::builtin::{execute_builtin_tool, get_builtin_tools};
+use super::servers::bash::{BashService, BashStreamCallback};
 
 // NOTE: list_mcp_tools 和 call_mcp_tool 的 #[napi] 导出在 exports/api.rs 中，
 // 此处仅保留内部函数供 exports 层调用。
@@ -149,40 +150,70 @@ fn load_external_mcp_tools(
 
 /// Execute an MCP tool and capture incremental checkpoint state immediately
 /// before built-in mutating tools run.
-pub fn call_mcp_tool(
+pub async fn call_mcp_tool(
     tool_full_name: String,
     args_json: String,
     checkpoint_ids: Vec<String>,
     checkpoint_work_dir: Option<String>,
+    on_chunk: BashStreamCallback,
 ) -> napi::Result<String> {
-    let args: Value = serde_json::from_str(&args_json).map_err(|error| {
-        Error::new(
-            Status::InvalidArg,
-            format!(
-                "Failed to parse arguments JSON for tool \"{}\": {}. Received: {}",
-                tool_full_name,
-                error,
-                if args_json.len() > 200 {
-                    format!("{}...", &args_json[..200])
-                } else {
-                    args_json.clone()
-                }
-            ),
-        )
-    })?;
+    let args = parse_tool_args(&tool_full_name, &args_json)?;
 
-    capture_checkpoint_before_tool(
-        &tool_full_name,
-        &args,
-        checkpoint_ids,
-        checkpoint_work_dir,
-    )?;
-    let result = execute_builtin_tool(&tool_full_name, &args)?;
+    let checkpoint_tool_name = tool_full_name.clone();
+    let checkpoint_args = args.clone();
+    tokio::task::spawn_blocking(move || {
+        capture_checkpoint_before_tool(
+            &checkpoint_tool_name,
+            &checkpoint_args,
+            checkpoint_ids,
+            checkpoint_work_dir,
+        )
+    })
+    .await
+    .map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to capture checkpoint before tool execution: {error}"),
+        )
+    })??;
+
+    let result = if tool_full_name == "mcp__bash__terminal-execute" {
+        BashService::new()
+            .execute_terminal_stream(&args, on_chunk)
+            .await?
+    } else {
+        tokio::task::spawn_blocking(move || execute_builtin_tool(&tool_full_name, &args))
+            .await
+            .map_err(|error| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to execute MCP tool: {error}"),
+                )
+            })??
+    };
 
     serde_json::to_string(&result).map_err(|error| {
         Error::new(
             Status::GenericFailure,
             format!("Failed to serialize result: {error}"),
+        )
+    })
+}
+
+fn parse_tool_args(tool_full_name: &str, args_json: &str) -> napi::Result<Value> {
+    serde_json::from_str(args_json).map_err(|error| {
+        let received = args_json.chars().take(200).collect::<String>();
+        let suffix = if args_json.chars().count() > 200 {
+            "..."
+        } else {
+            ""
+        };
+
+        Error::new(
+            Status::InvalidArg,
+            format!(
+                "Failed to parse arguments JSON for tool \"{tool_full_name}\": {error}. Received: {received}{suffix}"
+            ),
         )
     })
 }

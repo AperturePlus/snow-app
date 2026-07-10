@@ -4,6 +4,11 @@ export type McpToolDefinition = {
   inputSchemaJson: string;
 };
 
+export type BashStreamChunk = {
+  stream: "stdout" | "stderr";
+  data: string;
+};
+
 export type McpServerConfigInput = {
   serverId: string;
   scope: string;

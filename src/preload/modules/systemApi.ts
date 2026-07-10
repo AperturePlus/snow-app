@@ -1,9 +1,30 @@
 import { ipcRenderer, type IpcRendererEvent } from "electron";
 import type {
+  BashStreamChunk,
   CheckpointFileChange,
   CheckpointFileDiff,
   McpToolDefinition,
 } from "../types";
+
+const MCP_TOOL_CHUNK_CHANNEL = "mcp:call-tool:chunk";
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const createMcpToolStreamId = (): string =>
+  `tool-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const normalizeBashStreamChunk = (value: unknown): BashStreamChunk | null => {
+  if (
+    !isRecord(value) ||
+    (value.stream !== "stdout" && value.stream !== "stderr") ||
+    typeof value.data !== "string"
+  ) {
+    return null;
+  }
+
+  return { stream: value.stream, data: value.data };
+};
 
 export const systemApi = {
   listMcpTools: (): Promise<McpToolDefinition[]> =>
@@ -12,15 +33,36 @@ export const systemApi = {
     toolFullName: string,
     argsJson: string,
     checkpointIds?: string[],
-    checkpointWorkDir?: string
-  ): Promise<string> =>
-    ipcRenderer.invoke(
-      "mcp:call-tool",
-      toolFullName,
-      argsJson,
-      checkpointIds,
-      checkpointWorkDir
-    ),
+    checkpointWorkDir?: string,
+    onChunk?: (chunk: BashStreamChunk) => void
+  ): Promise<string> => {
+    const streamId = createMcpToolStreamId();
+    const handleChunk = (_event: IpcRendererEvent, payload: unknown): void => {
+      if (!isRecord(payload) || payload.streamId !== streamId) {
+        return;
+      }
+
+      const chunk = normalizeBashStreamChunk(payload.chunk);
+      if (chunk) {
+        onChunk?.(chunk);
+      }
+    };
+
+    ipcRenderer.on(MCP_TOOL_CHUNK_CHANNEL, handleChunk);
+
+    return ipcRenderer
+      .invoke(
+        "mcp:call-tool",
+        toolFullName,
+        argsJson,
+        checkpointIds,
+        checkpointWorkDir,
+        streamId
+      )
+      .finally(() => {
+        ipcRenderer.removeListener(MCP_TOOL_CHUNK_CHANNEL, handleChunk);
+      });
+  },
   createCheckpoint: (workDir: string): Promise<string> =>
     ipcRenderer.invoke("checkpoint:create", workDir),
   restoreCheckpoint: (checkpointId: string, workDir: string): Promise<void> =>

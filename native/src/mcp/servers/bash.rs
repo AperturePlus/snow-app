@@ -1,16 +1,28 @@
-use std::io::Read;
-use std::process::{Command, Stdio};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::process::Stdio;
+use std::sync::Arc;
+use std::time::Duration;
 
 use napi::bindgen_prelude::*;
+use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
+use napi_derive::napi;
 use regex::Regex;
 use serde_json::{json, Value};
+use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::process::Command;
 
 use super::super::service::McpService;
 use super::super::tools::McpTool;
 
 pub struct BashService;
+
+#[napi(object)]
+pub struct BashStreamChunk {
+    pub stream: String,
+    pub data: String,
+}
+
+pub type BashStreamCallback =
+    ThreadsafeFunction<BashStreamChunk, Unknown<'static>, BashStreamChunk, Status, false>;
 
 impl BashService {
     pub fn new() -> Self {
@@ -21,7 +33,7 @@ impl BashService {
 const SERVER_ID: &str = "bash";
 const MAX_OUTPUT_LENGTH: usize = 10000;
 const DEFAULT_TIMEOUT_MS: u64 = 30000;
-const POLL_INTERVAL_MS: u64 = 50;
+const OUTPUT_TRUNCATED_MARKER: &str = "... (output truncated)";
 
 impl McpService for BashService {
     fn id(&self) -> &str {
@@ -65,9 +77,13 @@ impl McpService for BashService {
         }]
     }
 
-    fn execute(&self, tool_name: &str, args: &Value) -> napi::Result<Value> {
+    fn execute(&self, tool_name: &str, _args: &Value) -> napi::Result<Value> {
         match tool_name {
-            "terminal-execute" => self.execute_terminal(args),
+            "terminal-execute" => Err(Error::new(
+                Status::GenericFailure,
+                "The Bash tool must be executed through the asynchronous streaming executor"
+                    .to_string(),
+            )),
             _ => Err(Error::new(
                 Status::GenericFailure,
                 format!(
@@ -80,42 +96,45 @@ impl McpService for BashService {
 }
 
 impl BashService {
-    fn execute_terminal(&self, args: &Value) -> napi::Result<Value> {
+    pub async fn execute_terminal_stream(
+        &self,
+        args: &Value,
+        on_chunk: BashStreamCallback,
+    ) -> napi::Result<Value> {
         let command = args
             .get("command")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| Error::new(Status::InvalidArg, "command is required".to_string()))?;
+            .and_then(Value::as_str)
+            .ok_or_else(|| Error::new(Status::InvalidArg, "command is required".to_string()))?
+            .to_string();
 
         let working_directory = args
             .get("workingDirectory")
-            .and_then(|v| v.as_str())
+            .and_then(Value::as_str)
             .ok_or_else(|| {
                 Error::new(
                     Status::InvalidArg,
                     "workingDirectory is required".to_string(),
                 )
-            })?;
+            })?
+            .to_string();
 
         let timeout = args
             .get("timeout")
-            .and_then(|v| v.as_u64())
+            .and_then(Value::as_u64)
             .unwrap_or(DEFAULT_TIMEOUT_MS);
-
         let executed_at = chrono::Local::now().to_rfc3339();
 
-        // Security check: reject potentially dangerous commands
-        if is_dangerous_command(command) {
+        if is_dangerous_command(&command) {
             return Err(Error::new(
                 Status::GenericFailure,
                 format!(
                     "Dangerous command detected and blocked: {}",
-                    &command[..command.len().min(50)]
+                    command.chars().take(50).collect::<String>()
                 ),
             ));
         }
 
-        // Self-protection: reject commands that would kill the app's own process
-        let self_destruct = is_self_destructive_command(command);
+        let self_destruct = is_self_destructive_command(&command);
         if self_destruct.is_self_destructive {
             return Err(Error::new(
                 Status::GenericFailure,
@@ -126,109 +145,207 @@ impl BashService {
             ));
         }
 
-        let is_windows = cfg!(target_os = "windows");
-
-        let (shell, shell_args) = if is_windows {
-            // On Windows, use cmd with UTF-8 codepage
+        let (shell, shell_args) = if cfg!(target_os = "windows") {
             let utf8_command = format!("chcp 65001>nul && {}", command);
             ("cmd".to_string(), vec!["/C".to_string(), utf8_command])
         } else {
-            // On Unix, use sh
-            ("sh".to_string(), vec!["-c".to_string(), command.to_string()])
+            (
+                "sh".to_string(),
+                vec!["-c".to_string(), command.clone()],
+            )
         };
 
-        let mut cmd = Command::new(&shell);
-        cmd.args(&shell_args)
-            .current_dir(working_directory)
+        let mut process = Command::new(&shell);
+        process
+            .args(&shell_args)
+            .current_dir(&working_directory)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .kill_on_drop(true)
             .env("LANG", "en_US.UTF-8")
             .env("LC_ALL", "en_US.UTF-8");
 
-        // On Windows, prevent a console window from flashing on screen
-        // when spawning processes from a GUI application.
         #[cfg(target_os = "windows")]
         {
-            use std::os::windows::process::CommandExt;
-            // CREATE_NO_WINDOW flag (0x08000000) prevents the console window
-            // from appearing and disappearing.
             const CREATE_NO_WINDOW: u32 = 0x08000000;
-            cmd.creation_flags(CREATE_NO_WINDOW);
+            process.creation_flags(CREATE_NO_WINDOW);
         }
 
-        let mut child = cmd.spawn()
-            .map_err(|e| {
-                Error::new(
-                    Status::GenericFailure,
-                    format!("Failed to spawn process: {}", e),
-                )
-            })?;
+        let mut child = process.spawn().map_err(|error| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to spawn process: {error}"),
+            )
+        })?;
 
-        // Poll for completion with timeout using try_wait()
-        let deadline = Instant::now() + Duration::from_millis(timeout);
-        let poll_interval = Duration::from_millis(POLL_INTERVAL_MS);
+        let callback = Arc::new(on_chunk);
+        let stdout_task = child.stdout.take().map(|stdout| {
+            tokio::spawn(read_stream(stdout, "stdout", Arc::clone(&callback)))
+        });
+        let stderr_task = child.stderr.take().map(|stderr| {
+            tokio::spawn(read_stream(stderr, "stderr", Arc::clone(&callback)))
+        });
 
-        loop {
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    // Process finished
-                    let stdout = read_stdout(&mut child);
-                    let stderr = read_stderr(&mut child);
-                    let exit_code = status.code().unwrap_or(1);
+        let wait_result = match tokio::time::timeout(
+            Duration::from_millis(timeout),
+            child.wait(),
+        )
+        .await
+        {
+            Ok(Ok(status)) => ProcessWaitResult::Completed(status.code().unwrap_or(1)),
+            Ok(Err(error)) => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                ProcessWaitResult::Failed(error.to_string())
+            }
+            Err(_) => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                ProcessWaitResult::TimedOut
+            }
+        };
 
-                    return Ok(json!({
-                        "stdout": truncate_output(&stdout, MAX_OUTPUT_LENGTH),
-                        "stderr": truncate_output(&stderr, MAX_OUTPUT_LENGTH),
-                        "exitCode": exit_code,
-                        "command": command,
-                        "executedAt": executed_at
-                    }));
+        let stdout = await_stream_task(stdout_task).await;
+        let stderr = await_stream_task(stderr_task).await;
+
+        match wait_result {
+            ProcessWaitResult::Completed(exit_code) => Ok(json!({
+                "stdout": stdout,
+                "stderr": stderr,
+                "exitCode": exit_code,
+                "command": command,
+                "executedAt": executed_at
+            })),
+            ProcessWaitResult::TimedOut => Err(Error::new(
+                Status::GenericFailure,
+                format!("Command timed out after {timeout}ms: {command}"),
+            )),
+            ProcessWaitResult::Failed(error) => Err(Error::new(
+                Status::GenericFailure,
+                format!("Failed to wait for process: {error}"),
+            )),
+        }
+    }
+}
+
+enum ProcessWaitResult {
+    Completed(i32),
+    TimedOut,
+    Failed(String),
+}
+
+async fn await_stream_task(
+    task: Option<tokio::task::JoinHandle<String>>,
+) -> String {
+    match task {
+        Some(task) => task.await.unwrap_or_default(),
+        None => String::new(),
+    }
+}
+
+async fn read_stream<R>(
+    mut reader: R,
+    stream: &'static str,
+    on_chunk: Arc<BashStreamCallback>,
+) -> String
+where
+    R: AsyncRead + Unpin,
+{
+    let mut output = Vec::new();
+    let mut buffer = [0_u8; 4096];
+    let mut pending_utf8 = Vec::new();
+    let mut was_truncated = false;
+
+    loop {
+        let read = match reader.read(&mut buffer).await {
+            Ok(0) | Err(_) => break,
+            Ok(read) => read,
+        };
+
+        let remaining = MAX_OUTPUT_LENGTH.saturating_sub(output.len());
+        let accepted = remaining.min(read);
+        if accepted > 0 {
+            output.extend_from_slice(&buffer[..accepted]);
+            pending_utf8.extend_from_slice(&buffer[..accepted]);
+            emit_complete_utf8_chunks(&on_chunk, stream, &mut pending_utf8);
+        }
+
+        if accepted < read && !was_truncated {
+            was_truncated = true;
+            emit_stream_chunk(
+                &on_chunk,
+                stream,
+                OUTPUT_TRUNCATED_MARKER.to_string(),
+            );
+        }
+    }
+
+    if !pending_utf8.is_empty() {
+        emit_stream_chunk(
+            &on_chunk,
+            stream,
+            String::from_utf8_lossy(&pending_utf8).into_owned(),
+        );
+    }
+
+    let mut text = String::from_utf8_lossy(&output).into_owned();
+    if was_truncated {
+        text.push_str(OUTPUT_TRUNCATED_MARKER);
+    }
+    text
+}
+
+fn emit_complete_utf8_chunks(
+    on_chunk: &BashStreamCallback,
+    stream: &str,
+    pending: &mut Vec<u8>,
+) {
+    loop {
+        match std::str::from_utf8(pending) {
+            Ok(text) => {
+                emit_stream_chunk(on_chunk, stream, text.to_string());
+                pending.clear();
+                return;
+            }
+            Err(error) => {
+                let valid_up_to = error.valid_up_to();
+                if valid_up_to > 0 {
+                    let text = String::from_utf8_lossy(&pending[..valid_up_to]).into_owned();
+                    emit_stream_chunk(on_chunk, stream, text);
+                    pending.drain(..valid_up_to);
+                    continue;
                 }
-                Ok(None) => {
-                    // Still running
-                    if Instant::now() >= deadline {
-                        // Timed out - kill the process
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        return Err(Error::new(
-                            Status::GenericFailure,
-                            format!("Command timed out after {}ms: {}", timeout, command),
-                        ));
-                    }
-                    thread::sleep(poll_interval);
+
+                if error.error_len().is_none() {
+                    return;
                 }
-                Err(e) => {
-                    return Err(Error::new(
-                        Status::GenericFailure,
-                        format!("Failed to wait for process: {}", e),
-                    ));
-                }
+
+                let invalid_len = error.error_len().unwrap_or(1);
+                let invalid = String::from_utf8_lossy(&pending[..invalid_len]).into_owned();
+                emit_stream_chunk(on_chunk, stream, invalid);
+                pending.drain(..invalid_len);
             }
         }
     }
 }
 
-fn read_stdout(child: &mut std::process::Child) -> String {
-    match child.stdout.take() {
-        Some(mut s) => {
-            let mut buf = String::new();
-            let _ = s.read_to_string(&mut buf);
-            buf
-        }
-        None => String::new(),
+fn emit_stream_chunk(
+    on_chunk: &BashStreamCallback,
+    stream: &str,
+    data: String,
+) {
+    if data.is_empty() {
+        return;
     }
-}
 
-fn read_stderr(child: &mut std::process::Child) -> String {
-    match child.stderr.take() {
-        Some(mut s) => {
-            let mut buf = String::new();
-            let _ = s.read_to_string(&mut buf);
-            buf
-        }
-        None => String::new(),
-    }
+    on_chunk.call(
+        BashStreamChunk {
+            stream: stream.to_string(),
+            data,
+        },
+        ThreadsafeFunctionCallMode::NonBlocking,
+    );
 }
 
 // ============================================================================
@@ -387,14 +504,4 @@ fn regex_matches(pattern: &str, text: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Truncate output if it exceeds maximum length
-fn truncate_output(output: &str, max_length: usize) -> String {
-    if output.is_empty() {
-        return String::new();
-    }
-    if output.len() > max_length {
-        format!("{}... (output truncated)", &output[..max_length])
-    } else {
-        output.to_string()
-    }
-}
+

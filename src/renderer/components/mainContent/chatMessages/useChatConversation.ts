@@ -12,6 +12,8 @@ export type ToolCallInfo = {
   callId?: string;
   status: "pending" | "running" | "completed" | "error";
   result?: string;
+  streamingStdout?: string;
+  streamingStderr?: string;
 };
 
 export type ChatConversationMessage = {
@@ -613,10 +615,16 @@ export const useChatConversation = (
           updateSessionField(effectiveKey, "tokenUsage", response.tokenUsage);
         }
 
-        // Parse tool calls from response
+        // Parse tool calls from response. Mark the first call as running immediately
+        // so expensive commands are visible before execution begins; later calls stay
+        // pending until the sequential executor reaches them.
         const toolCalls = parseToolCalls(response.toolCallsJson);
+        const visibleToolCalls = toolCalls.map((toolCall, index) => ({
+          ...toolCall,
+          status: index === 0 ? ("running" as const) : toolCall.status,
+        }));
 
-        // Update assistant message with final content
+        // Update assistant message with final content and immediately-visible calls.
         updateSessionMessages(effectiveKey, (currentMessages) =>
           currentMessages.map((currentMessage) => {
             if (currentMessage.id !== currentAssistantMessageId) {
@@ -632,7 +640,8 @@ export const useChatConversation = (
               status: "sent",
               responseId: response.id,
               model: response.model || options.model,
-              toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+              toolCalls:
+                visibleToolCalls.length > 0 ? visibleToolCalls : undefined,
             };
           })
         );
@@ -648,36 +657,33 @@ export const useChatConversation = (
           return;
         }
 
-        // Execute tool calls and collect results
+        // Execute tool calls sequentially and collect results.
         const toolResults: string[] = [];
-        for (const toolCall of toolCalls) {
-          // Update tool call status to running
-          updateSessionMessages(effectiveKey, (currentMessages) =>
-            currentMessages.map((currentMessage) => {
-              if (currentMessage.id !== currentAssistantMessageId) {
-                return currentMessage;
-              }
+        for (const [toolIndex, toolCall] of toolCalls.entries()) {
+          if (toolIndex > 0) {
+            updateSessionMessages(effectiveKey, (currentMessages) =>
+              currentMessages.map((currentMessage) => {
+                if (currentMessage.id !== currentAssistantMessageId) {
+                  return currentMessage;
+                }
 
-              return {
-                ...currentMessage,
-                toolCalls: updateFirstMatchingToolCall(
-                  currentMessage.toolCalls,
-                  toolCall,
-                  "pending",
-                  (currentToolCall) => ({
-                    ...currentToolCall,
-                    status: "running" as const,
-                  })
-                ),
-              };
-            })
-          );
+                return {
+                  ...currentMessage,
+                  toolCalls: updateFirstMatchingToolCall(
+                    currentMessage.toolCalls,
+                    toolCall,
+                    "pending",
+                    (currentToolCall) => ({
+                      ...currentToolCall,
+                      status: "running" as const,
+                    })
+                  ),
+                };
+              })
+            );
+          }
 
           let result: string;
-          // Validate tool call before sending to Rust backend.
-          // If the AI provided a malformed tool name or invalid JSON arguments,
-          // return a descriptive error so the AI can self-correct in the next
-          // iteration instead of triggering a confusing backend error.
           const validationError = validateToolCall(toolCall);
           if (validationError) {
             result = validationError;
@@ -689,14 +695,50 @@ export const useChatConversation = (
                 toolCall.name,
                 toolCall.arguments,
                 checkpointIds,
-                checkpointIds.length > 0 ? directoryPath : undefined
+                checkpointIds.length > 0 ? directoryPath : undefined,
+                (chunk) => {
+                  if (!chunk.data) {
+                    return;
+                  }
+
+                  updateSessionMessages(effectiveKey, (currentMessages) =>
+                    currentMessages.map((currentMessage) => {
+                      if (currentMessage.id !== currentAssistantMessageId) {
+                        return currentMessage;
+                      }
+
+                      return {
+                        ...currentMessage,
+                        toolCalls: updateFirstMatchingToolCall(
+                          currentMessage.toolCalls,
+                          toolCall,
+                          "running",
+                          (currentToolCall) => ({
+                            ...currentToolCall,
+                            streamingStdout:
+                              chunk.stream === "stdout"
+                                ? `${currentToolCall.streamingStdout ?? ""}${
+                                    chunk.data
+                                  }`
+                                : currentToolCall.streamingStdout,
+                            streamingStderr:
+                              chunk.stream === "stderr"
+                                ? `${currentToolCall.streamingStderr ?? ""}${
+                                    chunk.data
+                                  }`
+                                : currentToolCall.streamingStderr,
+                          })
+                        ),
+                      };
+                    })
+                  );
+                }
               );
             } catch (err) {
               result = JSON.stringify({ error: getErrorMessage(err) });
             }
           }
 
-          // Update tool call status to completed
           updateSessionMessages(effectiveKey, (currentMessages) =>
             currentMessages.map((currentMessage) => {
               if (currentMessage.id !== currentAssistantMessageId) {
