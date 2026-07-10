@@ -26,6 +26,7 @@ pub struct StoreChatExchangeInput<'a> {
     pub request_messages: &'a [ChatContextMessage],
     pub response_content: &'a str,
     pub response_id: &'a str,
+    pub checkpoint_id: &'a str,
     pub model: &'a str,
     pub status: &'a str,
     pub raw_response_json: &'a str,
@@ -124,12 +125,18 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
             )?;
 
             for (index, message) in input.request_messages.iter().enumerate() {
+                let checkpoint_id = if index == 0 && normalize_role(&message.role) == "user" {
+                    input.checkpoint_id
+                } else {
+                    ""
+                };
                 insert_message(
                     &transaction,
                     input.conversation_id,
                     &message.role,
                     &message.content,
                     "",
+                    checkpoint_id,
                     input.model,
                     "sent",
                     "{}",
@@ -145,6 +152,7 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                 "assistant",
                 input.response_content,
                 input.response_id,
+                "",
                 input.model,
                 input.status,
                 input.raw_response_json,
@@ -557,6 +565,7 @@ pub fn list_chat_messages(
                         status,
                         model,
                         response_id,
+                        checkpoint_id,
                         tool_calls_json,
                         created_at
                    FROM chat_messages
@@ -573,8 +582,9 @@ pub fn list_chat_messages(
                     status: row.get(4)?,
                     model: row.get(5)?,
                     response_id: row.get(6)?,
-                    tool_calls_json: row.get(7)?,
-                    created_at: row.get(8)?,
+                    checkpoint_id: row.get(7)?,
+                    tool_calls_json: row.get(8)?,
+                    created_at: row.get(9)?,
                 })
             })?;
 
@@ -889,6 +899,7 @@ fn insert_message(
     role: &str,
     content: &str,
     response_id: &str,
+    checkpoint_id: &str,
     model: &str,
     status: &str,
     raw_json: &str,
@@ -905,13 +916,14 @@ fn insert_message(
            content,
            model,
            response_id,
+           checkpoint_id,
            status,
            raw_json,
            thinking,
            tool_calls_json,
            created_at
          ) VALUES (
-           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, datetime('now')
+           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, datetime('now')
          )",
         params![
             database::create_snowflake_id(),
@@ -921,6 +933,7 @@ fn insert_message(
             content.trim(),
             model,
             response_id,
+            checkpoint_id,
             status,
             raw_json,
             thinking.trim(),

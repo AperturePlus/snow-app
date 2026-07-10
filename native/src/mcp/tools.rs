@@ -147,41 +147,85 @@ fn load_external_mcp_tools(
     Vec::new()
 }
 
-/// 执行 MCP 工具调用。
-///
-/// 参数 `tool_full_name` 格式为 `mcp__{server_id}__{tool_name}`，
-/// 例如 `mcp__filesystem__read`。
-///
-/// 对于内置服务（如 filesystem），直接在 Rust 侧执行；
-/// 对于外部 MCP 服务（未来支持），将转发到对应的 MCP 服务器。
-pub fn call_mcp_tool(tool_full_name: String, args_json: String) -> napi::Result<String> {
-    let args: Value = match serde_json::from_str(&args_json) {
-        Ok(parsed) => parsed,
-        Err(e) => {
-            // Return a descriptive error so the AI can self-correct
-            return Err(Error::new(
-                Status::InvalidArg,
-                format!(
-                    "Failed to parse arguments JSON for tool \"{}\": {}. Received: {}",
-                    tool_full_name,
-                    e,
-                    if args_json.len() > 200 {
-                        format!("{}...", &args_json[..200])
-                    } else {
-                        args_json.clone()
-                    }
-                ),
-            ));
-        }
-    };
+/// Execute an MCP tool and capture incremental checkpoint state immediately
+/// before built-in mutating tools run.
+pub fn call_mcp_tool(
+    tool_full_name: String,
+    args_json: String,
+    checkpoint_ids: Vec<String>,
+    checkpoint_work_dir: Option<String>,
+) -> napi::Result<String> {
+    let args: Value = serde_json::from_str(&args_json).map_err(|error| {
+        Error::new(
+            Status::InvalidArg,
+            format!(
+                "Failed to parse arguments JSON for tool \"{}\": {}. Received: {}",
+                tool_full_name,
+                error,
+                if args_json.len() > 200 {
+                    format!("{}...", &args_json[..200])
+                } else {
+                    args_json.clone()
+                }
+            ),
+        )
+    })?;
 
-    // 尝试内置工具执行
+    capture_checkpoint_before_tool(
+        &tool_full_name,
+        &args,
+        checkpoint_ids,
+        checkpoint_work_dir,
+    )?;
     let result = execute_builtin_tool(&tool_full_name, &args)?;
 
-    serde_json::to_string(&result).map_err(|e| {
+    serde_json::to_string(&result).map_err(|error| {
         Error::new(
             Status::GenericFailure,
-            format!("Failed to serialize result: {}", e),
+            format!("Failed to serialize result: {error}"),
         )
     })
+}
+
+fn capture_checkpoint_before_tool(
+    tool_full_name: &str,
+    args: &Value,
+    checkpoint_ids: Vec<String>,
+    checkpoint_work_dir: Option<String>,
+) -> napi::Result<()> {
+    if checkpoint_ids.is_empty() {
+        return Ok(());
+    }
+    let work_dir = checkpoint_work_dir.ok_or_else(|| {
+        Error::new(
+            Status::InvalidArg,
+            "Checkpoint working directory is required".to_string(),
+        )
+    })?;
+
+    match tool_full_name {
+        "mcp__filesystem__replace_edit" | "mcp__filesystem__create" => {
+            let file_path = args
+                .get("filePath")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    Error::new(
+                        Status::InvalidArg,
+                        "filePath is required for checkpoint capture".to_string(),
+                    )
+                })?;
+            crate::storage::services::checkpoint::record_checkpoint_file(
+                checkpoint_ids,
+                work_dir,
+                file_path.to_string(),
+            )
+        }
+        "mcp__bash__terminal-execute" => {
+            crate::storage::services::checkpoint::record_checkpoint_worktree(
+                checkpoint_ids,
+                work_dir,
+            )
+        }
+        _ => Ok(()),
+    }
 }

@@ -6525,17 +6525,17 @@ input {
   border-radius: var(--radius-sm);
 }
 
-.rollback-change-added {
+.file-change-added {
   color: #2ea043;
   background: rgba(46, 160, 67, 0.12);
 }
 
-.rollback-change-modified {
+.file-change-modified {
   color: #d29922;
   background: rgba(210, 153, 34, 0.12);
 }
 
-.rollback-change-deleted {
+.file-change-deleted {
   color: #f85149;
   background: rgba(248, 81, 73, 0.12);
 }
@@ -6563,20 +6563,23 @@ input {
   border-bottom: none;
 }
 
-.rollback-change-icon {
+.file-change-icon {
   flex-shrink: 0;
 }
 
-.rollback-change-icon.rollback-change-added {
+.file-change-icon.file-change-added {
   color: #2ea043;
+  background: transparent;
 }
 
-.rollback-change-icon.rollback-change-modified {
+.file-change-icon.file-change-modified {
   color: #d29922;
+  background: transparent;
 }
 
-.rollback-change-icon.rollback-change-deleted {
+.file-change-icon.file-change-deleted {
   color: #f85149;
+  background: transparent;
 }
 
 .rollback-change-type {
@@ -6599,6 +6602,131 @@ input {
   font-size: 12px;
   color: var(--text-tertiary);
   text-align: center;
+}
+
+.rollback-confirm-dialog.preview-open {
+  width: min(960px, 92vw);
+  height: min(680px, 86vh);
+  max-height: 86vh;
+}
+
+.rollback-confirm-dialog.preview-open .confirm-dialog-header {
+  flex-shrink: 0;
+}
+
+.rollback-confirm-dialog .confirm-dialog-actions {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.rollback-dialog-primary-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.confirm-dialog-btn.preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.confirm-dialog-btn.preview:hover {
+  border-color: var(--accent-blue);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.rollback-preview-back {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.rollback-preview-back:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.file-diff-preview {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: 240px minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.file-diff-preview-files {
+  min-width: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.file-diff-preview-file {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: none;
+  border-bottom: 1px solid var(--border-light);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+}
+
+.file-diff-preview-file:hover {
+  background: var(--bg-hover);
+}
+
+.file-diff-preview-file.active {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.file-diff-preview-file span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+}
+
+.file-diff-preview-diff {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.file-diff-preview-state {
+  display: flex;
+  min-height: 120px;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.file-diff-preview-state.error {
+  color: var(--accent-red-text);
 }
 
 /* Commit Section */

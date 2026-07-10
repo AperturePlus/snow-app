@@ -1,11 +1,26 @@
 import { ipcRenderer, type IpcRendererEvent } from "electron";
-import type { McpToolDefinition } from "../types";
+import type {
+  CheckpointFileChange,
+  CheckpointFileDiff,
+  McpToolDefinition,
+} from "../types";
 
 export const systemApi = {
   listMcpTools: (): Promise<McpToolDefinition[]> =>
     ipcRenderer.invoke("mcp:list-tools"),
-  callMcpTool: (toolFullName: string, argsJson: string): Promise<string> =>
-    ipcRenderer.invoke("mcp:call-tool", toolFullName, argsJson),
+  callMcpTool: (
+    toolFullName: string,
+    argsJson: string,
+    checkpointIds?: string[],
+    checkpointWorkDir?: string
+  ): Promise<string> =>
+    ipcRenderer.invoke(
+      "mcp:call-tool",
+      toolFullName,
+      argsJson,
+      checkpointIds,
+      checkpointWorkDir
+    ),
   createCheckpoint: (workDir: string): Promise<string> =>
     ipcRenderer.invoke("checkpoint:create", workDir),
   restoreCheckpoint: (checkpointId: string, workDir: string): Promise<void> =>
@@ -17,6 +32,11 @@ export const systemApi = {
     workDir: string
   ): Promise<CheckpointFileChange[]> =>
     ipcRenderer.invoke("checkpoint:list-changes", checkpointId, workDir),
+  listCheckpointDiffs: (
+    checkpointId: string,
+    workDir: string
+  ): Promise<CheckpointFileDiff[]> =>
+    ipcRenderer.invoke("checkpoint:list-diffs", checkpointId, workDir),
   writeLog: (level: string, entry: unknown): Promise<void> =>
     ipcRenderer.invoke("debug:write-log", level, entry),
   sum: (a: number, b: number): Promise<number> =>

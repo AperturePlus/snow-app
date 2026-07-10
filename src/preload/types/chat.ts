@@ -30,6 +30,7 @@ export type ChatMessageRecord = {
   status: string;
   model: string;
   responseId: string;
+  checkpointId: string;
   toolCallsJson: string;
   createdAt: string;
 };

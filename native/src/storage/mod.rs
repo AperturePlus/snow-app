@@ -232,6 +232,7 @@ pub struct ChatMessageRecord {
     pub status: String,
     pub model: String,
     pub response_id: String,
+    pub checkpoint_id: String,
     pub tool_calls_json: String,
     pub created_at: String,
 }

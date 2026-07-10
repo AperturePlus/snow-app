@@ -33,6 +33,7 @@ pub struct ResponsesApiRequest {
     pub conversation_id: Option<String>,
     pub previous_response_id: Option<String>,
     pub directory_id: Option<String>,
+    pub checkpoint_id: Option<String>,
 }
 
 #[napi(object)]
@@ -151,6 +152,7 @@ async fn create_response_async(
             request_messages: &prepared_request.current_messages,
             response_content: &streamed_response.content,
             response_id: &streamed_response.id,
+            checkpoint_id: request.checkpoint_id.as_deref().unwrap_or(""),
             model: &streamed_response.model,
             status: &streamed_response.status,
             raw_response_json: &raw_response_json,

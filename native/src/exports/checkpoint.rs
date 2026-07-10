@@ -1,7 +1,7 @@
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
-use crate::storage::services::checkpoint::CheckpointFileChange;
+use crate::storage::services::checkpoint::{CheckpointFileChange, CheckpointFileDiff};
 
 /// Create a file-system checkpoint (snapshot) of the working directory.
 ///
@@ -51,6 +51,19 @@ pub async fn list_checkpoint_changes(
 ) -> napi::Result<Vec<CheckpointFileChange>> {
     tokio::task::spawn_blocking(move || {
         crate::storage::services::checkpoint::list_checkpoint_changes(checkpoint_id, work_dir)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+/// Return unified diffs for all files that would be affected by rollback.
+#[napi]
+pub async fn list_checkpoint_diffs(
+    checkpoint_id: String,
+    work_dir: String,
+) -> napi::Result<Vec<CheckpointFileDiff>> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::checkpoint::list_checkpoint_diffs(checkpoint_id, work_dir)
     })
     .await
     .map_err(map_spawn_error)?

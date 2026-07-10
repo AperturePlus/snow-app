@@ -52,6 +52,7 @@ type ConversationSessionRef = {
   streamId: string | null;
   isSending: boolean;
   directoryId?: string;
+  checkpointIds: string[];
 };
 
 type RollbackPreview = {
@@ -59,6 +60,7 @@ type RollbackPreview = {
   messageContent: string;
   changes: CheckpointFileChange[];
   checkpointId?: string;
+  workDir?: string;
   convId?: string;
   responseId?: string;
   isFirstMessage: boolean;
@@ -102,6 +104,14 @@ type UseChatConversationResult = {
 };
 
 const PENDING_SESSION_KEY = "__pending__";
+
+const deleteCheckpoints = (checkpointIds: string[]): void => {
+  for (const checkpointId of checkpointIds) {
+    void window.snow.deleteCheckpoint(checkpointId).catch(() => {
+      // Checkpoint cleanup is best effort.
+    });
+  }
+};
 
 const formatMessageTime = (): string =>
   new Date().toLocaleTimeString("zh-CN", {
@@ -300,6 +310,7 @@ export const useChatConversation = (
         streamId: null,
         isSending: false,
         directoryId: dirId,
+        checkpointIds: [],
       });
     }
     setSessions((prev) => {
@@ -481,7 +492,8 @@ export const useChatConversation = (
           role: "user" | "assistant" | "system" | "developer" | "tool";
           content: string;
         }[],
-        currentConversationId: string | undefined
+        currentConversationId: string | undefined,
+        checkpointId?: string
       ): Promise<void> => {
         const iterSessionKey = currentConversationId ?? PENDING_SESSION_KEY;
         let effectiveKey = iterSessionKey;
@@ -492,6 +504,7 @@ export const useChatConversation = (
             model: options.model,
             conversationId: currentConversationId,
             directoryId: sessionDirId,
+            checkpointId,
           },
           (chunk) => {
             updateSessionMessages(effectiveKey, (currentMessages) =>
@@ -632,9 +645,13 @@ export const useChatConversation = (
             result = validationError;
           } else {
             try {
+              const checkpointIds =
+                sessionsRefData.current.get(effectiveKey)?.checkpointIds ?? [];
               result = await window.snow.callMcpTool(
                 toolCall.name,
-                toolCall.arguments
+                toolCall.arguments,
+                checkpointIds,
+                checkpointIds.length > 0 ? directoryPath : undefined
               );
             } catch (err) {
               result = JSON.stringify({ error: getErrorMessage(err) });
@@ -710,12 +727,17 @@ export const useChatConversation = (
       // The checkpoint is awaited before runAgentLoop to guarantee the AI
       // cannot modify files before the snapshot is captured.
       const initCheckpointAndRun = async (): Promise<void> => {
+        let checkpointId: string | undefined;
         if (directoryPath && !directoryPath.startsWith("ssh://")) {
           try {
-            const cpId = await window.snow.createCheckpoint(directoryPath);
+            checkpointId = await window.snow.createCheckpoint(directoryPath);
+            const ref = sessionsRefData.current.get(sessionKey);
+            if (ref) {
+              ref.checkpointIds = [...ref.checkpointIds, checkpointId];
+            }
             updateSessionMessages(sessionKey, (currentMessages) =>
               currentMessages.map((m) =>
-                m.id === userMessage.id ? { ...m, checkpointId: cpId } : m
+                m.id === userMessage.id ? { ...m, checkpointId } : m
               )
             );
           } catch {
@@ -725,7 +747,8 @@ export const useChatConversation = (
         await runAgentLoop(
           assistantMessageId,
           [{ role: "user", content: trimmed }],
-          activeConversationIdRef.current
+          sessionKey === PENDING_SESSION_KEY ? undefined : sessionKey,
+          checkpointId
         );
       };
 
@@ -884,15 +907,25 @@ export const useChatConversation = (
               timestamp: record.createdAt,
               status: record.status === "error" ? "error" : "sent",
               responseId: record.responseId || undefined,
+              checkpointId: record.checkpointId || undefined,
               model: record.model || undefined,
               toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
             };
           });
 
+        const checkpointIds = Array.from(
+          new Set(
+            records
+              .filter((record) => record.role === "user" && record.checkpointId)
+              .map((record) => record.checkpointId)
+          )
+        );
+
         sessionsRefData.current.set(trimmedId, {
           streamId: null,
           isSending: false,
           directoryId: conversationDirId,
+          checkpointIds,
         });
         setSessions((prev) => ({
           ...prev,
@@ -922,6 +955,7 @@ export const useChatConversation = (
     // Clear stale pending session if not actively streaming
     const pendingRef = sessionsRefData.current.get(PENDING_SESSION_KEY);
     if (pendingRef && !pendingRef.isSending) {
+      deleteCheckpoints(pendingRef.checkpointIds);
       sessionsRefData.current.delete(PENDING_SESSION_KEY);
       setSessions((prev) => {
         const next = { ...prev };
@@ -957,7 +991,10 @@ export const useChatConversation = (
       updateSessionField(conversationId, "isStreaming", false);
       updateSessionField(conversationId, "isAborting", false);
       removeStreamingId(conversationId);
-      // Clean up session from state and ref
+      // Clean up session state and incremental checkpoint storage.
+      if (ref) {
+        deleteCheckpoints(ref.checkpointIds);
+      }
       sessionsRefData.current.delete(conversationId);
       setSessions((prev) => {
         const next = { ...prev };
@@ -1085,6 +1122,7 @@ export const useChatConversation = (
           messageContent,
           changes,
           checkpointId,
+          workDir: directoryPath,
           convId,
           responseId,
           isFirstMessage,
@@ -1121,12 +1159,39 @@ export const useChatConversation = (
       return currentMessages.slice(0, idx);
     });
 
-    // Restore file-system checkpoint (undo AI file modifications).
+    // Restore file-system checkpoint and then release every checkpoint at or
+    // after the rollback target. Earlier checkpoints remain active.
     if (checkpointId && directoryPath && !directoryPath.startsWith("ssh://")) {
+      const sessionRef = sessionsRefData.current.get(key);
+      const checkpointIndex =
+        sessionRef?.checkpointIds.indexOf(checkpointId) ?? -1;
+      const discardedCheckpointIds =
+        sessionRef && checkpointIndex >= 0
+          ? sessionRef.checkpointIds.slice(checkpointIndex)
+          : [checkpointId];
+      if (sessionRef && checkpointIndex >= 0) {
+        sessionRef.checkpointIds = sessionRef.checkpointIds.slice(
+          0,
+          checkpointIndex
+        );
+      }
       void window.snow
         .restoreCheckpoint(checkpointId, directoryPath)
+        .then(() => {
+          deleteCheckpoints(discardedCheckpointIds);
+        })
         .catch(() => {
-          // Best effort — file restore failure should not block message rollback
+          // Keep the target checkpoint when restore fails so retry is possible.
+          if (
+            sessionRef &&
+            checkpointIndex >= 0 &&
+            !sessionRef.checkpointIds.includes(checkpointId)
+          ) {
+            sessionRef.checkpointIds = [
+              ...sessionRef.checkpointIds,
+              ...discardedCheckpointIds,
+            ];
+          }
         });
     }
 

@@ -89,14 +89,26 @@ pub async fn list_mcp_tools() -> napi::Result<Vec<McpToolDefinition>> {
 }
 
 #[napi]
-pub async fn call_mcp_tool(tool_full_name: String, args_json: String) -> napi::Result<String> {
-    // 使用 spawn_blocking 确保工具执行（如终端命令、文件操作）不阻塞 Node.js 主线程
-    tokio::task::spawn_blocking(move || call_tool(tool_full_name, args_json))
-        .await
-        .map_err(|e| {
-            Error::new(
-                Status::GenericFailure,
-                format!("Failed to execute call_mcp_tool: {}", e),
-            )
-        })?
+pub async fn call_mcp_tool(
+    tool_full_name: String,
+    args_json: String,
+    checkpoint_ids: Option<Vec<String>>,
+    checkpoint_work_dir: Option<String>,
+) -> napi::Result<String> {
+    // 工具执行和增量检查点 I/O 全部运行于阻塞线程池，避免阻塞 Node.js。
+    tokio::task::spawn_blocking(move || {
+        call_tool(
+            tool_full_name,
+            args_json,
+            checkpoint_ids.unwrap_or_default(),
+            checkpoint_work_dir,
+        )
+    })
+    .await
+    .map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to execute call_mcp_tool: {error}"),
+        )
+    })?
 }

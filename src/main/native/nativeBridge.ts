@@ -304,6 +304,10 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to list checkpoint changes")
         ),
+      listCheckpointDiffs: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to list checkpoint diffs")
+        ),
       truncateConversationFromResponse: () =>
         Promise.reject(
           new Error("Rust native bridge is required to truncate conversation")

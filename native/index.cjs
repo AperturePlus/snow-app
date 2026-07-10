@@ -18,7 +18,8 @@ const requiredExports = [
   'upsertCustomHeaderScheme',
   'deleteCustomHeaderScheme',
   'reorderWorkspaceDirectories',
-  'deleteWorkspaceDirectory'
+  'deleteWorkspaceDirectory',
+  'listCheckpointDiffs'
 ]
 
 const platformName = platformMap[`${process.platform}-${process.arch}`]

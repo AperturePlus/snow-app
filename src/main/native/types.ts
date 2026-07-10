@@ -212,6 +212,7 @@ export type ChatMessageRecord = {
   status: string;
   model: string;
   responseId: string;
+  checkpointId: string;
   toolCallsJson: string;
   createdAt: string;
 };
@@ -226,6 +227,7 @@ export type ResponsesApiRequest = {
   conversationId?: string;
   previousResponseId?: string;
   directoryId?: string;
+  checkpointId?: string;
 };
 
 export type TokenUsage = {
@@ -323,6 +325,11 @@ export type CheckpointFileChange = {
   changeType: string;
 };
 
+export type CheckpointFileDiff = CheckpointFileChange & {
+  content: string;
+  isBinary: boolean;
+};
+
 export type NativeBridge = {
   initializeAppStorage: () => Promise<AppStorageInfo>;
 
@@ -397,7 +404,12 @@ export type NativeBridge = {
   ) => Promise<ResponsesApiResult>;
   abortResponseStream: (streamId: string) => boolean;
   listMcpTools: () => Promise<McpToolDefinition[]>;
-  callMcpTool: (toolFullName: string, argsJson: string) => Promise<string>;
+  callMcpTool: (
+    toolFullName: string,
+    argsJson: string,
+    checkpointIds?: string[],
+    checkpointWorkDir?: string
+  ) => Promise<string>;
   engineInfo: () => string;
   sum: (a: number, b: number) => number;
   detectTerminals: () => Promise<DetectedTerminal[]>;
@@ -441,6 +453,10 @@ export type NativeBridge = {
     checkpointId: string,
     workDir: string
   ) => Promise<CheckpointFileChange[]>;
+  listCheckpointDiffs: (
+    checkpointId: string,
+    workDir: string
+  ) => Promise<CheckpointFileDiff[]>;
   truncateConversationFromResponse: (
     conversationId: string,
     responseId: string

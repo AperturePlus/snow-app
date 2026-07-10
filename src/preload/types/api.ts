@@ -60,6 +60,7 @@ export type ResponsesApiRequest = {
   conversationId?: string | null;
   previousResponseId?: string | null;
   directoryId?: string | null;
+  checkpointId?: string | null;
 };
 
 export type TokenUsage = {

@@ -92,7 +92,7 @@ fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
     reset_legacy_integer_primary_key_tables(connection)?;
 
     connection.execute_batch(
-        "PRAGMA user_version = 12;
+        "PRAGMA user_version = 13;
 
          CREATE TABLE IF NOT EXISTS system_settings (
            id TEXT PRIMARY KEY NOT NULL,
@@ -260,6 +260,7 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            content TEXT NOT NULL,
            model TEXT NOT NULL DEFAULT '',
            response_id TEXT NOT NULL DEFAULT '',
+           checkpoint_id TEXT NOT NULL DEFAULT '',
            status TEXT NOT NULL DEFAULT 'sent',
            raw_json TEXT NOT NULL DEFAULT '{}',
            thinking TEXT NOT NULL DEFAULT '',
@@ -309,6 +310,12 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
         "chat_messages",
         "tool_calls_json",
         "TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    ensure_column(
+        connection,
+        "chat_messages",
+        "checkpoint_id",
+        "TEXT NOT NULL DEFAULT ''",
     )?;
 
     Ok(())

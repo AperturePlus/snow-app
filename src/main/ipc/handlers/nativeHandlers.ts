@@ -38,14 +38,38 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   ipcMain.handle("mcp:list-tools", () => native.listMcpTools());
   ipcMain.handle(
     "mcp:call-tool",
-    async (_event, toolFullName: unknown, argsJson: unknown) => {
+    async (
+      _event,
+      toolFullName: unknown,
+      argsJson: unknown,
+      checkpointIds: unknown,
+      checkpointWorkDir: unknown
+    ) => {
       if (typeof toolFullName !== "string" || !toolFullName.trim()) {
         throw new Error("Tool full name is required");
       }
       if (typeof argsJson !== "string") {
         throw new Error("Arguments JSON string is required");
       }
-      return native.callMcpTool(toolFullName.trim(), argsJson);
+      if (
+        checkpointIds !== undefined &&
+        (!Array.isArray(checkpointIds) ||
+          checkpointIds.some((id) => typeof id !== "string" || !id.trim()))
+      ) {
+        throw new Error("Checkpoint ids must be non-empty strings");
+      }
+      if (
+        checkpointWorkDir !== undefined &&
+        (typeof checkpointWorkDir !== "string" || !checkpointWorkDir.trim())
+      ) {
+        throw new Error("Checkpoint working directory must be a string");
+      }
+      return native.callMcpTool(
+        toolFullName.trim(),
+        argsJson,
+        (checkpointIds as string[] | undefined)?.map((id) => id.trim()),
+        (checkpointWorkDir as string | undefined)?.trim()
+      );
     }
   );
 
@@ -89,6 +113,20 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         );
       }
       return native.listCheckpointChanges(checkpointId.trim(), workDir);
+    }
+  );
+  ipcMain.handle(
+    "checkpoint:list-diffs",
+    (_event, checkpointId: unknown, workDir: unknown) => {
+      if (typeof checkpointId !== "string" || !checkpointId.trim()) {
+        throw new Error("Checkpoint id is required to list diffs");
+      }
+      if (typeof workDir !== "string" || !workDir.trim()) {
+        throw new Error(
+          "Working directory path is required to list checkpoint diffs"
+        );
+      }
+      return native.listCheckpointDiffs(checkpointId.trim(), workDir);
     }
   );
 };

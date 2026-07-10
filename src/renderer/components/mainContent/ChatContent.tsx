@@ -69,6 +69,8 @@ export const ChatContent = ({
       {rollbackPreview ? (
         <RollbackConfirmDialog
           changes={rollbackPreview.changes}
+          checkpointId={rollbackPreview.checkpointId}
+          workDir={rollbackPreview.workDir}
           isFirstMessage={rollbackPreview.isFirstMessage}
           onConfirm={confirmRollback}
           onCancel={cancelRollback}
