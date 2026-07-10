@@ -34,3 +34,9 @@ export type ChatMessageRecord = {
   toolCallsJson: string;
   createdAt: string;
 };
+
+export type ChatMessagePage = {
+  items: ChatMessageRecord[];
+  total: number;
+  hasMore: boolean;
+};

@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import type { ChatInputSendOptions } from "../chatInput/types";
 import type {
   ChatConversationRecord,
+  ChatMessageRecord,
   CheckpointFileChange,
   TokenUsage,
 } from "../../../../preload";
@@ -40,9 +41,13 @@ type UpsertedConversation = {
 
 type ConversationSessionState = {
   messages: ChatConversationMessage[];
+  messageRecords: ChatMessageRecord[];
   summary: string;
   isStreaming: boolean;
   isAborting: boolean;
+  isLoadingOlderMessages: boolean;
+  hasMoreMessages: boolean;
+  isInitialHistoryLoaded: boolean;
   tokenUsage: TokenUsage | null;
   directoryId?: string;
   hasNewContent: boolean;
@@ -80,6 +85,11 @@ type UseChatConversationResult = {
   forkMessageCount: number | undefined;
   streamingConversationIds: Set<string>;
   completedConversationIds: Set<string>;
+  isLoadingOlderMessages: boolean;
+  hasMoreMessages: boolean;
+  isInitialHistoryLoaded: boolean;
+  isLoadingInitialHistory: boolean;
+  loadOlderMessages: () => Promise<void>;
   handleSendMessage: (message: string, options: ChatInputSendOptions) => void;
   handleSelectConversation: (
     conversationId: string,
@@ -106,6 +116,7 @@ type UseChatConversationResult = {
 };
 
 const PENDING_SESSION_KEY = "__pending__";
+const CHAT_MESSAGE_PAGE_SIZE = 10;
 
 const deleteCheckpoints = (checkpointIds: string[]): void => {
   for (const checkpointId of checkpointIds) {
@@ -234,6 +245,69 @@ const parseToolCalls = (toolCallsJson: string | undefined): ToolCallInfo[] => {
   return [];
 };
 
+const buildConversationMessages = (
+  records: ChatMessageRecord[]
+): ChatConversationMessage[] => {
+  const toolResultQueues = new Map<string, string[]>();
+  for (const record of records) {
+    if (record.role !== "tool" || !record.content) {
+      continue;
+    }
+
+    for (const segment of record.content.split("\n\n")) {
+      const match = segment.match(/^\[Tool:\s*(.+?)\]\n([\s\S]*)$/);
+      if (!match) {
+        continue;
+      }
+      const queue = toolResultQueues.get(match[1]) ?? [];
+      queue.push(match[2]);
+      toolResultQueues.set(match[1], queue);
+    }
+  }
+
+  const consumeToolResult = (toolCall: ToolCallInfo): string | undefined => {
+    const identifiers = toolCall.callId
+      ? [`${toolCall.name}#${toolCall.callId}`, toolCall.name]
+      : [toolCall.name];
+
+    for (const identifier of identifiers) {
+      const queue = toolResultQueues.get(identifier);
+      if (queue && queue.length > 0) {
+        return queue.shift();
+      }
+    }
+
+    return undefined;
+  };
+
+  return records
+    .filter((record) => record.role !== "tool")
+    .map((record) => {
+      const toolCalls = parseToolCalls(record.toolCallsJson).map((toolCall) => {
+        const result = consumeToolResult(toolCall);
+        return {
+          ...toolCall,
+          status:
+            result === undefined ? ("error" as const) : ("completed" as const),
+          result,
+        };
+      });
+
+      return {
+        id: record.id,
+        role: record.role === "user" ? "user" : "assistant",
+        content: record.content,
+        thinking: record.thinking || undefined,
+        timestamp: record.createdAt,
+        status: record.status === "error" ? "error" : "sent",
+        responseId: record.responseId || undefined,
+        checkpointId: record.checkpointId || undefined,
+        model: record.model || undefined,
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      };
+    });
+};
+
 const isSameToolCall = (
   candidate: ToolCallInfo,
   target: ToolCallInfo
@@ -322,6 +396,7 @@ export const useChatConversation = (
   const [completedConversationIds, setCompletedConversationIds] = useState<
     Set<string>
   >(new Set());
+  const [isLoadingInitialHistory, setIsLoadingInitialHistory] = useState(false);
   const [draftToRestore, setDraftToRestore] = useState<string | null>(null);
   const [rollbackPreview, setRollbackPreview] =
     useState<RollbackPreview | null>(null);
@@ -330,6 +405,8 @@ export const useChatConversation = (
     new Map()
   );
   const activeConversationIdRef = useRef<string | undefined>(undefined);
+  const selectionRequestIdRef = useRef(0);
+  const loadingOlderConversationIdsRef = useRef(new Set<string>());
   // Keep a ref to the latest sessions so async callbacks (e.g. handleRollback)
   // can read the current messages without stale closures.
   const sessionsRef = useRef<Record<string, ConversationSessionState>>({});
@@ -355,9 +432,13 @@ export const useChatConversation = (
         ...prev,
         [key]: {
           messages: [],
+          messageRecords: [],
           summary: "",
           isStreaming: false,
           isAborting: false,
+          isLoadingOlderMessages: false,
+          hasMoreMessages: false,
+          isInitialHistoryLoaded: true,
           tokenUsage: null,
           directoryId: dirId,
           hasNewContent: false,
@@ -933,15 +1014,26 @@ export const useChatConversation = (
       conversationDirId?: string
     ): Promise<void> => {
       const trimmedId = conversationId.trim();
-      if (!trimmedId || trimmedId === activeConversationIdRef.current) {
+      if (!trimmedId) {
+        return;
+      }
+      const selectionRequestId = ++selectionRequestIdRef.current;
+      const cachedSession = sessionsRef.current[trimmedId];
+      const hasLoadedCachedHistory =
+        sessionsRefData.current.has(trimmedId) &&
+        cachedSession?.isInitialHistoryLoaded === true;
+
+      if (
+        trimmedId === activeConversationIdRef.current &&
+        hasLoadedCachedHistory
+      ) {
+        setIsLoadingInitialHistory(false);
         return;
       }
 
-      // If session already exists, just switch the active pointer
-      // (preserves in-flight streaming without reloading from DB)
-      if (sessionsRefData.current.has(trimmedId)) {
+      if (hasLoadedCachedHistory) {
+        setIsLoadingInitialHistory(false);
         setActiveId(trimmedId);
-        // Clear the "new content" indicator when user views this conversation
         updateSessionField(trimmedId, "hasNewContent", false);
         setCompletedConversationIds((prev) => {
           if (!prev.has(trimmedId)) return prev;
@@ -953,78 +1045,26 @@ export const useChatConversation = (
       }
 
       const nextTitle = title?.trim() ?? "";
+      setActiveId(trimmedId);
+      setIsLoadingInitialHistory(true);
 
       try {
-        const [records, conversationRecord] = await Promise.all([
-          window.snow.listChatMessages(trimmedId),
+        const [page, conversationRecord] = await Promise.all([
+          window.snow.listChatMessagesPaginated(
+            trimmedId,
+            "",
+            CHAT_MESSAGE_PAGE_SIZE
+          ),
           window.snow.getChatConversation(trimmedId),
         ]);
 
-        // Build ordered result queues from tool-role messages. New records include
-        // callId in the identifier; legacy records are consumed by tool name order.
-        const toolResultQueues = new Map<string, string[]>();
-        for (const record of records) {
-          if (record.role === "tool" && record.content) {
-            for (const segment of record.content.split("\n\n")) {
-              const match = segment.match(/^\[Tool:\s*(.+?)\]\n([\s\S]*)$/);
-              if (match) {
-                const queue = toolResultQueues.get(match[1]) ?? [];
-                queue.push(match[2]);
-                toolResultQueues.set(match[1], queue);
-              }
-            }
-          }
+        if (selectionRequestId !== selectionRequestIdRef.current) {
+          return;
         }
-
-        const consumeToolResult = (
-          toolCall: ToolCallInfo
-        ): string | undefined => {
-          const identifiers = toolCall.callId
-            ? [`${toolCall.name}#${toolCall.callId}`, toolCall.name]
-            : [toolCall.name];
-
-          for (const identifier of identifiers) {
-            const queue = toolResultQueues.get(identifier);
-            if (queue && queue.length > 0) {
-              return queue.shift();
-            }
-          }
-
-          return undefined;
-        };
-
-        const loadedMessages: ChatConversationMessage[] = records
-          .filter((record) => record.role !== "tool")
-          .map((record) => {
-            const toolCalls = parseToolCalls(record.toolCallsJson).map((tc) => {
-              const result = consumeToolResult(tc);
-              return {
-                ...tc,
-                status:
-                  result === undefined
-                    ? ("error" as const)
-                    : ("completed" as const),
-                result,
-              };
-            });
-
-            return {
-              id: record.id,
-              role: record.role === "user" ? "user" : "assistant",
-              content: record.content,
-              thinking: record.thinking || undefined,
-              timestamp: record.createdAt,
-              status: record.status === "error" ? "error" : "sent",
-              responseId: record.responseId || undefined,
-              checkpointId: record.checkpointId || undefined,
-              model: record.model || undefined,
-              toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-            };
-          });
 
         const checkpointIds = Array.from(
           new Set(
-            records
+            page.items
               .filter((record) => record.role === "user" && record.checkpointId)
               .map((record) => record.checkpointId)
           )
@@ -1039,10 +1079,14 @@ export const useChatConversation = (
         setSessions((prev) => ({
           ...prev,
           [trimmedId]: {
-            messages: loadedMessages,
+            messages: buildConversationMessages(page.items),
+            messageRecords: page.items,
             summary: nextTitle,
             isStreaming: false,
             isAborting: false,
+            isLoadingOlderMessages: false,
+            hasMoreMessages: page.hasMore,
+            isInitialHistoryLoaded: true,
             tokenUsage: conversationTokenUsage ?? null,
             directoryId: conversationDirId,
             hasNewContent: false,
@@ -1051,16 +1095,106 @@ export const useChatConversation = (
             forkMessageCount: conversationRecord?.forkMessageCount || undefined,
           },
         }));
-
-        setActiveId(trimmedId);
       } catch {
         // 加载历史消息失败时静默处理，不阻断交互
+      } finally {
+        if (selectionRequestId === selectionRequestIdRef.current) {
+          setIsLoadingInitialHistory(false);
+        }
       }
     },
     [setActiveId, updateSessionField]
   );
 
+  const loadOlderMessages = useCallback(async (): Promise<void> => {
+    const conversationId = activeConversationIdRef.current;
+    if (!conversationId) {
+      return;
+    }
+
+    const session = sessionsRef.current[conversationId];
+    const beforeMessageId = session?.messageRecords[0]?.id;
+    if (
+      !session ||
+      !beforeMessageId ||
+      !session.hasMoreMessages ||
+      loadingOlderConversationIdsRef.current.has(conversationId)
+    ) {
+      return;
+    }
+
+    loadingOlderConversationIdsRef.current.add(conversationId);
+    updateSessionField(conversationId, "isLoadingOlderMessages", true);
+
+    try {
+      const page = await window.snow.listChatMessagesPaginated(
+        conversationId,
+        beforeMessageId,
+        CHAT_MESSAGE_PAGE_SIZE
+      );
+      const currentSession = sessionsRef.current[conversationId];
+      if (!currentSession) {
+        return;
+      }
+
+      const existingIds = new Set(
+        currentSession.messageRecords.map((record) => record.id)
+      );
+      const olderRecords = page.items.filter(
+        (record) => !existingIds.has(record.id)
+      );
+      const combinedRecords = [
+        ...olderRecords,
+        ...currentSession.messageRecords,
+      ];
+      const persistedIds = new Set(
+        currentSession.messageRecords.map((record) => record.id)
+      );
+      const transientMessages = currentSession.messages.filter(
+        (message) => !persistedIds.has(message.id)
+      );
+
+      setSessions((prev) => {
+        const latestSession = prev[conversationId];
+        if (!latestSession) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          [conversationId]: {
+            ...latestSession,
+            messages: [
+              ...buildConversationMessages(combinedRecords),
+              ...transientMessages,
+            ],
+            messageRecords: combinedRecords,
+            isLoadingOlderMessages: false,
+            hasMoreMessages: page.hasMore,
+          },
+        };
+      });
+
+      const refData = sessionsRefData.current.get(conversationId);
+      if (refData) {
+        refData.checkpointIds = Array.from(
+          new Set(
+            combinedRecords
+              .filter((record) => record.role === "user" && record.checkpointId)
+              .map((record) => record.checkpointId)
+          )
+        );
+      }
+    } catch {
+      updateSessionField(conversationId, "isLoadingOlderMessages", false);
+    } finally {
+      loadingOlderConversationIdsRef.current.delete(conversationId);
+    }
+  }, [updateSessionField]);
+
   const handleNewChat = useCallback((): void => {
+    selectionRequestIdRef.current += 1;
+    setIsLoadingInitialHistory(false);
     // Clear stale pending session if not actively streaming
     const pendingRef = sessionsRefData.current.get(PENDING_SESSION_KEY);
     if (pendingRef && !pendingRef.isSending) {
@@ -1359,6 +1493,11 @@ export const useChatConversation = (
     forkMessageCount: activeSession?.forkMessageCount,
     streamingConversationIds,
     completedConversationIds,
+    isLoadingOlderMessages: activeSession?.isLoadingOlderMessages ?? false,
+    hasMoreMessages: activeSession?.hasMoreMessages ?? false,
+    isInitialHistoryLoaded: activeSession?.isInitialHistoryLoaded ?? false,
+    isLoadingInitialHistory,
+    loadOlderMessages,
     handleSendMessage,
     handleSelectConversation,
     handleNewChat,

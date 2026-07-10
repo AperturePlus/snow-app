@@ -328,13 +328,27 @@ export function ChatsSection({
               </div>
             ))}
             {hasMore ? (
-              <div className="chat-load-more" ref={loadMoreRef}>
+              <div
+                className={`chat-load-more ${
+                  isLoadingMore ? "is-loading" : ""
+                }`}
+                ref={loadMoreRef}
+                role={isLoadingMore ? "status" : undefined}
+                aria-live="polite"
+                aria-label={
+                  isLoadingMore
+                    ? t("sidebar.chatLoadingMore", {
+                        defaultValue: "Loading more chats...",
+                      })
+                    : undefined
+                }
+              >
                 {isLoadingMore ? (
                   <>
-                    <Loader2 className="spin" size={13} />
+                    <Loader2 className="spin" size={14} aria-hidden="true" />
                     <span>
                       {t("sidebar.chatLoadingMore", {
-                        defaultValue: "Loading more...",
+                        defaultValue: "Loading more chats...",
                       })}
                     </span>
                   </>

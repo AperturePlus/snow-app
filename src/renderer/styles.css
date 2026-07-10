@@ -907,12 +907,21 @@ input {
 
 .chat-load-more {
   display: flex;
+  min-height: 32px;
   align-items: center;
   justify-content: center;
   gap: 6px;
   padding: 8px;
   color: var(--text-muted);
   font-size: 11.5px;
+}
+
+.chat-load-more.is-loading {
+  color: var(--text-secondary);
+}
+
+.chat-load-more svg {
+  flex: 0 0 auto;
 }
 
 .chat-all-loaded {
@@ -3114,6 +3123,27 @@ input {
   --chat-flex-grow: 1;
 }
 
+.chat-area.is-loading-history {
+  align-items: stretch;
+  justify-content: center;
+}
+
+.chat-initial-history-loader {
+  display: flex;
+  min-height: 96px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.chat-initial-history-loader svg {
+  flex: 0 0 auto;
+  animation: chat-history-loader-spin 0.85s linear infinite;
+}
+
 .chat-empty-greeting {
   display: flex;
   flex-direction: column;
@@ -3145,6 +3175,30 @@ input {
   color: var(--text-secondary);
   font-size: 14px;
   line-height: 1.6;
+}
+
+.chat-history-loader {
+  display: flex;
+  width: min(100%, 980px);
+  min-height: 28px;
+  margin: 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.chat-history-loader svg {
+  flex: 0 0 auto;
+  animation: chat-history-loader-spin 0.85s linear infinite;
+}
+
+@keyframes chat-history-loader-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .chat-message-list {

@@ -216,6 +216,12 @@ export type ChatMessageRecord = {
   toolCallsJson: string;
   createdAt: string;
 };
+
+export type ChatMessagePage = {
+  items: ChatMessageRecord[];
+  total: number;
+  hasMore: boolean;
+};
 export type ResponsesApiMessage = {
   role: "user" | "assistant" | "system" | "developer" | "tool";
   content: string;
@@ -395,6 +401,11 @@ export type NativeBridge = {
   renameConversation: (conversationId: string, title: string) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
   listChatMessages: (conversationId: string) => Promise<ChatMessageRecord[]>;
+  listChatMessagesPaginated: (
+    conversationId: string,
+    beforeMessageId: string,
+    limit: number
+  ) => Promise<ChatMessagePage>;
   forkConversation: (
     sourceConversationId: string,
     upToResponseId: string

@@ -2,6 +2,7 @@ import { ipcRenderer } from "electron";
 import type {
   ChatConversationPage,
   ChatConversationRecord,
+  ChatMessagePage,
   ChatMessageRecord,
 } from "../types";
 
@@ -44,6 +45,17 @@ export const conversationApi = {
     ipcRenderer.invoke("chat-conversations:delete", conversationId),
   listChatMessages: (conversationId: string): Promise<ChatMessageRecord[]> =>
     ipcRenderer.invoke("chat-conversations:list-messages", conversationId),
+  listChatMessagesPaginated: (
+    conversationId: string,
+    beforeMessageId: string,
+    limit: number
+  ): Promise<ChatMessagePage> =>
+    ipcRenderer.invoke(
+      "chat-conversations:list-messages-paginated",
+      conversationId,
+      beforeMessageId,
+      limit
+    ),
   forkConversation: (
     sourceConversationId: string,
     upToResponseId: string

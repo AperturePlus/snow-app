@@ -237,6 +237,13 @@ pub struct ChatMessageRecord {
     pub created_at: String,
 }
 
+#[napi(object)]
+pub struct ChatMessagePage {
+    pub items: Vec<ChatMessageRecord>,
+    pub total: i32,
+    pub has_more: bool,
+}
+
 pub fn initialize_app_storage() -> Result<AppStorageInfo> {
     let storage_dir = ensure_storage_dir()?;
     let database_path = paths::database_file_path(&storage_dir);
@@ -441,9 +448,24 @@ pub fn delete_conversation(conversation_id: String) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::delete_conversation(&database_path, &conversation_id)
 }
+
 pub fn list_chat_messages(conversation_id: String) -> Result<Vec<ChatMessageRecord>> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::list_chat_messages(&database_path, &conversation_id)
+}
+
+pub fn list_chat_messages_paginated(
+    conversation_id: String,
+    before_message_id: String,
+    limit: i32,
+) -> Result<ChatMessagePage> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::list_chat_messages_paginated(
+        &database_path,
+        &conversation_id,
+        &before_message_id,
+        limit,
+    )
 }
 pub fn fork_conversation(
     source_conversation_id: String,

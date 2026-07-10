@@ -5,7 +5,9 @@ use napi::bindgen_prelude::*;
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::super::database;
-use super::super::{ChatConversationPage, ChatConversationRecord, ChatMessageRecord};
+use super::super::{
+    ChatConversationPage, ChatConversationRecord, ChatMessagePage, ChatMessageRecord,
+};
 
 #[derive(Clone, Debug)]
 pub struct ChatContextMessage {
@@ -591,6 +593,78 @@ pub fn list_chat_messages(
             rows.collect()
         })
         .map_err(|error| database::database_error(database_path, "list chat messages", error))
+}
+
+pub fn list_chat_messages_paginated(
+    database_path: &Path,
+    conversation_id: &str,
+    before_message_id: &str,
+    limit: i32,
+) -> Result<ChatMessagePage> {
+    Connection::open(database_path)
+        .and_then(|connection| {
+            let total: i32 = connection.query_row(
+                "SELECT COUNT(*)
+                   FROM chat_messages
+                  WHERE conversation_id = ?1",
+                params![conversation_id],
+                |row| row.get(0),
+            )?;
+
+            let safe_limit = if limit > 0 { limit } else { 10 };
+            let query_limit = safe_limit.saturating_add(1);
+            let mut statement = connection.prepare(
+                "SELECT id,
+                        role,
+                        content,
+                        thinking,
+                        status,
+                        model,
+                        response_id,
+                        checkpoint_id,
+                        tool_calls_json,
+                        created_at
+                   FROM chat_messages
+                  WHERE conversation_id = ?1
+                    AND (?2 = '' OR id < ?2)
+                  ORDER BY id DESC
+                  LIMIT ?3",
+            )?;
+
+            let rows = statement.query_map(
+                params![conversation_id, before_message_id, query_limit],
+                |row| {
+                    Ok(ChatMessageRecord {
+                        id: row.get(0)?,
+                        role: row.get(1)?,
+                        content: row.get(2)?,
+                        thinking: row.get(3)?,
+                        status: row.get(4)?,
+                        model: row.get(5)?,
+                        response_id: row.get(6)?,
+                        checkpoint_id: row.get(7)?,
+                        tool_calls_json: row.get(8)?,
+                        created_at: row.get(9)?,
+                    })
+                },
+            )?;
+
+            let mut items: Vec<ChatMessageRecord> = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+            let has_more = items.len() > safe_limit as usize;
+            if has_more {
+                items.truncate(safe_limit as usize);
+            }
+            items.reverse();
+
+            Ok(ChatMessagePage {
+                items,
+                total,
+                has_more,
+            })
+        })
+        .map_err(|error| {
+            database::database_error(database_path, "list chat messages paginated", error)
+        })
 }
 
 pub fn fork_conversation(

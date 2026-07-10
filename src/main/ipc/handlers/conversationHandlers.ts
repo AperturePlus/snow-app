@@ -69,6 +69,30 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
     }
   );
   ipcMain.handle(
+    "chat-conversations:list-messages-paginated",
+    (
+      _event,
+      conversationId: unknown,
+      beforeMessageId: unknown,
+      limit: unknown
+    ) => {
+      if (typeof conversationId !== "string" || !conversationId.trim()) {
+        throw new Error("Conversation ID is required to list chat messages");
+      }
+
+      const safeBeforeMessageId =
+        typeof beforeMessageId === "string" ? beforeMessageId.trim() : "";
+      const safeLimit =
+        typeof limit === "number" && limit > 0 ? Math.floor(limit) : 10;
+
+      return native.listChatMessagesPaginated(
+        conversationId.trim(),
+        safeBeforeMessageId,
+        safeLimit
+      );
+    }
+  );
+  ipcMain.handle(
     "chat-conversations:fork",
     async (_event, sourceConversationId: unknown, upToResponseId: unknown) => {
       if (

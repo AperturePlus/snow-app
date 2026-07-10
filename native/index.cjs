@@ -19,7 +19,8 @@ const requiredExports = [
   'deleteCustomHeaderScheme',
   'reorderWorkspaceDirectories',
   'deleteWorkspaceDirectory',
-  'listCheckpointDiffs'
+  'listCheckpointDiffs',
+  'listChatMessagesPaginated'
 ]
 
 const platformName = platformMap[`${process.platform}-${process.arch}`]

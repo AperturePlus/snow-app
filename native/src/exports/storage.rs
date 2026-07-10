@@ -3,8 +3,8 @@ use napi_derive::napi;
 
 use crate::storage::{
     ApiConfigInput, ApiConfigRecord, AppStorageInfo, ChatConversationPage,
-    ChatConversationRecord, ChatMessageRecord,
-    CustomHeaderSchemeInput, CustomHeaderSchemeRecord, McpServerConfigInput,
+    ChatConversationRecord, ChatMessagePage, ChatMessageRecord, CustomHeaderSchemeInput,
+    CustomHeaderSchemeRecord, McpServerConfigInput,
     McpServerConfigRecord, SensitiveCommandConfigInput, SensitiveCommandConfigRecord,
     SystemPromptItemInput, SystemPromptItemRecord, WorkspaceDirectoryInput,
     WorkspaceDirectoryRecord,
@@ -273,6 +273,23 @@ pub async fn list_chat_messages(conversation_id: String) -> napi::Result<Vec<Cha
     tokio::task::spawn_blocking(move || crate::storage::list_chat_messages(conversation_id))
         .await
         .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn list_chat_messages_paginated(
+    conversation_id: String,
+    before_message_id: String,
+    limit: i32,
+) -> napi::Result<ChatMessagePage> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::list_chat_messages_paginated(
+            conversation_id,
+            before_message_id,
+            limit,
+        )
+    })
+    .await
+    .map_err(map_spawn_error)?
 }
 
 #[napi]
