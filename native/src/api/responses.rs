@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
 use async_openai::{config::OpenAIConfig, error::OpenAIError, Client};
@@ -14,7 +14,9 @@ use tokio_util::sync::CancellationToken;
 use crate::api::config::{
     normalize_base_url, resolve_sdk_api_base_url, DEFAULT_OPENAI_BASE_URL,
 };
-use crate::api::conversation::{prepare_context_request, ConversationContextRequest};
+use crate::api::conversation::{
+    parse_chat_message_content, prepare_context_request, ConversationContextRequest,
+};
 use crate::storage::services::chat_conversations::{
     store_chat_exchange, ChatContextMessage, ChatTokenUsage, StoreChatExchangeInput,
 };
@@ -140,7 +142,7 @@ async fn create_response_async(
     })?;
 
     let client = build_openai_client(&base_url, api_key, &custom_headers)?;
-    let payload = build_responses_payload(&prepared_request.messages, &request, &api_config)?;
+    let payload = build_responses_payload(&prepared_request.messages, &database_path, &request, &api_config)?;
     let streamed_response = collect_streaming_response(&client, payload, on_chunk, &cancel_token).await?;
     let raw_response_json = serde_json::to_string(&streamed_response.raw_events)
         .unwrap_or_else(|_| "[]".to_string());
@@ -233,6 +235,7 @@ fn build_openai_client(
 
 fn build_responses_payload(
     messages: &[ChatContextMessage],
+    database_path: &Path,
     request: &ResponsesApiRequest,
     api_config: &ApiConfigRecord,
 ) -> Result<Value> {
@@ -251,18 +254,38 @@ fn build_responses_payload(
 
     let input = messages
         .iter()
-        .filter_map(|message| {
+        .map(|message| {
             let content = message.content.trim();
             if content.is_empty() {
-                return None;
+                return Ok(None);
             }
 
-            Some(json!({
+            let parsed_content = parse_chat_message_content(content, database_path)?;
+            let content = if parsed_content.images.is_empty() {
+                Value::String(parsed_content.text)
+            } else {
+                let mut parts = Vec::new();
+                if !parsed_content.text.is_empty() {
+                    parts.push(json!({ "type": "input_text", "text": parsed_content.text }));
+                }
+                parts.extend(parsed_content.images.iter().map(|image| {
+                    json!({
+                        "type": "input_image",
+                        "image_url": image.data_url,
+                    })
+                }));
+                Value::Array(parts)
+            };
+
+            Ok(Some(json!({
                 "type": "message",
                 "role": normalize_message_role(&message.role),
                 "content": content,
-            }))
+            })))
         })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .filter_map(|message| message)
         .collect::<Vec<_>>();
 
     if input.is_empty() {

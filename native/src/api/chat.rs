@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use futures::StreamExt;
 use napi::bindgen_prelude::*;
@@ -9,7 +9,9 @@ use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
 
 use crate::api::config::{normalize_base_url, resolve_sdk_api_base_url};
-use crate::api::conversation::{prepare_context_request, ConversationContextRequest};
+use crate::api::conversation::{
+    parse_chat_message_content, prepare_context_request, ConversationContextRequest,
+};
 use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback, ResponsesApiStreamChunk,
     TokenUsage,
@@ -84,7 +86,7 @@ async fn create_chat_completion_response_async(
     let client = reqwest::Client::builder()
         .build()
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
-    let payload = build_chat_completions_payload(&prepared_request.messages, &request, &api_config)?;
+    let payload = build_chat_completions_payload(&prepared_request.messages, &database_path, &request, &api_config)?;
     let streamed_response = collect_chat_completions_stream(
         &client,
         &endpoint,
@@ -151,6 +153,7 @@ fn resolve_chat_completions_endpoint(api_config: &ApiConfigRecord) -> String {
 
 fn build_chat_completions_payload(
     messages: &[ChatContextMessage],
+    database_path: &Path,
     request: &ResponsesApiRequest,
     api_config: &ApiConfigRecord,
 ) -> Result<Value> {
@@ -169,17 +172,37 @@ fn build_chat_completions_payload(
 
     let messages = messages
         .iter()
-        .filter_map(|message| {
+        .map(|message| {
             let content = message.content.trim();
             if content.is_empty() {
-                return None;
+                return Ok(None);
             }
 
-            Some(json!({
+            let parsed_content = parse_chat_message_content(content, database_path)?;
+            let content = if parsed_content.images.is_empty() {
+                Value::String(parsed_content.text)
+            } else {
+                let mut parts = Vec::new();
+                if !parsed_content.text.is_empty() {
+                    parts.push(json!({ "type": "text", "text": parsed_content.text }));
+                }
+                parts.extend(parsed_content.images.iter().map(|image| {
+                    json!({
+                        "type": "image_url",
+                        "image_url": { "url": image.data_url },
+                    })
+                }));
+                Value::Array(parts)
+            };
+
+            Ok(Some(json!({
                 "role": normalize_message_role(&message.role),
                 "content": content,
-            }))
+            })))
         })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .filter_map(|message| message)
         .collect::<Vec<_>>();
 
     if messages.is_empty() {

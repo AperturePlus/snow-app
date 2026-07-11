@@ -149,6 +149,26 @@ pub async fn read_directory_entries(dir_path: String) -> napi::Result<Vec<Direct
 }
 
 #[napi]
+pub async fn rename_workspace_entry(
+    root_path: String,
+    entry_path: String,
+    new_name: String,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::rename_workspace_entry(root_path, entry_path, new_name)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn delete_workspace_entry(root_path: String, entry_path: String) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::delete_workspace_entry(root_path, entry_path))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn search_files(root_dir: String, query: String) -> napi::Result<Vec<FileSearchResult>> {
     tokio::task::spawn_blocking(move || crate::storage::search_files(root_dir, query))
         .await

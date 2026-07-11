@@ -95,6 +95,7 @@ export const FilesystemCreateToolCall = ({
   const fileName = getFileName(filePath);
 
   const hasError = parsedResult.type === "error";
+  const effectiveStatus = hasError ? "error" : toolCall.status;
 
   const lineCount = useMemo(() => {
     if (!parsedArgs?.content) return 0;
@@ -125,9 +126,9 @@ export const FilesystemCreateToolCall = ({
           </span>
         ) : null}
         <span
-          className={`tool-call-status tool-call-status-${toolCall.status}`}
+          className={`tool-call-status tool-call-status-${effectiveStatus}`}
         >
-          {toolCall.status}
+          {effectiveStatus}
         </span>
       </summary>
       <div className="tool-call-body">

@@ -30,6 +30,7 @@ type ParsedResult =
       endLine: number;
     }
   | { type: "directory"; entries: string[] }
+  | { type: "image"; content: string; mediaType: string }
   | { type: "error"; message: string }
   | { type: "raw"; text: string }
   | { type: "empty" };
@@ -72,6 +73,15 @@ const parseResult = (
       }
 
       if (typeof parsed.content === "string") {
+        if (parsed.isImage === true) {
+          return {
+            type: "image",
+            content: parsed.content,
+            mediaType:
+              typeof parsed.mediaType === "string" ? parsed.mediaType : "image",
+          };
+        }
+
         if (
           typeof parsed.totalLines === "number" &&
           typeof parsed.startLine === "number" &&
@@ -137,15 +147,6 @@ export const FilesystemReadToolCall = ({
     [toolCall.result, parsedArgs]
   );
 
-  const StatusIcon =
-    toolCall.status === "completed"
-      ? CheckCircle
-      : toolCall.status === "running"
-      ? Loader2
-      : toolCall.status === "error"
-      ? AlertCircle
-      : FileText;
-
   const isDirectory = parsedResult.type === "directory";
 
   const rangeLabel = getLineRangeLabel(parsedArgs, parsedResult);
@@ -153,6 +154,16 @@ export const FilesystemReadToolCall = ({
   const fileName = filePath.split(/[\\/]/).filter(Boolean).pop() || filePath;
 
   const hasError = parsedResult.type === "error";
+  const effectiveStatus = hasError ? "error" : toolCall.status;
+
+  const StatusIcon =
+    effectiveStatus === "completed"
+      ? CheckCircle
+      : effectiveStatus === "running"
+      ? Loader2
+      : effectiveStatus === "error"
+      ? AlertCircle
+      : FileText;
 
   return (
     <details className="tool-call-item tool-call-filesystem-read">
@@ -179,9 +190,9 @@ export const FilesystemReadToolCall = ({
           </span>
         ) : null}
         <span
-          className={`tool-call-status tool-call-status-${toolCall.status}`}
+          className={`tool-call-status tool-call-status-${effectiveStatus}`}
         >
-          {toolCall.status}
+          {effectiveStatus}
         </span>
       </summary>
       <div className="tool-call-body">
@@ -223,6 +234,22 @@ export const FilesystemReadToolCall = ({
             <pre className="tool-call-section-pre tool-call-file-content">
               {parsedResult.content}
             </pre>
+          </div>
+        ) : null}
+
+        {parsedResult.type === "image" ? (
+          <div className="tool-call-image-result">
+            <div className="tool-call-file-meta">
+              <span>{parsedResult.mediaType}</span>
+            </div>
+            <img
+              src={
+                parsedResult.content.match(/@@image:([^@]+)@@/)?.[1] ??
+                parsedResult.content
+              }
+              alt={`Image preview (${parsedResult.mediaType})`}
+              className="tool-call-image-preview"
+            />
           </div>
         ) : null}
 

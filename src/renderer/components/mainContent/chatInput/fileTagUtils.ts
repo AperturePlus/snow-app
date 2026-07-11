@@ -39,16 +39,21 @@ export const parseContentSegments = (content: string): ContentSegment[] => {
     const value = match[2];
 
     if (kind === "image") {
-      const mimeMatch = value.match(/^data:image\/([a-z]+);/);
-      const ext = mimeMatch ? mimeMatch[1] : "png";
-      segments.push({
-        type: "image",
-        tag: { name: `image.${ext}`, dataUrl: value },
-      });
+      if (value.startsWith("data:image/")) {
+        const mimeMatch = value.match(/^data:image\/([a-z]+);/);
+        const ext = mimeMatch ? mimeMatch[1] : "png";
+        segments.push({
+          type: "image",
+          tag: { name: `image.${ext}`, dataUrl: value },
+        });
+      } else {
+        const name = value.split("/").filter(Boolean).pop() || "image.png";
+        segments.push({ type: "image", tag: { name, dataUrl: value } });
+      }
     } else {
       const isDirectory = kind === "dir";
       const path = value;
-      const name = path.split("/").filter(Boolean).pop() || path;
+      const name = path.split(/[\\/]/).filter(Boolean).pop() || path;
       segments.push({ type: "file", tag: { path, name, isDirectory } });
     }
     lastIndex = regex.lastIndex;
@@ -77,7 +82,9 @@ export const createChipHtml = (tag: FileTag): string => {
     tag.path
   )}" data-file-name="${escapeHtml(tag.name)}" data-file-is-dir="${
     tag.isDirectory
-  }"><span class="file-chip-icon">${icon}</span><span class="file-chip-name">${escapeHtml(
+  }" title="${escapeHtml(
+    tag.path
+  )}"><span class="file-chip-icon">${icon}</span><span class="file-chip-name">${escapeHtml(
     tag.name
   )}</span><span class="file-chip-remove" data-chip-remove="true">${CLOSE_ICON_SVG}</span></span>`;
 };

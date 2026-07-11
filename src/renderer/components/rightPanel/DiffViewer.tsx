@@ -1,4 +1,4 @@
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, X } from "lucide-react";
 
 import { useI18n } from "../../i18n";
 import type { GitDiffResult, GitFileStatus } from "./git";
@@ -62,6 +62,7 @@ type DiffViewerProps = {
   diffResult: GitDiffResult | null;
   diffLoading: boolean;
   onOpenInTab?: OpenDiffTabCallback;
+  onClose?: () => void;
 };
 
 export function DiffViewer({
@@ -69,6 +70,7 @@ export function DiffViewer({
   diffResult,
   diffLoading,
   onOpenInTab,
+  onClose,
 }: DiffViewerProps): React.JSX.Element {
   const { t } = useI18n();
   const diffLines = diffResult ? parseDiffContent(diffResult.content) : [];
@@ -79,16 +81,33 @@ export function DiffViewer({
         <span className="diff-viewer-file-name" title={selectedFile.path}>
           {selectedFile.path}
         </span>
-        {onOpenInTab && (
-          <button
-            type="button"
-            className="icon-btn diff-viewer-open-tab-btn"
-            title={t("rightPanel.openInNewTab")}
-            aria-label={t("rightPanel.openInNewTab")}
-            onClick={() => onOpenInTab(selectedFile, diffResult, diffLoading)}
-          >
-            <ExternalLink size={14} strokeWidth={1.8} />
-          </button>
+        {(onOpenInTab || onClose) && (
+          <div className="diff-viewer-actions">
+            {onOpenInTab && (
+              <button
+                type="button"
+                className="icon-btn"
+                title={t("rightPanel.openInNewTab")}
+                aria-label={t("rightPanel.openInNewTab")}
+                onClick={() =>
+                  onOpenInTab(selectedFile, diffResult, diffLoading)
+                }
+              >
+                <ExternalLink size={14} strokeWidth={1.8} />
+              </button>
+            )}
+            {onClose && (
+              <button
+                type="button"
+                className="icon-btn"
+                title={t("rightPanel.closeDiff")}
+                aria-label={t("rightPanel.closeDiff")}
+                onClick={onClose}
+              >
+                <X size={14} strokeWidth={1.8} />
+              </button>
+            )}
+          </div>
         )}
       </div>
       {diffLoading ? (

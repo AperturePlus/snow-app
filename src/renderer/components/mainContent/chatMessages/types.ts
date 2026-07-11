@@ -1,7 +1,7 @@
 import type { ToolCallInfo } from "./useChatConversation";
-
 export type UserMessageProps = {
   content: string;
+  isStreaming: boolean;
   onRollback: () => void;
 };
 

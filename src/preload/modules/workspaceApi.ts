@@ -33,6 +33,23 @@ export const workspaceApi = {
     ),
   readDirectoryEntries: (dirPath: string): Promise<DirectoryEntry[]> =>
     ipcRenderer.invoke("workspace-directories:read-entries", dirPath),
+  renameWorkspaceEntry: (
+    rootPath: string,
+    entryPath: string,
+    newName: string
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "workspace-directories:rename-entry",
+      rootPath,
+      entryPath,
+      newName
+    ),
+  deleteWorkspaceEntry: (rootPath: string, entryPath: string): Promise<void> =>
+    ipcRenderer.invoke(
+      "workspace-directories:delete-entry",
+      rootPath,
+      entryPath
+    ),
   readFileContent: (filePath: string): Promise<FileContentResult> =>
     ipcRenderer.invoke("workspace-directories:read-file", filePath),
   startDirectoryWatch: (dirPath: string): Promise<void> =>

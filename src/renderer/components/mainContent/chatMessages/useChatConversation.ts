@@ -58,6 +58,7 @@ type ConversationSessionState = {
 type ConversationSessionRef = {
   streamId: string | null;
   isSending: boolean;
+  isAbortRequested: boolean;
   directoryId?: string;
   checkpointIds: string[];
 };
@@ -91,6 +92,8 @@ type UseChatConversationResult = {
   isLoadingInitialHistory: boolean;
   loadOlderMessages: () => Promise<void>;
   handleSendMessage: (message: string, options: ChatInputSendOptions) => void;
+  pendingMessages: string[];
+  withdrawPendingMessage: (index: number) => string | null;
   handleSelectConversation: (
     conversationId: string,
     title?: string,
@@ -412,6 +415,16 @@ export const useChatConversation = (
   const sessionsRef = useRef<Record<string, ConversationSessionState>>({});
   sessionsRef.current = sessions;
 
+  const pendingQueueRef = useRef<
+    Map<string, Array<{ text: string; options: ChatInputSendOptions }>>
+  >(new Map());
+  const [activePendingMessages, setActivePendingMessages] = useState<string[]>(
+    []
+  );
+  const handleSendMessageRef = useRef<
+    (message: string, options: ChatInputSendOptions) => void
+  >(() => {});
+
   const setActiveId = useCallback((id: string | undefined): void => {
     activeConversationIdRef.current = id;
     setActiveConversationId(id);
@@ -422,6 +435,7 @@ export const useChatConversation = (
       sessionsRefData.current.set(key, {
         streamId: null,
         isSending: false,
+        isAbortRequested: false,
         directoryId: dirId,
         checkpointIds: [],
       });
@@ -487,6 +501,17 @@ export const useChatConversation = (
       sessionsRefData.current.set(newKey, { ...oldRef });
       sessionsRefData.current.delete(oldKey);
     }
+
+    const pendingQueue = pendingQueueRef.current.get(oldKey);
+    if (pendingQueue?.length) {
+      const existingPendingQueue = pendingQueueRef.current.get(newKey) ?? [];
+      pendingQueueRef.current.set(newKey, [
+        ...pendingQueue,
+        ...existingPendingQueue,
+      ]);
+      pendingQueueRef.current.delete(oldKey);
+    }
+
     setSessions((prev) => {
       const oldSession = prev[oldKey];
       if (!oldSession) return prev;
@@ -532,6 +557,10 @@ export const useChatConversation = (
       const sessionKey = activeConversationIdRef.current ?? PENDING_SESSION_KEY;
       const existingRef = sessionsRefData.current.get(sessionKey);
       if (existingRef?.isSending) {
+        const queue = pendingQueueRef.current.get(sessionKey) ?? [];
+        queue.push({ text: trimmed, options });
+        pendingQueueRef.current.set(sessionKey, queue);
+        setActivePendingMessages(queue.map((item) => item.text));
         return;
       }
 
@@ -542,6 +571,7 @@ export const useChatConversation = (
       const sessionRef = sessionsRefData.current.get(sessionKey);
       if (sessionRef) {
         sessionRef.isSending = true;
+        sessionRef.isAbortRequested = false;
       }
 
       const userMessage: ChatConversationMessage = {
@@ -615,6 +645,10 @@ export const useChatConversation = (
         const iterSessionKey = currentConversationId ?? PENDING_SESSION_KEY;
         let effectiveKey = iterSessionKey;
 
+        if (sessionsRefData.current.get(effectiveKey)?.isAbortRequested) {
+          return;
+        }
+
         const response = await window.snow.createResponseStream(
           {
             messages: requestMessages,
@@ -624,6 +658,10 @@ export const useChatConversation = (
             checkpointId,
           },
           (chunk) => {
+            if (sessionsRefData.current.get(effectiveKey)?.isAbortRequested) {
+              return;
+            }
+
             updateSessionMessages(effectiveKey, (currentMessages) =>
               currentMessages.map((currentMessage) => {
                 if (currentMessage.id !== currentAssistantMessageId) {
@@ -651,6 +689,9 @@ export const useChatConversation = (
             const ref = sessionsRefData.current.get(effectiveKey);
             if (ref) {
               ref.streamId = streamId;
+              if (ref.isAbortRequested) {
+                void window.snow.abortResponseStream(streamId);
+              }
             }
           }
         );
@@ -696,6 +737,10 @@ export const useChatConversation = (
           updateSessionField(effectiveKey, "tokenUsage", response.tokenUsage);
         }
 
+        if (sessionsRefData.current.get(effectiveKey)?.isAbortRequested) {
+          return;
+        }
+
         // Parse tool calls from response. Mark the first call as running immediately
         // so expensive commands are visible before execution begins; later calls stay
         // pending until the sequential executor reaches them.
@@ -727,8 +772,46 @@ export const useChatConversation = (
           })
         );
 
-        // If no tool calls, we're done
+        // If no tool calls, check for pending user messages before finishing.
+        // This injects messages queued during AI streaming without waiting for
+        // the entire outer handleSendMessage to complete.
         if (toolCalls.length === 0) {
+          const pendingQueueNoTools =
+            pendingQueueRef.current.get(effectiveKey) ?? [];
+          if (pendingQueueNoTools.length > 0) {
+            pendingQueueRef.current.delete(effectiveKey);
+            const pendingText = pendingQueueNoTools
+              .map((item) => item.text)
+              .join("\n\n");
+            setActivePendingMessages([]);
+
+            const pendingUserMsg: ChatConversationMessage = {
+              id: createMessageId("user"),
+              role: "user",
+              content: pendingText,
+              timestamp: formatMessageTime(),
+              status: "sent",
+            };
+            const nextAssistantId = createMessageId("assistant");
+            const nextPendingAssistant: ChatConversationMessage = {
+              id: nextAssistantId,
+              role: "assistant",
+              content: "",
+              timestamp: formatMessageTime(),
+              status: "sending",
+              model: options.model,
+            };
+            updateSessionMessages(effectiveKey, (currentMessages) => [
+              ...currentMessages,
+              pendingUserMsg,
+              nextPendingAssistant,
+            ]);
+            await runAgentLoop(
+              nextAssistantId,
+              [{ role: "user", content: pendingText }],
+              response.conversationId
+            );
+          }
           return;
         }
 
@@ -741,6 +824,9 @@ export const useChatConversation = (
         // Execute tool calls sequentially and collect results.
         const toolResults: string[] = [];
         for (const [toolIndex, toolCall] of toolCalls.entries()) {
+          if (sessionsRefData.current.get(effectiveKey)?.isAbortRequested) {
+            return;
+          }
           if (toolIndex > 0) {
             updateSessionMessages(effectiveKey, (currentMessages) =>
               currentMessages.map((currentMessage) => {
@@ -846,6 +932,10 @@ export const useChatConversation = (
             ? `${toolCall.name}#${toolCall.callId}`
             : toolCall.name;
           toolResults.push(`[Tool: ${toolResultIdentifier}]\n${result}`);
+
+          if (sessionsRefData.current.get(effectiveKey)?.isAbortRequested) {
+            return;
+          }
         }
 
         // Add tool results as a tool message for the next iteration
@@ -865,7 +955,37 @@ export const useChatConversation = (
           toolResultMessage,
         ]);
 
-        // Create new pending assistant message for next iteration
+        // Continue the loop with tool results sent as role: "tool"
+        // The Rust side (conversation.rs normalize_role) maps "tool" -> "user"
+        // when sending to the AI API, but stores it as "tool" in the database.
+        // Flush pending user messages before adding the next assistant placeholder so
+        // they are sent in the next request as soon as the tool batch finishes.
+        const pendingQueueForTools =
+          pendingQueueRef.current.get(effectiveKey) ?? [];
+        const nextMessages: {
+          role: "user" | "assistant" | "system" | "developer" | "tool";
+          content: string;
+        }[] = [{ role: "tool", content: toolResultContent }];
+        if (pendingQueueForTools.length > 0) {
+          pendingQueueRef.current.delete(effectiveKey);
+          const pendingText = pendingQueueForTools
+            .map((item) => item.text)
+            .join("\n\n");
+          setActivePendingMessages([]);
+          const pendingUserMsgForTools: ChatConversationMessage = {
+            id: createMessageId("user"),
+            role: "user",
+            content: pendingText,
+            timestamp: formatMessageTime(),
+            status: "sent",
+          };
+          updateSessionMessages(effectiveKey, (currentMessages) => [
+            ...currentMessages,
+            pendingUserMsgForTools,
+          ]);
+          nextMessages.push({ role: "user", content: pendingText });
+        }
+
         const newAssistantMessageId = createMessageId("assistant");
         const newPendingAssistant: ChatConversationMessage = {
           id: newAssistantMessageId,
@@ -875,18 +995,14 @@ export const useChatConversation = (
           status: "sending",
           model: options.model,
         };
-
         updateSessionMessages(effectiveKey, (currentMessages) => [
           ...currentMessages,
           newPendingAssistant,
         ]);
 
-        // Continue the loop with tool results sent as role: "tool"
-        // The Rust side (conversation.rs normalize_role) maps "tool" -> "user"
-        // when sending to the AI API, but stores it as "tool" in the database
         await runAgentLoop(
           newAssistantMessageId,
-          [{ role: "tool", content: toolResultContent }],
+          nextMessages,
           response.conversationId
         );
       };
@@ -950,6 +1066,18 @@ export const useChatConversation = (
           updateSessionField(finalSessionKey, "isAborting", false);
           removeStreamingId(finalSessionKey);
 
+          // Flush pending messages queued while this session was busy.
+          const pendingQueue =
+            pendingQueueRef.current.get(finalSessionKey) ?? [];
+          if (pendingQueue.length > 0) {
+            pendingQueueRef.current.delete(finalSessionKey);
+            const combined = pendingQueue.map((item) => item.text).join("\n\n");
+            const lastOptions =
+              pendingQueue[pendingQueue.length - 1]?.options ?? {};
+            setActivePendingMessages([]);
+            handleSendMessageRef.current(combined, lastOptions);
+          }
+
           // If this is a background conversation (not the active one),
           // mark it as completed so the sidebar shows a dot indicator.
           if (
@@ -1005,6 +1133,24 @@ export const useChatConversation = (
       setActiveId,
     ]
   );
+
+  // Keep the ref current so the pending-flush closure always calls the latest version.
+  handleSendMessageRef.current = handleSendMessage;
+
+  const withdrawPendingMessage = useCallback((index: number): string | null => {
+    const sessionKey = activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+    const queue = pendingQueueRef.current.get(sessionKey);
+    if (!queue || index < 0 || index >= queue.length) {
+      return null;
+    }
+
+    const [removed] = queue.splice(index, 1);
+    if (queue.length === 0) {
+      pendingQueueRef.current.delete(sessionKey);
+    }
+    setActivePendingMessages(queue.map((item) => item.text));
+    return removed?.text ?? null;
+  }, []);
 
   const handleSelectConversation = useCallback(
     async (
@@ -1073,6 +1219,7 @@ export const useChatConversation = (
         sessionsRefData.current.set(trimmedId, {
           streamId: null,
           isSending: false,
+          isAbortRequested: false,
           directoryId: conversationDirId,
           checkpointIds,
         });
@@ -1212,14 +1359,34 @@ export const useChatConversation = (
   const handleAbort = useCallback((): void => {
     const key = activeConversationIdRef.current ?? PENDING_SESSION_KEY;
     const ref = sessionsRefData.current.get(key);
-    if (!ref?.streamId) {
+    if (!ref?.isSending || ref.isAbortRequested) {
       return;
     }
+
+    ref.isAbortRequested = true;
+    updateSessionMessages(key, (currentMessages) =>
+      currentMessages.map((message) => ({
+        ...message,
+        status: message.status === "sending" ? "sent" : message.status,
+        toolCalls: message.toolCalls?.map((toolCall) =>
+          toolCall.status === "running" || toolCall.status === "pending"
+            ? {
+                ...toolCall,
+                status: "error",
+                result: toolCall.result ?? "Interrupted by user",
+              }
+            : toolCall
+        ),
+      }))
+    );
     updateSessionField(key, "isStreaming", false);
-    updateSessionField(key, "isAborting", true);
+    updateSessionField(key, "isAborting", false);
     removeStreamingId(key);
-    void window.snow.abortResponseStream(ref.streamId);
-  }, [updateSessionField, removeStreamingId]);
+
+    if (ref.streamId) {
+      void window.snow.abortResponseStream(ref.streamId);
+    }
+  }, [updateSessionMessages, updateSessionField, removeStreamingId]);
 
   const abortConversation = useCallback(
     (conversationId: string): void => {
@@ -1499,6 +1666,8 @@ export const useChatConversation = (
     isLoadingInitialHistory,
     loadOlderMessages,
     handleSendMessage,
+    pendingMessages: activePendingMessages,
+    withdrawPendingMessage,
     handleSelectConversation,
     handleNewChat,
     refreshConversations,

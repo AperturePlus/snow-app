@@ -129,6 +129,18 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to read directory entries")
         ),
+      renameWorkspaceEntry: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to rename workspace entries"
+          )
+        ),
+      deleteWorkspaceEntry: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to delete workspace entries"
+          )
+        ),
       readFileContent: () =>
         Promise.reject(
           new Error("Rust native bridge is required to read file content")

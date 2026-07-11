@@ -148,11 +148,9 @@ export function WorkspaceDirectoryList({
                   className={`list-item${
                     directory.directoryId === activeDirectoryId ? " active" : ""
                   }`}
-                  disabled={
-                    isActionLocked ||
-                    directory.directoryId === activeDirectoryId
-                  }
+                  disabled={isActionLocked}
                   onClick={() => onActivate(directory.directoryId)}
+                  onDoubleClick={() => onShowDetails?.(directory.directoryId)}
                   title={directory.path}
                   type="button"
                 >

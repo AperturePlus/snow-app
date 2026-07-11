@@ -109,6 +109,7 @@ export const FilesystemEditToolCall = ({
   const fileName = getFileName(filePath);
 
   const hasError = parsedResult.type === "error";
+  const effectiveStatus = hasError ? "error" : toolCall.status;
 
   const stats = useMemo(() => {
     if (diffLines.length === 0) return null;
@@ -142,9 +143,9 @@ export const FilesystemEditToolCall = ({
           </span>
         ) : null}
         <span
-          className={`tool-call-status tool-call-status-${toolCall.status}`}
+          className={`tool-call-status tool-call-status-${effectiveStatus}`}
         >
-          {toolCall.status}
+          {effectiveStatus}
         </span>
       </summary>
       <div className="tool-call-body">

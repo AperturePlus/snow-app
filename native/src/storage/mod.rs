@@ -348,6 +348,19 @@ pub fn delete_workspace_directory(directory_id: String) -> Result<()> {
 pub fn read_directory_entries(dir_path: String) -> Result<Vec<services::fs_explorer::DirectoryEntry>> {
     services::fs_explorer::read_directory_entries(&dir_path)
 }
+
+pub fn rename_workspace_entry(
+    root_path: String,
+    entry_path: String,
+    new_name: String,
+) -> Result<()> {
+    services::fs_explorer::rename_workspace_entry(&root_path, &entry_path, &new_name)
+}
+
+pub fn delete_workspace_entry(root_path: String, entry_path: String) -> Result<()> {
+    services::fs_explorer::delete_workspace_entry(&root_path, &entry_path)
+}
+
 pub fn search_files(root_dir: String, query: String) -> Result<Vec<services::fs_explorer::FileSearchResult>> {
     services::fs_explorer::search_files(&root_dir, &query)
 }

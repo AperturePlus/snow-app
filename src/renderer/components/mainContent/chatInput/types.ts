@@ -8,10 +8,13 @@ export type ChatInputProps = {
   placeholder?: string;
   onSend?: (message: string, options: ChatInputSendOptions) => void;
   isStreaming?: boolean;
+  isAborting?: boolean;
   onAbort?: () => void;
   tokenUsage?: TokenUsage | null;
   draftToRestore?: string | null;
   onDraftRestored?: () => void;
+  pendingMessages?: string[];
+  onWithdrawPendingMessage?: (index: number) => string | null;
 };
 
 export type RequestMethod = "chat" | "responses" | "gemini" | "anthropic";
@@ -47,6 +50,7 @@ export type ChatInputState = {
   thinkingDropdownRef: RefObject<HTMLDivElement | null>;
   labels: ChatInputLabels;
   isStreaming: boolean;
+  isAborting: boolean;
 };
 
 export type ChatInputLabels = {
@@ -77,10 +81,13 @@ export type ChatInputActions = {
   handleRetryFetchModels: () => Promise<void>;
   handleToggleModelDropdown: () => void;
   handleSelectThinking: (nextValue: string) => Promise<void>;
+  restoreContent: (content: string) => void;
 };
 
 export type ChatInputViewProps = ChatInputState &
   ChatInputActions & {
     placeholder: string;
     tokenUsage: TokenUsage | null;
+    pendingMessages: string[];
+    onWithdrawPendingMessage?: (index: number) => string | null;
   };

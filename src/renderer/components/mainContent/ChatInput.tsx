@@ -7,15 +7,19 @@ export const ChatInput = ({
   placeholder,
   onSend,
   isStreaming = false,
+  isAborting = false,
   onAbort,
   tokenUsage = null,
   draftToRestore = null,
   onDraftRestored,
+  pendingMessages = [],
+  onWithdrawPendingMessage,
 }: ChatInputProps): React.JSX.Element => {
   const { t } = useI18n();
   const controller = useChatInputController({
     onSend,
     isStreaming,
+    isAborting,
     onAbort,
     draftToRestore,
     onDraftRestored,
@@ -26,6 +30,8 @@ export const ChatInput = ({
       placeholder={placeholder ?? t("chatInput.placeholder")}
       {...controller}
       tokenUsage={tokenUsage}
+      pendingMessages={pendingMessages}
+      onWithdrawPendingMessage={onWithdrawPendingMessage}
     />
   );
 };

@@ -29,6 +29,7 @@ import {
 } from "./FileMentionPopup";
 import { useDropdownDirection } from "./useDropdownDirection";
 import { PlusMenu, type PlusMenuSection } from "./PlusMenu";
+import { PendingMessages } from "./PendingMessages";
 
 export const ChatInputView = ({
   placeholder,
@@ -56,7 +57,10 @@ export const ChatInputView = ({
   thinkingDropdownRef,
   labels,
   isStreaming,
+  isAborting,
   tokenUsage,
+  pendingMessages,
+  onWithdrawPendingMessage,
   setManualValue,
   setIsManualMode,
   setIsThinkingDropdownOpen,
@@ -71,6 +75,7 @@ export const ChatInputView = ({
   handleRetryFetchModels,
   handleToggleModelDropdown,
   handleSelectThinking,
+  restoreContent,
 }: ChatInputViewProps): React.JSX.Element => {
   const { t } = useI18n();
   const isDraggingOverRef = useRef(false);
@@ -506,6 +511,17 @@ export const ChatInputView = ({
     [t, handleSelectFilesAndFolders]
   );
 
+  const handleWithdrawPending = useCallback(
+    (index: number): string | null => {
+      const restored = onWithdrawPendingMessage?.(index);
+      if (restored) {
+        restoreContent(restored);
+      }
+      return restored ?? null;
+    },
+    [onWithdrawPendingMessage, restoreContent]
+  );
+
   return (
     <div className="input-area" ref={mentionAnchorRef}>
       <FileMentionPopup
@@ -517,6 +533,10 @@ export const ChatInputView = ({
         onSelectBatch={handleMentionSelectBatch}
         textareaRef={textareaRef}
         onDragStart={handleMentionDragStart}
+      />
+      <PendingMessages
+        messages={pendingMessages}
+        onWithdraw={handleWithdrawPending}
       />
       <div className="input-box">
         <div
@@ -778,18 +798,38 @@ export const ChatInputView = ({
               tokenUsage={tokenUsage}
               maxContextTokens={activeApiConfig?.maxContextTokens ?? null}
             />
-            <button
-              className={`send-btn ${isStreaming ? "abort" : ""}`}
-              aria-label={isStreaming ? "Stop generating" : "Send"}
-              onClick={isStreaming ? handleAbort : handleSend}
-              disabled={!isStreaming && !value.trim()}
-            >
-              {isStreaming ? (
-                <Square size={14} fill="currentColor" />
+            <div className="input-action-buttons">
+              {isStreaming || isAborting ? (
+                <button
+                  className={`abort-btn ${isAborting ? "is-aborting" : ""}`}
+                  aria-label={
+                    isAborting ? "Stopping generation" : "Stop generating"
+                  }
+                  title={isAborting ? "Stopping generation" : "Stop generating"}
+                  onClick={handleAbort}
+                  disabled={isAborting}
+                  type="button"
+                >
+                  {isAborting ? (
+                    <Loader2 size={14} className="spin" />
+                  ) : (
+                    <Square size={14} fill="currentColor" />
+                  )}
+                </button>
               ) : (
-                <ArrowUp size={16} />
+                <span className="abort-btn-placeholder" aria-hidden="true" />
               )}
-            </button>
+              <button
+                className="send-btn"
+                aria-label="Send"
+                title="Send"
+                onClick={handleSend}
+                disabled={!value.trim()}
+                type="button"
+              >
+                <ArrowUp size={16} />
+              </button>
+            </div>
           </div>
         </div>
       </div>

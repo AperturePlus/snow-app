@@ -93,6 +93,41 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
   );
 
   ipcMain.handle(
+    "workspace-directories:rename-entry",
+    (_event, rootPath: unknown, entryPath: unknown, newName: unknown) => {
+      if (typeof rootPath !== "string" || !rootPath.trim()) {
+        throw new Error("Workspace root path is required");
+      }
+      if (typeof entryPath !== "string" || !entryPath.trim()) {
+        throw new Error("Workspace entry path is required");
+      }
+      if (typeof newName !== "string" || !newName.trim()) {
+        throw new Error("Workspace entry name is required");
+      }
+
+      return native.renameWorkspaceEntry(
+        rootPath.trim(),
+        entryPath.trim(),
+        newName.trim()
+      );
+    }
+  );
+
+  ipcMain.handle(
+    "workspace-directories:delete-entry",
+    (_event, rootPath: unknown, entryPath: unknown) => {
+      if (typeof rootPath !== "string" || !rootPath.trim()) {
+        throw new Error("Workspace root path is required");
+      }
+      if (typeof entryPath !== "string" || !entryPath.trim()) {
+        throw new Error("Workspace entry path is required");
+      }
+
+      return native.deleteWorkspaceEntry(rootPath.trim(), entryPath.trim());
+    }
+  );
+
+  ipcMain.handle(
     "workspace-directories:read-file",
     (_event, filePath: unknown) => {
       if (typeof filePath !== "string" || !filePath.trim()) {

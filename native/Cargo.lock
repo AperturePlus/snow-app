@@ -1966,6 +1966,7 @@ name = "snow_native"
 version = "0.1.0"
 dependencies = [
  "async-openai",
+ "base64",
  "blake3",
  "chrono",
  "dirs-next",

@@ -16,6 +16,7 @@ import type {
   FileSearchResult,
   SshConnectParams,
 } from "../../../preload";
+import { ExplorerEntryContextMenu } from "./ExplorerEntryContextMenu";
 import type { SidebarContentProps } from "./types";
 
 type TreeNode = {
@@ -33,6 +34,12 @@ type FlatNode = {
   depth: number;
   hasChildren: boolean;
   isExpanded: boolean;
+};
+
+type ExplorerEntryContextMenuState = {
+  name: string;
+  path: string;
+  position: { x: number; y: number };
 };
 
 const flattenTree = (
@@ -96,6 +103,8 @@ export function ProjectExplorerContent({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [entryContextMenu, setEntryContextMenu] =
+    useState<ExplorerEntryContextMenuState | null>(null);
   const treeRef = useRef<HTMLDivElement | null>(null);
   const treeStateRef = useRef<TreeNode[]>([]);
   const rootPathRef = useRef<string | null>(null);
@@ -368,6 +377,76 @@ export function ProjectExplorerContent({
   const handleBack = useCallback((): void => {
     onSwitchContent("main");
   }, [onSwitchContent]);
+
+  const handleEntryContextMenu = useCallback(
+    (
+      event: React.MouseEvent<HTMLDivElement>,
+      entry: { name: string; path: string }
+    ): void => {
+      if (isSsh) {
+        return;
+      }
+
+      event.preventDefault();
+      setSelectedPath(entry.path);
+      setEntryContextMenu({
+        name: entry.name,
+        path: entry.path,
+        position: { x: event.clientX, y: event.clientY },
+      });
+    },
+    [isSsh]
+  );
+
+  const handleRenameEntry = useCallback(
+    async (entryPath: string, newName: string): Promise<void> => {
+      if (!rootPath) {
+        return;
+      }
+
+      setError(null);
+      try {
+        await window.snow.renameWorkspaceEntry(rootPath, entryPath, newName);
+        setSelectedPath(null);
+        handleRefresh();
+      } catch (operationError) {
+        setError(
+          operationError instanceof Error
+            ? operationError.message
+            : t("sidebar.explorerRenameError", {
+                defaultValue: "Failed to rename workspace entry",
+              })
+        );
+        throw operationError;
+      }
+    },
+    [handleRefresh, rootPath, t]
+  );
+
+  const handleDeleteEntry = useCallback(
+    async (entryPath: string): Promise<void> => {
+      if (!rootPath) {
+        return;
+      }
+
+      setError(null);
+      try {
+        await window.snow.deleteWorkspaceEntry(rootPath, entryPath);
+        setSelectedPath(null);
+        handleRefresh();
+      } catch (operationError) {
+        setError(
+          operationError instanceof Error
+            ? operationError.message
+            : t("sidebar.explorerDeleteError", {
+                defaultValue: "Failed to delete workspace entry",
+              })
+        );
+        throw operationError;
+      }
+    },
+    [handleRefresh, rootPath, t]
+  );
 
   const handleSearchChange = useCallback((value: string): void => {
     setSearchQuery(value);
@@ -689,6 +768,9 @@ export function ProjectExplorerContent({
                       setSelectedPath(result.path);
                       onOpenFile?.(result.path, result.name);
                     }}
+                    onContextMenu={(event) =>
+                      handleEntryContextMenu(event, result)
+                    }
                     title={result.path}
                   >
                     {getFileTypeIcon(result.name, false, false, {
@@ -751,6 +833,9 @@ export function ProjectExplorerContent({
                         onOpenFile?.(node.path, node.name);
                       }
                     }}
+                    onContextMenu={(event) =>
+                      handleEntryContextMenu(event, node)
+                    }
                     style={{ paddingLeft: `${depth * 14 + 8}px` }}
                     title={node.path}
                   >
@@ -783,6 +868,17 @@ export function ProjectExplorerContent({
           </>
         )}
       </div>
+      {entryContextMenu ? (
+        <ExplorerEntryContextMenu
+          entryName={entryContextMenu.name}
+          onClose={() => setEntryContextMenu(null)}
+          onDelete={() => handleDeleteEntry(entryContextMenu.path)}
+          onRename={(newName) =>
+            handleRenameEntry(entryContextMenu.path, newName)
+          }
+          position={entryContextMenu.position}
+        />
+      ) : null}
     </>
   );
 }

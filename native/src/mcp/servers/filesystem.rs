@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use base64::Engine;
 use napi::bindgen_prelude::*;
 use serde_json::{json, Value};
 
@@ -155,6 +156,15 @@ impl FilesystemService {
 
             return Ok(json!({
                 "content": items.join("\n")
+            }));
+        }
+
+        if is_image_file(path) {
+            let data_url = read_image_as_data_url(path)?;
+            return Ok(json!({
+                "content": format!("@@image:{}@@", data_url),
+                "mediaType": image_media_type(path),
+                "isImage": true
             }));
         }
 
@@ -349,4 +359,57 @@ impl FilesystemService {
             "path": file_path
         }))
     }
+}
+
+fn is_image_file(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .map(str::to_lowercase)
+            .as_deref(),
+        Some("png")
+            | Some("jpg")
+            | Some("jpeg")
+            | Some("gif")
+            | Some("webp")
+            | Some("bmp")
+            | Some("svg")
+    )
+}
+
+fn image_media_type(path: &Path) -> String {
+    match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(str::to_lowercase)
+        .as_deref()
+    {
+        Some("png") => "image/png".to_string(),
+        Some("jpg") | Some("jpeg") => "image/jpeg".to_string(),
+        Some("gif") => "image/gif".to_string(),
+        Some("webp") => "image/webp".to_string(),
+        Some("bmp") => "image/bmp".to_string(),
+        Some("svg") => "image/svg+xml".to_string(),
+        _ => "application/octet-stream".to_string(),
+    }
+}
+
+fn read_image_as_data_url(path: &Path) -> napi::Result<String> {
+    let bytes = fs::read(path).map_err(|e| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to read image file: {}", e),
+        )
+    })?;
+
+    if bytes.is_empty() {
+        return Err(Error::new(
+            Status::GenericFailure,
+            "Image file is empty".to_string(),
+        ));
+    }
+
+    let media_type = image_media_type(path);
+    let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{};base64,{}", media_type, data))
 }

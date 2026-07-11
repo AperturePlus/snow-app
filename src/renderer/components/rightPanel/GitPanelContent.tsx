@@ -124,6 +124,7 @@ export function GitPanelContent({
             diffResult={diffResult}
             diffLoading={diffLoading}
             onOpenInTab={onOpenInTab}
+            onClose={() => setSelectedFile(null)}
           />
         ) : (
           <div className="diff-viewer">

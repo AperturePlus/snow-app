@@ -18,15 +18,23 @@ export const parseDbTimestamp = (dateStr: string): Date => {
     return new Date(0);
   }
 
-  const normalized = dateStr.replace(" ", "T");
-  return new Date(`${normalized}Z`);
+  const normalized = dateStr.includes("T")
+    ? dateStr
+    : dateStr.replace(" ", "T");
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized);
+
+  return new Date(hasTimezone ? normalized : `${normalized}Z`);
 };
 
 /**
  * Determine which time group a date falls into, relative to "now".
  */
 export const getTimeGroup = (date: Date, now: Date): TimeGroupKey => {
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  );
   const startOfYesterday = new Date(startOfToday.getTime() - ONE_DAY_MS);
   const startOf7Days = new Date(startOfToday.getTime() - 6 * ONE_DAY_MS);
 

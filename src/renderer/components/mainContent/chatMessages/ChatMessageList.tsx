@@ -105,6 +105,7 @@ export const ChatMessageList = ({
       return (
         <UserMessage
           content={message.content}
+          isStreaming={isStreaming}
           onRollback={() => handleRollback(message.id)}
           key={message.id}
         />

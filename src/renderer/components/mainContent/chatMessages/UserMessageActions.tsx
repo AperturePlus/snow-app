@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { Check, Copy, Undo2 } from "lucide-react";
-
 type UserMessageActionsProps = {
   content: string;
+  isStreaming: boolean;
   onRollback: () => void;
 };
 
 export const UserMessageActions = ({
   content,
+  isStreaming,
   onRollback,
 }: UserMessageActionsProps): React.JSX.Element => {
   const [copied, setCopied] = useState(false);
@@ -33,14 +34,16 @@ export const UserMessageActions = ({
           <Copy size={15} strokeWidth={1.8} />
         )}
       </button>
-      <button
-        className="user-message-action-btn"
-        type="button"
-        aria-label="Rollback to this message"
-        onClick={onRollback}
-      >
-        <Undo2 size={15} strokeWidth={1.8} />
-      </button>
+      {!isStreaming ? (
+        <button
+          className="user-message-action-btn"
+          type="button"
+          aria-label="Rollback to this message"
+          onClick={onRollback}
+        >
+          <Undo2 size={15} strokeWidth={1.8} />
+        </button>
+      ) : null}
     </div>
   );
 };

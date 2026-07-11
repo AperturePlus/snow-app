@@ -31,6 +31,7 @@ import {
 type UseChatInputControllerParams = {
   onSend?: (message: string, options: { model?: string }) => void;
   isStreaming?: boolean;
+  isAborting?: boolean;
   onAbort?: () => void;
   draftToRestore?: string | null;
   onDraftRestored?: () => void;
@@ -50,6 +51,7 @@ const isComposingKeyboardEvent = (
 export const useChatInputController = ({
   onSend,
   isStreaming = false,
+  isAborting = false,
   onAbort,
   draftToRestore = null,
   onDraftRestored,
@@ -290,6 +292,28 @@ export const useChatInputController = ({
     [adjustHeight]
   );
 
+  const restoreContent = useCallback(
+    (content: string) => {
+      setValue(content);
+
+      if (textareaRef.current) {
+        const html = content
+          .replace(/\u0026/g, "\u0026amp;")
+          .replace(/</g, "\u0026lt;")
+          .replace(/>/g, "\u0026gt;")
+          .replace(/\n/g, "\u003cbr\u003e");
+        textareaRef.current.innerHTML = html;
+        textareaRef.current.dataset.empty =
+          content.trim() === "" ? "true" : "false";
+        requestAnimationFrame(() => {
+          adjustHeight();
+          textareaRef.current?.focus();
+        });
+      }
+    },
+    [adjustHeight, textareaRef]
+  );
+
   const handleSend = useCallback(() => {
     const trimmed = value.trim();
     if (!trimmed) {
@@ -504,6 +528,7 @@ export const useChatInputController = ({
     thinkingDropdownRef,
     labels,
     isStreaming,
+    isAborting,
     setManualValue,
     setIsManualMode,
     setIsThinkingDropdownOpen,
@@ -518,5 +543,6 @@ export const useChatInputController = ({
     handleRetryFetchModels,
     handleToggleModelDropdown,
     handleSelectThinking,
+    restoreContent,
   };
 };

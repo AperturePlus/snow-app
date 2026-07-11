@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use futures::StreamExt;
 use napi::bindgen_prelude::*;
@@ -11,7 +11,9 @@ use tokio_util::sync::CancellationToken;
 use crate::api::config::{
     normalize_base_url, resolve_sdk_api_base_url, DEFAULT_GEMINI_BASE_URL, DEFAULT_OPENAI_BASE_URL,
 };
-use crate::api::conversation::{prepare_context_request, ConversationContextRequest};
+use crate::api::conversation::{
+    parse_chat_message_content, prepare_context_request, ConversationContextRequest,
+};
 use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback, ResponsesApiStreamChunk,
     TokenUsage,
@@ -99,7 +101,7 @@ async fn create_gemini_response_async(
     let client = reqwest::Client::builder()
         .build()
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
-    let payload = build_gemini_payload(&prepared_request.messages, &request, &api_config)?;
+    let payload = build_gemini_payload(&prepared_request.messages, &database_path, &request, &api_config)?;
     let streamed_response = collect_gemini_stream(
         &client,
         &endpoint,
@@ -181,6 +183,7 @@ fn resolve_gemini_endpoint(api_config: &ApiConfigRecord, model: &str, api_key: &
 
 fn build_gemini_payload(
     messages: &[ChatContextMessage],
+    database_path: &Path,
     request: &ResponsesApiRequest,
     api_config: &ApiConfigRecord,
 ) -> Result<Value> {
@@ -195,15 +198,31 @@ fn build_gemini_payload(
             continue;
         }
 
+        let parsed_content = parse_chat_message_content(content, database_path)?;
         let role = message.role.trim();
         match role {
             "system" | "developer" => {
-                system_parts.push(content.to_string());
+                if !parsed_content.text.is_empty() {
+                    system_parts.push(parsed_content.text);
+                }
             }
             _ => {
+                let mut parts = Vec::new();
+                if !parsed_content.text.is_empty() {
+                    parts.push(json!({ "text": parsed_content.text }));
+                }
+                parts.extend(parsed_content.images.iter().map(|image| {
+                    json!({
+                        "inlineData": {
+                            "mimeType": image.media_type,
+                            "data": image.data,
+                        },
+                    })
+                }));
+
                 contents.push(json!({
                     "role": normalize_gemini_role(role),
-                    "parts": [{"text": content}],
+                    "parts": parts,
                 }));
             }
         }

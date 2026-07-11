@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use futures::StreamExt;
 use napi::bindgen_prelude::*;
@@ -13,7 +13,9 @@ use tokio_util::sync::CancellationToken;
 use crate::api::config::{
     normalize_base_url, resolve_sdk_api_base_url, DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_OPENAI_BASE_URL,
 };
-use crate::api::conversation::{prepare_context_request, ConversationContextRequest};
+use crate::api::conversation::{
+    parse_chat_message_content, prepare_context_request, ConversationContextRequest,
+};
 use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback, ResponsesApiStreamChunk,
     TokenUsage,
@@ -91,7 +93,7 @@ async fn create_anthropic_response_async(
     let client = reqwest::Client::builder()
         .build()
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
-    let payload = build_anthropic_payload(&prepared_request.messages, &request, &api_config)?;
+    let payload = build_anthropic_payload(&prepared_request.messages, &database_path, &request, &api_config)?;
     let streamed_response = collect_anthropic_stream(
         &client,
         &endpoint,
@@ -162,6 +164,7 @@ fn resolve_anthropic_endpoint(api_config: &ApiConfigRecord) -> String {
 
 fn build_anthropic_payload(
     messages: &[ChatContextMessage],
+    database_path: &Path,
     request: &ResponsesApiRequest,
     api_config: &ApiConfigRecord,
 ) -> Result<Value> {
@@ -187,12 +190,35 @@ fn build_anthropic_payload(
             continue;
         }
 
+        let parsed_content = parse_chat_message_content(content, database_path)?;
         let role = message.role.trim();
         match role {
             "system" | "developer" => {
-                system_parts.push(content.to_string());
+                if !parsed_content.text.is_empty() {
+                    system_parts.push(parsed_content.text);
+                }
             }
             _ => {
+                let content = if parsed_content.images.is_empty() {
+                    Value::String(parsed_content.text)
+                } else {
+                    let mut blocks = Vec::new();
+                    if !parsed_content.text.is_empty() {
+                        blocks.push(json!({ "type": "text", "text": parsed_content.text }));
+                    }
+                    blocks.extend(parsed_content.images.iter().map(|image| {
+                        json!({
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": image.media_type,
+                                "data": image.data,
+                            },
+                        })
+                    }));
+                    Value::Array(blocks)
+                };
+
                 anthropic_messages.push(json!({
                     "role": normalize_anthropic_role(role),
                     "content": content,

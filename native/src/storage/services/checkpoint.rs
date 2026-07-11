@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{Read, Write};
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -241,9 +243,16 @@ fn write_manifest(checkpoint_id: &str, manifest: &CheckpointManifest) -> Result<
 }
 
 fn run_git(work_dir: &Path, args: &[&str]) -> Result<Output> {
-    Command::new("git")
-        .args(args)
-        .current_dir(work_dir)
+    let mut command = Command::new("git");
+    command.args(args).current_dir(work_dir);
+
+    #[cfg(target_os = "windows")]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    command
         .output()
         .map_err(|error| Error::from_reason(format!("Failed to execute git: {error}")))
 }

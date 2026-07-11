@@ -270,6 +270,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             selectedFile={diffData.selectedFile}
             diffResult={diffData.diffResult}
             diffLoading={diffData.diffLoading}
+            onClose={() => handleCloseTab(tab.id)}
           />
         );
       }

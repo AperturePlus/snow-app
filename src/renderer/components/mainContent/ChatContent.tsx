@@ -1,7 +1,5 @@
 import { useCallback, useLayoutEffect, useRef } from "react";
-import { LoaderCircle } from "lucide-react";
 import type { WorkspaceDirectoryRecord } from "../../../preload";
-import { useI18n } from "../../i18n";
 import { ChatInput } from "./ChatInput";
 import { EmptyGreeting } from "./EmptyGreeting";
 import { ChatMessageList, useChatConversationContext } from "./chatMessages";
@@ -14,6 +12,7 @@ type ChatContentProps = {
 
 type PendingScrollRestore = {
   conversationId: string;
+  requestId: number;
   scrollHeight: number;
   scrollTop: number;
 };
@@ -23,7 +22,6 @@ const LOAD_OLDER_SCROLL_THRESHOLD = 96;
 export const ChatContent = ({
   activeDirectory,
 }: ChatContentProps): React.JSX.Element => {
-  const { t } = useI18n();
   const {
     messages,
     activeConversationId,
@@ -42,15 +40,38 @@ export const ChatContent = ({
     rollbackPreview,
     confirmRollback,
     cancelRollback,
+    pendingMessages,
+    withdrawPendingMessage,
   } = useChatConversationContext();
   const hasMessages = messages.length > 0;
   const hasHistoryContent = hasMessages || isLoadingInitialHistory;
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeConversationIdRef = useRef(activeConversationId);
+  const previousActiveConversationIdRef = useRef(activeConversationId);
   const positionedConversationIdsRef = useRef(new Set<string>());
   const pendingScrollRestoreRef = useRef<PendingScrollRestore | null>(null);
+  const scrollRestoreRequestIdRef = useRef(0);
   const isLoadingOlderWithScrollRef = useRef(false);
   activeConversationIdRef.current = activeConversationId;
+
+  useLayoutEffect(() => {
+    if (previousActiveConversationIdRef.current === activeConversationId) {
+      return;
+    }
+
+    previousActiveConversationIdRef.current = activeConversationId;
+    scrollRestoreRequestIdRef.current += 1;
+    pendingScrollRestoreRef.current = null;
+    isLoadingOlderWithScrollRef.current = false;
+    if (activeConversationId) {
+      positionedConversationIdsRef.current.delete(activeConversationId);
+    }
+
+    const container = scrollRef.current;
+    if (container) {
+      container.scrollTop = 0;
+    }
+  }, [activeConversationId]);
 
   useLayoutEffect(() => {
     const container = scrollRef.current;
@@ -75,9 +96,11 @@ export const ChatContent = ({
       return;
     }
 
+    const requestId = ++scrollRestoreRequestIdRef.current;
     isLoadingOlderWithScrollRef.current = true;
     pendingScrollRestoreRef.current = {
       conversationId,
+      requestId,
       scrollHeight: container.scrollHeight,
       scrollTop: container.scrollTop,
     };
@@ -87,21 +110,23 @@ export const ChatContent = ({
     } finally {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          const latestContainer = scrollRef.current;
           const pendingRestore = pendingScrollRestoreRef.current;
           if (
-            latestContainer &&
             pendingRestore &&
-            pendingRestore.conversationId === activeConversationIdRef.current
+            pendingRestore.requestId === requestId &&
+            pendingRestore.conversationId === activeConversationIdRef.current &&
+            scrollRef.current === container
           ) {
             const addedHeight =
-              latestContainer.scrollHeight - pendingRestore.scrollHeight;
-            latestContainer.scrollTop =
+              container.scrollHeight - pendingRestore.scrollHeight;
+            container.scrollTop =
               pendingRestore.scrollTop + Math.max(0, addedHeight);
           }
 
-          pendingScrollRestoreRef.current = null;
-          isLoadingOlderWithScrollRef.current = false;
+          if (scrollRestoreRequestIdRef.current === requestId) {
+            pendingScrollRestoreRef.current = null;
+            isLoadingOlderWithScrollRef.current = false;
+          }
         });
       });
     }
@@ -141,6 +166,7 @@ export const ChatContent = ({
       }`}
     >
       <div
+        key={activeConversationId ?? "new-chat"}
         className={`chat-area ${
           isLoadingInitialHistory ? "is-loading-history" : ""
         }`}
@@ -149,32 +175,29 @@ export const ChatContent = ({
         aria-busy={isLoadingInitialHistory || isLoadingOlderMessages}
       >
         {isLoadingInitialHistory ? (
-          <div
-            className="chat-initial-history-loader"
-            role="status"
-            aria-live="polite"
-          >
-            <LoaderCircle size={20} strokeWidth={1.8} aria-hidden="true" />
-            <span>
-              {t("chat.loadingConversationMessages", {
-                defaultValue: "Loading conversation messages...",
-              })}
-            </span>
+          <div className="chat-initial-history-skeleton" aria-hidden="true">
+            {Array.from({ length: 3 }, (_, index) => (
+              <div
+                className={`chat-message-skeleton ${
+                  index === 1 ? "is-user" : "is-assistant"
+                }`}
+                key={index}
+              >
+                <div className="chat-message-skeleton-line is-primary" />
+                <div className="chat-message-skeleton-line is-secondary" />
+                {index === 0 ? (
+                  <div className="chat-message-skeleton-line is-tertiary" />
+                ) : null}
+              </div>
+            ))}
           </div>
         ) : hasMessages ? (
           <>
             {isLoadingOlderMessages ? (
-              <div
-                className="chat-history-loader"
-                role="status"
-                aria-live="polite"
-              >
-                <LoaderCircle size={16} strokeWidth={1.8} aria-hidden="true" />
-                <span>
-                  {t("chat.loadingOlderMessages", {
-                    defaultValue: "Loading older messages...",
-                  })}
-                </span>
+              <div className="chat-history-skeleton" aria-hidden="true">
+                <div className="chat-history-skeleton-line" />
+                <div className="chat-history-skeleton-line" />
+                <div className="chat-history-skeleton-line" />
               </div>
             ) : null}
             <ChatMessageList
@@ -191,10 +214,13 @@ export const ChatContent = ({
       <ChatInput
         onSend={handleSendWithScroll}
         isStreaming={isStreaming}
+        isAborting={isAborting}
         onAbort={handleAbort}
         tokenUsage={tokenUsage}
         draftToRestore={draftToRestore}
         onDraftRestored={clearDraftToRestore}
+        pendingMessages={pendingMessages}
+        onWithdrawPendingMessage={withdrawPendingMessage}
       />
 
       {rollbackPreview ? (

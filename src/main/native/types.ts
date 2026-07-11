@@ -367,6 +367,12 @@ export type NativeBridge = {
   ) => Promise<void>;
   deleteWorkspaceDirectory: (directoryId: string) => Promise<void>;
   readDirectoryEntries: (dirPath: string) => Promise<DirectoryEntry[]>;
+  renameWorkspaceEntry: (
+    rootPath: string,
+    entryPath: string,
+    newName: string
+  ) => Promise<void>;
+  deleteWorkspaceEntry: (rootPath: string, entryPath: string) => Promise<void>;
   readFileContent: (filePath: string) => Promise<FileContentResult>;
   searchFiles: (rootDir: string, query: string) => Promise<FileSearchResult[]>;
   listMcpServerConfigs: () => Promise<McpServerConfigRecord[]>;
