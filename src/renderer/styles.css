@@ -3629,6 +3629,29 @@ input {
   color: var(--text-tertiary);
 }
 
+.stream-retrying {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--accent-amber-text, #b45309);
+}
+
+.stream-retrying-error {
+  display: block;
+  margin-top: 2px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-island);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-tertiary);
+  max-width: 600px;
+  word-break: break-word;
+  cursor: help;
+}
+
 .chat-message-group.is-error .ai-message {
   color: var(--accent-red-text);
 }

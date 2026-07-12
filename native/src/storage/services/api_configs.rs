@@ -46,6 +46,8 @@ pub fn list_api_configs(database_path: &Path) -> Result<Vec<ApiConfigRecord>> {
                         stream_idle_timeout_sec,
                         enable_auto_compress,
                         auto_compress_threshold,
+                        max_retries,
+                        retry_base_delay_ms,
                         system_prompt_ids_json,
                         custom_header_scheme_id,
                         config_json,
@@ -59,6 +61,8 @@ pub fn list_api_configs(database_path: &Path) -> Result<Vec<ApiConfigRecord>> {
                 let is_active: i64 = row.get(3)?;
                 let supports_vision: i64 = row.get(10)?;
                 let enable_auto_compress: i64 = row.get(19)?;
+                let max_retries: Option<i64> = row.get(21)?;
+                let retry_base_delay_ms: Option<i64> = row.get(22)?;
 
                 Ok(ApiConfigRecord {
                     id: row.get(0)?,
@@ -82,11 +86,13 @@ pub fn list_api_configs(database_path: &Path) -> Result<Vec<ApiConfigRecord>> {
                     stream_idle_timeout_sec: row.get(18)?,
                     enable_auto_compress: enable_auto_compress != 0,
                     auto_compress_threshold: row.get(20)?,
-                    system_prompt_ids_json: row.get(21)?,
-                    custom_header_scheme_id: row.get(22)?,
-                    config_json: row.get(23)?,
-                    source: row.get(24)?,
-                    updated_at: row.get(25)?,
+                    max_retries: max_retries.map(|v| v as i32),
+                    retry_base_delay_ms: retry_base_delay_ms.map(|v| v as i32),
+                    system_prompt_ids_json: row.get(23)?,
+                    custom_header_scheme_id: row.get(24)?,
+                    config_json: row.get(25)?,
+                    source: row.get(26)?,
+                    updated_at: row.get(27)?,
                 })
             })?;
 
@@ -133,6 +139,8 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                    stream_idle_timeout_sec,
                    enable_auto_compress,
                    auto_compress_threshold,
+                   max_retries,
+                   retry_base_delay_ms,
                    system_prompt_ids_json,
                    custom_header_scheme_id,
                    config_json,
@@ -142,7 +150,7 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                  ) VALUES (
                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
                    ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
-                   ?21, ?22, ?23, ?24, ?25,
+                   ?21, ?22, ?23, ?24, ?25, ?26, ?27,
                    datetime('now'), datetime('now')
                  )
                  ON CONFLICT(profile_name) DO UPDATE SET
@@ -171,6 +179,8 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                    stream_idle_timeout_sec = excluded.stream_idle_timeout_sec,
                    enable_auto_compress = excluded.enable_auto_compress,
                    auto_compress_threshold = excluded.auto_compress_threshold,
+                   max_retries = excluded.max_retries,
+                   retry_base_delay_ms = excluded.retry_base_delay_ms,
                    system_prompt_ids_json = excluded.system_prompt_ids_json,
                    custom_header_scheme_id = excluded.custom_header_scheme_id,
                    config_json = excluded.config_json,
@@ -198,6 +208,8 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                     config.stream_idle_timeout_sec,
                     config.enable_auto_compress as i32,
                     config.auto_compress_threshold,
+                    config.max_retries.unwrap_or(5),
+                    config.retry_base_delay_ms.unwrap_or(3000),
                     config.system_prompt_ids_json,
                     config.custom_header_scheme_id,
                     config.config_json,

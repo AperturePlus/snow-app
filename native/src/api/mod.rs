@@ -5,5 +5,6 @@ pub mod config;
 pub mod conversation;
 pub mod gemini;
 pub mod models;
+pub mod retry;
 pub mod responses;
 pub mod summary;

@@ -496,6 +496,36 @@ export function ApiSettingsFormFields({
               disabled={disabled}
             />
           </label>
+          <label className="api-settings-field">
+            <span>
+              {t("settings.apiMaxRetries", {
+                defaultValue: "Max retries",
+              })}
+            </span>
+            <input
+              value={data.maxRetries}
+              onChange={changeField("maxRetries")}
+              placeholder="5"
+              type="number"
+              min={0}
+              disabled={disabled}
+            />
+          </label>
+          <label className="api-settings-field">
+            <span>
+              {t("settings.apiRetryBaseDelayMs", {
+                defaultValue: "Retry delay (ms)",
+              })}
+            </span>
+            <input
+              value={data.retryBaseDelayMs}
+              onChange={changeField("retryBaseDelayMs")}
+              placeholder="3000"
+              type="number"
+              min={0}
+              disabled={disabled}
+            />
+          </label>
           <div className="api-settings-field api-settings-auto-compress-field">
             <div className="api-settings-auto-compress-header">
               <span>

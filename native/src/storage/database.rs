@@ -125,6 +125,8 @@ fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
            stream_idle_timeout_sec INTEGER,
            enable_auto_compress INTEGER NOT NULL DEFAULT 1,
            auto_compress_threshold INTEGER,
+           max_retries INTEGER NOT NULL DEFAULT 5,
+           retry_base_delay_ms INTEGER NOT NULL DEFAULT 3000,
            system_prompt_ids_json TEXT NOT NULL DEFAULT '',
            custom_header_scheme_id TEXT NOT NULL DEFAULT '',
            config_json TEXT NOT NULL DEFAULT '{}',

@@ -7,6 +7,7 @@ use serde_json::Value;
 use super::service::McpService;
 use super::servers::bash::BashService;
 use super::servers::filesystem::FilesystemService;
+use super::servers::grep::GrepService;
 use super::servers::todo::TodoService;
 use super::tools::McpTool;
 
@@ -16,6 +17,7 @@ pub fn builtin_services() -> HashMap<String, Arc<dyn McpService>> {
         Arc::new(FilesystemService::new()),
         Arc::new(BashService::new()),
         Arc::new(TodoService::new()),
+        Arc::new(GrepService::new()),
     ];
     services
         .into_iter()

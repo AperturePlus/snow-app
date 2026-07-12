@@ -30,50 +30,41 @@ impl McpService for FilesystemService {
                 name: "read".to_string(),
                 description: "Read file content with line numbers. Supports text files, images, Office documents, and directories.".to_string(),
                 input_schema: json!({
-                    "oneOf": [
-                        {
-                            "type": "object",
-                            "properties": {
-                                "filePath": {
-                                    "oneOf": [
-                                        { "type": "string" },
-                                        { "$ref": "#/definitions/readPathArray" }
-                                    ],
-                                    "description": "Path to the file to read or directory to list."
-                                },
-                                "startLine": {
-                                    "type": "number",
-                                    "description": "Optional starting line number (1-indexed)."
-                                },
-                                "endLine": {
-                                    "type": "number",
-                                    "description": "Optional ending line number (1-indexed)."
-                                }
-                            },
-                            "required": ["filePath"]
-                        },
-                        { "$ref": "#/definitions/readPathArray" }
-                    ],
-                    "definitions": {
-                        "readPathArray": {
-                            "type": "array",
-                            "items": {
-                                "oneOf": [
-                                    { "type": "string" },
-                                    {
-                                        "type": "object",
-                                        "properties": {
-                                            "path": { "type": "string" },
-                                            "startLine": { "type": "number" },
-                                            "endLine": { "type": "number" }
-                                        },
-                                        "required": ["path"]
+                    "type": "object",
+                    "properties": {
+                        "filePath": {
+                            "oneOf": [
+                                { "type": "string" },
+                                {
+                                    "type": "array",
+                                    "items": {
+                                        "oneOf": [
+                                            { "type": "string" },
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "path": { "type": "string" },
+                                                    "startLine": { "type": "number" },
+                                                    "endLine": { "type": "number" }
+                                                },
+                                                "required": ["path"]
+                                            }
+                                        ]
                                     }
-                                ]
-                            }
+                                }
+                            ],
+                            "description": "Path to the file to read or directory to list. Can be a single path string, an array of path strings, or an array of {path, startLine, endLine} objects."
+                        },
+                        "startLine": {
+                            "type": "number",
+                            "description": "Optional starting line number (1-indexed)."
+                        },
+                        "endLine": {
+                            "type": "number",
+                            "description": "Optional ending line number (1-indexed)."
                         }
                     },
-                    "description": "Read one path or multiple paths. Accepts either an object with filePath or a root array of path strings or {path, startLine, endLine} objects."
+                    "required": ["filePath"]
                 }),
             },
             McpTool {

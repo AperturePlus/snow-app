@@ -234,6 +234,9 @@ export function ApiSettingsTreePanel({
         config.maxContextTokens,
         config.autoCompressThreshold
       ),
+      maxRetries: config.maxRetries != null ? String(config.maxRetries) : "",
+      retryBaseDelayMs:
+        config.retryBaseDelayMs != null ? String(config.retryBaseDelayMs) : "",
       systemPromptIdsJson: config.systemPromptIdsJson ?? "",
       customHeaderSchemeId: config.customHeaderSchemeId ?? "",
     });
@@ -304,6 +307,8 @@ export function ApiSettingsTreePanel({
         streamIdleTimeoutSec: config.streamIdleTimeoutSec,
         enableAutoCompress: config.enableAutoCompress,
         autoCompressThreshold: config.autoCompressThreshold,
+        maxRetries: config.maxRetries,
+        retryBaseDelayMs: config.retryBaseDelayMs,
         systemPromptIdsJson: config.systemPromptIdsJson ?? "",
         customHeaderSchemeId: config.customHeaderSchemeId ?? "",
         configJson: config.configJson,

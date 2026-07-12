@@ -20,6 +20,7 @@ use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback, ResponsesApiStreamChunk,
     TokenUsage,
 };
+use crate::api::retry::{RetryOptions, should_retry, wait_before_retry};
 use crate::storage::services::chat_conversations::{
     store_chat_exchange, ChatContextMessage, ChatTokenUsage, StoreChatExchangeInput,
 };
@@ -94,6 +95,7 @@ async fn create_anthropic_response_async(
         .build()
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
     let payload = build_anthropic_payload(&prepared_request.messages, &database_path, &request, &api_config)?;
+    let retry_options = RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
     let streamed_response = collect_anthropic_stream(
         &client,
         &endpoint,
@@ -102,6 +104,7 @@ async fn create_anthropic_response_async(
         payload,
         on_chunk,
         &cancel_token,
+        &retry_options,
     )
     .await?;
     let raw_response_json = serde_json::to_string(&streamed_response.raw_events)
@@ -231,21 +234,38 @@ fn build_anthropic_payload(
         return Err(Error::from_reason("Chat message content is required"));
     }
 
-    let mut payload = json!({
-        "model": model,
-        "messages": anthropic_messages,
-        "stream": true,
-    });
-
     let max_tokens = api_config
         .max_tokens
         .filter(|&v| v > 0)
         .unwrap_or(DEFAULT_MAX_TOKENS);
-    payload["max_tokens"] = json!(max_tokens);
 
+    let mut payload = json!({
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": anthropic_messages,
+        "stream": true,
+    });
+
+    // Build system as an array of text blocks with cache_control on the last
+    // block, matching the Anthropic prompt-caching best practice used in
+    // snow-cli.  A plain string system field cannot carry cache_control.
     if !system_parts.is_empty() {
-        payload["system"] = json!(system_parts.join("\n"));
+        let system_blocks: Vec<Value> = system_parts
+            .iter()
+            .enumerate()
+            .map(|(index, text)| {
+                let mut block = json!({ "type": "text", "text": text });
+                if index == system_parts.len() - 1 {
+                    block["cache_control"] = json!({ "type": "ephemeral", "ttl": "5m" });
+                }
+                block
+            })
+            .collect();
+        payload["system"] = json!(system_blocks);
     }
+
+    // Add metadata.user_id for tracking and caching (matches snow-cli behavior).
+    payload["metadata"] = json!({ "user_id": "snow-app-user" });
 
     if let Some(thinking) = build_anthropic_thinking(&api_config.config_json) {
         payload["thinking"] = thinking;
@@ -254,6 +274,39 @@ fn build_anthropic_payload(
     if let Ok(tools) = crate::mcp::tools::tools_as_anthropic_json() {
         if tools.as_array().is_some_and(|arr| !arr.is_empty()) {
             payload["tools"] = tools;
+        }
+    }
+
+    // Add cache_control to the last user message's last content block.
+    // This enables Anthropic to cache the conversation prefix up to and
+    // including the last user turn, so subsequent tool-call rounds benefit
+    // from cache hits.  Matches snow-cli's convertToAnthropicMessages logic.
+    if let Some(messages) = payload.get_mut("messages").and_then(Value::as_array_mut) {
+        for msg in messages.iter_mut().rev() {
+            if msg.get("role").and_then(Value::as_str) == Some("user") {
+                match msg.get_mut("content") {
+                    Some(Value::String(_)) => {
+                        // Convert plain string content to structured array
+                        // so we can attach cache_control.
+                        let text = msg["content"].as_str().unwrap_or("").to_string();
+                        msg["content"] = json!([
+                            {
+                                "type": "text",
+                                "text": text,
+                                "cache_control": { "type": "ephemeral", "ttl": "5m" }
+                            }
+                        ]);
+                    }
+                    Some(Value::Array(arr)) => {
+                        if let Some(last_block) = arr.last_mut() {
+                            last_block["cache_control"] =
+                                json!({ "type": "ephemeral", "ttl": "5m" });
+                        }
+                    }
+                    _ => {}
+                }
+                break;
+            }
         }
     }
 
@@ -307,16 +360,11 @@ async fn collect_anthropic_stream(
     payload: Value,
     on_chunk: &ResponsesApiStreamCallback,
     cancel_token: &CancellationToken,
+    retry_options: &RetryOptions,
 ) -> Result<AnthropicStreamResult> {
-    let send_future = client
-        .post(endpoint)
-        .headers(build_header_map(api_key, custom_headers)?)
-        .json(&payload)
-        .send();
-
-    let response = tokio::select! {
-        biased;
-        _ = cancel_token.cancelled() => {
+    let mut attempt: u32 = 0;
+    let response = loop {
+        if cancel_token.is_cancelled() {
             return Ok(AnthropicStreamResult {
                 id: String::new(),
                 content: String::new(),
@@ -328,19 +376,93 @@ async fn collect_anthropic_stream(
                 raw_events: Vec::new(),
             });
         }
-        result = send_future => {
-            result.map_err(|error| Error::from_reason(format!("Failed to create Anthropic stream: {}", error)))?
+
+        let send_future = client
+            .post(endpoint)
+            .headers(build_header_map(api_key, custom_headers)?)
+            .json(&payload)
+            .send();
+
+        let result = tokio::select! {
+            biased;
+            _ = cancel_token.cancelled() => {
+                return Ok(AnthropicStreamResult {
+                    id: String::new(),
+                    content: String::new(),
+                    thinking: String::new(),
+                    model: String::new(),
+                    status: String::from("cancelled"),
+                    token_usage: ChatTokenUsage::default(),
+                    tool_calls_json: "[]".to_string(),
+                    raw_events: Vec::new(),
+                });
+            }
+            result = send_future => {
+                result.map_err(|error| Error::from_reason(format!("Failed to create Anthropic stream: {}", error)))
+            }
+        };
+
+        match result {
+            Ok(response) => {
+                let status = response.status();
+                if !status.is_success() {
+                    let error_body = response.text().await.unwrap_or_default();
+                    let error = Error::from_reason(format!(
+                        "Anthropic messages request failed: {} {}",
+                        status, error_body
+                    ));
+
+                    if !should_retry(&error, attempt, retry_options) {
+                        return Err(error);
+                    }
+
+                    // Emit retry status to frontend
+                    on_chunk.call(
+                        ResponsesApiStreamChunk {
+                            content_delta: String::new(),
+                            thinking_delta: String::new(),
+                            content: String::new(),
+                            thinking: String::new(),
+                            retrying: true,
+                            retry_attempt: Some((attempt + 1) as i32),
+                            retry_error: Some(error.reason.clone()),
+                        },
+                        ThreadsafeFunctionCallMode::NonBlocking,
+                    );
+
+                    match wait_before_retry(retry_options, cancel_token).await {
+                        Ok(()) => { attempt += 1; continue; }
+                        Err(e) => return Err(e),
+                    }
+                }
+                break response;
+            }
+            Err(error) => {
+                if !should_retry(&error, attempt, retry_options) {
+                    return Err(error);
+                }
+
+                // Emit retry status to frontend
+                on_chunk.call(
+                    ResponsesApiStreamChunk {
+                        content_delta: String::new(),
+                        thinking_delta: String::new(),
+                        content: String::new(),
+                        thinking: String::new(),
+                        retrying: true,
+                    retry_attempt: Some((attempt + 1) as i32),
+                    retry_error: Some(error.reason.clone()),
+                },
+                ThreadsafeFunctionCallMode::NonBlocking,
+            );
+
+                match wait_before_retry(retry_options, cancel_token).await {
+                    Ok(()) => { attempt += 1; continue; }
+                    Err(e) => return Err(e),
+                }
+            }
         }
     };
-
-    let status = response.status();
-    if !status.is_success() {
-        let error_body = response.text().await.unwrap_or_default();
-        return Err(Error::from_reason(format!(
-            "Anthropic messages request failed: {} {}",
-            status, error_body
-        )));
-    }
 
     let mut raw_events = Vec::new();
     let mut content_chunks = Vec::new();
@@ -680,6 +802,9 @@ fn emit_stream_chunk(
             thinking_delta,
             content: String::new(),
             thinking: String::new(),
+            retrying: false,
+            retry_attempt: None,
+            retry_error: None,
         },
         ThreadsafeFunctionCallMode::NonBlocking,
     );

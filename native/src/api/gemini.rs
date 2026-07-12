@@ -18,6 +18,7 @@ use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback, ResponsesApiStreamChunk,
     TokenUsage,
 };
+use crate::api::retry::{RetryOptions, should_retry, wait_before_retry};
 use crate::storage::services::chat_conversations::{
     store_chat_exchange, ChatContextMessage, ChatTokenUsage, StoreChatExchangeInput,
 };
@@ -102,6 +103,7 @@ async fn create_gemini_response_async(
         .build()
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
     let payload = build_gemini_payload(&prepared_request.messages, &database_path, &request, &api_config)?;
+    let retry_options = RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
     let streamed_response = collect_gemini_stream(
         &client,
         &endpoint,
@@ -109,6 +111,7 @@ async fn create_gemini_response_async(
         payload,
         on_chunk,
         &cancel_token,
+        &retry_options,
     )
     .await?;
     let raw_response_json = serde_json::to_string(&streamed_response.raw_events)
@@ -320,16 +323,11 @@ async fn collect_gemini_stream(
     payload: Value,
     on_chunk: &ResponsesApiStreamCallback,
     cancel_token: &CancellationToken,
+    retry_options: &RetryOptions,
 ) -> Result<GeminiStreamResult> {
-    let send_future = client
-        .post(endpoint)
-        .headers(build_header_map(custom_headers)?)
-        .json(&payload)
-        .send();
-
-    let response = tokio::select! {
-        biased;
-        _ = cancel_token.cancelled() => {
+    let mut attempt: u32 = 0;
+    let response = loop {
+        if cancel_token.is_cancelled() {
             return Ok(GeminiStreamResult {
                 id: String::new(),
                 content: String::new(),
@@ -341,19 +339,93 @@ async fn collect_gemini_stream(
                 raw_events: Vec::new(),
             });
         }
-        result = send_future => {
-            result.map_err(|error| Error::from_reason(format!("Failed to create Gemini stream: {}", error)))?
+
+        let send_future = client
+            .post(endpoint)
+            .headers(build_header_map(custom_headers)?)
+            .json(&payload)
+            .send();
+
+        let result = tokio::select! {
+            biased;
+            _ = cancel_token.cancelled() => {
+                return Ok(GeminiStreamResult {
+                    id: String::new(),
+                    content: String::new(),
+                    thinking: String::new(),
+                    model: String::new(),
+                    status: String::from("cancelled"),
+                    token_usage: ChatTokenUsage::default(),
+                    tool_calls_json: "[]".to_string(),
+                    raw_events: Vec::new(),
+                });
+            }
+            result = send_future => {
+                result.map_err(|error| Error::from_reason(format!("Failed to create Gemini stream: {}", error)))
+            }
+        };
+
+        match result {
+            Ok(response) => {
+                let status = response.status();
+                if !status.is_success() {
+                    let error_body = response.text().await.unwrap_or_default();
+                    let error = Error::from_reason(format!(
+                        "Gemini streamGenerateContent request failed: {} {}",
+                        status, error_body
+                    ));
+
+                    if !should_retry(&error, attempt, retry_options) {
+                        return Err(error);
+                    }
+
+                    // Emit retry status to frontend
+                    on_chunk.call(
+                        ResponsesApiStreamChunk {
+                            content_delta: String::new(),
+                            thinking_delta: String::new(),
+                            content: String::new(),
+                            thinking: String::new(),
+                            retrying: true,
+                            retry_attempt: Some((attempt + 1) as i32),
+                            retry_error: Some(error.reason.clone()),
+                        },
+                        ThreadsafeFunctionCallMode::NonBlocking,
+                    );
+
+                    match wait_before_retry(retry_options, cancel_token).await {
+                        Ok(()) => { attempt += 1; continue; }
+                        Err(e) => return Err(e),
+                    }
+                }
+                break response;
+            }
+            Err(error) => {
+                if !should_retry(&error, attempt, retry_options) {
+                    return Err(error);
+                }
+
+                // Emit retry status to frontend
+                on_chunk.call(
+                    ResponsesApiStreamChunk {
+                        content_delta: String::new(),
+                        thinking_delta: String::new(),
+                        content: String::new(),
+                        thinking: String::new(),
+                        retrying: true,
+                    retry_attempt: Some((attempt + 1) as i32),
+                    retry_error: Some(error.reason.clone()),
+                },
+                ThreadsafeFunctionCallMode::NonBlocking,
+            );
+
+                match wait_before_retry(retry_options, cancel_token).await {
+                    Ok(()) => { attempt += 1; continue; }
+                    Err(e) => return Err(e),
+                }
+            }
         }
     };
-
-    let status = response.status();
-    if !status.is_success() {
-        let error_body = response.text().await.unwrap_or_default();
-        return Err(Error::from_reason(format!(
-            "Gemini streamGenerateContent request failed: {} {}",
-            status, error_body
-        )));
-    }
 
     let mut raw_events = Vec::new();
     let mut content_chunks = Vec::new();
@@ -592,6 +664,9 @@ fn emit_stream_chunk(
             thinking_delta,
             content: String::new(),
             thinking: String::new(),
+            retrying: false,
+            retry_attempt: None,
+            retry_error: None,
         },
         ThreadsafeFunctionCallMode::NonBlocking,
     );

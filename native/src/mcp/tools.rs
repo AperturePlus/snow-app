@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 
 use super::builtin::{execute_builtin_tool, get_builtin_tools};
 use super::servers::bash::{BashService, BashStreamCallback};
+use super::servers::grep::GrepService;
 use super::servers::todo::TodoService;
 
 // NOTE: list_mcp_tools 和 call_mcp_tool 的 #[napi] 导出在 exports/api.rs 中，
@@ -68,18 +69,49 @@ pub fn tools_as_openai_chat_json() -> Result<Value> {
     let functions: Vec<Value> = tools
         .iter()
         .map(|tool| {
+            let sanitized_schema = sanitize_openai_parameters_schema(&tool.input_schema);
             json!({
                 "type": "function",
                 "function": {
                     "name": tool.full_name(),
                     "description": tool.description,
-                    "parameters": tool.input_schema,
+                    "parameters": sanitized_schema,
                 }
             })
         })
         .collect();
 
     Ok(Value::Array(functions))
+}
+
+/// OpenAI Chat Completions API requires the top-level `parameters` schema to be
+/// a JSON Schema of `type: "object"`. Some tool definitions may use `oneOf` or
+/// omit `type` at the top level, which causes a 400 Bad Request. This function
+/// ensures the top-level schema always has `"type": "object"` by removing
+/// incompatible top-level keywords (`oneOf`, `anyOf`, `allOf`) and forcing
+/// `type` to `"object"` when it is missing or null.
+fn sanitize_openai_parameters_schema(schema: &Value) -> Value {
+    let mut result = schema.clone();
+
+    if let Some(obj) = result.as_object_mut() {
+        // Remove top-level combinators that conflict with a concrete type.
+        obj.remove("oneOf");
+        obj.remove("anyOf");
+        obj.remove("allOf");
+
+        // Force top-level type to "object" if missing or not a string.
+        let needs_fix = match obj.get("type") {
+            None => true,
+            Some(Value::String(s)) => s != "object",
+            Some(Value::Null) => true,
+            Some(_) => true,
+        };
+        if needs_fix {
+            obj.insert("type".to_string(), Value::String("object".to_string()));
+        }
+    }
+
+    result
 }
 
 pub fn tools_as_anthropic_json() -> Result<Value> {
@@ -198,6 +230,10 @@ pub async fn call_mcp_tool(
             )
         })??;
         terminal_result?
+    } else if tool_full_name == "mcp__grep__search" {
+        // GrepService uses async process I/O (ripgrep/grep/findstr).
+        let grep_service = GrepService::new();
+        grep_service.execute_search(&args).await?
     } else if tool_full_name == "mcp__todo__todo-manage" {
         // TodoService uses async SQLite I/O via spawn_blocking internally,
         // so we call its async entry point directly.

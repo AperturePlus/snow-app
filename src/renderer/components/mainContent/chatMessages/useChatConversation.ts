@@ -31,6 +31,9 @@ export type ChatConversationMessage = {
   toolCalls?: ToolCallInfo[];
   toolCallId?: string;
   toolName?: string;
+  isRetrying?: boolean;
+  retryAttempt?: number;
+  retryError?: string;
   /** File-system checkpoint id created when the user sent this message.
    *  Used by rollback to restore the working directory to its pre-AI state. */
   checkpointId?: string;
@@ -899,6 +902,16 @@ export const useChatConversation = (
                   return currentMessage;
                 }
 
+                if (chunk.retrying) {
+                  return {
+                    ...currentMessage,
+                    isRetrying: true,
+                    retryAttempt: chunk.retryAttempt ?? undefined,
+                    retryError: chunk.retryError ?? undefined,
+                    status: "sending",
+                  };
+                }
+
                 const existingContent = currentMessage.content;
                 const nextContent =
                   chunk.content || `${existingContent}${chunk.contentDelta}`;
@@ -912,6 +925,7 @@ export const useChatConversation = (
                   thinking: nextThinking || undefined,
                   timestamp: formatMessageTime(),
                   status: "sending",
+                  isRetrying: false,
                 };
               })
             );
@@ -996,6 +1010,7 @@ export const useChatConversation = (
               model: response.model || options.model,
               toolCalls:
                 visibleToolCalls.length > 0 ? visibleToolCalls : undefined,
+              isRetrying: false,
             };
           })
         );
@@ -1382,6 +1397,7 @@ export const useChatConversation = (
                     content: getErrorMessage(error),
                     timestamp: formatMessageTime(),
                     status: "error",
+                    isRetrying: false,
                   }
                 : currentMessage
             )
@@ -1699,6 +1715,7 @@ export const useChatConversation = (
       currentMessages.map((message) => ({
         ...message,
         status: message.status === "sending" ? "sent" : message.status,
+        isRetrying: message.status === "sending" ? false : message.isRetrying,
         toolCalls: message.toolCalls?.map((toolCall) =>
           toolCall.status === "running" || toolCall.status === "pending"
             ? {

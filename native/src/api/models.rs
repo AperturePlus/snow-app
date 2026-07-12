@@ -13,6 +13,7 @@ use crate::api::config::{
     get_active_api_request_context, normalize_base_url, resolve_models_endpoint,
     DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_GEMINI_BASE_URL, DEFAULT_OPENAI_BASE_URL,
 };
+use crate::api::retry::{RetryOptions, with_retry_sync};
 
 #[napi(object)]
 pub struct Model {
@@ -206,25 +207,27 @@ fn fetch_openai_models(
     custom_headers: &HashMap<String, String>,
 ) -> Result<Vec<Model>> {
     let client = create_models_http_client()?;
-    let response = client
-        .get(models_url)
-        .headers(build_header_map(&build_headers(api_key, custom_headers))?)
-        .send()
-        .map_err(|error| Error::from_reason(format!("Failed to fetch models: {}", error)))?;
+    let retry_options = RetryOptions::default();
+    let data = with_retry_sync(|| {
+        let response = client
+            .get(models_url)
+            .headers(build_header_map(&build_headers(api_key, custom_headers))?)
+            .send()
+            .map_err(|error| Error::from_reason(format!("Failed to fetch models: {}", error)))?;
 
-    if !response.status().is_success() {
-        return Err(Error::from_reason(format!(
-            "Failed to fetch models: {} {}",
-            response.status(),
-            response.status().canonical_reason().unwrap_or("Unknown")
-        )));
-    }
+        if !response.status().is_success() {
+            return Err(Error::from_reason(format!(
+                "Failed to fetch models: {} {}",
+                response.status(),
+                response.status().canonical_reason().unwrap_or("Unknown")
+            )));
+        }
 
-    let data = parse_models_response(response)?;
+        parse_models_response(response)
+    }, &retry_options)?;
 
     Ok(parse_openai_compatible_models(&data))
 }
-
 fn fetch_gemini_models(base_url: &str, api_key: &str) -> Result<Vec<Model>> {
     if api_key.is_empty() {
         return Err(Error::from_reason("API key is required for Gemini API"));
@@ -234,25 +237,27 @@ fn fetch_gemini_models(base_url: &str, api_key: &str) -> Result<Vec<Model>> {
     let url = format!("{}/models?key={}", trimmed_base_url, api_key);
 
     let client = create_models_http_client()?;
-    let response = client
-        .get(&url)
-        .header("Content-Type", "application/json")
-        .send()
-        .map_err(|error| Error::from_reason(format!("Failed to fetch models: {}", error)))?;
+    let retry_options = RetryOptions::default();
+    let data = with_retry_sync(|| {
+        let response = client
+            .get(&url)
+            .header("Content-Type", "application/json")
+            .send()
+            .map_err(|error| Error::from_reason(format!("Failed to fetch models: {}", error)))?;
 
-    if !response.status().is_success() {
-        return Err(Error::from_reason(format!(
-            "Failed to fetch models: {} {}",
-            response.status(),
-            response.status().canonical_reason().unwrap_or("Unknown")
-        )));
-    }
+        if !response.status().is_success() {
+            return Err(Error::from_reason(format!(
+                "Failed to fetch models: {} {}",
+                response.status(),
+                response.status().canonical_reason().unwrap_or("Unknown")
+            )));
+        }
 
-    let data = parse_models_response(response)?;
+        parse_models_response(response)
+    }, &retry_options)?;
 
     Ok(parse_gemini_models(&data))
 }
-
 fn fetch_anthropic_models(
     base_url: &str,
     api_key: &str,
@@ -278,21 +283,24 @@ fn fetch_anthropic_models(
     }
 
     let client = create_models_http_client()?;
-    let response = client
-        .get(&url)
-        .headers(build_header_map(&headers)?)
-        .send()
-        .map_err(|error| Error::from_reason(format!("Failed to fetch models: {}", error)))?;
+    let retry_options = RetryOptions::default();
+    let data = with_retry_sync(|| {
+        let response = client
+            .get(&url)
+            .headers(build_header_map(&headers)?)
+            .send()
+            .map_err(|error| Error::from_reason(format!("Failed to fetch models: {}", error)))?;
 
-    if !response.status().is_success() {
-        return Err(Error::from_reason(format!(
-            "Failed to fetch models: {} {}",
-            response.status(),
-            response.status().canonical_reason().unwrap_or("Unknown")
-        )));
-    }
+        if !response.status().is_success() {
+            return Err(Error::from_reason(format!(
+                "Failed to fetch models: {} {}",
+                response.status(),
+                response.status().canonical_reason().unwrap_or("Unknown")
+            )));
+        }
 
-    let data = parse_models_response(response)?;
+        parse_models_response(response)
+    }, &retry_options)?;
 
     let anthropic_models = parse_anthropic_models(&data);
     if !anthropic_models.is_empty() {
@@ -301,7 +309,6 @@ fn fetch_anthropic_models(
 
     Ok(parse_openai_compatible_models(&data))
 }
-
 #[napi(object)]
 pub struct ApiConfigForModels {
     pub base_url: String,

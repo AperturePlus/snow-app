@@ -24,6 +24,8 @@ export type ApiConfigFormData = {
   streamIdleTimeoutSec: string;
   enableAutoCompress: boolean;
   autoCompressThreshold: string;
+  maxRetries: string;
+  retryBaseDelayMs: string;
   systemPromptIdsJson: string;
   customHeaderSchemeId: string;
 };

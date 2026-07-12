@@ -24,6 +24,8 @@ export type ApiConfigInput = {
   streamIdleTimeoutSec?: number;
   enableAutoCompress: boolean;
   autoCompressThreshold?: number;
+  maxRetries?: number;
+  retryBaseDelayMs?: number;
   systemPromptIdsJson: string;
   customHeaderSchemeId: string;
   configJson: string;
@@ -259,6 +261,9 @@ export type ResponsesApiStreamChunk = {
   thinkingDelta: string;
   content: string;
   thinking: string;
+  retrying: boolean;
+  retryAttempt?: number | null;
+  retryError?: string | null;
 };
 
 export type McpToolDefinition = {

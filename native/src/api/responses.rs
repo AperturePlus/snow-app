@@ -17,6 +17,7 @@ use crate::api::config::{
 use crate::api::conversation::{
     parse_chat_message_content, prepare_context_request, ConversationContextRequest,
 };
+use crate::api::retry::{RetryOptions, should_retry, wait_before_retry};
 use crate::storage::services::chat_conversations::{
     store_chat_exchange, ChatContextMessage, ChatTokenUsage, StoreChatExchangeInput,
 };
@@ -64,6 +65,9 @@ pub struct ResponsesApiStreamChunk {
     pub thinking_delta: String,
     pub content: String,
     pub thinking: String,
+    pub retrying: bool,
+    pub retry_attempt: Option<i32>,
+    pub retry_error: Option<String>,
 }
 
 /// ThreadsafeFunction variant of the streaming callback.
@@ -141,9 +145,22 @@ async fn create_response_async(
         directory_id: request.directory_id.as_deref(),
     })?;
 
-    let client = build_openai_client(&base_url, api_key, &custom_headers)?;
+    // Inject conversation_id and session_id as request headers for prompt
+    // caching.  OpenAI's Responses API uses these headers (along with
+    // prompt_cache_key in the payload) to route requests to the same cache
+    // shard.  Matches snow-cli's header injection behavior.
+    let mut effective_headers = custom_headers;
+    if let Some(ref conv_id) = request.conversation_id {
+        if !conv_id.is_empty() {
+            effective_headers.insert("conversation_id".to_string(), conv_id.clone());
+            effective_headers.insert("session_id".to_string(), conv_id.clone());
+        }
+    }
+
+    let client = build_openai_client(&base_url, api_key, &effective_headers)?;
     let payload = build_responses_payload(&prepared_request.messages, &database_path, &request, &api_config)?;
-    let streamed_response = collect_streaming_response(&client, payload, on_chunk, &cancel_token).await?;
+    let retry_options = RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
+    let streamed_response = collect_streaming_response(&client, payload, on_chunk, &cancel_token, &retry_options).await?;
     let raw_response_json = serde_json::to_string(&streamed_response.raw_events)
         .unwrap_or_else(|_| "[]".to_string());
 
@@ -296,6 +313,7 @@ fn build_responses_payload(
         "model": model,
         "input": input,
         "stream": true,
+        "store": false,
     });
 
     if let Some(max_tokens) = api_config.max_tokens {
@@ -311,6 +329,15 @@ fn build_responses_payload(
     if let Ok(tools) = crate::mcp::tools::tools_as_openai_responses_json() {
         if tools.as_array().is_some_and(|arr| !arr.is_empty()) {
             payload["tools"] = tools;
+        }
+    }
+
+    // Add prompt_cache_key using conversation_id so the Responses API can
+    // reuse cached prompt prefixes across turns within the same conversation.
+    // Matches snow-cli's behavior of passing prompt_cache_key in the payload.
+    if let Some(ref conv_id) = request.conversation_id {
+        if !conv_id.is_empty() {
+            payload["prompt_cache_key"] = json!(conv_id);
         }
     }
 
@@ -369,13 +396,12 @@ async fn collect_streaming_response(
     payload: Value,
     on_chunk: &ResponsesApiStreamCallback,
     cancel_token: &CancellationToken,
+    retry_options: &RetryOptions,
 ) -> Result<StreamingResponseResult> {
     let responses = client.responses();
-    let create_stream_future = responses.create_stream_byot::<Value, Value>(payload);
-
-    let mut stream: ResponseValueStream = tokio::select! {
-        biased;
-        _ = cancel_token.cancelled() => {
+    let mut attempt: u32 = 0;
+    let mut stream: ResponseValueStream = loop {
+        if cancel_token.is_cancelled() {
             return Ok(StreamingResponseResult {
                 id: String::new(),
                 content: String::new(),
@@ -392,8 +418,59 @@ async fn collect_streaming_response(
                 raw_events: Vec::new(),
             });
         }
-        result = create_stream_future => {
-            result.map_err(|error| Error::from_reason(format!("Failed to create response stream: {}", error)))?
+
+        let create_stream_future = responses.create_stream_byot::<Value, Value>(payload.clone());
+
+        let result = tokio::select! {
+            biased;
+            _ = cancel_token.cancelled() => {
+                return Ok(StreamingResponseResult {
+                    id: String::new(),
+                    content: String::new(),
+                    thinking: String::new(),
+                    model: String::new(),
+                    status: String::from("cancelled"),
+                    token_usage: ChatTokenUsage {
+                        input_tokens: 0,
+                        output_tokens: 0,
+                        cache_creation_input_tokens: 0,
+                        cache_read_input_tokens: 0,
+                    },
+                    tool_calls_json: "[]".to_string(),
+                    raw_events: Vec::new(),
+                });
+            }
+            result = create_stream_future => {
+                result.map_err(|error| Error::from_reason(format!("Failed to create response stream: {}", error)))
+            }
+        };
+
+        match result {
+            Ok(stream) => break stream,
+            Err(error) => {
+                if !should_retry(&error, attempt, retry_options) {
+                    return Err(error);
+                }
+
+                // Emit retry status to frontend
+                on_chunk.call(
+                    ResponsesApiStreamChunk {
+                        content_delta: String::new(),
+                        thinking_delta: String::new(),
+                        content: String::new(),
+                        thinking: String::new(),
+                        retrying: true,
+                        retry_attempt: Some((attempt + 1) as i32),
+                        retry_error: Some(error.reason.clone()),
+                    },
+                    ThreadsafeFunctionCallMode::NonBlocking,
+                );
+
+                match wait_before_retry(retry_options, cancel_token).await {
+                    Ok(()) => { attempt += 1; continue; }
+                    Err(e) => return Err(e),
+                }
+            }
         }
     };
 
@@ -565,6 +642,9 @@ fn emit_stream_chunk(
             thinking_delta,
             content: String::new(),
             thinking: String::new(),
+            retrying: false,
+            retry_attempt: None,
+            retry_error: None,
         },
         ThreadsafeFunctionCallMode::NonBlocking,
     );

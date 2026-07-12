@@ -19,6 +19,8 @@ export type ApiConfigInput = {
   streamIdleTimeoutSec?: number | null;
   enableAutoCompress: boolean;
   autoCompressThreshold?: number | null;
+  maxRetries?: number | null;
+  retryBaseDelayMs?: number | null;
   systemPromptIdsJson: string;
   customHeaderSchemeId: string;
   configJson: string;
@@ -86,4 +88,7 @@ export type ResponsesApiStreamChunk = {
   thinkingDelta: string;
   content: string;
   thinking: string;
+  retrying: boolean;
+  retryAttempt?: number | null;
+  retryError?: string | null;
 };

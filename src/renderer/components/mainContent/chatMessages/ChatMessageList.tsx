@@ -145,6 +145,9 @@ export const ChatMessageList = ({
         <AiResponse
           isStreaming={message.status === "sending"}
           isAborting={isLastAssistant && isAborting}
+          isRetrying={isLastAssistant && message.isRetrying}
+          retryAttempt={message.retryAttempt}
+          retryError={message.retryError}
           summary={message.content}
           thinking={message.thinking}
           showActions={showActions}

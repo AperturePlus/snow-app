@@ -33,6 +33,8 @@ export const emptyApiConfigForm = (
   streamIdleTimeoutSec: "",
   enableAutoCompress: true,
   autoCompressThreshold: String(DEFAULT_AUTO_COMPRESS_THRESHOLD_PERCENT),
+  maxRetries: "5",
+  retryBaseDelayMs: "3000",
   systemPromptIdsJson: "",
   customHeaderSchemeId: "",
 });
@@ -101,6 +103,8 @@ export function toApiConfigPayload(
     streamIdleTimeoutSec: parseOptionalInteger(data.streamIdleTimeoutSec),
     enableAutoCompress: data.enableAutoCompress,
     autoCompressThreshold: autoCompressThresholdTokens,
+    maxRetries: parseOptionalInteger(data.maxRetries),
+    retryBaseDelayMs: parseOptionalInteger(data.retryBaseDelayMs),
     systemPromptIdsJson: data.systemPromptIdsJson,
     customHeaderSchemeId: data.customHeaderSchemeId,
     configJson,

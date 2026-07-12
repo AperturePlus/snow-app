@@ -14,6 +14,9 @@ export const AiResponse = ({
   sections = [],
   isStreaming = false,
   isAborting = false,
+  isRetrying = false,
+  retryAttempt,
+  retryError,
   showActions = true,
   toolCalls = [],
   pendingToolAuthorizations = [],
@@ -90,6 +93,24 @@ export const AiResponse = ({
           <span className="stream-stopping">
             <Loader2 size={12} className="spin" />
             <span>{t("chat.stopping", { defaultValue: "Stopping..." })}</span>
+          </span>
+        ) : isRetrying ? (
+          <span className="stream-retrying">
+            <Loader2 size={12} className="spin" />
+            <span>
+              {t("chat.retrying", {
+                defaultValue: "Retrying",
+              })}
+              {retryAttempt != null ? ` (${retryAttempt})` : ""}
+              ...
+            </span>
+            {retryError ? (
+              <span className="stream-retrying-error" title={retryError}>
+                {retryError.length > 120
+                  ? `${retryError.slice(0, 120)}...`
+                  : retryError}
+              </span>
+            ) : null}
           </span>
         ) : isStreaming ? (
           <span className="stream-cursor" aria-hidden="true" />

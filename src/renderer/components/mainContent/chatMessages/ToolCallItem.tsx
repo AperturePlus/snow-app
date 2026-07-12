@@ -12,6 +12,7 @@ import {
   FilesystemEditToolCall,
   FilesystemCreateToolCall,
   TodoToolCall,
+  GrepToolCall,
 } from "./toolCallRenderers";
 import { ToolNameBadge } from "./toolCallRenderers/shared/ToolNameBadge";
 
@@ -53,6 +54,10 @@ export const ToolCallItem = ({
 
   if (toolCall.name === "mcp__todo__todo-manage") {
     return <TodoToolCall toolCall={toolCall} />;
+  }
+
+  if (toolCall.name === "mcp__grep__search") {
+    return <GrepToolCall toolCall={toolCall} />;
   }
 
   const iconName = toolCall.name.replace(/^mcp__.*__/, "");

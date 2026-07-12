@@ -35,6 +35,10 @@ const normalizeResponseStreamChunk = (
       typeof value.thinkingDelta === "string" ? value.thinkingDelta : "",
     content: typeof value.content === "string" ? value.content : "",
     thinking: typeof value.thinking === "string" ? value.thinking : "",
+    retrying: typeof value.retrying === "boolean" ? value.retrying : false,
+    retryAttempt:
+      typeof value.retryAttempt === "number" ? value.retryAttempt : null,
+    retryError: typeof value.retryError === "string" ? value.retryError : null,
   };
 };
 

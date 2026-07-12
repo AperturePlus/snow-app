@@ -7,6 +7,7 @@ use crate::api::config::{
     get_active_api_request_context, normalize_base_url, resolve_sdk_api_base_url,
     DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_GEMINI_BASE_URL, DEFAULT_OPENAI_BASE_URL,
 };
+use crate::api::retry::{RetryOptions, should_retry};
 use crate::storage::services::chat_conversations::{load_context_messages, update_conversation_summary};
 
 const SUMMARY_SYSTEM_PROMPT: &str = "You are a conversation title generator. Based on the conversation below, generate a concise title (max 50 characters) that captures the main topic. Respond with only the title text, no quotes, no additional explanation.";
@@ -36,6 +37,8 @@ pub async fn generate_conversation_summary(conversation_id: String) -> Result<St
         ));
     }
 
+    let retry_options = RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
+
     let summary_text = match api_config.request_method.as_str() {
         "responses" => {
             generate_summary_via_responses(
@@ -44,6 +47,7 @@ pub async fn generate_conversation_summary(conversation_id: String) -> Result<St
                 &custom_headers,
                 model,
                 &messages,
+                &retry_options,
             )
             .await?
         }
@@ -54,6 +58,7 @@ pub async fn generate_conversation_summary(conversation_id: String) -> Result<St
                 &custom_headers,
                 model,
                 &messages,
+                &retry_options,
             )
             .await?
         }
@@ -64,6 +69,7 @@ pub async fn generate_conversation_summary(conversation_id: String) -> Result<St
                 &custom_headers,
                 model,
                 &messages,
+                &retry_options,
             )
             .await?
         }
@@ -74,6 +80,7 @@ pub async fn generate_conversation_summary(conversation_id: String) -> Result<St
                 &custom_headers,
                 model,
                 &messages,
+                &retry_options,
             )
             .await?
         }
@@ -95,6 +102,7 @@ async fn generate_summary_via_chat(
     custom_headers: &HashMap<String, String>,
     model: &str,
     messages: &[crate::storage::services::chat_conversations::ChatContextMessage],
+    retry_options: &RetryOptions,
 ) -> Result<String> {
     let endpoint = resolve_chat_endpoint(api_config);
     if endpoint.is_empty() {
@@ -115,27 +123,14 @@ async fn generate_summary_via_chat(
         .build()
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
 
-    let response = client
-        .post(&endpoint)
-        .headers(build_header_map(api_key, custom_headers)?)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|error| Error::from_reason(format!("Summary request failed: {}", error)))?;
-
-    let status = response.status();
-    if !status.is_success() {
-        let error_body = response.text().await.unwrap_or_default();
-        return Err(Error::from_reason(format!(
-            "Summary request failed: {} {}",
-            status, error_body
-        )));
-    }
-
-    let body: Value = response
-        .json()
-        .await
-        .map_err(|error| Error::from_reason(format!("Failed to parse summary response: {}", error)))?;
+    let body: Value = send_summary_request_with_retry(
+        &client,
+        &endpoint,
+        build_header_map(api_key, custom_headers)?,
+        &payload,
+        retry_options,
+    )
+    .await?;
 
     let content = body
         .get("choices")
@@ -154,6 +149,7 @@ async fn generate_summary_via_responses(
     custom_headers: &HashMap<String, String>,
     model: &str,
     messages: &[crate::storage::services::chat_conversations::ChatContextMessage],
+    retry_options: &RetryOptions,
 ) -> Result<String> {
     let base_url = normalize_base_url(&api_config.base_url);
     if base_url.is_empty() {
@@ -176,27 +172,14 @@ async fn generate_summary_via_responses(
         .build()
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
 
-    let response = client
-        .post(&endpoint)
-        .headers(build_header_map(api_key, custom_headers)?)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|error| Error::from_reason(format!("Summary request failed: {}", error)))?;
-
-    let status = response.status();
-    if !status.is_success() {
-        let error_body = response.text().await.unwrap_or_default();
-        return Err(Error::from_reason(format!(
-            "Summary request failed: {} {}",
-            status, error_body
-        )));
-    }
-
-    let body: Value = response
-        .json()
-        .await
-        .map_err(|error| Error::from_reason(format!("Failed to parse summary response: {}", error)))?;
+    let body: Value = send_summary_request_with_retry(
+        &client,
+        &endpoint,
+        build_header_map(api_key, custom_headers)?,
+        &payload,
+        retry_options,
+    )
+    .await?;
 
     let content = extract_responses_content(&body);
 
@@ -209,6 +192,7 @@ async fn generate_summary_via_anthropic(
     custom_headers: &HashMap<String, String>,
     model: &str,
     messages: &[crate::storage::services::chat_conversations::ChatContextMessage],
+    retry_options: &RetryOptions,
 ) -> Result<String> {
     let endpoint = resolve_anthropic_endpoint(api_config);
     if endpoint.is_empty() {
@@ -230,27 +214,14 @@ async fn generate_summary_via_anthropic(
         .build()
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
 
-    let response = client
-        .post(&endpoint)
-        .headers(build_anthropic_header_map(api_key, custom_headers)?)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|error| Error::from_reason(format!("Summary request failed: {}", error)))?;
-
-    let status = response.status();
-    if !status.is_success() {
-        let error_body = response.text().await.unwrap_or_default();
-        return Err(Error::from_reason(format!(
-            "Summary request failed: {} {}",
-            status, error_body
-        )));
-    }
-
-    let body: Value = response
-        .json()
-        .await
-        .map_err(|error| Error::from_reason(format!("Failed to parse summary response: {}", error)))?;
+    let body: Value = send_summary_request_with_retry(
+        &client,
+        &endpoint,
+        build_anthropic_header_map(api_key, custom_headers)?,
+        &payload,
+        retry_options,
+    )
+    .await?;
 
     let content = extract_anthropic_content(&body);
 
@@ -263,6 +234,7 @@ async fn generate_summary_via_gemini(
     custom_headers: &HashMap<String, String>,
     model: &str,
     messages: &[crate::storage::services::chat_conversations::ChatContextMessage],
+    retry_options: &RetryOptions,
 ) -> Result<String> {
     let endpoint = resolve_gemini_endpoint(api_config, model, api_key);
     if endpoint.is_empty() {
@@ -289,27 +261,14 @@ async fn generate_summary_via_gemini(
         .build()
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
 
-    let response = client
-        .post(&endpoint)
-        .headers(build_gemini_header_map(custom_headers)?)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|error| Error::from_reason(format!("Summary request failed: {}", error)))?;
-
-    let status = response.status();
-    if !status.is_success() {
-        let error_body = response.text().await.unwrap_or_default();
-        return Err(Error::from_reason(format!(
-            "Summary request failed: {} {}",
-            status, error_body
-        )));
-    }
-
-    let body: Value = response
-        .json()
-        .await
-        .map_err(|error| Error::from_reason(format!("Failed to parse summary response: {}", error)))?;
+    let body: Value = send_summary_request_with_retry(
+        &client,
+        &endpoint,
+        build_gemini_header_map(custom_headers)?,
+        &payload,
+        retry_options,
+    )
+    .await?;
 
     let content = body
         .get("candidates")
@@ -324,6 +283,73 @@ async fn generate_summary_via_gemini(
         .unwrap_or("");
 
     Ok(content.to_string())
+}
+
+/// Send a non-streaming summary request with retry logic.
+/// Wraps the HTTP send + status check + JSON parse in a retry loop.
+async fn send_summary_request_with_retry(
+    client: &reqwest::Client,
+    endpoint: &str,
+    headers: reqwest::header::HeaderMap,
+    payload: &Value,
+    retry_options: &RetryOptions,
+) -> Result<Value> {
+    let mut attempt: u32 = 0;
+    loop {
+        let response = client
+            .post(endpoint)
+            .headers(headers.clone())
+            .json(payload)
+            .send()
+            .await
+            .map_err(|error| {
+                Error::from_reason(format!("Summary request failed: {}", error))
+            });
+
+        match response {
+            Ok(response) => {
+                let status = response.status();
+                if !status.is_success() {
+                    let error_body = response.text().await.unwrap_or_default();
+                    let error = Error::from_reason(format!(
+                        "Summary request failed: {} {}",
+                        status, error_body
+                    ));
+
+                    if !should_retry(&error, attempt, retry_options) {
+                        return Err(error);
+                    }
+
+                    attempt += 1;
+                    let delay = std::time::Duration::from_millis(retry_options.base_delay_ms);
+                    tokio::time::sleep(delay).await;
+                    continue;
+                }
+
+                let body: Value = response
+                    .json()
+                    .await
+                    .map_err(|error| {
+                        Error::from_reason(format!(
+                            "Failed to parse summary response: {}",
+                            error
+                        ))
+                    })?;
+
+                return Ok(body);
+            }
+            Err(error) => {
+                if !should_retry(&error, attempt, retry_options) {
+                    return Err(error);
+                }
+
+                attempt += 1;
+                let delay = std::time::Duration::from_millis(retry_options.base_delay_ms);
+                tokio::time::sleep(delay).await;
+                continue;
+            }
+        }
+    }
 }
 
 fn build_conversation_text(
