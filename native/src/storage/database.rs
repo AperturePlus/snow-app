@@ -92,7 +92,7 @@ fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
     reset_legacy_integer_primary_key_tables(connection)?;
 
     connection.execute_batch(
-        "PRAGMA user_version = 13;
+        "PRAGMA user_version = 14;
 
          CREATE TABLE IF NOT EXISTS system_settings (
            id TEXT PRIMARY KEY NOT NULL,
@@ -272,50 +272,20 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            ON chat_messages(conversation_id, id ASC);
          CREATE INDEX IF NOT EXISTS idx_chat_messages_response_id
            ON chat_messages(response_id);
-    ",
-    )?;
 
-    ensure_column(
-        connection,
-        "chat_conversations",
-        "input_tokens",
-        "INTEGER NOT NULL DEFAULT 0",
-    )?;
-    ensure_column(
-        connection,
-        "chat_conversations",
-        "output_tokens",
-        "INTEGER NOT NULL DEFAULT 0",
-    )?;
-    ensure_column(
-        connection,
-        "chat_conversations",
-        "cache_creation_input_tokens",
-        "INTEGER NOT NULL DEFAULT 0",
-    )?;
-    ensure_column(
-        connection,
-        "chat_conversations",
-        "cache_read_input_tokens",
-        "INTEGER NOT NULL DEFAULT 0",
-    )?;
-    ensure_column(
-        connection,
-        "chat_messages",
-        "thinking",
-        "TEXT NOT NULL DEFAULT ''",
-    )?;
-    ensure_column(
-        connection,
-        "chat_messages",
-        "tool_calls_json",
-        "TEXT NOT NULL DEFAULT '[]'",
-    )?;
-    ensure_column(
-        connection,
-        "chat_messages",
-        "checkpoint_id",
-        "TEXT NOT NULL DEFAULT ''",
+         CREATE TABLE IF NOT EXISTS todo_items (
+           id TEXT PRIMARY KEY NOT NULL,
+           session_id TEXT NOT NULL,
+           content TEXT NOT NULL,
+           status TEXT NOT NULL DEFAULT 'pending',
+           response_id TEXT NOT NULL DEFAULT '',
+           created_at TEXT NOT NULL,
+           updated_at TEXT NOT NULL,
+           parent_id TEXT
+         );
+         CREATE INDEX IF NOT EXISTS idx_todo_items_session
+           ON todo_items(session_id);
+    ",
     )?;
 
     Ok(())
@@ -352,29 +322,6 @@ fn has_integer_primary_key(connection: &Connection, table_name: &str) -> rusqlit
                 && primary_key_index > 0
                 && column_type.eq_ignore_ascii_case("INTEGER")))
     })
-}
-
-fn ensure_column(
-    connection: &Connection,
-    table_name: &str,
-    column_name: &str,
-    column_definition: &str,
-) -> rusqlite::Result<()> {
-    let mut statement = connection.prepare(&format!("PRAGMA table_info({table_name})"))?;
-    let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
-
-    for column in columns {
-        if column? == column_name {
-            return Ok(());
-        }
-    }
-
-    connection.execute(
-        &format!("ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}"),
-        [],
-    )?;
-
-    Ok(())
 }
 
 pub fn database_error(database_path: &Path, action: &str, error: rusqlite::Error) -> Error {

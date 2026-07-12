@@ -15,6 +15,12 @@ export type ChatInputProps = {
   onDraftRestored?: () => void;
   pendingMessages?: string[];
   onWithdrawPendingMessage?: (index: number) => string | null;
+  yoloMode?: boolean;
+  isUpdatingYoloMode?: boolean;
+  onYoloModeChange?: (enabled: boolean) => void;
+  onRefreshYoloMode?: () => void | Promise<boolean | void>;
+  autoScrollEnabled?: boolean;
+  onAutoScrollChange?: (enabled: boolean) => void;
 };
 
 export type RequestMethod = "chat" | "responses" | "gemini" | "anthropic";
@@ -90,4 +96,10 @@ export type ChatInputViewProps = ChatInputState &
     tokenUsage: TokenUsage | null;
     pendingMessages: string[];
     onWithdrawPendingMessage?: (index: number) => string | null;
+    yoloMode: boolean;
+    isUpdatingYoloMode: boolean;
+    onYoloModeChange?: (enabled: boolean) => void;
+    onRefreshYoloMode?: () => void | Promise<boolean | void>;
+    autoScrollEnabled: boolean;
+    onAutoScrollChange?: (enabled: boolean) => void;
   };

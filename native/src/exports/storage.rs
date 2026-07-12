@@ -44,6 +44,47 @@ pub async fn set_system_setting(
 }
 
 #[napi]
+pub async fn get_yolo_mode(workspace_path: Option<String>) -> napi::Result<bool> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::yolo_settings::get_yolo_mode(workspace_path)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn set_yolo_mode(workspace_path: Option<String>, enabled: bool) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::yolo_settings::set_yolo_mode(workspace_path, enabled)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn list_always_approved_tools(
+    workspace_path: Option<String>,
+) -> napi::Result<Vec<String>> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::permissions::list_always_approved_tools(workspace_path)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn add_always_approved_tool(
+    workspace_path: Option<String>,
+    tool_name: String,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::permissions::add_always_approved_tool(workspace_path, tool_name)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn list_api_configs() -> napi::Result<Vec<ApiConfigRecord>> {
     tokio::task::spawn_blocking(crate::storage::list_api_configs)
         .await
@@ -289,6 +330,16 @@ pub async fn delete_conversation(conversation_id: String) -> napi::Result<()> {
 }
 
 #[napi]
+pub async fn append_tool_message(
+    conversation_id: String,
+    content: String,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::append_tool_message(conversation_id, content))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn list_chat_messages(conversation_id: String) -> napi::Result<Vec<ChatMessageRecord>> {
     tokio::task::spawn_blocking(move || crate::storage::list_chat_messages(conversation_id))
         .await
@@ -331,6 +382,23 @@ pub async fn truncate_conversation_from_response(
 ) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || {
         crate::storage::truncate_conversation_from_response(conversation_id, response_id)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+/// List TODO items that will be deleted when rolling back to the given
+/// response_id within a conversation.  Returns a JSON string.
+#[napi]
+pub async fn list_todos_for_rollback(
+    session_id: String,
+    response_id: String,
+) -> napi::Result<String> {
+    tokio::task::spawn_blocking(move || {
+        crate::mcp::servers::todo::TodoService::list_todos_for_rollback(
+            &session_id,
+            &response_id,
+        )
     })
     .await
     .map_err(map_spawn_error)?

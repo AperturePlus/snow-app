@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatInputSendOptions } from "../chatInput/types";
 import type {
   ChatConversationRecord,
@@ -15,6 +15,8 @@ export type ToolCallInfo = {
   result?: string;
   streamingStdout?: string;
   streamingStderr?: string;
+  authorizationId?: string;
+  authorizationConversationId?: string;
 };
 
 export type ChatConversationMessage = {
@@ -63,6 +65,12 @@ type ConversationSessionRef = {
   checkpointIds: string[];
 };
 
+type RollbackTodoItem = {
+  id: string;
+  content: string;
+  status: string;
+};
+
 type RollbackPreview = {
   messageId: string;
   messageContent: string;
@@ -72,6 +80,13 @@ type RollbackPreview = {
   convId?: string;
   responseId?: string;
   isFirstMessage: boolean;
+  todoItems: RollbackTodoItem[];
+};
+type ToolAuthorizationDecision = "approved" | "rejected";
+
+type PendingToolAuthorization = {
+  toolCall: ToolCallInfo;
+  resolve: (decision: ToolAuthorizationDecision) => void;
 };
 
 type UseChatConversationResult = {
@@ -116,6 +131,14 @@ type UseChatConversationResult = {
   rollbackPreview: RollbackPreview | null;
   confirmRollback: () => void;
   cancelRollback: () => void;
+  yoloMode: boolean;
+  isUpdatingYoloMode: boolean;
+  setYoloMode: (enabled: boolean) => Promise<void>;
+  refreshYoloMode: () => Promise<boolean>;
+  pendingToolAuthorizations: ToolCallInfo[];
+  approveToolAuthorization: (toolCall: ToolCallInfo) => void;
+  approveToolAuthorizationAlways: (toolCall: ToolCallInfo) => void;
+  rejectToolAuthorization: (toolCall: ToolCallInfo) => void;
 };
 
 const PENDING_SESSION_KEY = "__pending__";
@@ -323,7 +346,9 @@ const isSameToolCall = (
 const updateFirstMatchingToolCall = (
   toolCalls: ToolCallInfo[] | undefined,
   target: ToolCallInfo,
-  expectedStatus: ToolCallInfo["status"],
+  expectedStatus:
+    | ToolCallInfo["status"]
+    | ReadonlyArray<ToolCallInfo["status"]>,
   update: (toolCall: ToolCallInfo) => ToolCallInfo
 ): ToolCallInfo[] | undefined => {
   if (!toolCalls) {
@@ -334,7 +359,9 @@ const updateFirstMatchingToolCall = (
   return toolCalls.map((toolCall) => {
     if (
       hasUpdated ||
-      toolCall.status !== expectedStatus ||
+      !(Array.isArray(expectedStatus)
+        ? expectedStatus.includes(toolCall.status)
+        : toolCall.status === expectedStatus) ||
       !isSameToolCall(toolCall, target)
     ) {
       return toolCall;
@@ -403,6 +430,11 @@ export const useChatConversation = (
   const [draftToRestore, setDraftToRestore] = useState<string | null>(null);
   const [rollbackPreview, setRollbackPreview] =
     useState<RollbackPreview | null>(null);
+  const [yoloMode, setYoloModeState] = useState(false);
+  const [isUpdatingYoloMode, setIsUpdatingYoloMode] = useState(false);
+  const [pendingToolAuthorizations, setPendingToolAuthorizations] = useState<
+    ToolCallInfo[]
+  >([]);
 
   const sessionsRefData = useRef<Map<string, ConversationSessionRef>>(
     new Map()
@@ -424,6 +456,205 @@ export const useChatConversation = (
   const handleSendMessageRef = useRef<
     (message: string, options: ChatInputSendOptions) => void
   >(() => {});
+  const yoloModeRef = useRef(yoloMode);
+  const alwaysApprovedToolsRef = useRef(new Set<string>());
+  const pendingToolAuthorizationRef = useRef(
+    new Map<string, PendingToolAuthorization>()
+  );
+  yoloModeRef.current = yoloMode;
+
+  const approveAllPendingToolAuthorizations = useCallback((): void => {
+    const pendingEntries = pendingToolAuthorizationRef.current;
+    if (pendingEntries.size === 0) {
+      return;
+    }
+
+    pendingEntries.forEach((entry) => entry.resolve("approved"));
+    pendingEntries.clear();
+    setPendingToolAuthorizations([]);
+  }, []);
+
+  const applyYoloMode = useCallback(
+    (enabled: boolean): void => {
+      yoloModeRef.current = enabled;
+      setYoloModeState(enabled);
+      if (enabled) {
+        approveAllPendingToolAuthorizations();
+      }
+    },
+    [approveAllPendingToolAuthorizations]
+  );
+
+  const refreshYoloMode = useCallback(async (): Promise<boolean> => {
+    try {
+      const enabled = await window.snow.getYoloMode(directoryPath);
+      applyYoloMode(enabled);
+      return enabled;
+    } catch {
+      applyYoloMode(false);
+      return false;
+    }
+  }, [applyYoloMode, directoryPath]);
+
+  useEffect(() => {
+    let disposed = false;
+
+    void window.snow
+      .getYoloMode(directoryPath)
+      .then((enabled) => {
+        if (!disposed) {
+          applyYoloMode(enabled);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          applyYoloMode(false);
+        }
+      });
+
+    void window.snow
+      .listAlwaysApprovedTools(directoryPath)
+      .then((toolNames) => {
+        if (!disposed) {
+          alwaysApprovedToolsRef.current = new Set(toolNames);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          alwaysApprovedToolsRef.current = new Set();
+        }
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [applyYoloMode, directoryPath]);
+
+  const setYoloMode = useCallback(
+    async (enabled: boolean): Promise<void> => {
+      if (isUpdatingYoloMode) {
+        return;
+      }
+
+      setIsUpdatingYoloMode(true);
+      try {
+        await window.snow.setYoloMode(directoryPath, enabled);
+        applyYoloMode(enabled);
+      } finally {
+        setIsUpdatingYoloMode(false);
+      }
+    },
+    [applyYoloMode, directoryPath, isUpdatingYoloMode]
+  );
+
+  const settleToolAuthorization = useCallback(
+    (toolCall: ToolCallInfo, decision: ToolAuthorizationDecision): void => {
+      const authorizationId = toolCall.authorizationId;
+      if (!authorizationId) {
+        return;
+      }
+
+      const pending = pendingToolAuthorizationRef.current.get(authorizationId);
+      if (!pending) {
+        return;
+      }
+
+      // Resolve only this tool's authorization. Rejecting one tool in a
+      // parallel batch must not cascade-reject the remaining tools.
+      pendingToolAuthorizationRef.current.delete(authorizationId);
+      setPendingToolAuthorizations((current) =>
+        current.filter((item) => item.authorizationId !== authorizationId)
+      );
+      pending.resolve(decision);
+    },
+    []
+  );
+
+  const rejectAllToolAuthorizations = useCallback((): void => {
+    const pendingEntries = pendingToolAuthorizationRef.current;
+    pendingEntries.forEach((entry) => entry.resolve("rejected"));
+    pendingEntries.clear();
+    setPendingToolAuthorizations([]);
+  }, []);
+
+  const requestToolAuthorization = useCallback(
+    (
+      toolCall: ToolCallInfo,
+      index: number,
+      conversationId: string
+    ): Promise<ToolAuthorizationDecision> => {
+      if (
+        yoloModeRef.current ||
+        alwaysApprovedToolsRef.current.has(toolCall.name)
+      ) {
+        return Promise.resolve("approved");
+      }
+
+      const authorizationId = `${
+        toolCall.callId ?? toolCall.name
+      }-${index}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const pendingToolCall = {
+        ...toolCall,
+        authorizationId,
+        authorizationConversationId: conversationId,
+      };
+
+      return new Promise((resolve) => {
+        pendingToolAuthorizationRef.current.set(authorizationId, {
+          toolCall: pendingToolCall,
+          resolve,
+        });
+        setPendingToolAuthorizations((current) => [
+          ...current,
+          pendingToolCall,
+        ]);
+      });
+    },
+    []
+  );
+
+  const requestToolAuthorizations = useCallback(
+    async (
+      toolCalls: ToolCallInfo[],
+      conversationId: string
+    ): Promise<ToolAuthorizationDecision[]> => {
+      // One disk read per tool batch so mid-loop YOLO toggles take effect
+      // immediately without re-reading the settings file for every tool.
+      try {
+        const enabled = await window.snow.getYoloMode(directoryPath);
+        applyYoloMode(enabled);
+      } catch {
+        // Keep the last known in-memory state if the read fails.
+      }
+
+      return Promise.all(
+        toolCalls.map((toolCall, index) =>
+          requestToolAuthorization(toolCall, index, conversationId)
+        )
+      );
+    },
+    [applyYoloMode, directoryPath, requestToolAuthorization]
+  );
+
+  const approveToolAuthorizationAlways = useCallback(
+    (toolCall: ToolCallInfo): void => {
+      void window.snow
+        .addAlwaysApprovedTool(directoryPath, toolCall.name)
+        .then(() => {
+          alwaysApprovedToolsRef.current.add(toolCall.name);
+        })
+        .catch(() => {
+          // The current execution can continue even if persistence fails.
+        })
+        .finally(() => settleToolAuthorization(toolCall, "approved"));
+    },
+    [directoryPath, settleToolAuthorization]
+  );
+
+  useEffect(
+    () => () => rejectAllToolAuthorizations(),
+    [rejectAllToolAuthorizations]
+  );
 
   const setActiveId = useCallback((id: string | undefined): void => {
     activeConversationIdRef.current = id;
@@ -745,10 +976,7 @@ export const useChatConversation = (
         // so expensive commands are visible before execution begins; later calls stay
         // pending until the sequential executor reaches them.
         const toolCalls = parseToolCalls(response.toolCallsJson);
-        const visibleToolCalls = toolCalls.map((toolCall, index) => ({
-          ...toolCall,
-          status: index === 0 ? ("running" as const) : toolCall.status,
-        }));
+        const visibleToolCalls = toolCalls;
 
         // Update assistant message with final content and immediately-visible calls.
         updateSessionMessages(effectiveKey, (currentMessages) =>
@@ -821,13 +1049,28 @@ export const useChatConversation = (
           return;
         }
 
-        // Execute tool calls sequentially and collect results.
-        const toolResults: string[] = [];
-        for (const [toolIndex, toolCall] of toolCalls.entries()) {
-          if (sessionsRefData.current.get(effectiveKey)?.isAbortRequested) {
-            return;
-          }
-          if (toolIndex > 0) {
+        // Request authorization for the full tool batch before executing it.
+        // Each tool is authorized independently: approving or rejecting one
+        // tool must not cascade to the rest of the batch.
+        const authorizationDecisions = await requestToolAuthorizations(
+          toolCalls,
+          effectiveKey
+        );
+
+        // When every tool in this batch is rejected (single tool or full
+        // parallel rejection), mark them as denied and stop the agent loop
+        // instead of feeding denial results back to the model.
+        const allToolsRejected =
+          authorizationDecisions.length > 0 &&
+          authorizationDecisions.every((decision) => decision === "rejected");
+        if (allToolsRejected) {
+          for (const toolCall of toolCalls) {
+            const deniedResult = JSON.stringify({
+              success: false,
+              error: "TOOL_EXECUTION_DENIED_BY_USER",
+              message: "用户拒绝执行",
+              toolName: toolCall.name,
+            });
             updateSessionMessages(effectiveKey, (currentMessages) =>
               currentMessages.map((currentMessage) => {
                 if (currentMessage.id !== currentAssistantMessageId) {
@@ -839,94 +1082,181 @@ export const useChatConversation = (
                   toolCalls: updateFirstMatchingToolCall(
                     currentMessage.toolCalls,
                     toolCall,
-                    "pending",
+                    ["pending", "running"],
                     (currentToolCall) => ({
                       ...currentToolCall,
-                      status: "running" as const,
+                      status: "error" as const,
+                      result: deniedResult,
                     })
                   ),
                 };
               })
             );
           }
+          return;
+        }
 
-          let result: string;
-          const validationError = validateToolCall(toolCall);
-          if (validationError) {
-            result = validationError;
-          } else {
-            try {
-              const checkpointIds =
-                sessionsRefData.current.get(effectiveKey)?.checkpointIds ?? [];
-              result = await window.snow.callMcpTool(
-                toolCall.name,
-                toolCall.arguments,
-                checkpointIds,
-                checkpointIds.length > 0 ? directoryPath : undefined,
-                (chunk) => {
-                  if (!chunk.data) {
-                    return;
-                  }
-
-                  updateSessionMessages(effectiveKey, (currentMessages) =>
-                    currentMessages.map((currentMessage) => {
-                      if (currentMessage.id !== currentAssistantMessageId) {
-                        return currentMessage;
-                      }
-
-                      return {
-                        ...currentMessage,
-                        toolCalls: updateFirstMatchingToolCall(
-                          currentMessage.toolCalls,
-                          toolCall,
-                          "running",
-                          (currentToolCall) => ({
-                            ...currentToolCall,
-                            streamingStdout:
-                              chunk.stream === "stdout"
-                                ? `${currentToolCall.streamingStdout ?? ""}${
-                                    chunk.data
-                                  }`
-                                : currentToolCall.streamingStdout,
-                            streamingStderr:
-                              chunk.stream === "stderr"
-                                ? `${currentToolCall.streamingStderr ?? ""}${
-                                    chunk.data
-                                  }`
-                                : currentToolCall.streamingStderr,
-                          })
-                        ),
-                      };
-                    })
-                  );
-                }
-              );
-            } catch (err) {
-              result = JSON.stringify({ error: getErrorMessage(err) });
-            }
+        const toolResults: string[] = [];
+        for (let toolIndex = 0; toolIndex < toolCalls.length; toolIndex++) {
+          const toolCall = toolCalls[toolIndex];
+          if (sessionsRefData.current.get(effectiveKey)?.isAbortRequested) {
+            return;
           }
 
-          updateSessionMessages(effectiveKey, (currentMessages) =>
-            currentMessages.map((currentMessage) => {
-              if (currentMessage.id !== currentAssistantMessageId) {
-                return currentMessage;
-              }
+          let result: string;
+          if (authorizationDecisions[toolIndex] === "rejected") {
+            result = JSON.stringify({
+              success: false,
+              error: "TOOL_EXECUTION_DENIED_BY_USER",
+              message: "用户拒绝执行",
+              toolName: toolCall.name,
+            });
 
-              return {
-                ...currentMessage,
-                toolCalls: updateFirstMatchingToolCall(
-                  currentMessage.toolCalls,
-                  toolCall,
-                  "running",
-                  (currentToolCall) => ({
-                    ...currentToolCall,
-                    status: "completed" as const,
-                    result,
-                  })
-                ),
-              };
-            })
-          );
+            updateSessionMessages(effectiveKey, (currentMessages) =>
+              currentMessages.map((currentMessage) => {
+                if (currentMessage.id !== currentAssistantMessageId) {
+                  return currentMessage;
+                }
+
+                return {
+                  ...currentMessage,
+                  toolCalls: updateFirstMatchingToolCall(
+                    currentMessage.toolCalls,
+                    toolCall,
+                    ["pending", "running"],
+                    (currentToolCall) => ({
+                      ...currentToolCall,
+                      status: "error" as const,
+                      result,
+                    })
+                  ),
+                };
+              })
+            );
+          } else {
+            const validationError = validateToolCall(toolCall);
+            if (validationError) {
+              result = validationError;
+            } else {
+              updateSessionMessages(effectiveKey, (currentMessages) =>
+                currentMessages.map((currentMessage) => {
+                  if (currentMessage.id !== currentAssistantMessageId) {
+                    return currentMessage;
+                  }
+
+                  return {
+                    ...currentMessage,
+                    toolCalls: updateFirstMatchingToolCall(
+                      currentMessage.toolCalls,
+                      toolCall,
+                      "pending",
+                      (currentToolCall) => ({
+                        ...currentToolCall,
+                        status: "running" as const,
+                      })
+                    ),
+                  };
+                })
+              );
+
+              try {
+                const checkpointIds =
+                  sessionsRefData.current.get(effectiveKey)?.checkpointIds ??
+                  [];
+
+                // Force-override sessionId for todo-manage. Only add actions
+                // receive responseId, because rollback tracking applies solely
+                // to TODO items created by that action.
+                let toolArgs = toolCall.arguments;
+                if (
+                  toolCall.name === "mcp__todo__todo-manage" &&
+                  effectiveKey !== PENDING_SESSION_KEY
+                ) {
+                  try {
+                    const parsedArgs = JSON.parse(toolArgs) as Record<
+                      string,
+                      unknown
+                    >;
+                    parsedArgs.sessionId = effectiveKey;
+                    if (parsedArgs.action === "add" && response.id) {
+                      parsedArgs.responseId = response.id;
+                    }
+                    toolArgs = JSON.stringify(parsedArgs);
+                  } catch {
+                    // If args are not valid JSON, let the tool fail naturally.
+                  }
+                }
+
+                result = await window.snow.callMcpTool(
+                  toolCall.name,
+                  toolArgs,
+                  checkpointIds,
+                  checkpointIds.length > 0 ? directoryPath : undefined,
+                  (chunk) => {
+                    if (!chunk.data) {
+                      return;
+                    }
+
+                    updateSessionMessages(effectiveKey, (currentMessages) =>
+                      currentMessages.map((currentMessage) => {
+                        if (currentMessage.id !== currentAssistantMessageId) {
+                          return currentMessage;
+                        }
+
+                        return {
+                          ...currentMessage,
+                          toolCalls: updateFirstMatchingToolCall(
+                            currentMessage.toolCalls,
+                            toolCall,
+                            ["pending", "running"],
+                            (currentToolCall) => ({
+                              ...currentToolCall,
+                              streamingStdout:
+                                chunk.stream === "stdout"
+                                  ? `${currentToolCall.streamingStdout ?? ""}${
+                                      chunk.data
+                                    }`
+                                  : currentToolCall.streamingStdout,
+                              streamingStderr:
+                                chunk.stream === "stderr"
+                                  ? `${currentToolCall.streamingStderr ?? ""}${
+                                      chunk.data
+                                    }`
+                                  : currentToolCall.streamingStderr,
+                            })
+                          ),
+                        };
+                      })
+                    );
+                  }
+                );
+              } catch (err) {
+                result = JSON.stringify({ error: getErrorMessage(err) });
+              }
+            }
+
+            updateSessionMessages(effectiveKey, (currentMessages) =>
+              currentMessages.map((currentMessage) => {
+                if (currentMessage.id !== currentAssistantMessageId) {
+                  return currentMessage;
+                }
+
+                return {
+                  ...currentMessage,
+                  toolCalls: updateFirstMatchingToolCall(
+                    currentMessage.toolCalls,
+                    toolCall,
+                    ["pending", "running"],
+                    (currentToolCall) => ({
+                      ...currentToolCall,
+                      status: "completed" as const,
+                      result,
+                    })
+                  ),
+                };
+              })
+            );
+          }
 
           const toolResultIdentifier = toolCall.callId
             ? `${toolCall.name}#${toolCall.callId}`
@@ -1069,7 +1399,7 @@ export const useChatConversation = (
           // Flush pending messages queued while this session was busy.
           const pendingQueue =
             pendingQueueRef.current.get(finalSessionKey) ?? [];
-          if (pendingQueue.length > 0) {
+          if (!ref?.isAbortRequested && pendingQueue.length > 0) {
             pendingQueueRef.current.delete(finalSessionKey);
             const combined = pendingQueue.map((item) => item.text).join("\n\n");
             const lastOptions =
@@ -1363,6 +1693,7 @@ export const useChatConversation = (
       return;
     }
 
+    rejectAllToolAuthorizations();
     ref.isAbortRequested = true;
     updateSessionMessages(key, (currentMessages) =>
       currentMessages.map((message) => ({
@@ -1386,11 +1717,17 @@ export const useChatConversation = (
     if (ref.streamId) {
       void window.snow.abortResponseStream(ref.streamId);
     }
-  }, [updateSessionMessages, updateSessionField, removeStreamingId]);
+  }, [
+    removeStreamingId,
+    rejectAllToolAuthorizations,
+    updateSessionMessages,
+    updateSessionField,
+  ]);
 
   const abortConversation = useCallback(
     (conversationId: string): void => {
       const ref = sessionsRefData.current.get(conversationId);
+      rejectAllToolAuthorizations();
       if (ref?.streamId) {
         void window.snow.abortResponseStream(ref.streamId);
         ref.streamId = null;
@@ -1412,7 +1749,7 @@ export const useChatConversation = (
         return next;
       });
     },
-    [updateSessionField, removeStreamingId]
+    [removeStreamingId, rejectAllToolAuthorizations, updateSessionField]
   );
 
   const refreshConversations = useCallback((): void => {
@@ -1527,6 +1864,34 @@ export const useChatConversation = (
           }
         }
 
+        // Fetch TODO items that will be deleted alongside the rollback.
+        let todoItems: RollbackTodoItem[] = [];
+        if (convId && responseId) {
+          try {
+            const todoJson = await window.snow.listTodosForRollback(
+              convId,
+              responseId
+            );
+            const parsed = JSON.parse(todoJson) as unknown;
+            if (Array.isArray(parsed)) {
+              todoItems = parsed
+                .filter(
+                  (item): item is Record<string, unknown> =>
+                    typeof item === "object" && item !== null
+                )
+                .map((item) => ({
+                  id: typeof item.id === "string" ? item.id : "",
+                  content: typeof item.content === "string" ? item.content : "",
+                  status:
+                    typeof item.status === "string" ? item.status : "pending",
+                }))
+                .filter((item) => item.id);
+            }
+          } catch {
+            // Best effort — show empty on error
+          }
+        }
+
         setRollbackPreview({
           messageId,
           messageContent,
@@ -1536,6 +1901,7 @@ export const useChatConversation = (
           convId,
           responseId,
           isFirstMessage,
+          todoItems,
         });
       };
 
@@ -1560,17 +1926,15 @@ export const useChatConversation = (
       isFirstMessage,
     } = preview;
 
-    // Truncate UI state: remove the target message and everything after.
     updateSessionMessages(key, (currentMessages) => {
-      const idx = currentMessages.findIndex((m) => m.id === messageId);
-      if (idx === -1) {
-        return currentMessages;
-      }
-      return currentMessages.slice(0, idx);
+      const targetIndex = currentMessages.findIndex(
+        (message) => message.id === messageId
+      );
+      return targetIndex === -1
+        ? currentMessages
+        : currentMessages.slice(0, targetIndex);
     });
 
-    // Restore file-system checkpoint and then release every checkpoint at or
-    // after the rollback target. Earlier checkpoints remain active.
     if (checkpointId && directoryPath && !directoryPath.startsWith("ssh://")) {
       const sessionRef = sessionsRefData.current.get(key);
       const checkpointIndex =
@@ -1591,7 +1955,6 @@ export const useChatConversation = (
           deleteCheckpoints(discardedCheckpointIds);
         })
         .catch(() => {
-          // Keep the target checkpoint when restore fails so retry is possible.
           if (
             sessionRef &&
             checkpointIndex >= 0 &&
@@ -1606,8 +1969,6 @@ export const useChatConversation = (
     }
 
     if (isFirstMessage && convId) {
-      // Rolling back to the first user message — delete the entire
-      // conversation from the DB and clear the session.
       void window.snow
         .deleteConversation(convId)
         .then(() => {
@@ -1624,13 +1985,11 @@ export const useChatConversation = (
       });
       setActiveId(undefined);
     } else if (convId && responseId) {
-      // Truncate DB messages from the exchange onward.
       void window.snow.truncateConversation(convId, responseId).catch(() => {
-        // Best effort — DB truncation failure should not block the UI
+        // Best effort — database persistence must not block the UI refresh.
       });
     }
 
-    // Write the rolled-back message content back into the input box.
     setDraftToRestore(messageContent);
     setRollbackPreview(null);
   }, [
@@ -1682,5 +2041,15 @@ export const useChatConversation = (
     rollbackPreview,
     confirmRollback,
     cancelRollback,
+    yoloMode,
+    isUpdatingYoloMode,
+    setYoloMode,
+    refreshYoloMode,
+    pendingToolAuthorizations,
+    approveToolAuthorization: (toolCall) =>
+      settleToolAuthorization(toolCall, "approved"),
+    approveToolAuthorizationAlways,
+    rejectToolAuthorization: (toolCall) =>
+      settleToolAuthorization(toolCall, "rejected"),
   };
 };

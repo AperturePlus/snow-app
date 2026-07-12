@@ -12,6 +12,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import type { WorkspaceDirectoryRecord } from "../../preload";
 import { useChatConversationContext } from "./mainContent/chatMessages";
+import { TodoPanelButton } from "./TopBar/TodoPanelButton";
 
 type TopBarProps = {
   isSidebarCollapsed: boolean;
@@ -36,12 +37,13 @@ export const TopBar = ({
   onOpenTerminal,
   onOpenBrowser,
 }: TopBarProps): React.JSX.Element => {
-  const { handleNewChat, summary, conversationDirectoryId } =
+  const { handleNewChat, summary, conversationDirectoryId, messages } =
     useChatConversationContext();
   const [conversationDirectoryName, setConversationDirectoryName] = useState<
     string | undefined
   >(undefined);
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
+  const [isTodoPanelOpen, setIsTodoPanelOpen] = useState(false);
   const plusMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -134,7 +136,11 @@ export const TopBar = ({
   };
 
   return (
-    <header className={`top-bar${isPlusMenuOpen ? " plus-menu-open" : ""}`}>
+    <header
+      className={`top-bar${isPlusMenuOpen ? " plus-menu-open" : ""}${
+        isTodoPanelOpen ? " todo-panel-open" : ""
+      }`}
+    >
       <div className="top-bar-left">
         <div className="top-bar-sidebar-actions" aria-label="Sidebar actions">
           <button
@@ -165,6 +171,10 @@ export const TopBar = ({
             <span className="header-subtitle">{headerSubtitle}</span>
           ) : null}
         </div>
+        <TodoPanelButton
+          messages={messages}
+          onOpenChange={setIsTodoPanelOpen}
+        />
       </div>
 
       <div className="top-bar-right">

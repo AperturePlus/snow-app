@@ -54,8 +54,6 @@ struct CheckpointManifest {
     version: u32,
     work_dir: String,
     git: Option<GitBaseline>,
-    #[serde(default)]
-    terminal_capture: bool,
     entries: Vec<CheckpointEntry>,
 }
 
@@ -154,36 +152,105 @@ fn normalize_path(path: &Path) -> PathBuf {
     normalized
 }
 
+/// Strip Windows extended-length path prefixes so absolute and canonical paths
+/// can be compared consistently.
+///
+/// `fs::canonicalize` on Windows returns paths like `\\?\D:\repo` or
+/// `\\?\UNC\server\share`. Logical absolute paths from the AI / UI usually do
+/// not include this prefix, so `starts_with` would otherwise reject in-workspace
+/// absolute paths (especially for files that do not exist yet).
+fn strip_windows_extended_prefix(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\") {
+        if let Some(unc) = rest.strip_prefix(r"UNC\") {
+            return PathBuf::from(format!(r"\\{unc}"));
+        }
+        return PathBuf::from(rest);
+    }
+    path.to_path_buf()
+}
+
+fn path_key(path: &Path) -> String {
+    let stripped = strip_windows_extended_prefix(path);
+    let mut key = stripped.to_string_lossy().replace('\\', "/");
+    while key.ends_with('/') && key.len() > 1 {
+        key.pop();
+    }
+    #[cfg(windows)]
+    {
+        key = key.to_ascii_lowercase();
+    }
+    key
+}
+
+fn is_path_within_root(path: &Path, root: &Path) -> bool {
+    let candidate_key = path_key(path);
+    let base_key = path_key(root);
+    candidate_key == base_key
+        || candidate_key.starts_with(&format!("{base_key}/"))
+}
+
+/// Resolve a path that may not exist yet while preserving the same Windows
+/// extended-path form as `fs::canonicalize` on the parent directory.
+fn resolve_path_for_checkpoint(path: &Path) -> Result<PathBuf> {
+    if path.exists() {
+        return fs::canonicalize(path).map_err(|error| {
+            Error::from_reason(format!(
+                "Failed to resolve checkpoint path '{}': {error}",
+                path.display()
+            ))
+        });
+    }
+
+    let normalized = normalize_path(path);
+    if let Some(parent) = normalized.parent() {
+        if !parent.as_os_str().is_empty() && parent.exists() {
+            let parent_canonical = fs::canonicalize(parent).map_err(|error| {
+                Error::from_reason(format!(
+                    "Failed to resolve checkpoint path parent '{}': {error}",
+                    parent.display()
+                ))
+            })?;
+            if let Some(file_name) = normalized.file_name() {
+                return Ok(parent_canonical.join(file_name));
+            }
+        }
+    }
+
+    Ok(strip_windows_extended_prefix(&normalized))
+}
+
 fn resolve_checkpoint_path(root: &Path, file_path: &str) -> Result<(PathBuf, PathBuf)> {
     let supplied = Path::new(file_path);
     let candidate = if supplied.is_absolute() {
         supplied.to_path_buf()
     } else {
-        root.join(supplied)
+        // Join relative paths against the logical root so Windows extended
+        // prefixes do not leak into intermediate path components.
+        strip_windows_extended_prefix(root).join(supplied)
     };
-    let normalized = if candidate.exists() {
-        fs::canonicalize(&candidate).map_err(|error| {
-            Error::from_reason(format!(
-                "Failed to resolve checkpoint path '{}': {error}",
-                candidate.display()
-            ))
-        })?
-    } else {
-        normalize_path(&candidate)
-    };
+    let normalized = resolve_path_for_checkpoint(&candidate)?;
 
-    if !normalized.starts_with(root) {
+    if !is_path_within_root(&normalized, root) {
         return Err(Error::from_reason(format!(
             "Path '{}' is outside checkpoint working directory '{}'",
-            normalized.display(),
-            root.display()
+            strip_windows_extended_prefix(&normalized).display(),
+            strip_windows_extended_prefix(root).display()
         )));
     }
 
-    let relative = normalized
-        .strip_prefix(root)
-        .map_err(|_| Error::from_reason("Failed to create checkpoint-relative path"))?
-        .to_path_buf();
+    let relative = {
+        let path_key_value = path_key(&normalized);
+        let root_key_value = path_key(root);
+        if path_key_value == root_key_value {
+            PathBuf::new()
+        } else {
+            let relative_key = path_key_value
+                .strip_prefix(&format!("{root_key_value}/"))
+                .ok_or_else(|| Error::from_reason("Failed to create checkpoint-relative path"))?;
+            from_forward_slashes(relative_key)
+        }
+    };
     Ok((normalized, relative))
 }
 
@@ -487,6 +554,7 @@ fn capture_entry(
     absolute: &Path,
     relative: &Path,
     prefer_git_baseline: bool,
+    assume_missing_when_untracked: bool,
 ) -> Result<()> {
     if relative.as_os_str().is_empty() || should_skip_relative(relative) {
         return Ok(());
@@ -502,6 +570,7 @@ fn capture_entry(
         {
             OriginalState::Git
         }
+        _ if assume_missing_when_untracked => OriginalState::Missing,
         _ => current_state(absolute)?,
     };
     manifest.entries.push(CheckpointEntry { path, original });
@@ -531,7 +600,6 @@ pub fn create_checkpoint(work_dir: String) -> Result<String> {
         version: MANIFEST_VERSION,
         work_dir: root.to_string_lossy().to_string(),
         git: detect_git_baseline(&root),
-        terminal_capture: false,
         entries: Vec::new(),
     };
 
@@ -562,7 +630,7 @@ pub fn record_checkpoint_file(
         let mut manifest = read_manifest(&checkpoint_id)?;
         validate_manifest_work_dir(&manifest, &work_dir)?;
         let entry_count = manifest.entries.len();
-        capture_entry(&mut manifest, &absolute, &relative, false)?;
+        capture_entry(&mut manifest, &absolute, &relative, false, false)?;
         if manifest.entries.len() != entry_count {
             write_manifest(&checkpoint_id, &manifest)?;
         }
@@ -570,12 +638,30 @@ pub fn record_checkpoint_file(
     Ok(())
 }
 
-/// Capture Git-visible paths before a terminal command runs. Existing Git
-/// objects are referenced by commit id; only untracked or pre-modified files
-/// are copied into the shared content-addressed object store.
+/// Capture Git-visible paths before a terminal command runs. These entries
+/// preserve any pre-existing user edits if the command subsequently changes
+/// the same paths.
 pub fn record_checkpoint_worktree(
     checkpoint_ids: Vec<String>,
     work_dir: String,
+) -> Result<()> {
+    record_checkpoint_worktree_changes(checkpoint_ids, work_dir, false)
+}
+
+/// Capture the paths changed by a completed terminal command. Newly recorded
+/// tracked files use the checkpoint Git baseline; existing entries keep the
+/// state captured before the command.
+pub fn record_checkpoint_worktree_after(
+    checkpoint_ids: Vec<String>,
+    work_dir: String,
+) -> Result<()> {
+    record_checkpoint_worktree_changes(checkpoint_ids, work_dir, true)
+}
+
+fn record_checkpoint_worktree_changes(
+    checkpoint_ids: Vec<String>,
+    work_dir: String,
+    prefer_git_baseline: bool,
 ) -> Result<()> {
     if checkpoint_ids.is_empty() {
         return Ok(());
@@ -589,14 +675,26 @@ pub fn record_checkpoint_worktree(
             continue;
         };
         let paths = collect_git_change_paths(baseline)?;
+        let path_states = paths
+            .into_iter()
+            .map(|relative_path| {
+                let exists_in_git = git_object_exists(baseline, &relative_path)?;
+                Ok((relative_path, exists_in_git))
+            })
+            .collect::<Result<Vec<_>>>()?;
         let entry_count = manifest.entries.len();
-        for relative_path in paths {
+        for (relative_path, exists_in_git) in path_states {
             let relative = from_forward_slashes(&relative_path);
             let absolute = root.join(&relative);
-            capture_entry(&mut manifest, &absolute, &relative, false)?;
+            capture_entry(
+                &mut manifest,
+                &absolute,
+                &relative,
+                prefer_git_baseline,
+                prefer_git_baseline && !exists_in_git,
+            )?;
         }
-        if !manifest.terminal_capture || manifest.entries.len() != entry_count {
-            manifest.terminal_capture = true;
+        if manifest.entries.len() != entry_count {
             write_manifest(&checkpoint_id, &manifest)?;
         }
     }
@@ -612,35 +710,8 @@ pub fn restore_checkpoint(checkpoint_id: String, work_dir: String) -> Result<()>
     for entry in &manifest.entries {
         restore_entry(&root, &manifest, entry)?;
     }
-
-    if manifest.terminal_capture {
-        let baseline = manifest.git.as_ref().ok_or_else(|| {
-            Error::from_reason("Checkpoint Git baseline is missing")
-        })?;
-        let recorded_paths: HashSet<&str> = manifest
-            .entries
-            .iter()
-            .map(|entry| entry.path.as_str())
-            .collect();
-        for path in collect_git_change_paths(baseline)? {
-            if recorded_paths.contains(path.as_str()) {
-                continue;
-            }
-            let destination = root.join(from_forward_slashes(&path));
-            if let Some(content) = read_git_object(baseline, &path)? {
-                write_file(&destination, &content)?;
-            } else if destination.is_file() || destination.is_symlink() {
-                fs::remove_file(&destination).map_err(|error| {
-                    Error::from_reason(format!(
-                        "Failed to remove added file '{}': {error}",
-                        destination.display()
-                    ))
-                })?;
-            }
-        }
-    }
-
     prune_empty_parent_directories(&root, &manifest.entries);
+
     Ok(())
 }
 
@@ -827,28 +898,15 @@ pub struct CheckpointFileDiff {
     pub is_binary: bool,
 }
 
-fn collect_tracked_states(
-    manifest: &CheckpointManifest,
-) -> Result<HashMap<String, OriginalState>> {
-    let mut tracked: HashMap<String, OriginalState> = manifest
+fn collect_tracked_states(manifest: &CheckpointManifest) -> HashMap<String, OriginalState> {
+    manifest
         .entries
         .iter()
         .map(|entry| (entry.path.clone(), entry.original.clone()))
-        .collect();
-
-    if manifest.terminal_capture {
-        if let Some(baseline) = manifest.git.as_ref() {
-            for path in collect_git_change_paths(baseline)? {
-                tracked.entry(path).or_insert(OriginalState::Git);
-            }
-        }
-    }
-
-    Ok(tracked)
+        .collect()
 }
 
-/// Compare only recorded paths. Git-backed checkpoints additionally include
-/// paths changed by terminal commands, without walking the working directory.
+/// Compare only paths explicitly recorded while this conversation's tools ran.
 pub fn list_checkpoint_changes(
     checkpoint_id: String,
     work_dir: String,
@@ -856,7 +914,7 @@ pub fn list_checkpoint_changes(
     let _guard = checkpoint_guard()?;
     let manifest = read_manifest(&checkpoint_id)?;
     let root = validate_manifest_work_dir(&manifest, &work_dir)?;
-    let tracked = collect_tracked_states(&manifest)?;
+    let tracked = collect_tracked_states(&manifest);
 
     let mut changes = Vec::new();
     for (path, original) in tracked {
@@ -883,7 +941,7 @@ pub fn list_checkpoint_diffs(
     let _guard = checkpoint_guard()?;
     let manifest = read_manifest(&checkpoint_id)?;
     let root = validate_manifest_work_dir(&manifest, &work_dir)?;
-    let tracked = collect_tracked_states(&manifest)?;
+    let tracked = collect_tracked_states(&manifest);
 
     let mut diffs = Vec::new();
     for (path, original) in tracked {

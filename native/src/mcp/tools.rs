@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 
 use super::builtin::{execute_builtin_tool, get_builtin_tools};
 use super::servers::bash::{BashService, BashStreamCallback};
+use super::servers::todo::TodoService;
 
 // NOTE: list_mcp_tools 和 call_mcp_tool 的 #[napi] 导出在 exports/api.rs 中，
 // 此处仅保留内部函数供 exports 层调用。
@@ -159,6 +160,8 @@ pub async fn call_mcp_tool(
 ) -> napi::Result<String> {
     let args = parse_tool_args(&tool_full_name, &args_json)?;
 
+    let checkpoint_ids_after = checkpoint_ids.clone();
+    let checkpoint_work_dir_after = checkpoint_work_dir.clone();
     let checkpoint_tool_name = tool_full_name.clone();
     let checkpoint_args = args.clone();
     tokio::task::spawn_blocking(move || {
@@ -178,9 +181,28 @@ pub async fn call_mcp_tool(
     })??;
 
     let result = if tool_full_name == "mcp__bash__terminal-execute" {
-        BashService::new()
+        let terminal_result = BashService::new()
             .execute_terminal_stream(&args, on_chunk)
-            .await?
+            .await;
+        tokio::task::spawn_blocking(move || {
+            capture_checkpoint_after_tool(
+                checkpoint_ids_after,
+                checkpoint_work_dir_after,
+            )
+        })
+        .await
+        .map_err(|error| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to capture checkpoint after tool execution: {error}"),
+            )
+        })??;
+        terminal_result?
+    } else if tool_full_name == "mcp__todo__todo-manage" {
+        // TodoService uses async SQLite I/O via spawn_blocking internally,
+        // so we call its async entry point directly.
+        let todo_service = TodoService::new();
+        todo_service.execute_async(&args).await?
     } else {
         tokio::task::spawn_blocking(move || execute_builtin_tool(&tool_full_name, &args))
             .await
@@ -259,4 +281,23 @@ fn capture_checkpoint_before_tool(
         }
         _ => Ok(()),
     }
+}
+
+fn capture_checkpoint_after_tool(
+    checkpoint_ids: Vec<String>,
+    checkpoint_work_dir: Option<String>,
+) -> napi::Result<()> {
+    if checkpoint_ids.is_empty() {
+        return Ok(());
+    }
+    let work_dir = checkpoint_work_dir.ok_or_else(|| {
+        Error::new(
+            Status::InvalidArg,
+            "Checkpoint working directory is required".to_string(),
+        )
+    })?;
+    crate::storage::services::checkpoint::record_checkpoint_worktree_after(
+        checkpoint_ids,
+        work_dir,
+    )
 }

@@ -1,5 +1,6 @@
-import { useCallback, useLayoutEffect, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { WorkspaceDirectoryRecord } from "../../../preload";
+import { useAutoScrollPreference } from "../../hooks/useAutoScrollPreference";
 import { ChatInput } from "./ChatInput";
 import { EmptyGreeting } from "./EmptyGreeting";
 import { ChatMessageList, useChatConversationContext } from "./chatMessages";
@@ -8,6 +9,10 @@ import type { ChatInputSendOptions } from "./chatInput/types";
 
 type ChatContentProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
+};
+
+type ChatContentBodyProps = ChatContentProps & {
+  onRollbackConfirmed: () => void;
 };
 
 type PendingScrollRestore = {
@@ -19,9 +24,10 @@ type PendingScrollRestore = {
 
 const LOAD_OLDER_SCROLL_THRESHOLD = 96;
 
-export const ChatContent = ({
+const ChatContentBody = ({
   activeDirectory,
-}: ChatContentProps): React.JSX.Element => {
+  onRollbackConfirmed,
+}: ChatContentBodyProps): React.JSX.Element => {
   const {
     messages,
     activeConversationId,
@@ -42,7 +48,13 @@ export const ChatContent = ({
     cancelRollback,
     pendingMessages,
     withdrawPendingMessage,
+    yoloMode,
+    isUpdatingYoloMode,
+    setYoloMode,
+    refreshYoloMode,
+    pendingToolAuthorizations,
   } = useChatConversationContext();
+  const { autoScrollEnabled, setAutoScrollEnabled } = useAutoScrollPreference();
   const hasMessages = messages.length > 0;
   const hasHistoryContent = hasMessages || isLoadingInitialHistory;
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -52,6 +64,8 @@ export const ChatContent = ({
   const pendingScrollRestoreRef = useRef<PendingScrollRestore | null>(null);
   const scrollRestoreRequestIdRef = useRef(0);
   const isLoadingOlderWithScrollRef = useRef(false);
+  const scrolledAuthorizationSignatureRef = useRef("");
+  const shouldStickToBottomRef = useRef(true);
   activeConversationIdRef.current = activeConversationId;
 
   useLayoutEffect(() => {
@@ -63,6 +77,8 @@ export const ChatContent = ({
     scrollRestoreRequestIdRef.current += 1;
     pendingScrollRestoreRef.current = null;
     isLoadingOlderWithScrollRef.current = false;
+    scrolledAuthorizationSignatureRef.current = "";
+    shouldStickToBottomRef.current = true;
     if (activeConversationId) {
       positionedConversationIdsRef.current.delete(activeConversationId);
     }
@@ -88,6 +104,58 @@ export const ChatContent = ({
     container.scrollTop = container.scrollHeight;
     positionedConversationIdsRef.current.add(activeConversationId);
   }, [activeConversationId, isInitialHistoryLoaded, messages.length]);
+
+  // When tool authorization prompts appear, force-scroll the chat area to
+  // the bottom so users do not miss the confirmation while reading earlier
+  // messages and leave the agent loop blocked without noticing.
+  useLayoutEffect(() => {
+    const container = scrollRef.current;
+    if (!container || !activeConversationId) {
+      return;
+    }
+
+    const visibleAuthorizations = pendingToolAuthorizations.filter(
+      (toolCall) =>
+        toolCall.authorizationConversationId === activeConversationId
+    );
+    if (visibleAuthorizations.length === 0) {
+      scrolledAuthorizationSignatureRef.current = "";
+      return;
+    }
+
+    const signature = visibleAuthorizations
+      .map(
+        (toolCall) =>
+          toolCall.authorizationId ??
+          `${toolCall.name}-${toolCall.callId ?? toolCall.arguments}`
+      )
+      .join("|");
+    if (signature === scrolledAuthorizationSignatureRef.current) {
+      return;
+    }
+
+    scrolledAuthorizationSignatureRef.current = signature;
+    requestAnimationFrame(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    });
+  }, [activeConversationId, pendingToolAuthorizations]);
+
+  // Keep the chat pinned to the latest AI output while streaming, unless the
+  // user scrolls away or has disabled the preference entirely.
+  useLayoutEffect(() => {
+    if (
+      !autoScrollEnabled ||
+      !isStreaming ||
+      !shouldStickToBottomRef.current ||
+      !scrollRef.current
+    ) {
+      return;
+    }
+
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [autoScrollEnabled, isStreaming, messages]);
 
   const handleLoadOlderWithScroll = useCallback(async (): Promise<void> => {
     const container = scrollRef.current;
@@ -134,8 +202,15 @@ export const ChatContent = ({
 
   const handleChatScroll = useCallback((): void => {
     const container = scrollRef.current;
+    if (!container) {
+      return;
+    }
+
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    shouldStickToBottomRef.current = distanceFromBottom < 48;
+
     if (
-      !container ||
       container.scrollTop > LOAD_OLDER_SCROLL_THRESHOLD ||
       !hasMoreMessages ||
       isLoadingOlderMessages ||
@@ -150,6 +225,7 @@ export const ChatContent = ({
   const handleSendWithScroll = useCallback(
     (message: string, options: ChatInputSendOptions) => {
       handleSendMessage(message, options);
+      shouldStickToBottomRef.current = true;
       requestAnimationFrame(() => {
         if (scrollRef.current) {
           scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -158,6 +234,11 @@ export const ChatContent = ({
     },
     [handleSendMessage]
   );
+
+  const handleConfirmRollback = useCallback((): void => {
+    confirmRollback();
+    onRollbackConfirmed();
+  }, [confirmRollback, onRollbackConfirmed]);
 
   return (
     <div
@@ -221,6 +302,12 @@ export const ChatContent = ({
         onDraftRestored={clearDraftToRestore}
         pendingMessages={pendingMessages}
         onWithdrawPendingMessage={withdrawPendingMessage}
+        yoloMode={yoloMode}
+        isUpdatingYoloMode={isUpdatingYoloMode}
+        onYoloModeChange={setYoloMode}
+        onRefreshYoloMode={refreshYoloMode}
+        autoScrollEnabled={autoScrollEnabled}
+        onAutoScrollChange={setAutoScrollEnabled}
       />
 
       {rollbackPreview ? (
@@ -229,10 +316,29 @@ export const ChatContent = ({
           checkpointId={rollbackPreview.checkpointId}
           workDir={rollbackPreview.workDir}
           isFirstMessage={rollbackPreview.isFirstMessage}
-          onConfirm={confirmRollback}
+          todoItems={rollbackPreview.todoItems}
+          onConfirm={handleConfirmRollback}
           onCancel={cancelRollback}
         />
       ) : null}
     </div>
+  );
+};
+
+export const ChatContent = ({
+  activeDirectory,
+}: ChatContentProps): React.JSX.Element => {
+  const [renderVersion, setRenderVersion] = useState(0);
+
+  const handleRollbackConfirmed = useCallback((): void => {
+    setRenderVersion((currentVersion) => currentVersion + 1);
+  }, []);
+
+  return (
+    <ChatContentBody
+      key={renderVersion}
+      activeDirectory={activeDirectory}
+      onRollbackConfirmed={handleRollbackConfirmed}
+    />
   );
 };

@@ -542,6 +542,34 @@ fn process_anthropic_event(
                 }
             }
         }
+        "content_block_stop" => {
+            // Finalize tool input: parse the accumulated JSON fragments
+            // and update the tool_call's "input" field. This is critical
+            // because input_json_delta only sets "input" when the
+            // accumulated string happens to be valid JSON at an
+            // intermediate point — the complete JSON is only available
+            // after all deltas have been received.
+            if let Some(index) = event
+                .get("index")
+                .and_then(Value::as_u64)
+                .and_then(|value| usize::try_from(value).ok())
+            {
+                if let Some(accumulated) = tool_input_json_by_index.get(&index) {
+                    if let Ok(input) = serde_json::from_str::<Value>(accumulated.as_str()) {
+                        if let Some(position) =
+                            tool_call_positions_by_index.get(&index).copied()
+                        {
+                            if let Some(tool_call) = tool_calls
+                                .get_mut(position)
+                                .and_then(Value::as_object_mut)
+                            {
+                                tool_call.insert("input".to_string(), input);
+                            }
+                        }
+                    }
+                }
+            }
+        }
         "content_block_delta" => {
             if let Some(delta) = event.get("delta") {
                 let delta_type = delta
@@ -569,6 +597,8 @@ fn process_anthropic_event(
                                 let input_json = tool_input_json_by_index.entry(index).or_default();
                                 input_json.push_str(partial_json);
 
+                                // Best-effort intermediate parse for early UI updates.
+                                // The final, authoritative parse happens in content_block_stop.
                                 if let Ok(input) = serde_json::from_str::<Value>(input_json.as_str()) {
                                     if let Some(position) =
                                         tool_call_positions_by_index.get(&index).copied()

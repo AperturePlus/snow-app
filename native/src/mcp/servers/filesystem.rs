@@ -30,22 +30,50 @@ impl McpService for FilesystemService {
                 name: "read".to_string(),
                 description: "Read file content with line numbers. Supports text files, images, Office documents, and directories.".to_string(),
                 input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "filePath": {
-                            "type": "string",
-                            "description": "Path to the file to read or directory to list. Can be a single path, array of paths, or array of {path, startLine, endLine} objects."
+                    "oneOf": [
+                        {
+                            "type": "object",
+                            "properties": {
+                                "filePath": {
+                                    "oneOf": [
+                                        { "type": "string" },
+                                        { "$ref": "#/definitions/readPathArray" }
+                                    ],
+                                    "description": "Path to the file to read or directory to list."
+                                },
+                                "startLine": {
+                                    "type": "number",
+                                    "description": "Optional starting line number (1-indexed)."
+                                },
+                                "endLine": {
+                                    "type": "number",
+                                    "description": "Optional ending line number (1-indexed)."
+                                }
+                            },
+                            "required": ["filePath"]
                         },
-                        "startLine": {
-                            "type": "number",
-                            "description": "Optional starting line number (1-indexed)."
-                        },
-                        "endLine": {
-                            "type": "number",
-                            "description": "Optional ending line number (1-indexed)."
+                        { "$ref": "#/definitions/readPathArray" }
+                    ],
+                    "definitions": {
+                        "readPathArray": {
+                            "type": "array",
+                            "items": {
+                                "oneOf": [
+                                    { "type": "string" },
+                                    {
+                                        "type": "object",
+                                        "properties": {
+                                            "path": { "type": "string" },
+                                            "startLine": { "type": "number" },
+                                            "endLine": { "type": "number" }
+                                        },
+                                        "required": ["path"]
+                                    }
+                                ]
+                            }
                         }
                     },
-                    "required": ["filePath"]
+                    "description": "Read one path or multiple paths. Accepts either an object with filePath or a root array of path strings or {path, startLine, endLine} objects."
                 }),
             },
             McpTool {
@@ -119,90 +147,36 @@ impl McpService for FilesystemService {
 
 impl FilesystemService {
     fn execute_read(&self, args: &Value) -> napi::Result<Value> {
-        let file_path = args
-            .get("filePath")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                let keys: Vec<String> = args.as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
-                Error::new(
-                    Status::InvalidArg,
-                    format!(
-                        "filePath is required for tool \"mcp__filesystem__read\". Received keys: [{}]. Please provide a valid file path.",
-                        keys.join(", ")
-                    ),
-                )
-            })?;
-
-        let start_line = args.get("startLine").and_then(|v| v.as_u64());
-        let end_line = args.get("endLine").and_then(|v| v.as_u64());
-
-        let path = Path::new(file_path);
-
-        if path.is_dir() {
-            let entries = fs::read_dir(path).map_err(|e| {
-                Error::new(
-                    Status::GenericFailure,
-                    format!("Failed to read directory: {}", e),
-                )
-            })?;
-
-            let mut items: Vec<String> = Vec::new();
-            for entry in entries.flatten() {
-                let name = entry.file_name().to_string_lossy().to_string();
-                let prefix = if entry.path().is_dir() { "/" } else { "" };
-                items.push(format!("{}{}", name, prefix));
-            }
-            items.sort();
-
-            return Ok(json!({
-                "content": items.join("\n")
-            }));
+        if let Value::Array(paths) = args {
+            return read_paths(paths, None, None);
         }
 
-        if is_image_file(path) {
-            let data_url = read_image_as_data_url(path)?;
-            return Ok(json!({
-                "content": format!("@@image:{}@@", data_url),
-                "mediaType": image_media_type(path),
-                "isImage": true
-            }));
-        }
-
-        let content = fs::read_to_string(path).map_err(|e| {
+        let file_path = args.get("filePath").ok_or_else(|| {
+            let keys: Vec<String> = args
+                .as_object()
+                .map(|object| object.keys().cloned().collect())
+                .unwrap_or_default();
             Error::new(
-                Status::GenericFailure,
-                format!("Failed to read file: {}", e),
+                Status::InvalidArg,
+                format!(
+                    "filePath is required for tool \"mcp__filesystem__read\". Received keys: [{}]. Please provide a valid file path.",
+                    keys.join(", ")
+                ),
             )
         })?;
 
-        let lines: Vec<&str> = content.lines().collect();
-        let total_lines = lines.len();
+        let default_start_line = args.get("startLine").and_then(|value| value.as_u64());
+        let default_end_line = args.get("endLine").and_then(|value| value.as_u64());
 
-        let start = start_line.map(|s| s as usize).unwrap_or(1).saturating_sub(1);
-        let end = end_line
-            .map(|e| e as usize)
-            .unwrap_or(total_lines)
-            .min(total_lines);
-
-        if start >= total_lines {
-            return Ok(json!({
-                "content": "",
-                "totalLines": total_lines
-            }));
+        match file_path {
+            Value::String(path) => read_path(path, default_start_line, default_end_line),
+            Value::Array(paths) => read_paths(paths, default_start_line, default_end_line),
+            _ => Err(Error::new(
+                Status::InvalidArg,
+                "filePath must be a string or an array of paths for tool \"mcp__filesystem__read\"."
+                    .to_string(),
+            )),
         }
-
-        let selected: Vec<String> = lines[start..end]
-            .iter()
-            .enumerate()
-            .map(|(i, line)| format!("{:>6}: {}", start + i + 1, line))
-            .collect();
-
-        Ok(json!({
-            "content": selected.join("\n"),
-            "totalLines": total_lines,
-            "startLine": start + 1,
-            "endLine": end
-        }))
     }
 
     fn execute_replace_edit(&self, args: &Value) -> napi::Result<Value> {
@@ -359,6 +333,153 @@ impl FilesystemService {
             "path": file_path
         }))
     }
+}
+
+fn read_paths(
+    paths: &[Value],
+    default_start_line: Option<u64>,
+    default_end_line: Option<u64>,
+) -> napi::Result<Value> {
+    let mut files = Vec::with_capacity(paths.len());
+
+    for (index, item) in paths.iter().enumerate() {
+        let (path, start_line, end_line) =
+            parse_read_path_item(item, default_start_line, default_end_line, index)?;
+        let mut result = read_path(path, start_line, end_line)?;
+        result["filePath"] = Value::String(path.to_string());
+        files.push(result);
+    }
+
+    Ok(json!({ "files": files }))
+}
+
+fn parse_read_path_item(
+    item: &Value,
+    default_start_line: Option<u64>,
+    default_end_line: Option<u64>,
+    index: usize,
+) -> napi::Result<(&str, Option<u64>, Option<u64>)> {
+    match item {
+        Value::String(path) => Ok((path, default_start_line, default_end_line)),
+        Value::Object(object) => {
+            let path = object.get("path").and_then(Value::as_str).ok_or_else(|| {
+                Error::new(
+                    Status::InvalidArg,
+                    format!("filePath[{}].path must be a non-empty string.", index),
+                )
+            })?;
+
+            if path.is_empty() {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!("filePath[{}].path must be a non-empty string.", index),
+                ));
+            }
+
+            Ok((
+                path,
+                object
+                    .get("startLine")
+                    .and_then(Value::as_u64)
+                    .or(default_start_line),
+                object
+                    .get("endLine")
+                    .and_then(Value::as_u64)
+                    .or(default_end_line),
+            ))
+        }
+        _ => Err(Error::new(
+            Status::InvalidArg,
+            format!(
+                "filePath[{}] must be a path string or an object with a path property.",
+                index
+            ),
+        )),
+    }
+}
+
+fn read_path(
+    file_path: &str,
+    start_line: Option<u64>,
+    end_line: Option<u64>,
+) -> napi::Result<Value> {
+    if file_path.is_empty() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "filePath must be a non-empty string for tool \"mcp__filesystem__read\"."
+                .to_string(),
+        ));
+    }
+
+    let path = Path::new(file_path);
+
+    if path.is_dir() {
+        let entries = fs::read_dir(path).map_err(|error| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to read directory: {}", error),
+            )
+        })?;
+
+        let mut items: Vec<String> = Vec::new();
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let prefix = if entry.path().is_dir() { "/" } else { "" };
+            items.push(format!("{}{}", name, prefix));
+        }
+        items.sort();
+
+        return Ok(json!({
+            "content": items.join("\n")
+        }));
+    }
+
+    if is_image_file(path) {
+        let data_url = read_image_as_data_url(path)?;
+        return Ok(json!({
+            "content": format!("@@image:{}@@", data_url),
+            "mediaType": image_media_type(path),
+            "isImage": true
+        }));
+    }
+
+    let content = fs::read_to_string(path).map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to read file: {}", error),
+        )
+    })?;
+
+    let lines: Vec<&str> = content.lines().collect();
+    let total_lines = lines.len();
+    let start = start_line
+        .map(|line| line as usize)
+        .unwrap_or(1)
+        .saturating_sub(1);
+    let end = end_line
+        .map(|line| line as usize)
+        .unwrap_or(total_lines)
+        .min(total_lines);
+
+    if start >= total_lines {
+        return Ok(json!({
+            "content": "",
+            "totalLines": total_lines
+        }));
+    }
+
+    let selected: Vec<String> = lines[start..end]
+        .iter()
+        .enumerate()
+        .map(|(index, line)| format!("{:>6}: {}", start + index + 1, line))
+        .collect();
+
+    Ok(json!({
+        "content": selected.join("\n"),
+        "totalLines": total_lines,
+        "startLine": start + 1,
+        "endLine": end
+    }))
 }
 
 fn is_image_file(path: &Path) -> bool {

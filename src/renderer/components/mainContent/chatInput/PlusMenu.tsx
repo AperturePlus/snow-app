@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react";
+import { ArrowDownToLine, Plus, ShieldAlert } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "../../../i18n";
@@ -20,9 +20,23 @@ export type PlusMenuSection = {
 
 export type PlusMenuProps = {
   sections: PlusMenuSection[];
+  yoloMode: boolean;
+  isUpdatingYoloMode: boolean;
+  onYoloModeChange?: (enabled: boolean) => void;
+  onRefreshYoloMode?: () => void | Promise<boolean | void>;
+  autoScrollEnabled: boolean;
+  onAutoScrollChange?: (enabled: boolean) => void;
 };
 
-export const PlusMenu = ({ sections }: PlusMenuProps): React.JSX.Element => {
+export const PlusMenu = ({
+  sections,
+  yoloMode,
+  isUpdatingYoloMode,
+  onYoloModeChange,
+  onRefreshYoloMode,
+  autoScrollEnabled,
+  onAutoScrollChange,
+}: PlusMenuProps): React.JSX.Element => {
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -33,8 +47,15 @@ export const PlusMenu = ({ sections }: PlusMenuProps): React.JSX.Element => {
   }, []);
 
   const handleToggle = useCallback(() => {
-    setIsOpen((prev) => !prev);
-  }, []);
+    setIsOpen((prev) => {
+      const next = !prev;
+      if (next) {
+        // Re-check settings.json every open so external edits stay in sync.
+        void onRefreshYoloMode?.();
+      }
+      return next;
+    });
+  }, [onRefreshYoloMode]);
 
   const handleItemClick = useCallback(
     (item: PlusMenuItem) => {
@@ -104,6 +125,58 @@ export const PlusMenu = ({ sections }: PlusMenuProps): React.JSX.Element => {
               )}
             </div>
           ))}
+          <div className="plus-menu-section">
+            <div className="plus-menu-section-divider" />
+            <div className="plus-menu-section-title">
+              {t("plusMenu.sectionMode")}
+            </div>
+            <div className="plus-menu-item plus-menu-yolo-item">
+              <ArrowDownToLine size={14} className="plus-menu-item-icon" />
+              <div className="plus-menu-item-content">
+                <span className="plus-menu-item-label">
+                  {t("plusMenu.autoScroll")}
+                </span>
+                <span className="plus-menu-item-description">
+                  {t("plusMenu.autoScrollDescription")}
+                </span>
+              </div>
+              <label className="toggle-switch plus-menu-yolo-switch">
+                <input
+                  aria-label={t("plusMenu.autoScroll")}
+                  checked={autoScrollEnabled}
+                  disabled={!onAutoScrollChange}
+                  onChange={() => {
+                    onAutoScrollChange?.(!autoScrollEnabled);
+                  }}
+                  type="checkbox"
+                />
+                <span className="toggle-slider" />
+              </label>
+            </div>
+            <div className="plus-menu-item plus-menu-yolo-item">
+              <ShieldAlert size={14} className="plus-menu-item-icon" />
+              <div className="plus-menu-item-content">
+                <span className="plus-menu-item-label">
+                  {t("plusMenu.yoloMode")}
+                </span>
+                <span className="plus-menu-item-description">
+                  {t("plusMenu.yoloModeDescription")}
+                </span>
+              </div>
+              <label className="toggle-switch plus-menu-yolo-switch">
+                <input
+                  aria-label={t("plusMenu.yoloMode")}
+                  checked={yoloMode}
+                  disabled={isUpdatingYoloMode || !onYoloModeChange}
+                  onChange={() => {
+                    void onYoloModeChange?.(!yoloMode);
+                  }}
+                  type="checkbox"
+                />
+                <span className="toggle-slider" />
+              </label>
+            </div>
+          </div>
         </div>
       )}
     </div>

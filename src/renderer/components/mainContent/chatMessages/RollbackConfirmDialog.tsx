@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, ArrowLeft, Eye } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CheckSquare,
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  ListChecks,
+} from "lucide-react";
 import type {
   CheckpointFileChange,
   CheckpointFileDiff,
@@ -12,11 +20,18 @@ import {
   getFileChangeClassName,
 } from "../../common/FileDiffPreview";
 
+type RollbackTodoItem = {
+  id: string;
+  content: string;
+  status: string;
+};
+
 type RollbackConfirmDialogProps = {
   changes: CheckpointFileChange[];
   checkpointId?: string;
   workDir?: string;
   isFirstMessage: boolean;
+  todoItems: RollbackTodoItem[];
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -34,6 +49,7 @@ export const RollbackConfirmDialog = ({
   checkpointId,
   workDir,
   isFirstMessage,
+  todoItems,
   onConfirm,
   onCancel,
 }: RollbackConfirmDialogProps): React.JSX.Element | null => {
@@ -43,6 +59,7 @@ export const RollbackConfirmDialog = ({
   const [diffs, setDiffs] = useState<CheckpointFileDiff[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState(false);
+  const [isTodoExpanded, setIsTodoExpanded] = useState(false);
 
   useEffect(() => {
     dialogRef.current?.focus();
@@ -203,6 +220,44 @@ export const RollbackConfirmDialog = ({
               </>
             ) : (
               <p>{t("chat.rollbackNoChangesNotice")}</p>
+            )}
+            {todoItems.length > 0 && (
+              <div className="rollback-todo-notice">
+                <button
+                  type="button"
+                  className="rollback-todo-toggle"
+                  onClick={() => setIsTodoExpanded((v) => !v)}
+                  aria-label={t("chat.rollbackTodoToggle")}
+                  title={t("chat.rollbackTodoToggle")}
+                >
+                  {isTodoExpanded ? (
+                    <ChevronDown size={14} />
+                  ) : (
+                    <ChevronRight size={14} />
+                  )}
+                </button>
+                <ListChecks size={14} />
+                <span>
+                  {t("chat.rollbackTodoNotice", {
+                    values: { count: todoItems.length },
+                  })}
+                </span>
+              </div>
+            )}
+            {isTodoExpanded && todoItems.length > 0 && (
+              <ul className="rollback-todo-list">
+                {todoItems.map((todo) => (
+                  <li key={todo.id} className="rollback-todo-item">
+                    <CheckSquare
+                      size={12}
+                      className="rollback-todo-item-icon"
+                    />
+                    <span className="rollback-todo-item-content">
+                      {todo.content}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         )}

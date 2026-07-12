@@ -4,4 +4,4 @@ mod engine;
 mod git;
 mod sample;
 mod storage;
-mod terminal;
+pub(crate) mod terminal;

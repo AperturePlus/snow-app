@@ -53,6 +53,22 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to write system settings")
         ),
+      getYoloMode: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to read YOLO mode")
+        ),
+      setYoloMode: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write YOLO mode")
+        ),
+      listAlwaysApprovedTools: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to read tool permissions")
+        ),
+      addAlwaysApprovedTool: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write tool permissions")
+        ),
       listApiConfigs: () =>
         Promise.reject(
           new Error("Rust native bridge is required to list API configs")
@@ -326,9 +342,17 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to list checkpoint diffs")
         ),
+      appendToolMessage: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to append a tool message")
+        ),
       truncateConversationFromResponse: () =>
         Promise.reject(
           new Error("Rust native bridge is required to truncate conversation")
+        ),
+      listTodosForRollback: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to list todos")
         ),
     };
   }

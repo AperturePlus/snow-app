@@ -20,7 +20,6 @@ type ParsedBashArgs = {
   workingDirectory: string;
   timeout?: number;
   isInteractive?: boolean;
-  enableAiSummary: boolean;
 };
 
 type ParsedBashResult =
@@ -53,7 +52,6 @@ const parseArgs = (args: string): ParsedBashArgs | null => {
       !isRecord(parsed) ||
       typeof parsed.command !== "string" ||
       typeof parsed.workingDirectory !== "string" ||
-      typeof parsed.enableAiSummary !== "boolean" ||
       !isOptionalTimeout(parsed.timeout) ||
       !isOptionalBoolean(parsed.isInteractive)
     ) {
@@ -65,7 +63,6 @@ const parseArgs = (args: string): ParsedBashArgs | null => {
       workingDirectory: parsed.workingDirectory,
       timeout: parsed.timeout,
       isInteractive: parsed.isInteractive,
-      enableAiSummary: parsed.enableAiSummary,
     };
   } catch {
     return null;
@@ -291,16 +288,6 @@ export const BashToolCall = ({
                 {t("toolCall.bash.interactive")}:{" "}
                 {t(
                   parsedArgs.isInteractive
-                    ? "toolCall.bash.boolean.yes"
-                    : "toolCall.bash.boolean.no"
-                )}
-              </span>
-            ) : null}
-            {parsedArgs ? (
-              <span className="tool-call-bash-meta-item">
-                {t("toolCall.bash.aiSummary")}:{" "}
-                {t(
-                  parsedArgs.enableAiSummary
                     ? "toolCall.bash.boolean.yes"
                     : "toolCall.bash.boolean.no"
                 )}

@@ -3,6 +3,7 @@ import { useI18n } from "../../../i18n";
 import { AiResponseActions } from "./AiResponseActions";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallItem } from "./ToolCallItem";
+import { ToolAuthorizationDialog } from "./ToolAuthorizationDialog";
 import { MarkdownBlock } from "./markdownRenderer";
 import type { AiResponseProps } from "./types";
 
@@ -15,6 +16,10 @@ export const AiResponse = ({
   isAborting = false,
   showActions = true,
   toolCalls = [],
+  pendingToolAuthorizations = [],
+  onApproveToolAuthorization,
+  onApproveToolAuthorizationAlways,
+  onRejectToolAuthorization,
   conversationId,
   responseId,
   onFork,
@@ -67,6 +72,17 @@ export const AiResponse = ({
               />
             ))}
           </div>
+        ) : null}
+
+        {onApproveToolAuthorization &&
+        onApproveToolAuthorizationAlways &&
+        onRejectToolAuthorization ? (
+          <ToolAuthorizationDialog
+            toolCalls={pendingToolAuthorizations}
+            onApprove={onApproveToolAuthorization}
+            onApproveAlways={onApproveToolAuthorizationAlways}
+            onReject={onRejectToolAuthorization}
+          />
         ) : null}
 
         {/* 5. Loading indicator — persists throughout the entire AI loop */}

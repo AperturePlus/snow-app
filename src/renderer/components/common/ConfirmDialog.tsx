@@ -10,6 +10,7 @@ type ConfirmDialogProps = {
   cancelLabel: string;
   onConfirm: () => void;
   onCancel: () => void;
+  variant?: "default" | "warning" | "danger";
 };
 
 export const ConfirmDialog = ({
@@ -20,6 +21,7 @@ export const ConfirmDialog = ({
   cancelLabel,
   onConfirm,
   onCancel,
+  variant = "default",
 }: ConfirmDialogProps): React.JSX.Element | null => {
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -39,15 +41,17 @@ export const ConfirmDialog = ({
       className="confirm-dialog-overlay"
       onKeyDown={(e) => {
         if (e.key === "Escape") {
+          e.preventDefault();
           onCancel();
         }
-        if (e.key === "Enter") {
+        if (e.key === "Enter" && e.target === dialogRef.current) {
+          e.preventDefault();
           onConfirm();
         }
       }}
     >
       <div
-        className="confirm-dialog"
+        className={`confirm-dialog confirm-dialog-${variant}`}
         ref={dialogRef}
         tabIndex={-1}
       >

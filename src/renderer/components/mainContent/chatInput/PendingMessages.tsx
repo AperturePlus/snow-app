@@ -1,4 +1,4 @@
-import { Clock, X } from "lucide-react";
+import { Clock, Trash2 } from "lucide-react";
 import { useI18n } from "../../../i18n";
 
 type PendingMessagesProps = {
@@ -44,7 +44,7 @@ export const PendingMessages = ({
                 aria-label={t("chatInput.withdraw")}
                 title={t("chatInput.withdraw")}
               >
-                <X size={12} />
+                <Trash2 size={12} />
               </button>
             )}
           </li>

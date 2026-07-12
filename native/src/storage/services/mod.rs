@@ -1,5 +1,6 @@
 pub mod api_configs;
 pub mod chat_conversations;
+pub mod checkpoint;
 pub mod custom_header_schemes;
 pub mod fs_explorer;
 pub mod git;
@@ -8,5 +9,6 @@ pub mod mcp_server_configs;
 pub mod sensitive_command_configs;
 pub mod system_prompts;
 pub mod system_settings;
-pub mod checkpoint;
+pub mod permissions;
 pub mod workspace_directories;
+pub mod yolo_settings;

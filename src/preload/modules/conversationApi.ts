@@ -43,6 +43,12 @@ export const conversationApi = {
     ipcRenderer.invoke("chat-conversations:rename", conversationId, title),
   deleteConversation: (conversationId: string): Promise<void> =>
     ipcRenderer.invoke("chat-conversations:delete", conversationId),
+  appendToolMessage: (conversationId: string, content: string): Promise<void> =>
+    ipcRenderer.invoke(
+      "chat-conversations:append-tool-message",
+      conversationId,
+      content
+    ),
   listChatMessages: (conversationId: string): Promise<ChatMessageRecord[]> =>
     ipcRenderer.invoke("chat-conversations:list-messages", conversationId),
   listChatMessagesPaginated: (
@@ -76,4 +82,9 @@ export const conversationApi = {
     ),
   generateConversationSummary: (conversationId: string): Promise<string> =>
     ipcRenderer.invoke("chat-conversations:generate-summary", conversationId),
+  listTodosForRollback: (
+    sessionId: string,
+    responseId: string
+  ): Promise<string> =>
+    ipcRenderer.invoke("chat-conversations:count-todos", sessionId, responseId),
 };

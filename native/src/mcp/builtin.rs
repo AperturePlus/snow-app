@@ -7,6 +7,7 @@ use serde_json::Value;
 use super::service::McpService;
 use super::servers::bash::BashService;
 use super::servers::filesystem::FilesystemService;
+use super::servers::todo::TodoService;
 use super::tools::McpTool;
 
 /// 注册所有内置 MCP 服务，返回 server_id -> service 的映射。
@@ -14,6 +15,7 @@ pub fn builtin_services() -> HashMap<String, Arc<dyn McpService>> {
     let services: Vec<Arc<dyn McpService>> = vec![
         Arc::new(FilesystemService::new()),
         Arc::new(BashService::new()),
+        Arc::new(TodoService::new()),
     ];
     services
         .into_iter()

@@ -462,6 +462,11 @@ pub fn delete_conversation(conversation_id: String) -> Result<()> {
     services::chat_conversations::delete_conversation(&database_path, &conversation_id)
 }
 
+pub fn append_tool_message(conversation_id: String, content: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::append_tool_message(&database_path, &conversation_id, &content)
+}
+
 pub fn list_chat_messages(conversation_id: String) -> Result<Vec<ChatMessageRecord>> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::list_chat_messages(&database_path, &conversation_id)

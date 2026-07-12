@@ -202,6 +202,49 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
         .map_err(|error| database::database_error(database_path, "store chat exchange", error))
 }
 
+pub fn append_tool_message(
+    database_path: &Path,
+    conversation_id: &str,
+    content: &str,
+) -> Result<()> {
+    let trimmed_content = content.trim();
+    if trimmed_content.is_empty() {
+        return Ok(());
+    }
+
+    Connection::open(database_path)
+        .and_then(|mut connection| {
+            let transaction = connection.transaction()?;
+            insert_message(
+                &transaction,
+                conversation_id,
+                "tool",
+                trimmed_content,
+                "",
+                "",
+                "",
+                "sent",
+                "{}",
+                "",
+                "[]",
+                0,
+            )?;
+            transaction.execute(
+                "UPDATE chat_conversations
+                    SET message_count = (
+                          SELECT COUNT(*)
+                            FROM chat_messages
+                           WHERE conversation_id = ?1
+                        ),
+                        updated_at = datetime('now')
+                  WHERE conversation_id = ?1",
+                params![conversation_id],
+            )?;
+            transaction.commit()
+        })
+        .map_err(|error| database::database_error(database_path, "append tool message", error))
+}
+
 pub fn update_conversation_summary(
     database_path: &Path,
     conversation_id: &str,
@@ -538,6 +581,14 @@ pub fn delete_conversation(
             params![conversation_id],
         )
         .map_err(|error| database::database_error(database_path, "delete chat messages", error))?;
+
+    // Delete all TODO items associated with this conversation session.
+    transaction
+        .execute(
+            "DELETE FROM todo_items WHERE session_id = ?1",
+            params![conversation_id],
+        )
+        .map_err(|error| database::database_error(database_path, "delete todo items", error))?;
 
     transaction
         .execute(
@@ -898,6 +949,23 @@ pub fn truncate_conversation_from_response(
             params![conversation_id, delete_from],
         )
         .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
+
+    // Delete TODO items whose response_id matches any assistant response
+    // at or after the rollback boundary. TODOs from earlier exchanges
+    // (with a different response_id or empty response_id) are preserved.
+    transaction
+        .execute(
+            "DELETE FROM todo_items
+              WHERE session_id = ?1
+                AND response_id IN (
+                  SELECT response_id FROM chat_messages
+                    WHERE conversation_id = ?1
+                      AND response_id <> ''
+                      AND id >= ?2
+                )",
+            params![conversation_id, delete_from],
+        )
+        .map_err(|error| database::database_error(database_path, "delete todo items", error))?;
 
     // Refresh conversation metadata so the sidebar stays consistent.
     transaction

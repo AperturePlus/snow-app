@@ -8,6 +8,7 @@ import {
   Globe,
   GitBranch,
   ListTree,
+  ListChecks,
   Hammer,
   type LucideIcon,
 } from "lucide-react";
@@ -21,6 +22,7 @@ export type ToolCategory =
   | "web"
   | "git"
   | "outline"
+  | "todo"
   | "generic";
 
 const TOOL_ICON_MAP: Record<ToolCategory, LucideIcon> = {
@@ -32,6 +34,7 @@ const TOOL_ICON_MAP: Record<ToolCategory, LucideIcon> = {
   web: Globe,
   git: GitBranch,
   outline: ListTree,
+  todo: ListChecks,
   generic: Wrench,
 };
 
@@ -52,11 +55,28 @@ export const getToolCategory = (toolName: string): ToolCategory => {
   if (lower.includes("read")) return "read";
   if (lower.includes("edit") || lower.includes("replace")) return "edit";
   if (lower.includes("create") || lower.includes("write")) return "create";
-  if (lower.includes("search") || lower.includes("find") || lower.includes("semantic")) return "search";
-  if (lower.includes("terminal") || lower.includes("execute") || lower.includes("command")) return "terminal";
-  if (lower.includes("web") || lower.includes("fetch") || lower.includes("url")) return "web";
+  if (
+    lower.includes("search") ||
+    lower.includes("find") ||
+    lower.includes("semantic")
+  )
+    return "search";
+  if (
+    lower.includes("terminal") ||
+    lower.includes("execute") ||
+    lower.includes("command")
+  )
+    return "terminal";
+  if (lower.includes("web") || lower.includes("fetch") || lower.includes("url"))
+    return "web";
   if (lower.includes("git")) return "git";
-  if (lower.includes("outline") || lower.includes("tree") || lower.includes("symbol")) return "outline";
+  if (
+    lower.includes("outline") ||
+    lower.includes("tree") ||
+    lower.includes("symbol")
+  )
+    return "outline";
+  if (lower.includes("todo")) return "todo";
   return "generic";
 };
 

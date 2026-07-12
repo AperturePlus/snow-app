@@ -59,6 +59,19 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
     }
   );
   ipcMain.handle(
+    "chat-conversations:append-tool-message",
+    async (_event, conversationId: unknown, content: unknown) => {
+      if (typeof conversationId !== "string" || !conversationId.trim()) {
+        throw new Error("Conversation ID is required to append a tool message");
+      }
+      if (typeof content !== "string" || !content.trim()) {
+        throw new Error("Tool message content is required");
+      }
+
+      await native.appendToolMessage(conversationId.trim(), content);
+    }
+  );
+  ipcMain.handle(
     "chat-conversations:list-messages",
     (_event, conversationId: unknown) => {
       if (typeof conversationId !== "string" || !conversationId.trim()) {
@@ -122,6 +135,18 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
         conversationId.trim(),
         responseId.trim()
       );
+    }
+  );
+  ipcMain.handle(
+    "chat-conversations:count-todos",
+    async (_event, sessionId: unknown, responseId: unknown) => {
+      if (typeof sessionId !== "string" || !sessionId.trim()) {
+        throw new Error("Session ID is required to count todos");
+      }
+      if (typeof responseId !== "string" || !responseId.trim()) {
+        throw new Error("Response ID is required to count todos");
+      }
+      return native.listTodosForRollback(sessionId.trim(), responseId.trim());
     }
   );
   ipcMain.handle(

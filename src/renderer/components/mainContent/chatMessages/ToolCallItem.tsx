@@ -11,6 +11,7 @@ import {
   FilesystemReadToolCall,
   FilesystemEditToolCall,
   FilesystemCreateToolCall,
+  TodoToolCall,
 } from "./toolCallRenderers";
 import { ToolNameBadge } from "./toolCallRenderers/shared/ToolNameBadge";
 
@@ -48,6 +49,10 @@ export const ToolCallItem = ({
 
   if (toolCall.name === "mcp__bash__terminal-execute") {
     return <BashToolCall toolCall={toolCall} />;
+  }
+
+  if (toolCall.name === "mcp__todo__todo-manage") {
+    return <TodoToolCall toolCall={toolCall} />;
   }
 
   const iconName = toolCall.name.replace(/^mcp__.*__/, "");

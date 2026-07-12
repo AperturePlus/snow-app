@@ -350,6 +350,16 @@ export type NativeBridge = {
     settingCode: string,
     settingValue: string
   ) => Promise<void>;
+  getYoloMode: (workspacePath?: string) => Promise<boolean>;
+  setYoloMode: (
+    workspacePath: string | undefined,
+    enabled: boolean
+  ) => Promise<void>;
+  listAlwaysApprovedTools: (workspacePath?: string) => Promise<string[]>;
+  addAlwaysApprovedTool: (
+    workspacePath: string | undefined,
+    toolName: string
+  ) => Promise<void>;
   listApiConfigs: () => Promise<ApiConfigRecord[]>;
   upsertApiConfig: (config: ApiConfigInput) => Promise<void>;
   deleteApiConfig: (profileName: string) => Promise<void>;
@@ -406,6 +416,7 @@ export type NativeBridge = {
   ) => Promise<void>;
   renameConversation: (conversationId: string, title: string) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
+  appendToolMessage: (conversationId: string, content: string) => Promise<void>;
   listChatMessages: (conversationId: string) => Promise<ChatMessageRecord[]>;
   listChatMessagesPaginated: (
     conversationId: string,
@@ -484,4 +495,8 @@ export type NativeBridge = {
     conversationId: string,
     responseId: string
   ) => Promise<void>;
+  listTodosForRollback: (
+    sessionId: string,
+    responseId: string
+  ) => Promise<string>;
 };

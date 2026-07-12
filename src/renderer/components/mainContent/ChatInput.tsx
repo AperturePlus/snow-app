@@ -14,6 +14,12 @@ export const ChatInput = ({
   onDraftRestored,
   pendingMessages = [],
   onWithdrawPendingMessage,
+  yoloMode = false,
+  isUpdatingYoloMode = false,
+  onYoloModeChange,
+  onRefreshYoloMode,
+  autoScrollEnabled = false,
+  onAutoScrollChange,
 }: ChatInputProps): React.JSX.Element => {
   const { t } = useI18n();
   const controller = useChatInputController({
@@ -32,6 +38,12 @@ export const ChatInput = ({
       tokenUsage={tokenUsage}
       pendingMessages={pendingMessages}
       onWithdrawPendingMessage={onWithdrawPendingMessage}
+      yoloMode={yoloMode}
+      isUpdatingYoloMode={isUpdatingYoloMode}
+      onYoloModeChange={onYoloModeChange}
+      onRefreshYoloMode={onRefreshYoloMode}
+      autoScrollEnabled={autoScrollEnabled}
+      onAutoScrollChange={onAutoScrollChange}
     />
   );
 };

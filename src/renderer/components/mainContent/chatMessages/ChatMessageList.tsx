@@ -25,6 +25,10 @@ export const ChatMessageList = ({
     handleRollback,
     forkedFromConversationId,
     forkMessageCount,
+    pendingToolAuthorizations,
+    approveToolAuthorization,
+    approveToolAuthorizationAlways,
+    rejectToolAuthorization,
   } = useChatConversationContext();
 
   const lastAssistantMessageId = useMemo(() => {
@@ -129,8 +133,12 @@ export const ChatMessageList = ({
     // - All assistant messages without tool calls (1-on-1 conversations)
     // - The last assistant message when it has tool calls (AI Loop ending)
     // - Never on a message that is currently streaming
+    // - Never while the conversation-level streaming is active (AI Loop in
+    //   progress). Without this guard, a message that finishes streaming
+    //   but precedes a tool-call round would briefly show actions that
+    //   vanish when the next assistant turn starts — causing a flash.
     const showActions =
-      !isMessageStreaming && (!hasToolCalls || isLastAssistant);
+      !isStreaming && !isMessageStreaming && (!hasToolCalls || isLastAssistant);
 
     return (
       <div className={className} key={message.id}>
@@ -141,6 +149,18 @@ export const ChatMessageList = ({
           thinking={message.thinking}
           showActions={showActions}
           toolCalls={message.toolCalls}
+          pendingToolAuthorizations={
+            isLastAssistant
+              ? pendingToolAuthorizations.filter(
+                  (toolCall) =>
+                    toolCall.authorizationConversationId ===
+                    activeConversationId
+                )
+              : undefined
+          }
+          onApproveToolAuthorization={approveToolAuthorization}
+          onApproveToolAuthorizationAlways={approveToolAuthorizationAlways}
+          onRejectToolAuthorization={rejectToolAuthorization}
           conversationId={activeConversationId}
           responseId={message.responseId}
           onFork={handleFork}

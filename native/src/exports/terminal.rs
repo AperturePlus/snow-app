@@ -78,7 +78,7 @@ fn find_git_bash_well_known() -> Option<String> {
     None
 }
 
-fn detect_windows_terminals() -> Vec<DetectedTerminal> {
+pub(crate) fn detect_windows_terminals() -> Vec<DetectedTerminal> {
     let mut results: Vec<DetectedTerminal> = Vec::new();
     let path_env = std::env::var("PATH").unwrap_or_default();
 
@@ -150,7 +150,7 @@ fn detect_windows_terminals() -> Vec<DetectedTerminal> {
     results
 }
 
-fn detect_posix_terminals() -> Vec<DetectedTerminal> {
+pub(crate) fn detect_posix_terminals() -> Vec<DetectedTerminal> {
     let mut results: Vec<DetectedTerminal> = Vec::new();
     let path_env = std::env::var("PATH").unwrap_or_default();
 
@@ -209,4 +209,9 @@ pub async fn detect_terminals() -> napi::Result<Vec<DetectedTerminal>> {
             format!("Failed to detect terminals: {}", e),
         )
     })?
+}
+
+pub(crate) async fn detect_default_terminal() -> napi::Result<Option<DetectedTerminal>> {
+    let terminals = detect_terminals().await?;
+    Ok(terminals.into_iter().next())
 }

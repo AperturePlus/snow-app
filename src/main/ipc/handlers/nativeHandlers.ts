@@ -24,6 +24,26 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       settingValue: string
     ) => native.setSystemSetting(settingName, settingCode, settingValue)
   );
+  ipcMain.handle(
+    "settings:get-yolo-mode",
+    async (_event, workspacePath: string | undefined) =>
+      native.getYoloMode(workspacePath)
+  );
+  ipcMain.handle(
+    "settings:set-yolo-mode",
+    async (_event, workspacePath: string | undefined, enabled: boolean) =>
+      native.setYoloMode(workspacePath, enabled)
+  );
+  ipcMain.handle(
+    "permissions:list-always-approved-tools",
+    async (_event, workspacePath: string | undefined) =>
+      native.listAlwaysApprovedTools(workspacePath)
+  );
+  ipcMain.handle(
+    "permissions:add-always-approved-tool",
+    async (_event, workspacePath: string | undefined, toolName: string) =>
+      native.addAlwaysApprovedTool(workspacePath, toolName)
+  );
 
   ipcMain.handle("native:sum", (_event, a: number, b: number) =>
     native.sum(a, b)
