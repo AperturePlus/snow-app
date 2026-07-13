@@ -89,6 +89,7 @@ async fn create_anthropic_response_async(
         messages: &request_messages,
         max_context_tokens: api_config.max_context_tokens,
         directory_id: request.directory_id.as_deref(),
+        context_compaction: request.context_compaction.unwrap_or(false),
     })?;
 
     let client = reqwest::Client::builder()
@@ -125,6 +126,7 @@ async fn create_anthropic_response_async(
             response_thinking: &streamed_response.thinking,
             tool_calls_json: &streamed_response.tool_calls_json,
             directory_id: request.directory_id.as_deref().unwrap_or(""),
+            context_compaction: request.context_compaction.unwrap_or(false),
         },
     )?;
 
@@ -271,9 +273,11 @@ fn build_anthropic_payload(
         payload["thinking"] = thinking;
     }
 
-    if let Ok(tools) = crate::mcp::tools::tools_as_anthropic_json() {
-        if tools.as_array().is_some_and(|arr| !arr.is_empty()) {
-            payload["tools"] = tools;
+    if !request.context_compaction.unwrap_or(false) {
+        if let Ok(tools) = crate::mcp::tools::tools_as_anthropic_json() {
+            if tools.as_array().is_some_and(|arr| !arr.is_empty()) {
+                payload["tools"] = tools;
+            }
         }
     }
 

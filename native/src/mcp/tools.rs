@@ -6,6 +6,7 @@ use super::builtin::{execute_builtin_tool, get_builtin_tools};
 use super::servers::bash::{BashService, BashStreamCallback};
 use super::servers::grep::GrepService;
 use super::servers::todo::TodoService;
+use super::servers::websearch::WebSearchService;
 
 // NOTE: list_mcp_tools 和 call_mcp_tool 的 #[napi] 导出在 exports/api.rs 中，
 // 此处仅保留内部函数供 exports 层调用。
@@ -182,7 +183,6 @@ fn load_external_mcp_tools(
 }
 
 /// Execute an MCP tool and capture incremental checkpoint state immediately
-/// before built-in mutating tools run.
 pub async fn call_mcp_tool(
     tool_full_name: String,
     args_json: String,
@@ -217,10 +217,7 @@ pub async fn call_mcp_tool(
             .execute_terminal_stream(&args, on_chunk)
             .await;
         tokio::task::spawn_blocking(move || {
-            capture_checkpoint_after_tool(
-                checkpoint_ids_after,
-                checkpoint_work_dir_after,
-            )
+            capture_checkpoint_after_tool(checkpoint_ids_after, checkpoint_work_dir_after)
         })
         .await
         .map_err(|error| {
@@ -231,14 +228,13 @@ pub async fn call_mcp_tool(
         })??;
         terminal_result?
     } else if tool_full_name == "mcp__grep__search" {
-        // GrepService uses async process I/O (ripgrep/grep/findstr).
-        let grep_service = GrepService::new();
-        grep_service.execute_search(&args).await?
+        GrepService::new().execute_search(&args).await?
     } else if tool_full_name == "mcp__todo__todo-manage" {
-        // TodoService uses async SQLite I/O via spawn_blocking internally,
-        // so we call its async entry point directly.
-        let todo_service = TodoService::new();
-        todo_service.execute_async(&args).await?
+        TodoService::new().execute_async(&args).await?
+    } else if tool_full_name == "mcp__websearch__websearch-search" {
+        WebSearchService::new().execute_search(&args).await?
+    } else if tool_full_name == "mcp__websearch__websearch-fetch" {
+        WebSearchService::new().execute_fetch(&args).await?
     } else {
         tokio::task::spawn_blocking(move || execute_builtin_tool(&tool_full_name, &args))
             .await

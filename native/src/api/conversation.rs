@@ -16,7 +16,8 @@ use crate::api::responses::{
 };
 use crate::prompt::system_prompt::build_system_prompt;
 use crate::storage::services::chat_conversations::{
-    load_context_messages, resolve_conversation_id, ChatContextMessage,
+    load_context_messages, resolve_conversation_id, store_failed_chat_exchange,
+    ChatContextMessage,
 };
 use crate::storage::services::workspace_directories::get_workspace_directory_path;
 
@@ -27,6 +28,7 @@ pub struct ConversationContextRequest<'a> {
     pub messages: &'a [ChatContextMessage],
     pub max_context_tokens: Option<i32>,
     pub directory_id: Option<&'a str>,
+    pub context_compaction: bool,
 }
 
 pub struct PreparedConversationRequest {
@@ -54,6 +56,24 @@ pub async fn create_response_stream(
     stream_id: String,
 ) -> Result<ResponsesApiResult> {
     let context = get_active_api_request_context()?;
+    let failure_messages = request
+        .messages
+        .iter()
+        .map(|message| ChatContextMessage {
+            role: message.role.clone(),
+            content: message.content.clone(),
+        })
+        .collect::<Vec<_>>();
+    let failure_conversation_id = request.conversation_id.clone();
+    let failure_previous_response_id = request.previous_response_id.clone();
+    let failure_checkpoint_id = request.checkpoint_id.clone().unwrap_or_default();
+    let failure_model = request
+        .model
+        .clone()
+        .unwrap_or_else(|| context.api_config.advanced_model.clone());
+    let failure_directory_id = request.directory_id.clone().unwrap_or_default();
+    let failure_context_compaction = request.context_compaction.unwrap_or(false);
+    let failure_database_path = context.database_path.clone();
     let cancel_token = crate::api::cancel::create_and_register(&stream_id);
 
     let result = match context.api_config.request_method.as_str() {
@@ -108,13 +128,67 @@ pub async fn create_response_stream(
     };
 
     crate::api::cancel::unregister_stream(&stream_id);
-    result
+    match result {
+        Ok(response) => Ok(response),
+        Err(error) => {
+            if failure_context_compaction {
+                return Err(error);
+            }
+            let error_message = error.to_string();
+            let persisted_error_message = error_message.clone();
+            let persisted_failure_model = failure_model.clone();
+            let conversation_id = tokio::task::spawn_blocking(move || {
+                store_failed_chat_exchange(
+                    &failure_database_path,
+                    failure_conversation_id.as_deref(),
+                    failure_previous_response_id.as_deref(),
+                    &failure_messages,
+                    &failure_checkpoint_id,
+                    &persisted_failure_model,
+                    &failure_directory_id,
+                    &persisted_error_message,
+                )
+            })
+            .await
+            .map_err(|join_error| {
+                Error::from_reason(format!(
+                    "Failed to persist chat request error: {}",
+                    join_error
+                ))
+            })??;
+
+            Ok(ResponsesApiResult {
+                id: String::new(),
+                conversation_id,
+                content: error_message,
+                thinking: String::new(),
+                model: failure_model,
+                status: "error".to_string(),
+                tool_calls_json: "[]".to_string(),
+                token_usage: crate::api::responses::TokenUsage {
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                },
+            })
+        }
+    }
 }
 
 pub fn prepare_context_request(
     request: ConversationContextRequest<'_>,
 ) -> Result<PreparedConversationRequest> {
-    let mut current_messages = normalize_messages(request.messages);
+    let mut current_messages = if request.context_compaction {
+        vec![ChatContextMessage {
+            // Use a final user instruction for cross-provider compatibility. Some
+            // OpenAI-compatible Chat endpoints reject the `developer` role.
+            role: "user".to_string(),
+            content: "Create a durable context handoff for the next assistant. Output only the handoff document in Markdown. Preserve concrete objectives, user requirements, decisions, architecture constraints, relevant files and symbols, completed changes, current state, pending tasks, exact commands or errors, edge cases, and the next recommended steps. Be concise but do not omit information required to continue the work correctly. Do not call tools and do not address the user conversationally.".to_string(),
+        }]
+    } else {
+        normalize_messages(request.messages)
+    };
     for message in &mut current_messages {
         message.content = persist_inline_images_to_disk(&message.content, request.database_path)?;
     }

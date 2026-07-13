@@ -71,6 +71,10 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
       typeof source.directoryId === "string" ? source.directoryId : undefined,
     checkpointId:
       typeof source.checkpointId === "string" ? source.checkpointId : undefined,
+    contextCompaction:
+      typeof source.contextCompaction === "boolean"
+        ? source.contextCompaction
+        : undefined,
   };
 };
 

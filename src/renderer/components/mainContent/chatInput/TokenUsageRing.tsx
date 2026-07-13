@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useI18n } from "../../../i18n";
 import type { TokenUsage } from "../../../../preload";
 
 type TokenUsageRingProps = {
@@ -15,6 +16,7 @@ export const TokenUsageRing = ({
   tokenUsage,
   maxContextTokens,
 }: TokenUsageRingProps): React.JSX.Element | null => {
+  const { locale, t } = useI18n();
   const [showTooltip, setShowTooltip] = useState(false);
 
   const segments = useMemo(() => {
@@ -25,11 +27,10 @@ export const TokenUsageRing = ({
     const input = tokenUsage.inputTokens;
     const output = tokenUsage.outputTokens;
     const cacheCreation = tokenUsage.cacheCreationInputTokens;
-    const cacheRead = tokenUsage.cacheReadInputTokens;
+    const cacheRead = Math.min(tokenUsage.cacheReadInputTokens, input);
 
-    // input_tokens is normalized at the Rust layer to include cache tokens for
-    // all providers (Anthropic returns them disjoint; OpenAI/Gemini already
-    // include them in prompt_tokens). So total = input + output is correct.
+    // Rust normalizes all providers so input includes cache reads. Cache reads
+    // are therefore a subset of input rather than an additional total.
     const total = input + output;
 
     if (total === 0) {
@@ -41,9 +42,7 @@ export const TokenUsageRing = ({
     const ratio = Math.min(total / max, 1);
     const filled = ratio * CIRCUMFERENCE;
     const remaining = CIRCUMFERENCE - filled;
-
-    // Non-cached input = input minus the portion that was a cache hit.
-    const nonCachedInput = Math.max(0, input - cacheRead);
+    const nonCachedInput = input - cacheRead;
 
     const inputLength = filled * (nonCachedInput / total);
     const outputLength = filled * (output / total);
@@ -70,52 +69,65 @@ export const TokenUsageRing = ({
     return null;
   }
 
+  const formatTokens = (value: number): string => value.toLocaleString(locale);
   const tooltipContent = (
     <div className="token-usage-tooltip">
       <div className="token-usage-tooltip-row">
         <span className="token-usage-dot token-usage-dot-input" />
-        <span className="token-usage-label">Input</span>
+        <span className="token-usage-label">
+          {t("chatInput.tokenUsage.input")}
+        </span>
         <span className="token-usage-value">
-          {segments.input.toLocaleString()}
+          {formatTokens(segments.nonCachedInput)}
         </span>
       </div>
       <div className="token-usage-tooltip-row">
         <span className="token-usage-dot token-usage-dot-output" />
-        <span className="token-usage-label">Output</span>
+        <span className="token-usage-label">
+          {t("chatInput.tokenUsage.output")}
+        </span>
         <span className="token-usage-value">
-          {segments.output.toLocaleString()}
+          {formatTokens(segments.output)}
         </span>
       </div>
       {segments.cacheCreation > 0 && (
         <div className="token-usage-tooltip-row">
           <span className="token-usage-dot token-usage-dot-cache" />
-          <span className="token-usage-label">Cache Write</span>
+          <span className="token-usage-label">
+            {t("chatInput.tokenUsage.cacheWrite")}
+          </span>
           <span className="token-usage-value">
-            {segments.cacheCreation.toLocaleString()}
+            {formatTokens(segments.cacheCreation)}
           </span>
         </div>
       )}
       {segments.cacheRead > 0 && (
         <div className="token-usage-tooltip-row">
           <span className="token-usage-dot token-usage-dot-cache-read" />
-          <span className="token-usage-label">Cache Read</span>
+          <span className="token-usage-label">
+            {t("chatInput.tokenUsage.cacheHit")}
+          </span>
           <span className="token-usage-value">
-            {segments.cacheRead.toLocaleString()}
+            {formatTokens(segments.cacheRead)}
           </span>
         </div>
       )}
       <div className="token-usage-tooltip-divider" />
       <div className="token-usage-tooltip-row">
-        <span className="token-usage-label">Total</span>
+        <span className="token-usage-label">
+          {t("chatInput.tokenUsage.total")}
+        </span>
         <span className="token-usage-value">
-          {segments.total.toLocaleString()}
+          {formatTokens(segments.total)}
         </span>
       </div>
       {maxContextTokens && maxContextTokens > 0 && (
         <div className="token-usage-tooltip-row">
-          <span className="token-usage-label">Context</span>
+          <span className="token-usage-label">
+            {t("chatInput.tokenUsage.context")}
+          </span>
           <span className="token-usage-value">
-            {segments.max.toLocaleString()}
+            {formatTokens(segments.max)}
           </span>
         </div>
       )}

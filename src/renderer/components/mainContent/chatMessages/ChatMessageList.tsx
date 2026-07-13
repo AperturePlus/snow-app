@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { GitFork } from "lucide-react";
+import { FileText, GitFork } from "lucide-react";
 import { useI18n } from "../../../i18n";
 import { AiResponse } from "./AiResponse";
 import { UserMessage } from "./UserMessage";
@@ -102,17 +102,39 @@ export const ChatMessageList = ({
     </div>
   );
 
+  const renderContextBoundary = (messageId: string): React.JSX.Element => (
+    <div className="chat-context-divider" key={`${messageId}-boundary`}>
+      <span className="chat-context-divider-line" />
+      <span className="chat-context-divider-label">
+        <FileText size={13} strokeWidth={1.8} />
+        {t("chat.contextCompacted")}
+      </span>
+      <span className="chat-context-divider-line" />
+    </div>
+  );
+
   const renderItem = (
     message: ChatConversationMessage
   ): React.JSX.Element | null => {
     if (message.role === "user") {
-      return (
+      const userMessage = (
         <UserMessage
           content={message.content}
           isStreaming={isStreaming}
           onRollback={() => handleRollback(message.id)}
           key={message.id}
         />
+      );
+
+      if (!message.isContextCompaction) {
+        return userMessage;
+      }
+
+      return (
+        <div className="chat-context-boundary-group" key={message.id}>
+          {renderContextBoundary(message.id)}
+          {userMessage}
+        </div>
       );
     }
 

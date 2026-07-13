@@ -160,7 +160,12 @@ impl FilesystemService {
         let default_end_line = args.get("endLine").and_then(|value| value.as_u64());
 
         match file_path {
-            Value::String(path) => read_path(path, default_start_line, default_end_line),
+            Value::String(path) => {
+                if let Some(arr) = try_parse_as_json_array(path) {
+                    return read_paths(&arr, default_start_line, default_end_line);
+                }
+                read_path(path, default_start_line, default_end_line)
+            }
             Value::Array(paths) => read_paths(paths, default_start_line, default_end_line),
             _ => Err(Error::new(
                 Status::InvalidArg,
@@ -171,19 +176,21 @@ impl FilesystemService {
     }
 
     fn execute_replace_edit(&self, args: &Value) -> napi::Result<Value> {
-        let file_path = args
-            .get("filePath")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                let keys: Vec<String> = args.as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
-                Error::new(
-                    Status::InvalidArg,
-                    format!(
-                        "filePath is required for tool \"mcp__filesystem__replace_edit\". Received keys: [{}]. Please provide a valid file path.",
-                        keys.join(", ")
-                    ),
-                )
-            })?;
+        let file_path = normalize_path(
+            args
+                .get("filePath")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    let keys: Vec<String> = args.as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
+                    Error::new(
+                        Status::InvalidArg,
+                        format!(
+                            "filePath is required for tool \"mcp__filesystem__replace_edit\". Received keys: [{}]. Please provide a valid file path.",
+                            keys.join(", ")
+                        ),
+                    )
+                })?,
+        );
 
         let search_content = args
             .get("searchContent")
@@ -211,10 +218,10 @@ impl FilesystemService {
             .map(|o| o as usize)
             .unwrap_or(1);
 
-        let content = fs::read_to_string(file_path).map_err(|e| {
+        let content = fs::read_to_string(&file_path).map_err(|e| {
             Error::new(
                 Status::GenericFailure,
-                format!("Failed to read file: {}", e),
+                format!("Failed to read file: {} (path: {})", e, file_path),
             )
         })?;
 
@@ -252,10 +259,10 @@ impl FilesystemService {
             &content[end_idx..]
         );
 
-        fs::write(file_path, &new_content).map_err(|e| {
+        fs::write(&file_path, &new_content).map_err(|e| {
             Error::new(
                 Status::GenericFailure,
-                format!("Failed to write file: {}", e),
+                format!("Failed to write file: {} (path: {})", e, file_path),
             )
         })?;
 
@@ -268,19 +275,21 @@ impl FilesystemService {
     }
 
     fn execute_create(&self, args: &Value) -> napi::Result<Value> {
-        let file_path = args
-            .get("filePath")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                let keys: Vec<String> = args.as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
-                Error::new(
-                    Status::InvalidArg,
-                    format!(
-                        "filePath is required for tool \"mcp__filesystem__create\". Received keys: [{}]. Please provide a valid file path.",
-                        keys.join(", ")
-                    ),
-                )
-            })?;
+        let file_path = normalize_path(
+            args
+                .get("filePath")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    let keys: Vec<String> = args.as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
+                    Error::new(
+                        Status::InvalidArg,
+                        format!(
+                            "filePath is required for tool \"mcp__filesystem__create\". Received keys: [{}]. Please provide a valid file path.",
+                            keys.join(", ")
+                        ),
+                    )
+                })?,
+        );
 
         let content = args
             .get("content")
@@ -292,7 +301,7 @@ impl FilesystemService {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        let path = Path::new(file_path);
+        let path = Path::new(&file_path);
 
         if path.exists() && !overwrite {
             return Err(Error::new(
@@ -306,7 +315,7 @@ impl FilesystemService {
                 fs::create_dir_all(parent).map_err(|e| {
                     Error::new(
                         Status::GenericFailure,
-                        format!("Failed to create directories: {}", e),
+                        format!("Failed to create directories: {} (path: {})", e, file_path),
                     )
                 })?;
             }
@@ -315,7 +324,7 @@ impl FilesystemService {
         fs::write(path, content).map_err(|e| {
             Error::new(
                 Status::GenericFailure,
-                format!("Failed to write file: {}", e),
+                format!("Failed to write file: {} (path: {})", e, file_path),
             )
         })?;
 
@@ -336,8 +345,8 @@ fn read_paths(
     for (index, item) in paths.iter().enumerate() {
         let (path, start_line, end_line) =
             parse_read_path_item(item, default_start_line, default_end_line, index)?;
-        let mut result = read_path(path, start_line, end_line)?;
-        result["filePath"] = Value::String(path.to_string());
+        let mut result = read_path(&path, start_line, end_line)?;
+        result["filePath"] = Value::String(path);
         files.push(result);
     }
 
@@ -349,9 +358,18 @@ fn parse_read_path_item(
     default_start_line: Option<u64>,
     default_end_line: Option<u64>,
     index: usize,
-) -> napi::Result<(&str, Option<u64>, Option<u64>)> {
+) -> napi::Result<(String, Option<u64>, Option<u64>)> {
     match item {
-        Value::String(path) => Ok((path, default_start_line, default_end_line)),
+        Value::String(path) => {
+            let normalized = normalize_path(path);
+            if normalized.is_empty() {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!("filePath[{}] must be a non-empty string.", index),
+                ));
+            }
+            Ok((normalized, default_start_line, default_end_line))
+        }
         Value::Object(object) => {
             let path = object.get("path").and_then(Value::as_str).ok_or_else(|| {
                 Error::new(
@@ -360,7 +378,8 @@ fn parse_read_path_item(
                 )
             })?;
 
-            if path.is_empty() {
+            let normalized = normalize_path(path);
+            if normalized.is_empty() {
                 return Err(Error::new(
                     Status::InvalidArg,
                     format!("filePath[{}].path must be a non-empty string.", index),
@@ -368,7 +387,7 @@ fn parse_read_path_item(
             }
 
             Ok((
-                path,
+                normalized,
                 object
                     .get("startLine")
                     .and_then(Value::as_u64)
@@ -389,11 +408,30 @@ fn parse_read_path_item(
     }
 }
 
+fn normalize_path(path: &str) -> String {
+    let mut normalized = path.trim().to_string();
+    normalized = normalized.replace('\0', "");
+    if normalized.starts_with('\u{FEFF}') {
+        normalized = normalized.trim_start_matches('\u{FEFF}').to_string();
+    }
+    normalized
+}
+
+fn try_parse_as_json_array(s: &str) -> Option<Vec<Value>> {
+    let trimmed = s.trim();
+    if !trimmed.starts_with('[') || !trimmed.ends_with(']') {
+        return None;
+    }
+    serde_json::from_str::<Vec<Value>>(trimmed).ok()
+}
+
 fn read_path(
     file_path: &str,
     start_line: Option<u64>,
     end_line: Option<u64>,
 ) -> napi::Result<Value> {
+    let file_path = normalize_path(file_path);
+
     if file_path.is_empty() {
         return Err(Error::new(
             Status::InvalidArg,
@@ -402,13 +440,13 @@ fn read_path(
         ));
     }
 
-    let path = Path::new(file_path);
+    let path = Path::new(&file_path);
 
     if path.is_dir() {
         let entries = fs::read_dir(path).map_err(|error| {
             Error::new(
                 Status::GenericFailure,
-                format!("Failed to read directory: {}", error),
+                format!("Failed to read directory: {} (path: {})", error, file_path),
             )
         })?;
 
@@ -437,7 +475,7 @@ fn read_path(
     let content = fs::read_to_string(path).map_err(|error| {
         Error::new(
             Status::GenericFailure,
-            format!("Failed to read file: {}", error),
+            format!("Failed to read file: {} (path: {})", error, file_path),
         )
     })?;
 

@@ -82,6 +82,7 @@ async fn create_chat_completion_response_async(
         messages: &request_messages,
         max_context_tokens: api_config.max_context_tokens,
         directory_id: request.directory_id.as_deref(),
+        context_compaction: request.context_compaction.unwrap_or(false),
     })?;
 
     let client = reqwest::Client::builder()
@@ -118,6 +119,7 @@ async fn create_chat_completion_response_async(
             response_thinking: &streamed_response.thinking,
             tool_calls_json: &streamed_response.tool_calls_json,
             directory_id: request.directory_id.as_deref().unwrap_or(""),
+            context_compaction: request.context_compaction.unwrap_or(false),
         },
     )?;
 
@@ -231,9 +233,11 @@ fn build_chat_completions_payload(
         payload["reasoning_effort"] = json!(reasoning_effort);
     }
 
-    if let Ok(tools) = crate::mcp::tools::tools_as_openai_chat_json() {
-        if tools.as_array().is_some_and(|arr| !arr.is_empty()) {
-            payload["tools"] = tools;
+    if !request.context_compaction.unwrap_or(false) {
+        if let Ok(tools) = crate::mcp::tools::tools_as_openai_chat_json() {
+            if tools.as_array().is_some_and(|arr| !arr.is_empty()) {
+                payload["tools"] = tools;
+            }
         }
     }
 
@@ -667,6 +671,7 @@ fn extract_token_usage(usage: &Value) -> ChatTokenUsage {
                 &["prompt_cache_creation_tokens"],
                 &["cache_creation_input_tokens"],
                 &["prompt_tokens_details", "cache_creation_input_tokens"],
+                &["prompt_tokens_details", "cache_creation_tokens"],
             ],
         ),
         cache_read_input_tokens: read_first_i64(
@@ -675,6 +680,10 @@ fn extract_token_usage(usage: &Value) -> ChatTokenUsage {
                 &["cached_tokens"],
                 &["prompt_cache_hit_tokens"],
                 &["cache_read_input_tokens"],
+                &["cache_hit_input_tokens"],
+                &["cache_hit_tokens"],
+                &["prompt_tokens_details", "cache_read_input_tokens"],
+                &["prompt_tokens_details", "cache_hit_tokens"],
                 &["prompt_tokens_details", "cached_tokens"],
             ],
         ),

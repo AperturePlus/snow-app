@@ -1,10 +1,13 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { AlertCircle, FileText, Loader2 } from "lucide-react";
+import { useI18n } from "../../i18n";
 import type { WorkspaceDirectoryRecord } from "../../../preload";
 import { useAutoScrollPreference } from "../../hooks/useAutoScrollPreference";
 import { ChatInput } from "./ChatInput";
 import { EmptyGreeting } from "./EmptyGreeting";
 import { ChatMessageList, useChatConversationContext } from "./chatMessages";
 import { RollbackConfirmDialog } from "./chatMessages/RollbackConfirmDialog";
+import { MarkdownBlock } from "./chatMessages/markdownRenderer";
 import type { ChatInputSendOptions } from "./chatInput/types";
 
 type ChatContentProps = {
@@ -48,12 +51,17 @@ const ChatContentBody = ({
     cancelRollback,
     pendingMessages,
     withdrawPendingMessage,
+    compactConversation,
+    compactionPreview,
+    compactionError,
+    isCompacting,
     yoloMode,
     isUpdatingYoloMode,
     setYoloMode,
     refreshYoloMode,
     pendingToolAuthorizations,
   } = useChatConversationContext();
+  const { t } = useI18n();
   const { autoScrollEnabled, setAutoScrollEnabled } = useAutoScrollPreference();
   const hasMessages = messages.length > 0;
   const hasHistoryContent = hasMessages || isLoadingInitialHistory;
@@ -66,6 +74,8 @@ const ChatContentBody = ({
   const isLoadingOlderWithScrollRef = useRef(false);
   const scrolledAuthorizationSignatureRef = useRef("");
   const shouldStickToBottomRef = useRef(true);
+  const compactionStreamRef = useRef<HTMLDivElement>(null);
+  const previousIsCompactingRef = useRef(isCompacting);
   activeConversationIdRef.current = activeConversationId;
 
   useLayoutEffect(() => {
@@ -156,6 +166,34 @@ const ChatContentBody = ({
 
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [autoScrollEnabled, isStreaming, messages]);
+
+  // Compaction is an explicit operation, so its preview and persisted boundary
+  // must remain visible regardless of the user's normal auto-scroll preference.
+  useLayoutEffect(() => {
+    const wasCompacting = previousIsCompactingRef.current;
+    previousIsCompactingRef.current = isCompacting;
+    if (wasCompacting === isCompacting) {
+      return;
+    }
+
+    shouldStickToBottomRef.current = true;
+    const scrollToBottom = (): void => {
+      const container = scrollRef.current;
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
+    };
+
+    scrollToBottom();
+    requestAnimationFrame(scrollToBottom);
+  }, [isCompacting]);
+
+  useLayoutEffect(() => {
+    if (compactionStreamRef.current) {
+      compactionStreamRef.current.scrollTop =
+        compactionStreamRef.current.scrollHeight;
+    }
+  }, [compactionPreview]);
 
   const handleLoadOlderWithScroll = useCallback(async (): Promise<void> => {
     const container = scrollRef.current;
@@ -286,6 +324,47 @@ const ChatContentBody = ({
               isStreaming={isStreaming}
               isAborting={isAborting}
             />
+            {isCompacting ? (
+              <section className="context-compaction-stream" aria-live="polite">
+                <header className="context-compaction-stream-title">
+                  <span className="context-compaction-stream-icon">
+                    <FileText size={16} />
+                  </span>
+                  <span className="context-compaction-stream-heading">
+                    {t("chat.compactionGenerating")}
+                  </span>
+                  <Loader2
+                    className="context-compaction-stream-spinner spin"
+                    size={14}
+                  />
+                </header>
+                <div
+                  className="context-compaction-stream-body"
+                  ref={compactionStreamRef}
+                >
+                  {compactionPreview ? (
+                    <MarkdownBlock
+                      className="context-compaction-markdown"
+                      content={compactionPreview}
+                    />
+                  ) : (
+                    <div className="context-compaction-placeholder">
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                  )}
+                </div>
+              </section>
+            ) : null}
+            {compactionError ? (
+              <div className="context-compaction-error" role="alert">
+                <AlertCircle size={14} />
+                <span>
+                  {t("chat.compactionFailed")}: {compactionError}
+                </span>
+              </div>
+            ) : null}
           </>
         ) : (
           <EmptyGreeting activeDirectory={activeDirectory} />
@@ -302,6 +381,7 @@ const ChatContentBody = ({
         onDraftRestored={clearDraftToRestore}
         pendingMessages={pendingMessages}
         onWithdrawPendingMessage={withdrawPendingMessage}
+        onCompactConversation={compactConversation}
         yoloMode={yoloMode}
         isUpdatingYoloMode={isUpdatingYoloMode}
         onYoloModeChange={setYoloMode}

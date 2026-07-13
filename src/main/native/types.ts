@@ -236,6 +236,7 @@ export type ResponsesApiRequest = {
   previousResponseId?: string;
   directoryId?: string;
   checkpointId?: string;
+  contextCompaction?: boolean;
 };
 
 export type TokenUsage = {

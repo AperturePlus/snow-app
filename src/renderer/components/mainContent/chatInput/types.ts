@@ -15,6 +15,7 @@ export type ChatInputProps = {
   onDraftRestored?: () => void;
   pendingMessages?: string[];
   onWithdrawPendingMessage?: (index: number) => string | null;
+  onCompactConversation?: (model?: string) => void | Promise<void>;
   yoloMode?: boolean;
   isUpdatingYoloMode?: boolean;
   onYoloModeChange?: (enabled: boolean) => void;
@@ -96,6 +97,7 @@ export type ChatInputViewProps = ChatInputState &
     tokenUsage: TokenUsage | null;
     pendingMessages: string[];
     onWithdrawPendingMessage?: (index: number) => string | null;
+    onCompactConversation?: (model?: string) => void | Promise<void>;
     yoloMode: boolean;
     isUpdatingYoloMode: boolean;
     onYoloModeChange?: (enabled: boolean) => void;

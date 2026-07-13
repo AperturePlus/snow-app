@@ -9,30 +9,38 @@ use super::servers::bash::BashService;
 use super::servers::filesystem::FilesystemService;
 use super::servers::grep::GrepService;
 use super::servers::todo::TodoService;
+use super::servers::websearch::WebSearchService;
 use super::tools::McpTool;
 
-/// 注册所有内置 MCP 服务，返回 server_id -> service 的映射。
-pub fn builtin_services() -> HashMap<String, Arc<dyn McpService>> {
-    let services: Vec<Arc<dyn McpService>> = vec![
+/// 按固定注册顺序构造内置 MCP 服务。
+///
+/// 工具定义会直接出现在模型请求体中；因此绝不能通过 HashMap 迭代来
+/// 生成工具数组，否则每个进程的随机哈希种子都可能改变请求体顺序并使
+/// prompt cache 失效。新增内置服务必须追加到列表末尾。
+fn builtin_services_in_order() -> Vec<Arc<dyn McpService>> {
+    vec![
         Arc::new(FilesystemService::new()),
         Arc::new(BashService::new()),
         Arc::new(TodoService::new()),
         Arc::new(GrepService::new()),
-    ];
-    services
+        Arc::new(WebSearchService::new()),
+    ]
+}
+
+/// 注册所有内置 MCP 服务，返回 server_id -> service 的映射。
+pub fn builtin_services() -> HashMap<String, Arc<dyn McpService>> {
+    builtin_services_in_order()
         .into_iter()
-        .map(|s| (s.id().to_string(), s))
+        .map(|service| (service.id().to_string(), service))
         .collect()
 }
 
-/// 返回所有内置服务的工具定义。
+/// 返回所有内置服务的工具定义，保持与注册列表一致的固定顺序。
 pub fn get_builtin_tools() -> Vec<McpTool> {
-    let services = builtin_services();
-    let mut tools = Vec::new();
-    for (_, service) in services {
-        tools.extend(service.tools());
-    }
-    tools
+    builtin_services_in_order()
+        .into_iter()
+        .flat_map(|service| service.tools())
+        .collect()
 }
 
 /// 根据完整工具名（如 `mcp__filesystem__read`）执行对应的内置工具。

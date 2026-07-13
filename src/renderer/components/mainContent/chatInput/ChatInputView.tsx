@@ -30,6 +30,10 @@ import {
 import { useDropdownDirection } from "./useDropdownDirection";
 import { PlusMenu, type PlusMenuSection } from "./PlusMenu";
 import { PendingMessages } from "./PendingMessages";
+import { useChatConversationContext } from "../chatMessages";
+import { CommandPanel, type CommandPanelHandle } from "./commands/CommandPanel";
+import { createChatCommands } from "./commands/commandRegistry";
+import type { ChatCommand } from "./commands/types";
 
 export const ChatInputView = ({
   placeholder,
@@ -61,6 +65,7 @@ export const ChatInputView = ({
   tokenUsage,
   pendingMessages,
   onWithdrawPendingMessage,
+  onCompactConversation,
   yoloMode,
   isUpdatingYoloMode,
   onYoloModeChange,
@@ -84,12 +89,40 @@ export const ChatInputView = ({
   restoreContent,
 }: ChatInputViewProps): React.JSX.Element => {
   const { t } = useI18n();
+  const { handleNewChat, messages, isCompacting } =
+    useChatConversationContext();
   const isDraggingOverRef = useRef(false);
   const [isMentionOpen, setIsMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
   const mentionAnchorRef = useRef<HTMLDivElement>(null);
   const mentionPopupRef = useRef<FileMentionPopupHandle>(null);
   const mentionStartOffsetRef = useRef<number>(-1);
+  const [isCommandOpen, setIsCommandOpen] = useState(false);
+  const [commandQuery, setCommandQuery] = useState("");
+  const commandPanelRef = useRef<CommandPanelHandle>(null);
+  const commands = useMemo(
+    () =>
+      createChatCommands({
+        onNewChat: handleNewChat,
+        onCompactConversation,
+        model: selectedModel || undefined,
+        compactDisabled: messages.length === 0 || isStreaming || isCompacting,
+        labels: {
+          clearDescription: t("chatCommand.clearDescription"),
+          compactDescription: t("chatCommand.compactDescription"),
+        },
+      }),
+    [
+      handleNewChat,
+      isCompacting,
+      isStreaming,
+      messages.length,
+      onCompactConversation,
+      selectedModel,
+      t,
+    ]
+  );
+
   const [imagePreview, setImagePreview] = useState<{
     url: string;
     x: number;
@@ -194,6 +227,23 @@ export const ChatInputView = ({
     mentionStartOffsetRef.current = -1;
   }, []);
 
+  const handleCloseCommand = useCallback(() => {
+    setIsCommandOpen(false);
+    setCommandQuery("");
+  }, []);
+
+  const handleCommandSelect = useCallback(
+    (command: ChatCommand) => {
+      if (command.disabled) {
+        return;
+      }
+      handleCloseCommand();
+      restoreContent("");
+      command.execute();
+    },
+    [handleCloseCommand, restoreContent]
+  );
+
   const handleMentionDragStart = useCallback(
     (event: React.DragEvent<HTMLDivElement>, tag: FileTag) => {
       event.dataTransfer.setData("application/json", JSON.stringify(tag));
@@ -268,12 +318,11 @@ export const ChatInputView = ({
     [textareaRef]
   );
 
-  const checkMentionTrigger = useCallback(() => {
+  const checkInputTriggers = useCallback(() => {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) {
-      if (isMentionOpen) {
-        handleCloseMention();
-      }
+      handleCloseMention();
+      handleCloseCommand();
       return;
     }
 
@@ -282,31 +331,35 @@ export const ChatInputView = ({
     const offset = range.startOffset;
 
     if (node.nodeType !== Node.TEXT_NODE) {
-      if (isMentionOpen) {
-        handleCloseMention();
-      }
+      handleCloseMention();
+      handleCloseCommand();
       return;
     }
 
-    const text = (node as Text).textContent ?? "";
-    const textBefore = text.slice(0, offset);
-    const atMatch = textBefore.match(/(?:^|\s)@([^\s]*)$/);
+    const textBefore = (node.textContent ?? "").slice(0, offset);
+    const commandMatch = textBefore.match(/^\/([^\s]*)$/);
+    if (commandMatch) {
+      handleCloseMention();
+      setIsCommandOpen(true);
+      setCommandQuery(commandMatch[1]);
+      return;
+    }
 
-    if (atMatch) {
-      const queryText = atMatch[1];
+    const mentionMatch = textBefore.match(/(?:^|\s)@([^\s]*)$/);
+    if (mentionMatch) {
+      const queryText = mentionMatch[1];
       const atOffset = offset - queryText.length - 1;
 
-      if (!isMentionOpen) {
-        setIsMentionOpen(true);
-      }
+      setIsMentionOpen(true);
       mentionStartOffsetRef.current = atOffset + 1;
       setMentionQuery(queryText);
-    } else {
-      if (isMentionOpen) {
-        handleCloseMention();
-      }
+      handleCloseCommand();
+      return;
     }
-  }, [isMentionOpen, handleCloseMention]);
+
+    handleCloseMention();
+    handleCloseCommand();
+  }, [handleCloseCommand, handleCloseMention]);
 
   const handlePaste = useCallback(
     (event: React.ClipboardEvent<HTMLDivElement>) => {
@@ -371,17 +424,17 @@ export const ChatInputView = ({
       selection.removeAllRanges();
       selection.addRange(range);
       syncContent();
-      checkMentionTrigger();
+      checkInputTriggers();
     },
-    [syncContent, checkMentionTrigger]
+    [syncContent, checkInputTriggers]
   );
 
-  const handleInputWithMention = useCallback(() => {
+  const handleInput = useCallback(() => {
     syncContent();
-    checkMentionTrigger();
-  }, [syncContent, checkMentionTrigger]);
+    checkInputTriggers();
+  }, [syncContent, checkInputTriggers]);
 
-  const handleMentionKeyDown = useCallback(
+  const handleInputKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
       const nativeEvent = event.nativeEvent;
       const isComposing =
@@ -390,6 +443,13 @@ export const ChatInputView = ({
 
       if (isComposing) {
         return;
+      }
+
+      if (isCommandOpen && commandPanelRef.current) {
+        const handled = commandPanelRef.current.handleKeyDown(event);
+        if (handled) {
+          return;
+        }
       }
 
       if (isMentionOpen && mentionPopupRef.current) {
@@ -401,7 +461,7 @@ export const ChatInputView = ({
 
       handleKeyDown(event);
     },
-    [handleKeyDown, isMentionOpen]
+    [handleKeyDown, isCommandOpen, isMentionOpen]
   );
 
   const showImagePreview = useCallback(
@@ -541,6 +601,14 @@ export const ChatInputView = ({
           textareaRef={textareaRef}
           onDragStart={handleMentionDragStart}
         />
+        <CommandPanel
+          ref={commandPanelRef}
+          commands={commands}
+          query={commandQuery}
+          visible={isCommandOpen}
+          onClose={handleCloseCommand}
+          onSelect={handleCommandSelect}
+        />
         <PendingMessages
           messages={pendingMessages}
           onWithdraw={handleWithdrawPending}
@@ -553,8 +621,8 @@ export const ChatInputView = ({
             suppressContentEditableWarning
             data-placeholder={placeholder}
             data-empty="true"
-            onInput={handleInputWithMention}
-            onKeyDown={handleMentionKeyDown}
+            onInput={handleInput}
+            onKeyDown={handleInputKeyDown}
             onPaste={handlePaste}
             onDrop={handleDrop}
             onDragOver={handleDragOver}

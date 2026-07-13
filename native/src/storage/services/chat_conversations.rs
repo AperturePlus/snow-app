@@ -36,6 +36,7 @@ pub struct StoreChatExchangeInput<'a> {
     pub response_thinking: &'a str,
     pub tool_calls_json: &'a str,
     pub directory_id: &'a str,
+    pub context_compaction: bool,
 }
 
 pub fn resolve_conversation_id(
@@ -73,7 +74,17 @@ pub fn load_context_messages(
                 "SELECT role, content
                    FROM chat_messages
                   WHERE conversation_id = ?1
+                    AND id >= COALESCE(
+                      (SELECT id
+                         FROM chat_messages
+                        WHERE conversation_id = ?1
+                          AND status = 'context_compaction'
+                        ORDER BY id DESC
+                        LIMIT 1),
+                      ''
+                    )
                     AND content <> ''
+                    AND NOT (role = 'assistant' AND status = 'error')
                   ORDER BY id ASC",
             )?;
 
@@ -126,42 +137,59 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                 ],
             )?;
 
-            for (index, message) in input.request_messages.iter().enumerate() {
-                let checkpoint_id = if index == 0 && normalize_role(&message.role) == "user" {
-                    input.checkpoint_id
-                } else {
-                    ""
-                };
+            if input.context_compaction {
                 insert_message(
                     &transaction,
                     input.conversation_id,
-                    &message.role,
-                    &message.content,
+                    "user",
+                    input.response_content,
+                    input.response_id,
                     "",
-                    checkpoint_id,
                     input.model,
-                    "sent",
-                    "{}",
+                    "context_compaction",
+                    input.raw_response_json,
                     "",
                     "[]",
-                    index,
+                    0,
+                )?;
+            } else {
+                for (index, message) in input.request_messages.iter().enumerate() {
+                    let checkpoint_id = if index == 0 && normalize_role(&message.role) == "user" {
+                        input.checkpoint_id
+                    } else {
+                        ""
+                    };
+                    insert_message(
+                        &transaction,
+                        input.conversation_id,
+                        &message.role,
+                        &message.content,
+                        "",
+                        checkpoint_id,
+                        input.model,
+                        "sent",
+                        "{}",
+                        "",
+                        "[]",
+                        index,
+                    )?;
+                }
+
+                insert_message(
+                    &transaction,
+                    input.conversation_id,
+                    "assistant",
+                    input.response_content,
+                    input.response_id,
+                    "",
+                    input.model,
+                    input.status,
+                    input.raw_response_json,
+                    input.response_thinking,
+                    input.tool_calls_json,
+                    input.request_messages.len(),
                 )?;
             }
-
-            insert_message(
-                &transaction,
-                input.conversation_id,
-                "assistant",
-                input.response_content,
-                input.response_id,
-                "",
-                input.model,
-                input.status,
-                input.raw_response_json,
-                input.response_thinking,
-                input.tool_calls_json,
-                input.request_messages.len(),
-            )?;
 
             transaction.execute(
                 "UPDATE chat_conversations
@@ -174,7 +202,10 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                            WHERE conversation_id = ?1
                         ),
                         model = ?4,
-                        last_response_id = ?5,
+                        last_response_id = CASE
+                          WHEN ?5 <> '' THEN ?5
+                          ELSE last_response_id
+                        END,
                         status = 'active',
                         directory_id = CASE WHEN directory_id = '' THEN ?10 ELSE directory_id END,
                         input_tokens = input_tokens + ?6,
@@ -200,6 +231,64 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
             transaction.commit()
         })
         .map_err(|error| database::database_error(database_path, "store chat exchange", error))
+}
+
+pub fn store_failed_chat_exchange(
+    database_path: &Path,
+    conversation_id: Option<&str>,
+    previous_response_id: Option<&str>,
+    request_messages: &[ChatContextMessage],
+    checkpoint_id: &str,
+    model: &str,
+    directory_id: &str,
+    error_message: &str,
+) -> Result<String> {
+    let request_messages = request_messages
+        .iter()
+        .filter_map(|message| {
+            let content = message.content.trim();
+            (!content.is_empty()).then(|| ChatContextMessage {
+                role: message.role.trim().to_string(),
+                content: content.to_string(),
+            })
+        })
+        .collect::<Vec<_>>();
+    if request_messages.is_empty() {
+        return Err(Error::from_reason("Chat message content is required"));
+    }
+
+    let conversation_id = resolve_conversation_id(
+        database_path,
+        conversation_id,
+        previous_response_id,
+    )?;
+    let error_message = error_message.trim();
+    let response_content = if error_message.is_empty() {
+        "AI 响应失败，请稍后重试。"
+    } else {
+        error_message
+    };
+
+    store_chat_exchange(
+        database_path,
+        &StoreChatExchangeInput {
+            conversation_id: &conversation_id,
+            request_messages: &request_messages,
+            response_content,
+            response_id: "",
+            checkpoint_id,
+            model,
+            status: "error",
+            raw_response_json: "{}",
+            token_usage: ChatTokenUsage::default(),
+            response_thinking: "",
+            tool_calls_json: "[]",
+            directory_id,
+            context_compaction: false,
+        },
+    )?;
+
+    Ok(conversation_id)
 }
 
 pub fn append_tool_message(
@@ -906,53 +995,45 @@ pub fn truncate_conversation_from_response(
         .transaction()
         .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
 
-    // Locate the assistant message row that produced `response_id`.
-    let target_id: Option<String> = transaction
+    // Locate either an assistant response or a persisted context-compaction
+    // boundary. Boundaries are user messages and must be deleted from their own row.
+    let target: Option<(String, String)> = transaction
         .query_row(
-            "SELECT id FROM chat_messages
+            "SELECT id, status FROM chat_messages
               WHERE conversation_id = ?1 AND response_id = ?2
               LIMIT 1",
             params![conversation_id, response_id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
         .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
 
-    let target_id = match target_id {
-        Some(id) => id,
+    let (target_id, target_status) = match target {
+        Some(target) => target,
         None => return Ok(()),
     };
 
-    // Each store_chat_exchange call inserts request message(s) (response_id='')
-    // immediately followed by the assistant response. Find the request message
-    // from the same exchange — the row with the largest id below the assistant
-    // response that has an empty response_id.
-    let request_id: Option<String> = transaction
-        .query_row(
-            "SELECT id FROM chat_messages
-              WHERE conversation_id = ?1 AND id < ?2 AND response_id = ''
-              ORDER BY id DESC
-              LIMIT 1",
-            params![conversation_id, target_id],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
+    let delete_from = if target_status == "context_compaction" {
+        target_id.clone()
+    } else {
+        // Each normal exchange inserts request messages immediately before the
+        // assistant response. Include that request when truncating the exchange.
+        let request_id: Option<String> = transaction
+            .query_row(
+                "SELECT id FROM chat_messages
+                  WHERE conversation_id = ?1 AND id < ?2 AND response_id = ''
+                  ORDER BY id DESC
+                  LIMIT 1",
+                params![conversation_id, target_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
+        request_id.unwrap_or_else(|| target_id.clone())
+    };
 
-    let delete_from = request_id.unwrap_or_else(|| target_id.clone());
-
-    // Delete the user message, the assistant response, and everything after.
-    transaction
-        .execute(
-            "DELETE FROM chat_messages
-              WHERE conversation_id = ?1 AND id >= ?2",
-            params![conversation_id, delete_from],
-        )
-        .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
-
-    // Delete TODO items whose response_id matches any assistant response
-    // at or after the rollback boundary. TODOs from earlier exchanges
-    // (with a different response_id or empty response_id) are preserved.
+    // Delete linked TODO items before deleting their response rows, otherwise the
+    // response-id subquery would no longer be able to locate the affected items.
     transaction
         .execute(
             "DELETE FROM todo_items
@@ -966,6 +1047,16 @@ pub fn truncate_conversation_from_response(
             params![conversation_id, delete_from],
         )
         .map_err(|error| database::database_error(database_path, "delete todo items", error))?;
+
+    // Delete the selected exchange or boundary and everything after it. Messages
+    // before a compaction boundary remain available to full-conversation rollback.
+    transaction
+        .execute(
+            "DELETE FROM chat_messages
+              WHERE conversation_id = ?1 AND id >= ?2",
+            params![conversation_id, delete_from],
+        )
+        .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
 
     // Refresh conversation metadata so the sidebar stays consistent.
     transaction

@@ -97,6 +97,7 @@ async fn create_gemini_response_async(
         messages: &request_messages,
         max_context_tokens: api_config.max_context_tokens,
         directory_id: request.directory_id.as_deref(),
+        context_compaction: request.context_compaction.unwrap_or(false),
     })?;
 
     let client = reqwest::Client::builder()
@@ -132,6 +133,7 @@ async fn create_gemini_response_async(
             response_thinking: &streamed_response.thinking,
             tool_calls_json: &streamed_response.tool_calls_json,
             directory_id: request.directory_id.as_deref().unwrap_or(""),
+            context_compaction: request.context_compaction.unwrap_or(false),
         },
     )?;
 
@@ -264,10 +266,12 @@ fn build_gemini_payload(
         payload["generationConfig"] = generation_config;
     }
 
-    if let Ok(tools) = crate::mcp::tools::tools_as_gemini_json() {
-        if let Some(obj) = tools.as_object() {
-            if !obj.is_empty() {
-                payload["tools"] = json!([tools]);
+    if !request.context_compaction.unwrap_or(false) {
+        if let Ok(tools) = crate::mcp::tools::tools_as_gemini_json() {
+            if let Some(obj) = tools.as_object() {
+                if !obj.is_empty() {
+                    payload["tools"] = json!([tools]);
+                }
             }
         }
     }

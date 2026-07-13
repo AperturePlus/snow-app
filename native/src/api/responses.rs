@@ -37,6 +37,7 @@ pub struct ResponsesApiRequest {
     pub previous_response_id: Option<String>,
     pub directory_id: Option<String>,
     pub checkpoint_id: Option<String>,
+    pub context_compaction: Option<bool>,
 }
 
 #[napi(object)]
@@ -143,6 +144,7 @@ async fn create_response_async(
         messages: &request_messages,
         max_context_tokens: api_config.max_context_tokens,
         directory_id: request.directory_id.as_deref(),
+        context_compaction: request.context_compaction.unwrap_or(false),
     })?;
 
     // Inject conversation_id and session_id as request headers for prompt
@@ -179,6 +181,7 @@ async fn create_response_async(
             response_thinking: &streamed_response.thinking,
             tool_calls_json: &streamed_response.tool_calls_json,
             directory_id: request.directory_id.as_deref().unwrap_or(""),
+            context_compaction: request.context_compaction.unwrap_or(false),
         },
     )?;
 
@@ -326,9 +329,11 @@ fn build_responses_payload(
         payload["reasoning"] = reasoning;
     }
 
-    if let Ok(tools) = crate::mcp::tools::tools_as_openai_responses_json() {
-        if tools.as_array().is_some_and(|arr| !arr.is_empty()) {
-            payload["tools"] = tools;
+    if !request.context_compaction.unwrap_or(false) {
+        if let Ok(tools) = crate::mcp::tools::tools_as_openai_responses_json() {
+            if tools.as_array().is_some_and(|arr| !arr.is_empty()) {
+                payload["tools"] = tools;
+            }
         }
     }
 
@@ -669,16 +674,24 @@ fn extract_token_usage(response: &Value) -> ChatTokenUsage {
                 &["prompt_cache_creation_tokens"],
                 &["input_tokens_details", "cache_creation_input_tokens"],
                 &["input_tokens_details", "cache_creation_tokens"],
+                &["prompt_tokens_details", "cache_creation_input_tokens"],
+                &["prompt_tokens_details", "cache_creation_tokens"],
             ],
         ),
         cache_read_input_tokens: read_first_i64(
             usage,
             &[
                 &["cache_read_input_tokens"],
+                &["cache_hit_input_tokens"],
+                &["cache_hit_tokens"],
                 &["prompt_cache_hit_tokens"],
                 &["cached_tokens"],
                 &["input_tokens_details", "cache_read_input_tokens"],
+                &["input_tokens_details", "cache_hit_tokens"],
                 &["input_tokens_details", "cached_tokens"],
+                &["prompt_tokens_details", "cache_read_input_tokens"],
+                &["prompt_tokens_details", "cache_hit_tokens"],
+                &["prompt_tokens_details", "cached_tokens"],
             ],
         ),
     }

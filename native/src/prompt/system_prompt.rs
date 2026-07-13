@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use chrono::{Local, Offset};
+use chrono::Local;
 use serde_json::Value;
 
 const SETTINGS_DIRECTORY: &str = ".snow";
@@ -158,12 +158,9 @@ fn apply_role_override(prompt: &str, role_content: &str) -> String {
 // ---------------------------------------------------------------------------
 
 fn get_current_time_info() -> String {
-    let now = Local::now();
-    format!(
-        "## Current Time\n\n{}\n\n**Timezone:** {}",
-        now.format("%Y-%m-%d %H:%M:%S"),
-        now.offset().fix().to_string()
-    )
+    // Keep the system prompt cacheable across turns. A timestamp changes every
+    // request and breaks the cached prefix immediately before this section.
+    format!("Current Date: {}", Local::now().format("%Y-%m-%d"))
 }
 
 fn get_working_directory_section(working_directory: &str) -> String {

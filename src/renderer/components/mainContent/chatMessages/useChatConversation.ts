@@ -37,6 +37,7 @@ export type ChatConversationMessage = {
   /** File-system checkpoint id created when the user sent this message.
    *  Used by rollback to restore the working directory to its pre-AI state. */
   checkpointId?: string;
+  isContextCompaction?: boolean;
 };
 
 type UpsertedConversation = {
@@ -83,6 +84,7 @@ type RollbackPreview = {
   convId?: string;
   responseId?: string;
   isFirstMessage: boolean;
+  isContextCompaction: boolean;
   todoItems: RollbackTodoItem[];
 };
 type ToolAuthorizationDecision = "approved" | "rejected";
@@ -112,6 +114,10 @@ type UseChatConversationResult = {
   handleSendMessage: (message: string, options: ChatInputSendOptions) => void;
   pendingMessages: string[];
   withdrawPendingMessage: (index: number) => string | null;
+  compactConversation: (model?: string) => Promise<void>;
+  compactionPreview: string;
+  compactionError: string | null;
+  isCompacting: boolean;
   handleSelectConversation: (
     conversationId: string,
     title?: string,
@@ -333,6 +339,7 @@ const buildConversationMessages = (
         checkpointId: record.checkpointId || undefined,
         model: record.model || undefined,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        isContextCompaction: record.status === "context_compaction",
       };
     });
 };
@@ -456,6 +463,9 @@ export const useChatConversation = (
   const [activePendingMessages, setActivePendingMessages] = useState<string[]>(
     []
   );
+  const [compactionPreview, setCompactionPreview] = useState("");
+  const [compactionError, setCompactionError] = useState<string | null>(null);
+  const [isCompacting, setIsCompacting] = useState(false);
   const handleSendMessageRef = useRef<
     (message: string, options: ChatInputSendOptions) => void
   >(() => {});
@@ -864,9 +874,6 @@ export const useChatConversation = (
 
       let finalSessionKey = sessionKey;
 
-      const MAX_TOOL_ITERATIONS = 10;
-      let iteration = 0;
-
       const runAgentLoop = async (
         currentAssistantMessageId: string,
         requestMessages: {
@@ -992,7 +999,9 @@ export const useChatConversation = (
         const toolCalls = parseToolCalls(response.toolCallsJson);
         const visibleToolCalls = toolCalls;
 
-        // Update assistant message with final content and immediately-visible calls.
+        // Update assistant message with the persisted result. Failed responses
+        // still migrate the session, but remain visible locally as an error.
+        const responseFailed = response.status === "error";
         updateSessionMessages(effectiveKey, (currentMessages) =>
           currentMessages.map((currentMessage) => {
             if (currentMessage.id !== currentAssistantMessageId) {
@@ -1005,8 +1014,8 @@ export const useChatConversation = (
               thinking:
                 response.thinking || currentMessage.thinking || undefined,
               timestamp: formatMessageTime(),
-              status: "sent",
-              responseId: response.id,
+              status: responseFailed ? "error" : "sent",
+              responseId: response.id || undefined,
               model: response.model || options.model,
               toolCalls:
                 visibleToolCalls.length > 0 ? visibleToolCalls : undefined,
@@ -1014,6 +1023,10 @@ export const useChatConversation = (
             };
           })
         );
+
+        if (responseFailed) {
+          return;
+        }
 
         // If no tool calls, check for pending user messages before finishing.
         // This injects messages queued during AI streaming without waiting for
@@ -1058,58 +1071,13 @@ export const useChatConversation = (
           return;
         }
 
-        // Check iteration limit
-        iteration++;
-        if (iteration >= MAX_TOOL_ITERATIONS) {
-          return;
-        }
-
-        // Request authorization for the full tool batch before executing it.
-        // Each tool is authorized independently: approving or rejecting one
-        // tool must not cascade to the rest of the batch.
+        // A tool-call response must always be processed into tool results and
+        // followed by another model request. The loop naturally finishes only
+        // when a later response contains no tool calls, or when the user cancels.
         const authorizationDecisions = await requestToolAuthorizations(
           toolCalls,
           effectiveKey
         );
-
-        // When every tool in this batch is rejected (single tool or full
-        // parallel rejection), mark them as denied and stop the agent loop
-        // instead of feeding denial results back to the model.
-        const allToolsRejected =
-          authorizationDecisions.length > 0 &&
-          authorizationDecisions.every((decision) => decision === "rejected");
-        if (allToolsRejected) {
-          for (const toolCall of toolCalls) {
-            const deniedResult = JSON.stringify({
-              success: false,
-              error: "TOOL_EXECUTION_DENIED_BY_USER",
-              message: "用户拒绝执行",
-              toolName: toolCall.name,
-            });
-            updateSessionMessages(effectiveKey, (currentMessages) =>
-              currentMessages.map((currentMessage) => {
-                if (currentMessage.id !== currentAssistantMessageId) {
-                  return currentMessage;
-                }
-
-                return {
-                  ...currentMessage,
-                  toolCalls: updateFirstMatchingToolCall(
-                    currentMessage.toolCalls,
-                    toolCall,
-                    ["pending", "running"],
-                    (currentToolCall) => ({
-                      ...currentToolCall,
-                      status: "error" as const,
-                      result: deniedResult,
-                    })
-                  ),
-                };
-              })
-            );
-          }
-          return;
-        }
 
         const toolResults: string[] = [];
         for (let toolIndex = 0; toolIndex < toolCalls.length; toolIndex++) {
@@ -1483,6 +1451,98 @@ export const useChatConversation = (
   // Keep the ref current so the pending-flush closure always calls the latest version.
   handleSendMessageRef.current = handleSendMessage;
 
+  const compactConversation = useCallback(
+    async (model?: string): Promise<void> => {
+      const conversationId = activeConversationIdRef.current;
+      if (
+        !conversationId ||
+        sessionsRefData.current.get(conversationId)?.isSending
+      ) {
+        return;
+      }
+
+      const sessionRef = sessionsRefData.current.get(conversationId);
+      if (sessionRef) {
+        sessionRef.isSending = true;
+        sessionRef.isAbortRequested = false;
+      }
+      setCompactionPreview("");
+      setCompactionError(null);
+      setIsCompacting(true);
+
+      try {
+        const response = await window.snow.createResponseStream(
+          {
+            messages: [{ role: "user", content: "context handoff" }],
+            model,
+            conversationId,
+            directoryId: sessionRef?.directoryId ?? directoryId,
+            contextCompaction: true,
+          },
+          (chunk) => {
+            if (chunk.retrying) {
+              return;
+            }
+            setCompactionPreview(
+              (current) => chunk.content || `${current}${chunk.contentDelta}`
+            );
+          },
+          (streamId) => {
+            if (sessionRef) {
+              sessionRef.streamId = streamId;
+            }
+          }
+        );
+
+        const content = response.content.trim();
+        if (!content) {
+          throw new Error("Context handoff is empty");
+        }
+
+        const compactionMessage: ChatConversationMessage = {
+          id: response.id || createMessageId("user"),
+          role: "user",
+          content,
+          timestamp: formatMessageTime(),
+          status: "sent",
+          responseId: response.id || undefined,
+          model: response.model || model,
+          isContextCompaction: true,
+        };
+        updateSessionMessages(conversationId, (currentMessages) => [
+          ...currentMessages,
+          compactionMessage,
+        ]);
+        const latestRecords = await window.snow.listChatMessages(
+          conversationId
+        );
+        updateSessionField(conversationId, "messageRecords", latestRecords);
+      } catch (error) {
+        setCompactionError(
+          error instanceof Error ? error.message : "Failed to compact context"
+        );
+      } finally {
+        if (sessionRef) {
+          sessionRef.isSending = false;
+          sessionRef.streamId = null;
+        }
+        setIsCompacting(false);
+        setCompactionPreview("");
+
+        const pendingQueue = pendingQueueRef.current.get(conversationId) ?? [];
+        if (!sessionRef?.isAbortRequested && pendingQueue.length > 0) {
+          pendingQueueRef.current.delete(conversationId);
+          const combined = pendingQueue.map((item) => item.text).join("\n\n");
+          const lastOptions =
+            pendingQueue[pendingQueue.length - 1]?.options ?? {};
+          setActivePendingMessages([]);
+          handleSendMessageRef.current(combined, lastOptions);
+        }
+      }
+    },
+    [directoryId, updateSessionField, updateSessionMessages]
+  );
+
   const withdrawPendingMessage = useCallback((index: number): string | null => {
     const sessionKey = activeConversationIdRef.current ?? PENDING_SESSION_KEY;
     const queue = pendingQueueRef.current.get(sessionKey);
@@ -1523,9 +1583,10 @@ export const useChatConversation = (
         return;
       }
 
+      setIsLoadingInitialHistory(true);
+      setActiveId(trimmedId);
+
       if (hasLoadedCachedHistory) {
-        setIsLoadingInitialHistory(false);
-        setActiveId(trimmedId);
         updateSessionField(trimmedId, "hasNewContent", false);
         setCompletedConversationIds((prev) => {
           if (!prev.has(trimmedId)) return prev;
@@ -1533,12 +1594,19 @@ export const useChatConversation = (
           next.delete(trimmedId);
           return next;
         });
+
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => resolve());
+          });
+        });
+        if (selectionRequestId === selectionRequestIdRef.current) {
+          setIsLoadingInitialHistory(false);
+        }
         return;
       }
 
       const nextTitle = title?.trim() ?? "";
-      setActiveId(trimmedId);
-      setIsLoadingInitialHistory(true);
 
       try {
         const [page, conversationRecord] = await Promise.all([
@@ -1846,19 +1914,29 @@ export const useChatConversation = (
       const checkpointId = targetMessage.checkpointId;
       const convId = key !== PENDING_SESSION_KEY ? key : undefined;
 
-      // Determine if this is the first user message — rolling back to it
-      // means the entire conversation should be deleted.
+      // Delete the entire conversation only when this is the true first user
+      // message in the complete history. A compaction boundary and the first item
+      // in a paginated window must always use range truncation instead.
       const hasUserMessageBefore = messages
         .slice(0, targetIndex)
         .some((m) => m.role === "user");
-      const isFirstMessage = !hasUserMessageBefore;
+      const isFirstMessage =
+        !targetMessage.isContextCompaction &&
+        !session.hasMoreMessages &&
+        !hasUserMessageBefore;
 
-      // Find the responseId of the first assistant message after the target.
-      let responseId: string | undefined;
-      for (let i = targetIndex + 1; i < messages.length; i++) {
-        if (messages[i].role === "assistant" && messages[i].responseId) {
-          responseId = messages[i].responseId;
-          break;
+      // Normal user messages roll back from their following assistant response.
+      // A compaction boundary is persisted as a user message with its own response id,
+      // so rolling back that boundary must target the boundary row itself.
+      let responseId = targetMessage.isContextCompaction
+        ? targetMessage.responseId
+        : undefined;
+      if (!responseId) {
+        for (let i = targetIndex + 1; i < messages.length; i++) {
+          if (messages[i].role === "assistant" && messages[i].responseId) {
+            responseId = messages[i].responseId;
+            break;
+          }
         }
       }
 
@@ -1918,6 +1996,7 @@ export const useChatConversation = (
           convId,
           responseId,
           isFirstMessage,
+          isContextCompaction: targetMessage.isContextCompaction === true,
           todoItems,
         });
       };
@@ -1941,6 +2020,7 @@ export const useChatConversation = (
       convId,
       responseId,
       isFirstMessage,
+      isContextCompaction,
     } = preview;
 
     updateSessionMessages(key, (currentMessages) => {
@@ -1985,7 +2065,7 @@ export const useChatConversation = (
         });
     }
 
-    if (isFirstMessage && convId) {
+    if (isFirstMessage && !isContextCompaction && convId) {
       void window.snow
         .deleteConversation(convId)
         .then(() => {
@@ -2007,7 +2087,9 @@ export const useChatConversation = (
       });
     }
 
-    setDraftToRestore(messageContent);
+    if (!isContextCompaction) {
+      setDraftToRestore(messageContent);
+    }
     setRollbackPreview(null);
   }, [
     rollbackPreview,
@@ -2044,6 +2126,10 @@ export const useChatConversation = (
     handleSendMessage,
     pendingMessages: activePendingMessages,
     withdrawPendingMessage,
+    compactConversation,
+    compactionPreview,
+    compactionError,
+    isCompacting,
     handleSelectConversation,
     handleNewChat,
     refreshConversations,
