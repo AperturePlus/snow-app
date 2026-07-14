@@ -10,6 +10,7 @@ use super::servers::browser::BrowserService;
 use super::servers::filesystem::FilesystemService;
 use super::servers::grep::GrepService;
 use super::servers::todo::TodoService;
+use super::servers::user_interaction::UserInteractionService;
 use super::servers::websearch::WebSearchService;
 use super::tools::McpTool;
 
@@ -26,6 +27,7 @@ fn builtin_services_in_order() -> Vec<Arc<dyn McpService>> {
         Arc::new(GrepService::new()),
         Arc::new(WebSearchService::new()),
         Arc::new(BrowserService::new()),
+        Arc::new(UserInteractionService::new()),
     ]
 }
 

@@ -5,6 +5,8 @@ import type {
   BrowserCommand,
   BrowserCommandResponse,
   NativeBridge,
+  UserQuestionCommand,
+  UserQuestionResponse,
 } from "../../native/types";
 import {
   writeLog,
@@ -18,6 +20,11 @@ import {
   resolveBrowserCommand,
   unregisterBrowserRenderer,
 } from "../browserCommandBroker";
+import {
+  dispatchUserQuestion,
+  resolveUserQuestion,
+  USER_QUESTION_RESPONSE_CHANNEL,
+} from "../userQuestionBroker";
 
 const MCP_TOOL_CHUNK_CHANNEL = "mcp:call-tool:chunk";
 
@@ -86,6 +93,15 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       resolveBrowserCommand(event.sender, response);
     }
   );
+  ipcMain.on(
+    USER_QUESTION_RESPONSE_CHANNEL,
+    (event, response: UserQuestionResponse) => {
+      if (!response || typeof response.questionId !== "string") {
+        return;
+      }
+      resolveUserQuestion(event.sender, response);
+    }
+  );
   ipcMain.handle(
     "mcp:authorize-sensitive-command",
     async (_event, command: unknown) => {
@@ -107,7 +123,8 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       checkpointIds: unknown,
       checkpointWorkDir: unknown,
       sensitiveAuthorizationToken: unknown,
-      streamId: unknown
+      streamId: unknown,
+      interactionId: unknown
     ) => {
       if (typeof toolFullName !== "string" || !toolFullName.trim()) {
         throw new Error("Tool full name is required");
@@ -140,8 +157,12 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       if (typeof streamId !== "string" || !streamId.trim()) {
         throw new Error("Tool stream ID is required");
       }
+      if (typeof interactionId !== "string" || !interactionId.trim()) {
+        throw new Error("Tool interaction ID is required");
+      }
 
       const normalizedStreamId = streamId.trim();
+      const normalizedInteractionId = interactionId.trim();
       return native.callMcpTool(
         toolFullName.trim(),
         argsJson,
@@ -159,7 +180,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
           });
         },
         (command: BrowserCommand) =>
-          dispatchBrowserCommand(event.sender, command)
+          dispatchBrowserCommand(event.sender, command),
+        (question: UserQuestionCommand) =>
+          dispatchUserQuestion(event.sender, question, normalizedInteractionId)
       );
     }
   );

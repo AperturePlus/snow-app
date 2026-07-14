@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import type { ToolCallInfo } from "./useChatConversation";
 import {
+  AskUserQuestionToolCall,
   BashToolCall,
   FilesystemReadToolCall,
   FilesystemEditToolCall,
@@ -36,6 +37,10 @@ export const ToolCallItem = ({
   toolCall,
 }: ToolCallItemProps): React.JSX.Element => {
   // Delegate to specialized renderers based on tool name
+  if (toolCall.name === "mcp__user-interaction__askUserQuestion") {
+    return <AskUserQuestionToolCall toolCall={toolCall} />;
+  }
+
   if (toolCall.name === "mcp__filesystem__read") {
     return <FilesystemReadToolCall toolCall={toolCall} />;
   }

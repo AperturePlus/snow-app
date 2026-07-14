@@ -292,6 +292,22 @@ export type BrowserCommandResponse = {
   error?: string;
 };
 
+export type UserQuestionCommand = {
+  question: string;
+  options: string[];
+};
+
+export type UserQuestionRequest = UserQuestionCommand & {
+  questionId: string;
+  interactionId: string;
+};
+
+export type UserQuestionResponse = {
+  questionId: string;
+  resultJson?: string;
+  error?: string;
+};
+
 export type GitFileStatus = {
   path: string;
   oldPath: string | null;
@@ -472,7 +488,8 @@ export type NativeBridge = {
     checkpointWorkDir: string | undefined,
     sensitiveAuthorizationToken: string | undefined,
     onChunk: (chunk: BashStreamChunk) => void,
-    onBrowserCommand: (command: BrowserCommand) => Promise<string>
+    onBrowserCommand: (command: BrowserCommand) => Promise<string>,
+    onUserQuestion: (question: UserQuestionCommand) => Promise<string>
   ) => Promise<string>;
   engineInfo: () => string;
   sum: (a: number, b: number) => number;

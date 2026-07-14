@@ -6,11 +6,15 @@ import type {
   CheckpointFileChange,
   CheckpointFileDiff,
   McpToolDefinition,
+  UserQuestionRequest,
+  UserQuestionResponse,
 } from "../types";
 
 const MCP_TOOL_CHUNK_CHANNEL = "mcp:call-tool:chunk";
 const BROWSER_COMMAND_CHANNEL = "browser:command";
 const BROWSER_COMMAND_RESPONSE_CHANNEL = "browser:command-response";
+const USER_QUESTION_CHANNEL = "user-question:request";
+const USER_QUESTION_RESPONSE_CHANNEL = "user-question:response";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -73,6 +77,46 @@ export const systemApi = {
       void ipcRenderer.invoke("browser:renderer-unregister");
     };
   },
+  registerUserQuestionHandler: (
+    handler: (request: UserQuestionRequest) => Promise<string>
+  ): (() => void) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      request: UserQuestionRequest
+    ): void => {
+      if (
+        !request ||
+        typeof request.questionId !== "string" ||
+        typeof request.interactionId !== "string" ||
+        typeof request.question !== "string" ||
+        !Array.isArray(request.options) ||
+        request.options.some((option) => typeof option !== "string")
+      ) {
+        return;
+      }
+
+      void handler(request)
+        .then((resultJson) => {
+          const response: UserQuestionResponse = {
+            questionId: request.questionId,
+            resultJson,
+          };
+          ipcRenderer.send(USER_QUESTION_RESPONSE_CHANNEL, response);
+        })
+        .catch((error: unknown) => {
+          const response: UserQuestionResponse = {
+            questionId: request.questionId,
+            error: error instanceof Error ? error.message : String(error),
+          };
+          ipcRenderer.send(USER_QUESTION_RESPONSE_CHANNEL, response);
+        });
+    };
+
+    ipcRenderer.on(USER_QUESTION_CHANNEL, listener);
+    return () => {
+      ipcRenderer.removeListener(USER_QUESTION_CHANNEL, listener);
+    };
+  },
   issueSensitiveCommandAuthorization: (command: string): Promise<string> =>
     ipcRenderer.invoke("mcp:authorize-sensitive-command", command),
   callMcpTool: (
@@ -81,7 +125,8 @@ export const systemApi = {
     checkpointIds?: string[],
     checkpointWorkDir?: string,
     sensitiveAuthorizationToken?: string,
-    onChunk?: (chunk: BashStreamChunk) => void
+    onChunk?: (chunk: BashStreamChunk) => void,
+    interactionId?: string
   ): Promise<string> => {
     const streamId = createMcpToolStreamId();
     const handleChunk = (_event: IpcRendererEvent, payload: unknown): void => {
@@ -105,7 +150,8 @@ export const systemApi = {
         checkpointIds,
         checkpointWorkDir,
         sensitiveAuthorizationToken,
-        streamId
+        streamId,
+        interactionId ?? streamId
       )
       .finally(() => {
         ipcRenderer.removeListener(MCP_TOOL_CHUNK_CHANNEL, handleChunk);

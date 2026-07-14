@@ -6,17 +6,29 @@ import type {
   ChatMessageRecord,
   CheckpointFileChange,
   TokenUsage,
+  UserQuestionRequest,
 } from "../../../../preload";
 import { calculateAutoCompressThresholdTokens } from "../../sidebar/apiSettings/autoCompressThreshold";
+
+export type UserQuestionState = {
+  questionId: string;
+  question: string;
+  options: string[];
+  status: "waiting" | "answered" | "cancelled";
+  selectedOptions: string[];
+  customAnswers: string[];
+};
 
 export type ToolCallInfo = {
   name: string;
   arguments: string;
   callId?: string;
+  interactionId: string;
   status: "pending" | "running" | "completed" | "error";
   result?: string;
   streamingStdout?: string;
   streamingStderr?: string;
+  userQuestion?: UserQuestionState;
   authorizationId?: string;
   authorizationConversationId?: string;
   sensitiveCommandMatches?: Array<{
@@ -104,6 +116,17 @@ type PendingToolAuthorization = {
   resolve: (decision: ToolAuthorizationDecision) => void;
 };
 
+type PendingUserQuestion = {
+  interactionId: string;
+  resolve: (resultJson: string) => void;
+  reject: (error: Error) => void;
+};
+
+type UserQuestionTarget = {
+  sessionKey: string;
+  assistantMessageId: string;
+};
+
 type UseChatConversationResult = {
   messages: ChatConversationMessage[];
   summary: string;
@@ -158,6 +181,12 @@ type UseChatConversationResult = {
   approveToolAuthorization: (toolCall: ToolCallInfo) => void;
   approveToolAuthorizationAlways: (toolCall: ToolCallInfo) => void;
   rejectToolAuthorization: (toolCall: ToolCallInfo, reason: string) => void;
+  answerUserQuestion: (
+    questionId: string,
+    selectedOptions: string[],
+    customAnswers: string[]
+  ) => void;
+  cancelUserQuestion: (questionId: string) => void;
 };
 
 const PENDING_SESSION_KEY = "__pending__";
@@ -251,6 +280,20 @@ const normalizeToolCallArguments = (args: unknown): string => {
   return "{}";
 };
 
+const isUserQuestionCancellationResult = (resultJson: string): boolean => {
+  try {
+    const parsed: unknown = JSON.parse(resultJson);
+    return (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      !Array.isArray(parsed) &&
+      (parsed as Record<string, unknown>).cancelled === true
+    );
+  } catch {
+    return false;
+  }
+};
+
 const isValidToolName = (name: string): boolean => {
   // Valid format: mcp__{server_id}__{tool_name}
   const parts = name.split("__");
@@ -322,8 +365,11 @@ const parseToolCalls = (toolCallsJson: string | undefined): ToolCallInfo[] => {
   try {
     const parsed = JSON.parse(toolCallsJson);
     if (Array.isArray(parsed) && parsed.length > 0) {
+      const parseBatchId = `${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
       return parsed
-        .map((tc: unknown): ToolCallInfo | null => {
+        .map((tc: unknown, index: number): ToolCallInfo | null => {
           if (typeof tc !== "object" || tc === null || Array.isArray(tc)) {
             return null;
           }
@@ -332,10 +378,14 @@ const parseToolCalls = (toolCallsJson: string | undefined): ToolCallInfo[] => {
           if (!name) {
             return null;
           }
+          const callId = normalizeToolCallId(record);
           return {
             name,
             arguments: normalizeToolCallArgumentsFromTc(record),
-            callId: normalizeToolCallId(record),
+            callId,
+            interactionId: callId
+              ? `tool-${callId}`
+              : `tool-${parseBatchId}-${index}`,
             status: "pending" as const,
           };
         })
@@ -549,6 +599,8 @@ export const useChatConversation = (
   const pendingToolAuthorizationRef = useRef(
     new Map<string, PendingToolAuthorization>()
   );
+  const pendingUserQuestionRef = useRef(new Map<string, PendingUserQuestion>());
+  const userQuestionTargetRef = useRef(new Map<string, UserQuestionTarget>());
   const activeApiConfigRef = useRef<ApiConfigRecord | null>(null);
   yoloModeRef.current = yoloMode;
 
@@ -709,12 +761,32 @@ export const useChatConversation = (
     setPendingToolAuthorizations([]);
   }, []);
 
+  const rejectPendingUserQuestions = useCallback(
+    (sessionKey?: string): void => {
+      for (const [questionId, pending] of pendingUserQuestionRef.current) {
+        const target = userQuestionTargetRef.current.get(pending.interactionId);
+        if (sessionKey && target?.sessionKey !== sessionKey) {
+          continue;
+        }
+
+        pending.reject(new Error("User question interrupted"));
+        pendingUserQuestionRef.current.delete(questionId);
+        userQuestionTargetRef.current.delete(pending.interactionId);
+      }
+    },
+    []
+  );
+
   const requestToolAuthorization = useCallback(
     (
       toolCall: ToolCallInfo,
       index: number,
       conversationId: string
     ): Promise<ToolAuthorizationDecision> => {
+      if (toolCall.name === "mcp__user-interaction__askUserQuestion") {
+        return Promise.resolve({ status: "approved" });
+      }
+
       const shouldAutoApprove = () =>
         yoloModeRef.current ||
         alwaysApprovedToolsRef.current.has(toolCall.name);
@@ -904,6 +976,154 @@ export const useChatConversation = (
       });
     },
     []
+  );
+
+  useEffect(() => {
+    const unregister = window.snow.registerUserQuestionHandler(
+      (request: UserQuestionRequest): Promise<string> => {
+        const target = userQuestionTargetRef.current.get(request.interactionId);
+        if (!target) {
+          return Promise.reject(
+            new Error("No active tool call matches this user question")
+          );
+        }
+
+        updateSessionMessages(target.sessionKey, (currentMessages) =>
+          currentMessages.map((message) => {
+            if (message.id !== target.assistantMessageId) {
+              return message;
+            }
+
+            return {
+              ...message,
+              toolCalls: message.toolCalls?.map((toolCall) =>
+                toolCall.interactionId === request.interactionId
+                  ? {
+                      ...toolCall,
+                      userQuestion: {
+                        questionId: request.questionId,
+                        question: request.question,
+                        options: request.options,
+                        status: "waiting" as const,
+                        selectedOptions: [],
+                        customAnswers: [],
+                      },
+                    }
+                  : toolCall
+              ),
+            };
+          })
+        );
+
+        return new Promise<string>((resolve, reject) => {
+          pendingUserQuestionRef.current.set(request.questionId, {
+            interactionId: request.interactionId,
+            resolve,
+            reject,
+          });
+        });
+      }
+    );
+
+    return () => {
+      unregister();
+      for (const pending of pendingUserQuestionRef.current.values()) {
+        pending.reject(new Error("User question handler was disposed"));
+      }
+      pendingUserQuestionRef.current.clear();
+      userQuestionTargetRef.current.clear();
+    };
+  }, [updateSessionMessages]);
+
+  const settleUserQuestion = useCallback(
+    (
+      questionId: string,
+      cancelled: boolean,
+      selectedOptions: string[],
+      customAnswers: string[]
+    ): void => {
+      const pending = pendingUserQuestionRef.current.get(questionId);
+      if (!pending) {
+        return;
+      }
+
+      const normalizeAnswers = (values: string[]): string[] =>
+        Array.from(
+          new Set(values.map((value) => value.trim()).filter(Boolean))
+        );
+      const normalizedSelected = cancelled
+        ? []
+        : normalizeAnswers(selectedOptions);
+      const normalizedCustom = cancelled ? [] : normalizeAnswers(customAnswers);
+      const answers = normalizeAnswers([
+        ...normalizedSelected,
+        ...normalizedCustom,
+      ]);
+      if (!cancelled && answers.length === 0) {
+        return;
+      }
+
+      const target = userQuestionTargetRef.current.get(pending.interactionId);
+      if (target) {
+        updateSessionMessages(target.sessionKey, (currentMessages) =>
+          currentMessages.map((message) => {
+            if (message.id !== target.assistantMessageId) {
+              return message;
+            }
+
+            return {
+              ...message,
+              toolCalls: message.toolCalls?.map((toolCall) =>
+                toolCall.interactionId === pending.interactionId &&
+                toolCall.userQuestion?.questionId === questionId
+                  ? {
+                      ...toolCall,
+                      userQuestion: {
+                        ...toolCall.userQuestion,
+                        status: cancelled
+                          ? ("cancelled" as const)
+                          : ("answered" as const),
+                        selectedOptions: normalizedSelected,
+                        customAnswers: normalizedCustom,
+                      },
+                    }
+                  : toolCall
+              ),
+            };
+          })
+        );
+      }
+
+      pendingUserQuestionRef.current.delete(questionId);
+      userQuestionTargetRef.current.delete(pending.interactionId);
+      pending.resolve(
+        JSON.stringify({
+          cancelled,
+          answers,
+          selectedOptions: normalizedSelected,
+          customAnswers: normalizedCustom,
+        })
+      );
+    },
+    [updateSessionMessages]
+  );
+
+  const answerUserQuestion = useCallback(
+    (
+      questionId: string,
+      selectedOptions: string[],
+      customAnswers: string[]
+    ): void => {
+      settleUserQuestion(questionId, false, selectedOptions, customAnswers);
+    },
+    [settleUserQuestion]
+  );
+
+  const cancelUserQuestion = useCallback(
+    (questionId: string): void => {
+      settleUserQuestion(questionId, true, [], []);
+    },
+    [settleUserQuestion]
   );
 
   const updateSessionField = useCallback(
@@ -1341,10 +1561,45 @@ export const useChatConversation = (
         );
 
         const toolResults: string[] = [];
+        let userQuestionCancelled = false;
         for (let toolIndex = 0; toolIndex < toolCalls.length; toolIndex++) {
           const toolCall = toolCalls[toolIndex];
           if (sessionsRefData.current.get(effectiveKey)?.isAbortRequested) {
             return;
+          }
+
+          if (userQuestionCancelled) {
+            const skippedResult = JSON.stringify({
+              cancelled: true,
+              skipped: true,
+              reason: "Skipped because the user cancelled the question",
+            });
+            updateSessionMessages(effectiveKey, (currentMessages) =>
+              currentMessages.map((currentMessage) => {
+                if (currentMessage.id !== currentAssistantMessageId) {
+                  return currentMessage;
+                }
+
+                return {
+                  ...currentMessage,
+                  toolCalls: updateFirstMatchingToolCall(
+                    currentMessage.toolCalls,
+                    toolCall,
+                    ["pending", "running"],
+                    (currentToolCall) => ({
+                      ...currentToolCall,
+                      status: "completed" as const,
+                      result: skippedResult,
+                    })
+                  ),
+                };
+              })
+            );
+            const skippedIdentifier = toolCall.callId
+              ? `${toolCall.name}#${toolCall.callId}`
+              : toolCall.name;
+            toolResults.push(`[Tool: ${skippedIdentifier}]\n${skippedResult}`);
+            continue;
           }
 
           let result: string;
@@ -1454,50 +1709,68 @@ export const useChatConversation = (
                     );
                 }
 
-                result = await window.snow.callMcpTool(
-                  toolCall.name,
-                  toolArgs,
-                  checkpointIds,
-                  checkpointIds.length > 0 ? directoryPath : undefined,
-                  sensitiveAuthorizationToken,
-                  (chunk) => {
-                    if (!chunk.data) {
-                      return;
-                    }
+                const isUserQuestionTool =
+                  toolCall.name === "mcp__user-interaction__askUserQuestion";
+                if (isUserQuestionTool) {
+                  userQuestionTargetRef.current.set(toolCall.interactionId, {
+                    sessionKey: effectiveKey,
+                    assistantMessageId: currentAssistantMessageId,
+                  });
+                }
 
-                    updateSessionMessages(effectiveKey, (currentMessages) =>
-                      currentMessages.map((currentMessage) => {
-                        if (currentMessage.id !== currentAssistantMessageId) {
-                          return currentMessage;
-                        }
+                try {
+                  result = await window.snow.callMcpTool(
+                    toolCall.name,
+                    toolArgs,
+                    checkpointIds,
+                    checkpointIds.length > 0 ? directoryPath : undefined,
+                    sensitiveAuthorizationToken,
+                    (chunk) => {
+                      if (!chunk.data) {
+                        return;
+                      }
 
-                        return {
-                          ...currentMessage,
-                          toolCalls: updateFirstMatchingToolCall(
-                            currentMessage.toolCalls,
-                            toolCall,
-                            ["pending", "running"],
-                            (currentToolCall) => ({
-                              ...currentToolCall,
-                              streamingStdout:
-                                chunk.stream === "stdout"
-                                  ? `${currentToolCall.streamingStdout ?? ""}${
-                                      chunk.data
-                                    }`
-                                  : currentToolCall.streamingStdout,
-                              streamingStderr:
-                                chunk.stream === "stderr"
-                                  ? `${currentToolCall.streamingStderr ?? ""}${
-                                      chunk.data
-                                    }`
-                                  : currentToolCall.streamingStderr,
-                            })
-                          ),
-                        };
-                      })
+                      updateSessionMessages(effectiveKey, (currentMessages) =>
+                        currentMessages.map((currentMessage) => {
+                          if (currentMessage.id !== currentAssistantMessageId) {
+                            return currentMessage;
+                          }
+
+                          return {
+                            ...currentMessage,
+                            toolCalls: updateFirstMatchingToolCall(
+                              currentMessage.toolCalls,
+                              toolCall,
+                              ["pending", "running"],
+                              (currentToolCall) => ({
+                                ...currentToolCall,
+                                streamingStdout:
+                                  chunk.stream === "stdout"
+                                    ? `${
+                                        currentToolCall.streamingStdout ?? ""
+                                      }${chunk.data}`
+                                    : currentToolCall.streamingStdout,
+                                streamingStderr:
+                                  chunk.stream === "stderr"
+                                    ? `${
+                                        currentToolCall.streamingStderr ?? ""
+                                      }${chunk.data}`
+                                    : currentToolCall.streamingStderr,
+                              })
+                            ),
+                          };
+                        })
+                      );
+                    },
+                    toolCall.interactionId
+                  );
+                } finally {
+                  if (isUserQuestionTool) {
+                    userQuestionTargetRef.current.delete(
+                      toolCall.interactionId
                     );
                   }
-                );
+                }
               } catch (err) {
                 result = JSON.stringify({ error: getErrorMessage(err) });
               }
@@ -1524,6 +1797,13 @@ export const useChatConversation = (
                 };
               })
             );
+          }
+
+          if (
+            toolCall.name === "mcp__user-interaction__askUserQuestion" &&
+            isUserQuestionCancellationResult(result)
+          ) {
+            userQuestionCancelled = true;
           }
 
           const toolResultIdentifier = toolCall.callId
@@ -1555,6 +1835,18 @@ export const useChatConversation = (
           ...currentMessages,
           toolResultMessage,
         ]);
+
+        if (userQuestionCancelled) {
+          pendingQueueRef.current.delete(effectiveKey);
+          setActivePendingMessages([]);
+          if (response.conversationId) {
+            await window.snow.appendToolMessage(
+              response.conversationId,
+              toolResultContent
+            );
+          }
+          return;
+        }
 
         // Continue the loop with tool results sent as role: "tool"
         // The Rust side (conversation.rs normalize_role) maps "tool" -> "user"
@@ -2105,6 +2397,7 @@ export const useChatConversation = (
     }
 
     rejectAllToolAuthorizations();
+    rejectPendingUserQuestions(key);
     ref.isAbortRequested = true;
     updateSessionMessages(key, (currentMessages) =>
       currentMessages.map((message) => ({
@@ -2132,6 +2425,7 @@ export const useChatConversation = (
   }, [
     removeStreamingId,
     rejectAllToolAuthorizations,
+    rejectPendingUserQuestions,
     updateSessionMessages,
     updateSessionField,
   ]);
@@ -2140,6 +2434,7 @@ export const useChatConversation = (
     (conversationId: string): void => {
       const ref = sessionsRefData.current.get(conversationId);
       rejectAllToolAuthorizations();
+      rejectPendingUserQuestions(conversationId);
       if (ref?.streamId) {
         void window.snow.abortResponseStream(ref.streamId);
         ref.streamId = null;
@@ -2161,7 +2456,12 @@ export const useChatConversation = (
         return next;
       });
     },
-    [removeStreamingId, rejectAllToolAuthorizations, updateSessionField]
+    [
+      removeStreamingId,
+      rejectAllToolAuthorizations,
+      rejectPendingUserQuestions,
+      updateSessionField,
+    ]
   );
 
   const refreshConversations = useCallback((): void => {
@@ -2488,5 +2788,7 @@ export const useChatConversation = (
         status: "rejected",
         reason: reason.trim() || "User declined tool execution",
       }),
+    answerUserQuestion,
+    cancelUserQuestion,
   };
 };

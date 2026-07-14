@@ -7,6 +7,7 @@ use super::servers::bash::{BashService, BashStreamCallback};
 use super::servers::browser::{BrowserCommandCallback, BrowserService};
 use super::servers::grep::GrepService;
 use super::servers::todo::TodoService;
+use super::servers::user_interaction::{UserInteractionService, UserQuestionCallback};
 use super::servers::websearch::WebSearchService;
 
 // NOTE: list_mcp_tools 和 call_mcp_tool 的 #[napi] 导出在 exports/api.rs 中，
@@ -180,6 +181,7 @@ pub async fn call_mcp_tool(
     sensitive_authorization_token: Option<String>,
     on_chunk: BashStreamCallback,
     on_browser_command: BrowserCommandCallback,
+    on_user_question: UserQuestionCallback,
 ) -> napi::Result<String> {
     let args = parse_tool_args(&tool_full_name, &args_json)?;
 
@@ -233,6 +235,10 @@ pub async fn call_mcp_tool(
     } else if let Some(tool_name) = tool_full_name.strip_prefix("mcp__browser__") {
         BrowserService::new()
             .execute_async(tool_name, &args, &on_browser_command)
+            .await?
+    } else if tool_full_name == "mcp__user-interaction__askUserQuestion" {
+        UserInteractionService::new()
+            .execute_async(&args, &on_user_question)
             .await?
     } else {
         tokio::task::spawn_blocking(move || execute_builtin_tool(&tool_full_name, &args))

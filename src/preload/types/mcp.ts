@@ -20,6 +20,19 @@ export type BrowserCommandResponse = {
   error?: string;
 };
 
+export type UserQuestionRequest = {
+  questionId: string;
+  interactionId: string;
+  question: string;
+  options: string[];
+};
+
+export type UserQuestionResponse = {
+  questionId: string;
+  resultJson?: string;
+  error?: string;
+};
+
 export type McpServerConfigInput = {
   serverId: string;
   scope: string;

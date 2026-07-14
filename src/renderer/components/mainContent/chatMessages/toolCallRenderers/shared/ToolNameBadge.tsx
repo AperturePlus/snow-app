@@ -9,6 +9,7 @@ import {
   GitBranch,
   ListTree,
   ListChecks,
+  MessageCircleQuestion,
   Hammer,
   type LucideIcon,
 } from "lucide-react";
@@ -23,6 +24,7 @@ export type ToolCategory =
   | "git"
   | "outline"
   | "todo"
+  | "interaction"
   | "generic";
 
 const TOOL_ICON_MAP: Record<ToolCategory, LucideIcon> = {
@@ -35,6 +37,7 @@ const TOOL_ICON_MAP: Record<ToolCategory, LucideIcon> = {
   git: GitBranch,
   outline: ListTree,
   todo: ListChecks,
+  interaction: MessageCircleQuestion,
   generic: Wrench,
 };
 
@@ -77,6 +80,9 @@ export const getToolCategory = (toolName: string): ToolCategory => {
   )
     return "outline";
   if (lower.includes("todo")) return "todo";
+  if (lower.includes("question") || lower.includes("interaction")) {
+    return "interaction";
+  }
   return "generic";
 };
 
