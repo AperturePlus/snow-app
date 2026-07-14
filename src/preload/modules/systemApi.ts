@@ -1,12 +1,16 @@
 import { ipcRenderer, type IpcRendererEvent } from "electron";
 import type {
   BashStreamChunk,
+  BrowserCommandRequest,
+  BrowserCommandResponse,
   CheckpointFileChange,
   CheckpointFileDiff,
   McpToolDefinition,
 } from "../types";
 
 const MCP_TOOL_CHUNK_CHANNEL = "mcp:call-tool:chunk";
+const BROWSER_COMMAND_CHANNEL = "browser:command";
+const BROWSER_COMMAND_RESPONSE_CHANNEL = "browser:command-response";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -29,6 +33,46 @@ const normalizeBashStreamChunk = (value: unknown): BashStreamChunk | null => {
 export const systemApi = {
   listMcpTools: (): Promise<McpToolDefinition[]> =>
     ipcRenderer.invoke("mcp:list-tools"),
+  registerBrowserCommandHandler: (
+    handler: (request: BrowserCommandRequest) => Promise<string>
+  ): (() => void) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      request: BrowserCommandRequest
+    ): void => {
+      if (
+        !request ||
+        typeof request.commandId !== "string" ||
+        typeof request.operation !== "string" ||
+        typeof request.argsJson !== "string"
+      ) {
+        return;
+      }
+
+      void handler(request)
+        .then((resultJson) => {
+          const response: BrowserCommandResponse = {
+            commandId: request.commandId,
+            resultJson,
+          };
+          ipcRenderer.send(BROWSER_COMMAND_RESPONSE_CHANNEL, response);
+        })
+        .catch((error: unknown) => {
+          const response: BrowserCommandResponse = {
+            commandId: request.commandId,
+            error: error instanceof Error ? error.message : String(error),
+          };
+          ipcRenderer.send(BROWSER_COMMAND_RESPONSE_CHANNEL, response);
+        });
+    };
+
+    ipcRenderer.on(BROWSER_COMMAND_CHANNEL, listener);
+    void ipcRenderer.invoke("browser:renderer-register");
+    return () => {
+      ipcRenderer.removeListener(BROWSER_COMMAND_CHANNEL, listener);
+      void ipcRenderer.invoke("browser:renderer-unregister");
+    };
+  },
   issueSensitiveCommandAuthorization: (command: string): Promise<string> =>
     ipcRenderer.invoke("mcp:authorize-sensitive-command", command),
   callMcpTool: (

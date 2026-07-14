@@ -6,6 +6,7 @@ use serde_json::Value;
 
 use super::service::McpService;
 use super::servers::bash::BashService;
+use super::servers::browser::BrowserService;
 use super::servers::filesystem::FilesystemService;
 use super::servers::grep::GrepService;
 use super::servers::todo::TodoService;
@@ -24,6 +25,7 @@ fn builtin_services_in_order() -> Vec<Arc<dyn McpService>> {
         Arc::new(TodoService::new()),
         Arc::new(GrepService::new()),
         Arc::new(WebSearchService::new()),
+        Arc::new(BrowserService::new()),
     ]
 }
 

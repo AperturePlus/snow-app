@@ -8,6 +8,7 @@ import {
 import { createPortal } from "react-dom";
 import {
   ChevronRight,
+  Code2,
   Cookie,
   EllipsisVertical,
   Eraser,
@@ -31,6 +32,7 @@ export type BrowserMenuProps = {
   onZoomReset: () => void;
   onForceReload: () => void;
   onFindInPage: () => void;
+  onOpenDevTools: () => void;
   onSetHomepage: (url: string) => Promise<void>;
 };
 
@@ -43,7 +45,7 @@ const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 5;
 const MENU_WIDTH = 200;
 const MENU_GAP = 4;
-const ESTIMATED_MENU_HEIGHT = 180;
+const ESTIMATED_MENU_HEIGHT = 212;
 
 const formatZoomPercent = (factor: number): string =>
   `${Math.round(factor * 100)}%`;
@@ -62,7 +64,7 @@ const formatZoomPercent = (factor: number): string =>
  *   - 缩放: inline row with direct - / % (click to reset) / + controls. The
  *     menu stays open while adjusting so the user can tap +/- repeatedly.
  *   - 设置默认起始页: inline row with click-to-edit input. Empty means blank.
- *   - 强制重新加载, 在页面中查找: one-shot action items.
+ *   - 强制重新加载, 在页面中查找, 开发者工具: one-shot action items.
  */
 export const BrowserMenu = ({
   zoomFactor,
@@ -74,6 +76,7 @@ export const BrowserMenu = ({
   onZoomReset,
   onForceReload,
   onFindInPage,
+  onOpenDevTools,
   onSetHomepage,
 }: BrowserMenuProps): React.JSX.Element => {
   const { t } = useI18n();
@@ -349,6 +352,17 @@ export const BrowserMenu = ({
                 <Search size={14} strokeWidth={1.8} />
                 <span className="browser-menu-label">
                   {t("browser.findInPage")}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="browser-menu-item"
+                role="menuitem"
+                onClick={() => runAction(onOpenDevTools)}
+              >
+                <Code2 size={14} strokeWidth={1.8} />
+                <span className="browser-menu-label">
+                  {t("browser.openDevTools")}
                 </span>
               </button>
             </div>,

@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 
 use super::builtin::{execute_builtin_tool, get_builtin_tools};
 use super::servers::bash::{BashService, BashStreamCallback};
+use super::servers::browser::{BrowserCommandCallback, BrowserService};
 use super::servers::grep::GrepService;
 use super::servers::todo::TodoService;
 use super::servers::websearch::WebSearchService;
@@ -190,6 +191,7 @@ pub async fn call_mcp_tool(
     checkpoint_work_dir: Option<String>,
     sensitive_authorization_token: Option<String>,
     on_chunk: BashStreamCallback,
+    on_browser_command: BrowserCommandCallback,
 ) -> napi::Result<String> {
     let args = parse_tool_args(&tool_full_name, &args_json)?;
 
@@ -240,6 +242,10 @@ pub async fn call_mcp_tool(
         WebSearchService::new().execute_search(&args).await?
     } else if tool_full_name == "mcp__websearch__websearch-fetch" {
         WebSearchService::new().execute_fetch(&args).await?
+    } else if let Some(tool_name) = tool_full_name.strip_prefix("mcp__browser__") {
+        BrowserService::new()
+            .execute_async(tool_name, &args, &on_browser_command)
+            .await?
     } else {
         tokio::task::spawn_blocking(move || execute_builtin_tool(&tool_full_name, &args))
             .await

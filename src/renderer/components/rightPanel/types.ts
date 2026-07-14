@@ -30,6 +30,7 @@ export type TerminalTabData = {
 };
 
 export type BrowserTabData = {
+  instanceId: string;
   url: string;
 };
 

@@ -14,6 +14,7 @@ import { DiffViewer } from "./rightPanel/DiffViewer";
 import { FileViewerContent } from "./rightPanel/FileViewerContent";
 import { TerminalPanelContent } from "./rightPanel/TerminalPanelContent";
 import { BrowserPanelContent } from "./rightPanel/BrowserPanelContent";
+import { useBrowserMcpCommandBridge } from "./rightPanel/browser/useBrowserMcpCommandBridge";
 import type {
   BrowserTabData,
   DiffTabData,
@@ -111,22 +112,30 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     );
 
     const handleOpenBrowserTab = useCallback(
-      (url?: string) => {
-        const tabId = `browser-${Date.now()}`;
-        const browserData: BrowserTabData = { url: url ?? "" };
+      (url?: string, requestedInstanceId?: string): string => {
+        const instanceId =
+          requestedInstanceId ??
+          `browser-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const browserData: BrowserTabData = {
+          instanceId,
+          url: url ?? "",
+        };
         setTabs((prev) => [
           ...prev,
           {
-            id: tabId,
+            id: instanceId,
             type: "browser",
             title: t("rightPanel.browserTab"),
             data: browserData,
           },
         ]);
-        setActiveTabId(tabId);
+        setActiveTabId(instanceId);
+        return instanceId;
       },
       [t]
     );
+
+    useBrowserMcpCommandBridge(handleOpenBrowserTab);
 
     const handleBrowserTitleChange = useCallback(
       (tabId: string, title: string) => {
@@ -253,6 +262,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         const browserData = tab.data as BrowserTabData;
         return (
           <BrowserPanelContent
+            instanceId={browserData.instanceId}
             initialUrl={browserData.url}
             isActive={activeTabId === tab.id}
             onTitleChange={(title) => handleBrowserTitleChange(tab.id, title)}

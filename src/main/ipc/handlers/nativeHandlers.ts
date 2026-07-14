@@ -1,11 +1,23 @@
 import { ipcMain } from "electron";
 import { randomUUID } from "node:crypto";
-import type { BashStreamChunk, NativeBridge } from "../../native/types";
+import type {
+  BashStreamChunk,
+  BrowserCommand,
+  BrowserCommandResponse,
+  NativeBridge,
+} from "../../native/types";
 import {
   writeLog,
   type LogEntry,
   type LogLevel,
 } from "../../../utils/snowLogger";
+import {
+  BROWSER_COMMAND_RESPONSE_CHANNEL,
+  dispatchBrowserCommand,
+  registerBrowserRenderer,
+  resolveBrowserCommand,
+  unregisterBrowserRenderer,
+} from "../browserCommandBroker";
 
 const MCP_TOOL_CHUNK_CHANNEL = "mcp:call-tool:chunk";
 
@@ -59,6 +71,21 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   );
 
   ipcMain.handle("mcp:list-tools", () => native.listMcpTools());
+  ipcMain.handle("browser:renderer-register", (event) => {
+    registerBrowserRenderer(event.sender);
+  });
+  ipcMain.handle("browser:renderer-unregister", (event) => {
+    unregisterBrowserRenderer(event.sender);
+  });
+  ipcMain.on(
+    BROWSER_COMMAND_RESPONSE_CHANNEL,
+    (event, response: BrowserCommandResponse) => {
+      if (!response || typeof response.commandId !== "string") {
+        return;
+      }
+      resolveBrowserCommand(event.sender, response);
+    }
+  );
   ipcMain.handle(
     "mcp:authorize-sensitive-command",
     async (_event, command: unknown) => {
@@ -130,7 +157,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
             streamId: normalizedStreamId,
             chunk,
           });
-        }
+        },
+        (command: BrowserCommand) =>
+          dispatchBrowserCommand(event.sender, command)
       );
     }
   );

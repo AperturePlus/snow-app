@@ -3,10 +3,21 @@ export type McpToolDefinition = {
   description: string;
   inputSchemaJson: string;
 };
-
 export type BashStreamChunk = {
   stream: "stdout" | "stderr";
   data: string;
+};
+
+export type BrowserCommandRequest = {
+  commandId: string;
+  operation: string;
+  argsJson: string;
+};
+
+export type BrowserCommandResponse = {
+  commandId: string;
+  resultJson?: string;
+  error?: string;
 };
 
 export type McpServerConfigInput = {

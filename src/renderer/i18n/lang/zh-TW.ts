@@ -698,6 +698,7 @@ export const zhTW = {
   "browser.zoomReset": "重設為 100%",
   "browser.forceReload": "強制重新載入",
   "browser.findInPage": "在頁面中尋找",
+  "browser.openDevTools": "開啟瀏覽器開發者工具",
   "browser.setHomepage": "設定預設起始頁",
   "browser.homepagePlaceholder": "輸入網址，留空為空白頁",
   "browser.homepageEmpty": "空白頁",

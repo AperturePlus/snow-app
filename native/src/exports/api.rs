@@ -16,6 +16,7 @@ use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback,
 };
 use crate::mcp::servers::bash::{authorize_sensitive_command as authorize_command, BashStreamCallback};
+use crate::mcp::servers::browser::BrowserCommandCallback;
 use crate::mcp::tools::{
     call_mcp_tool as call_tool, list_mcp_tools as list_all_mcp_tools, McpToolDefinition,
 };
@@ -95,7 +96,7 @@ pub async fn authorize_sensitive_command(command: String, token: String) -> napi
 }
 
 #[napi(
-    ts_args_type = "toolFullName: string, argsJson: string, checkpointIds: string[] | undefined, checkpointWorkDir: string | undefined, sensitiveAuthorizationToken: string | undefined, onChunk: (chunk: BashStreamChunk) => void",
+    ts_args_type = "toolFullName: string, argsJson: string, checkpointIds: string[] | undefined, checkpointWorkDir: string | undefined, sensitiveAuthorizationToken: string | undefined, onChunk: (chunk: BashStreamChunk) => void, onBrowserCommand: (command: BrowserCommand) => Promise<string>",
     ts_return_type = "Promise<string>"
 )]
 pub async fn call_mcp_tool(
@@ -105,6 +106,7 @@ pub async fn call_mcp_tool(
     checkpoint_work_dir: Option<String>,
     sensitive_authorization_token: Option<String>,
     on_chunk: BashStreamCallback,
+    on_browser_command: BrowserCommandCallback,
 ) -> napi::Result<String> {
     call_tool(
         tool_full_name,
@@ -113,6 +115,7 @@ pub async fn call_mcp_tool(
         checkpoint_work_dir,
         sensitive_authorization_token,
         on_chunk,
+        on_browser_command,
     )
     .await
 }

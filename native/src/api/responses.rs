@@ -379,7 +379,10 @@ fn build_responses_reasoning(config_json: &str) -> Option<Value> {
         .map(str::trim)
         .filter(|value| !value.is_empty() && *value != "none")?;
 
-    Some(json!({ "effort": effort }))
+    Some(json!({
+        "effort": effort,
+        "summary": "auto",
+    }))
 }
 
 type ResponseValueStream =

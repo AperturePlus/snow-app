@@ -698,6 +698,7 @@ export const zhCN = {
   "browser.zoomReset": "重置为 100%",
   "browser.forceReload": "强制重新加载",
   "browser.findInPage": "在页面中查找",
+  "browser.openDevTools": "打开浏览器开发者工具",
   "browser.setHomepage": "设置默认起始页",
   "browser.homepagePlaceholder": "输入网址，留空为空白页",
   "browser.homepageEmpty": "空白页",

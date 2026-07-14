@@ -7,8 +7,11 @@ import {
   useWebviewScreenshot,
 } from "./browser";
 import { DEFAULT_BROWSER_HOMEPAGE } from "./browser/browserHomepageConstants";
+import { registerBrowserMcpInstance } from "./browser/browserMcpController";
+import { executeBrowserMcpOperation } from "./browser/browserMcpOperations";
 
 export type BrowserPanelContentProps = {
+  instanceId: string;
   initialUrl: string;
   isActive: boolean;
   onTitleChange?: (title: string) => void;
@@ -54,11 +57,13 @@ const isSuppressedNavigationError = (error: unknown): boolean => {
 };
 
 export const BrowserPanelContent = ({
+  instanceId,
   initialUrl,
   isActive,
   onTitleChange,
 }: BrowserPanelContentProps): React.JSX.Element => {
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
+  const consoleMessagesRef = useRef<unknown[]>([]);
   const { homepage, loaded, setHomepage } = useBrowserHomepage();
   // When an explicit initialUrl is provided, use it immediately. Otherwise,
   // leave the address bar and webview src empty until the homepage has been
@@ -101,6 +106,35 @@ export const BrowserPanelContent = ({
 
   // isActive is reserved for future panel visibility optimisation.
   void isActive;
+
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (!webview) {
+      return;
+    }
+
+    const unregister = registerBrowserMcpInstance(
+      instanceId,
+      (operation, args) =>
+        executeBrowserMcpOperation(
+          webview,
+          instanceId,
+          operation,
+          args,
+          consoleMessagesRef.current
+        ).then((result) => {
+          if (
+            operation === "devtools" &&
+            args.action === "console" &&
+            args.clearConsole === true
+          ) {
+            consoleMessagesRef.current = [];
+          }
+          return result;
+        })
+    );
+    return unregister;
+  }, [instanceId]);
 
   useEffect(() => {
     const webview = webviewRef.current;
@@ -178,6 +212,19 @@ export const BrowserPanelContent = ({
       });
     };
 
+    const handleConsoleMessage = (e: Electron.ConsoleMessageEvent): void => {
+      consoleMessagesRef.current = [
+        ...consoleMessagesRef.current,
+        {
+          level: e.level,
+          message: e.message,
+          line: e.line,
+          sourceId: e.sourceId,
+          recordedAt: new Date().toISOString(),
+        },
+      ].slice(-500);
+    };
+
     webview.addEventListener("did-navigate", handleDidNavigate);
     webview.addEventListener("did-navigate-in-page", handleDidNavigate);
     webview.addEventListener(
@@ -198,6 +245,7 @@ export const BrowserPanelContent = ({
       handleDidFailLoad as EventListener
     );
     webview.addEventListener("found-in-page", handleFoundInPage);
+    webview.addEventListener("console-message", handleConsoleMessage);
 
     return () => {
       webview.removeEventListener("did-navigate", handleDidNavigate);
@@ -220,6 +268,7 @@ export const BrowserPanelContent = ({
         handleDidFailLoad as EventListener
       );
       webview.removeEventListener("found-in-page", handleFoundInPage);
+      webview.removeEventListener("console-message", handleConsoleMessage);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onTitleChange]);
@@ -319,6 +368,10 @@ export const BrowserPanelContent = ({
     webviewRef.current?.reloadIgnoringCache();
   };
 
+  const handleOpenDevTools = (): void => {
+    webviewRef.current?.openDevTools();
+  };
+
   const handleOpenFind = (): void => {
     setFindVisible(true);
   };
@@ -388,6 +441,7 @@ export const BrowserPanelContent = ({
         onZoomReset={handleZoomReset}
         onForceReload={handleForceReload}
         onFindInPage={handleOpenFind}
+        onOpenDevTools={handleOpenDevTools}
         onSetHomepage={setHomepage}
       />
       <div className="browser-content">

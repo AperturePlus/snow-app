@@ -183,6 +183,64 @@ const createMessageId = (role: ChatConversationMessage["role"]): string =>
 const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : "AI 响应失败，请稍后重试。";
 
+type McpImageContentBlock = {
+  type: "image";
+  data: string;
+  mimeType: string;
+};
+
+const isMcpImageContentBlock = (
+  value: unknown
+): value is McpImageContentBlock => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const block = value as Record<string, unknown>;
+  return (
+    block.type === "image" &&
+    typeof block.data === "string" &&
+    block.data.length > 0 &&
+    typeof block.mimeType === "string" &&
+    block.mimeType.startsWith("image/")
+  );
+};
+
+const formatMcpToolResultForModel = (result: string): string => {
+  try {
+    const parsed = JSON.parse(result) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return result;
+    }
+    const record = parsed as Record<string, unknown>;
+    if (!Array.isArray(record.content)) {
+      return result;
+    }
+
+    const images = record.content.filter(isMcpImageContentBlock);
+    if (images.length === 0) {
+      return result;
+    }
+    const sanitizedContent = record.content.map((block) =>
+      isMcpImageContentBlock(block)
+        ? {
+            type: "image",
+            mimeType: block.mimeType,
+            data: "[attached as multimodal image]",
+          }
+        : block
+    );
+    const imageTags = images.map(
+      (image) => `@@image:data:${image.mimeType};base64,${image.data}@@`
+    );
+    return `${JSON.stringify({
+      ...record,
+      content: sanitizedContent,
+    })}\n${imageTags.join("\n")}`;
+  } catch {
+    return result;
+  }
+};
+
 const normalizeToolCallArguments = (args: unknown): string => {
   if (typeof args === "string") {
     return args;
@@ -1471,7 +1529,10 @@ export const useChatConversation = (
           const toolResultIdentifier = toolCall.callId
             ? `${toolCall.name}#${toolCall.callId}`
             : toolCall.name;
-          toolResults.push(`[Tool: ${toolResultIdentifier}]\n${result}`);
+          const modelToolResult = formatMcpToolResultForModel(result);
+          toolResults.push(
+            `[Tool: ${toolResultIdentifier}]\n${modelToolResult}`
+          );
 
           if (sessionsRefData.current.get(effectiveKey)?.isAbortRequested) {
             return;

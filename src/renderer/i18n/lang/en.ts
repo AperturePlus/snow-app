@@ -727,6 +727,7 @@ export const en = {
   "browser.zoomReset": "Reset to 100%",
   "browser.forceReload": "Force reload",
   "browser.findInPage": "Find in page",
+  "browser.openDevTools": "Open developer tools",
   "browser.setHomepage": "Set homepage",
   "browser.homepagePlaceholder": "Enter URL, leave empty for blank",
   "browser.homepageEmpty": "Blank",

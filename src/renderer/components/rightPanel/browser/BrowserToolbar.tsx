@@ -34,6 +34,7 @@ export type BrowserToolbarProps = {
   onZoomReset: () => void;
   onForceReload: () => void;
   onFindInPage: () => void;
+  onOpenDevTools: () => void;
   onSetHomepage: (url: string) => Promise<void>;
 };
 
@@ -90,6 +91,7 @@ export const BrowserToolbar = ({
   onZoomReset,
   onForceReload,
   onFindInPage,
+  onOpenDevTools,
   onSetHomepage,
 }: BrowserToolbarProps): React.JSX.Element => {
   const { t } = useI18n();
@@ -160,6 +162,7 @@ export const BrowserToolbar = ({
         onZoomReset={onZoomReset}
         onForceReload={onForceReload}
         onFindInPage={onFindInPage}
+        onOpenDevTools={onOpenDevTools}
         onSetHomepage={onSetHomepage}
       />
     </div>
