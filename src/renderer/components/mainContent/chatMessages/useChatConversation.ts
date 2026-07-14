@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatInputSendOptions } from "../chatInput/types";
 import type {
+  ApiConfigRecord,
   ChatConversationRecord,
   ChatMessageRecord,
   CheckpointFileChange,
   TokenUsage,
 } from "../../../../preload";
+import { calculateAutoCompressThresholdTokens } from "../../sidebar/apiSettings/autoCompressThreshold";
 
 export type ToolCallInfo = {
   name: string;
@@ -17,6 +19,11 @@ export type ToolCallInfo = {
   streamingStderr?: string;
   authorizationId?: string;
   authorizationConversationId?: string;
+  sensitiveCommandMatches?: Array<{
+    commandId: string;
+    pattern: string;
+    description: string;
+  }>;
 };
 
 export type ChatConversationMessage = {
@@ -67,6 +74,7 @@ type ConversationSessionRef = {
   isAbortRequested: boolean;
   directoryId?: string;
   checkpointIds: string[];
+  hasAutoCompacted: boolean;
 };
 
 type RollbackTodoItem = {
@@ -87,7 +95,9 @@ type RollbackPreview = {
   isContextCompaction: boolean;
   todoItems: RollbackTodoItem[];
 };
-type ToolAuthorizationDecision = "approved" | "rejected";
+type ToolAuthorizationDecision =
+  | { status: "approved"; sensitiveCommandConfirmed?: boolean }
+  | { status: "rejected"; reason: string };
 
 type PendingToolAuthorization = {
   toolCall: ToolCallInfo;
@@ -147,7 +157,7 @@ type UseChatConversationResult = {
   pendingToolAuthorizations: ToolCallInfo[];
   approveToolAuthorization: (toolCall: ToolCallInfo) => void;
   approveToolAuthorizationAlways: (toolCall: ToolCallInfo) => void;
-  rejectToolAuthorization: (toolCall: ToolCallInfo) => void;
+  rejectToolAuthorization: (toolCall: ToolCallInfo, reason: string) => void;
 };
 
 const PENDING_SESSION_KEY = "__pending__";
@@ -469,12 +479,42 @@ export const useChatConversation = (
   const handleSendMessageRef = useRef<
     (message: string, options: ChatInputSendOptions) => void
   >(() => {});
+  const performCompactionRef = useRef<
+    (
+      conversationId: string,
+      model?: string,
+      isAuto?: boolean
+    ) => Promise<string | null>
+  >(async () => null);
   const yoloModeRef = useRef(yoloMode);
   const alwaysApprovedToolsRef = useRef(new Set<string>());
   const pendingToolAuthorizationRef = useRef(
     new Map<string, PendingToolAuthorization>()
   );
+  const activeApiConfigRef = useRef<ApiConfigRecord | null>(null);
   yoloModeRef.current = yoloMode;
+
+  // Load the active API config once so the auto-compaction check can read
+  // enableAutoCompress / autoCompressThreshold / maxContextTokens without
+  // an extra IPC round-trip on every token-usage update.
+  useEffect(() => {
+    let disposed = false;
+    void window.snow
+      .listApiConfigs()
+      .then((configs) => {
+        if (disposed) {
+          return;
+        }
+        activeApiConfigRef.current =
+          configs.find((c) => c.isActive) ?? configs[0] ?? null;
+      })
+      .catch(() => {
+        // Best effort — auto-compaction simply won't trigger if config is unavailable.
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
 
   const approveAllPendingToolAuthorizations = useCallback((): void => {
     const pendingEntries = pendingToolAuthorizationRef.current;
@@ -482,9 +522,25 @@ export const useChatConversation = (
       return;
     }
 
-    pendingEntries.forEach((entry) => entry.resolve("approved"));
-    pendingEntries.clear();
-    setPendingToolAuthorizations([]);
+    const approvedAuthorizationIds: string[] = [];
+    pendingEntries.forEach((entry, authorizationId) => {
+      if ((entry.toolCall.sensitiveCommandMatches?.length ?? 0) > 0) {
+        return;
+      }
+
+      entry.resolve({ status: "approved" });
+      approvedAuthorizationIds.push(authorizationId);
+    });
+    approvedAuthorizationIds.forEach((authorizationId) =>
+      pendingEntries.delete(authorizationId)
+    );
+    setPendingToolAuthorizations((current) =>
+      current.filter(
+        (toolCall) =>
+          !toolCall.authorizationId ||
+          !approvedAuthorizationIds.includes(toolCall.authorizationId)
+      )
+    );
   }, []);
 
   const applyYoloMode = useCallback(
@@ -585,7 +641,12 @@ export const useChatConversation = (
 
   const rejectAllToolAuthorizations = useCallback((): void => {
     const pendingEntries = pendingToolAuthorizationRef.current;
-    pendingEntries.forEach((entry) => entry.resolve("rejected"));
+    pendingEntries.forEach((entry) =>
+      entry.resolve({
+        status: "rejected",
+        reason: "Tool execution interrupted",
+      })
+    );
     pendingEntries.clear();
     setPendingToolAuthorizations([]);
   }, []);
@@ -596,31 +657,91 @@ export const useChatConversation = (
       index: number,
       conversationId: string
     ): Promise<ToolAuthorizationDecision> => {
-      if (
+      const shouldAutoApprove = () =>
         yoloModeRef.current ||
-        alwaysApprovedToolsRef.current.has(toolCall.name)
-      ) {
-        return Promise.resolve("approved");
-      }
+        alwaysApprovedToolsRef.current.has(toolCall.name);
 
-      const authorizationId = `${
-        toolCall.callId ?? toolCall.name
-      }-${index}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const pendingToolCall = {
-        ...toolCall,
-        authorizationId,
-        authorizationConversationId: conversationId,
+      // Sensitive command check: even in YOLO mode, bash commands that match
+      // user-configured sensitive command patterns must be confirmed.
+      const checkSensitiveBash = async (): Promise<
+        ToolAuthorizationDecision | "needs-dialog"
+      > => {
+        if (toolCall.name !== "mcp__bash__terminal-execute") {
+          return shouldAutoApprove() ? { status: "approved" } : "needs-dialog";
+        }
+
+        let command = "";
+        try {
+          const parsed = JSON.parse(toolCall.arguments || "{}");
+          if (typeof parsed?.command === "string") {
+            command = parsed.command;
+          }
+        } catch {
+          // ignore parse error
+        }
+
+        if (!command) {
+          return shouldAutoApprove() ? { status: "approved" } : "needs-dialog";
+        }
+
+        try {
+          const matches = await window.snow.checkSensitiveCommandMatch(command);
+          if (matches.length > 0) {
+            // Sensitive command detected — force authorization dialog
+            // even in YOLO mode.
+            const authorizationId = `${
+              toolCall.callId ?? toolCall.name
+            }-${index}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            const pendingToolCall: ToolCallInfo = {
+              ...toolCall,
+              authorizationId,
+              authorizationConversationId: conversationId,
+              sensitiveCommandMatches: matches,
+            };
+
+            return new Promise<ToolAuthorizationDecision>((resolve) => {
+              pendingToolAuthorizationRef.current.set(authorizationId, {
+                toolCall: pendingToolCall,
+                resolve,
+              });
+              setPendingToolAuthorizations((current) => [
+                ...current,
+                pendingToolCall,
+              ]);
+            });
+          }
+        } catch {
+          // If the check fails, fall through to normal authorization flow.
+        }
+
+        return shouldAutoApprove() ? { status: "approved" } : "needs-dialog";
       };
 
-      return new Promise((resolve) => {
-        pendingToolAuthorizationRef.current.set(authorizationId, {
-          toolCall: pendingToolCall,
-          resolve,
+      return checkSensitiveBash().then((decision) => {
+        if (decision !== "needs-dialog") {
+          return decision;
+        }
+
+        // Normal authorization flow (non-YOLO, non-sensitive).
+        const authorizationId = `${
+          toolCall.callId ?? toolCall.name
+        }-${index}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const pendingToolCall = {
+          ...toolCall,
+          authorizationId,
+          authorizationConversationId: conversationId,
+        };
+
+        return new Promise<ToolAuthorizationDecision>((resolve) => {
+          pendingToolAuthorizationRef.current.set(authorizationId, {
+            toolCall: pendingToolCall,
+            resolve,
+          });
+          setPendingToolAuthorizations((current) => [
+            ...current,
+            pendingToolCall,
+          ]);
         });
-        setPendingToolAuthorizations((current) => [
-          ...current,
-          pendingToolCall,
-        ]);
       });
     },
     []
@@ -659,7 +780,9 @@ export const useChatConversation = (
         .catch(() => {
           // The current execution can continue even if persistence fails.
         })
-        .finally(() => settleToolAuthorization(toolCall, "approved"));
+        .finally(() =>
+          settleToolAuthorization(toolCall, { status: "approved" })
+        );
     },
     [directoryPath, settleToolAuthorization]
   );
@@ -682,6 +805,7 @@ export const useChatConversation = (
         isAbortRequested: false,
         directoryId: dirId,
         checkpointIds: [],
+        hasAutoCompacted: false,
       });
     }
     setSessions((prev) => {
@@ -989,6 +1113,85 @@ export const useChatConversation = (
           updateSessionField(effectiveKey, "tokenUsage", response.tokenUsage);
         }
 
+        // Auto-compaction check: when the active API config has
+        // enableAutoCompress=true and the total token usage exceeds the
+        // configured threshold, compact the context so the AI loop can
+        // continue without hitting the context window limit.
+        //
+        // The compaction summary is appended as a new user message in the
+        // database (handled by performCompaction). We then start a fresh
+        // runAgentLoop iteration with the compacted context so the AI
+        // picks up from the summary and continues working.
+        if (
+          response.tokenUsage &&
+          effectiveKey !== PENDING_SESSION_KEY &&
+          !sessionsRefData.current.get(effectiveKey)?.hasAutoCompacted
+        ) {
+          const apiConfig = activeApiConfigRef.current;
+          if (apiConfig?.enableAutoCompress) {
+            const thresholdTokens = calculateAutoCompressThresholdTokens(
+              apiConfig.maxContextTokens,
+              apiConfig.autoCompressThreshold
+            );
+            if (thresholdTokens != null && thresholdTokens > 0) {
+              const totalTokens =
+                response.tokenUsage.inputTokens +
+                response.tokenUsage.outputTokens;
+              if (totalTokens >= thresholdTokens) {
+                const sessionRefForAuto =
+                  sessionsRefData.current.get(effectiveKey);
+                if (sessionRefForAuto) {
+                  sessionRefForAuto.hasAutoCompacted = true;
+                }
+
+                const compactionSummary = await performCompactionRef.current(
+                  effectiveKey,
+                  options.model,
+                  true
+                );
+
+                if (compactionSummary) {
+                  if (
+                    sessionsRefData.current.get(effectiveKey)?.isAbortRequested
+                  ) {
+                    return;
+                  }
+
+                  // Start a new agent loop iteration with the compacted
+                  // context. The Rust backend uses conversationId to
+                  // reconstruct context from the database, so the
+                  // compaction summary message is automatically included.
+                  const postCompactionAssistantId =
+                    createMessageId("assistant");
+                  const postCompactionAssistant: ChatConversationMessage = {
+                    id: postCompactionAssistantId,
+                    role: "assistant",
+                    content: "",
+                    timestamp: formatMessageTime(),
+                    status: "sending",
+                    model: options.model,
+                  };
+                  updateSessionMessages(effectiveKey, (currentMessages) => [
+                    ...currentMessages,
+                    postCompactionAssistant,
+                  ]);
+                  await runAgentLoop(
+                    postCompactionAssistantId,
+                    [{ role: "user", content: compactionSummary }],
+                    response.conversationId
+                  );
+                  return;
+                }
+
+                // Compaction failed — reset the flag so it can retry later.
+                if (sessionRefForAuto) {
+                  sessionRefForAuto.hasAutoCompacted = false;
+                }
+              }
+            }
+          }
+        }
+
         if (sessionsRefData.current.get(effectiveKey)?.isAbortRequested) {
           return;
         }
@@ -1087,11 +1290,15 @@ export const useChatConversation = (
           }
 
           let result: string;
-          if (authorizationDecisions[toolIndex] === "rejected") {
+          const authorizationDecision = authorizationDecisions[toolIndex];
+          if (authorizationDecision.status === "rejected") {
+            const rejectionReason =
+              authorizationDecision.reason || "User declined tool execution";
             result = JSON.stringify({
               success: false,
               error: "TOOL_EXECUTION_DENIED_BY_USER",
-              message: "用户拒绝执行",
+              message: `Tool execution rejected by user. Reason: ${rejectionReason}`,
+              reason: rejectionReason,
               toolName: toolCall.name,
             });
 
@@ -1170,11 +1377,31 @@ export const useChatConversation = (
                   }
                 }
 
+                let sensitiveAuthorizationToken: string | undefined;
+                if (
+                  toolCall.name === "mcp__bash__terminal-execute" &&
+                  authorizationDecision.status === "approved" &&
+                  authorizationDecision.sensitiveCommandConfirmed === true
+                ) {
+                  const parsedArgs = JSON.parse(toolArgs) as Record<
+                    string,
+                    unknown
+                  >;
+                  if (typeof parsedArgs.command !== "string") {
+                    throw new Error("Sensitive command argument is missing");
+                  }
+                  sensitiveAuthorizationToken =
+                    await window.snow.issueSensitiveCommandAuthorization(
+                      parsedArgs.command
+                    );
+                }
+
                 result = await window.snow.callMcpTool(
                   toolCall.name,
                   toolArgs,
                   checkpointIds,
                   checkpointIds.length > 0 ? directoryPath : undefined,
+                  sensitiveAuthorizationToken,
                   (chunk) => {
                     if (!chunk.data) {
                       return;
@@ -1451,16 +1678,20 @@ export const useChatConversation = (
   // Keep the ref current so the pending-flush closure always calls the latest version.
   handleSendMessageRef.current = handleSendMessage;
 
-  const compactConversation = useCallback(
-    async (model?: string): Promise<void> => {
-      const conversationId = activeConversationIdRef.current;
-      if (
-        !conversationId ||
-        sessionsRefData.current.get(conversationId)?.isSending
-      ) {
-        return;
-      }
-
+  /**
+   * Core compaction logic shared by manual /compact and automatic threshold
+   * triggered compaction. Sends a "context handoff" request with
+   * contextCompaction=true, then appends the generated summary as a new user
+   * message so subsequent AI requests use the compacted context.
+   *
+   * Returns the compaction summary content on success, or null on failure.
+   */
+  const performCompaction = useCallback(
+    async (
+      conversationId: string,
+      model?: string,
+      isAuto = false
+    ): Promise<string | null> => {
       const sessionRef = sessionsRefData.current.get(conversationId);
       if (sessionRef) {
         sessionRef.isSending = true;
@@ -1499,6 +1730,10 @@ export const useChatConversation = (
           throw new Error("Context handoff is empty");
         }
 
+        if (response.tokenUsage) {
+          updateSessionField(conversationId, "tokenUsage", response.tokenUsage);
+        }
+
         const compactionMessage: ChatConversationMessage = {
           id: response.id || createMessageId("user"),
           role: "user",
@@ -1517,10 +1752,15 @@ export const useChatConversation = (
           conversationId
         );
         updateSessionField(conversationId, "messageRecords", latestRecords);
+
+        return content;
       } catch (error) {
-        setCompactionError(
-          error instanceof Error ? error.message : "Failed to compact context"
-        );
+        if (!isAuto) {
+          setCompactionError(
+            error instanceof Error ? error.message : "Failed to compact context"
+          );
+        }
+        return null;
       } finally {
         if (sessionRef) {
           sessionRef.isSending = false;
@@ -1529,18 +1769,43 @@ export const useChatConversation = (
         setIsCompacting(false);
         setCompactionPreview("");
 
-        const pendingQueue = pendingQueueRef.current.get(conversationId) ?? [];
-        if (!sessionRef?.isAbortRequested && pendingQueue.length > 0) {
-          pendingQueueRef.current.delete(conversationId);
-          const combined = pendingQueue.map((item) => item.text).join("\n\n");
-          const lastOptions =
-            pendingQueue[pendingQueue.length - 1]?.options ?? {};
-          setActivePendingMessages([]);
-          handleSendMessageRef.current(combined, lastOptions);
+        // For manual compaction, flush pending messages after completion.
+        // Auto-compaction runs inside runAgentLoop so the loop itself
+        // continues — no pending flush needed.
+        if (!isAuto) {
+          const pendingQueue =
+            pendingQueueRef.current.get(conversationId) ?? [];
+          if (!sessionRef?.isAbortRequested && pendingQueue.length > 0) {
+            pendingQueueRef.current.delete(conversationId);
+            const combined = pendingQueue.map((item) => item.text).join("\n\n");
+            const lastOptions =
+              pendingQueue[pendingQueue.length - 1]?.options ?? {};
+            setActivePendingMessages([]);
+            handleSendMessageRef.current(combined, lastOptions);
+          }
         }
       }
     },
     [directoryId, updateSessionField, updateSessionMessages]
+  );
+
+  // Keep the ref current so runAgentLoop (defined inside handleSendMessage)
+  // can call the latest performCompaction without stale closures.
+  performCompactionRef.current = performCompaction;
+
+  const compactConversation = useCallback(
+    async (model?: string): Promise<void> => {
+      const conversationId = activeConversationIdRef.current;
+      if (
+        !conversationId ||
+        sessionsRefData.current.get(conversationId)?.isSending
+      ) {
+        return;
+      }
+
+      await performCompaction(conversationId, model, false);
+    },
+    [performCompaction]
   );
 
   const withdrawPendingMessage = useCallback((index: number): string | null => {
@@ -1636,6 +1901,7 @@ export const useChatConversation = (
           isAbortRequested: false,
           directoryId: conversationDirId,
           checkpointIds,
+          hasAutoCompacted: false,
         });
         setSessions((prev) => ({
           ...prev,
@@ -2150,9 +2416,16 @@ export const useChatConversation = (
     refreshYoloMode,
     pendingToolAuthorizations,
     approveToolAuthorization: (toolCall) =>
-      settleToolAuthorization(toolCall, "approved"),
+      settleToolAuthorization(toolCall, {
+        status: "approved",
+        sensitiveCommandConfirmed:
+          (toolCall.sensitiveCommandMatches?.length ?? 0) > 0,
+      }),
     approveToolAuthorizationAlways,
-    rejectToolAuthorization: (toolCall) =>
-      settleToolAuthorization(toolCall, "rejected"),
+    rejectToolAuthorization: (toolCall, reason) =>
+      settleToolAuthorization(toolCall, {
+        status: "rejected",
+        reason: reason.trim() || "User declined tool execution",
+      }),
   };
 };

@@ -25,7 +25,7 @@ export type AiResponseProps = {
   pendingToolAuthorizations?: ToolCallInfo[];
   onApproveToolAuthorization?: (toolCall: ToolCallInfo) => void;
   onApproveToolAuthorizationAlways?: (toolCall: ToolCallInfo) => void;
-  onRejectToolAuthorization?: (toolCall: ToolCallInfo) => void;
+  onRejectToolAuthorization?: (toolCall: ToolCallInfo, reason: string) => void;
   conversationId?: string;
   responseId?: string;
   onFork?: (conversationId: string, upToResponseId: string) => void;

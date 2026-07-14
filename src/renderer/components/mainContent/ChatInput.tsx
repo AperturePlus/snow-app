@@ -21,6 +21,7 @@ export const ChatInput = ({
   onRefreshYoloMode,
   autoScrollEnabled = false,
   onAutoScrollChange,
+  isCompacting = false,
 }: ChatInputProps): React.JSX.Element => {
   const { t } = useI18n();
   const controller = useChatInputController({
@@ -46,6 +47,7 @@ export const ChatInput = ({
       onRefreshYoloMode={onRefreshYoloMode}
       autoScrollEnabled={autoScrollEnabled}
       onAutoScrollChange={onAutoScrollChange}
+      isCompacting={isCompacting}
     />
   );
 };

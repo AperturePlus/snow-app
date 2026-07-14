@@ -113,4 +113,14 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
   ipcMain.handle("sensitive-command-configs:import-snow-cli", () =>
     readSnowCliSensitiveCommandConfig(native)
   );
+
+  ipcMain.handle(
+    "sensitive-command-configs:check-match",
+    async (_event, command: unknown) => {
+      if (typeof command !== "string" || !command.trim()) {
+        return [];
+      }
+      return native.checkSensitiveCommandMatch(command);
+    }
+  );
 };

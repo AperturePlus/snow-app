@@ -22,6 +22,7 @@ export type ChatInputProps = {
   onRefreshYoloMode?: () => void | Promise<boolean | void>;
   autoScrollEnabled?: boolean;
   onAutoScrollChange?: (enabled: boolean) => void;
+  isCompacting?: boolean;
 };
 
 export type RequestMethod = "chat" | "responses" | "gemini" | "anthropic";
@@ -104,4 +105,5 @@ export type ChatInputViewProps = ChatInputState &
     onRefreshYoloMode?: () => void | Promise<boolean | void>;
     autoScrollEnabled: boolean;
     onAutoScrollChange?: (enabled: boolean) => void;
+    isCompacting: boolean;
   };

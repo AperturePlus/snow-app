@@ -29,11 +29,14 @@ const normalizeBashStreamChunk = (value: unknown): BashStreamChunk | null => {
 export const systemApi = {
   listMcpTools: (): Promise<McpToolDefinition[]> =>
     ipcRenderer.invoke("mcp:list-tools"),
+  issueSensitiveCommandAuthorization: (command: string): Promise<string> =>
+    ipcRenderer.invoke("mcp:authorize-sensitive-command", command),
   callMcpTool: (
     toolFullName: string,
     argsJson: string,
     checkpointIds?: string[],
     checkpointWorkDir?: string,
+    sensitiveAuthorizationToken?: string,
     onChunk?: (chunk: BashStreamChunk) => void
   ): Promise<string> => {
     const streamId = createMcpToolStreamId();
@@ -57,6 +60,7 @@ export const systemApi = {
         argsJson,
         checkpointIds,
         checkpointWorkDir,
+        sensitiveAuthorizationToken,
         streamId
       )
       .finally(() => {

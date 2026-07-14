@@ -1,4 +1,5 @@
 import { ipcMain } from "electron";
+import { randomUUID } from "node:crypto";
 import type { BashStreamChunk, NativeBridge } from "../../native/types";
 import {
   writeLog,
@@ -59,6 +60,18 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
 
   ipcMain.handle("mcp:list-tools", () => native.listMcpTools());
   ipcMain.handle(
+    "mcp:authorize-sensitive-command",
+    async (_event, command: unknown) => {
+      if (typeof command !== "string" || !command.trim()) {
+        throw new Error("Sensitive command is required");
+      }
+
+      const token = randomUUID();
+      await native.authorizeSensitiveCommand(command, token);
+      return token;
+    }
+  );
+  ipcMain.handle(
     "mcp:call-tool",
     async (
       event,
@@ -66,6 +79,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       argsJson: unknown,
       checkpointIds: unknown,
       checkpointWorkDir: unknown,
+      sensitiveAuthorizationToken: unknown,
       streamId: unknown
     ) => {
       if (typeof toolFullName !== "string" || !toolFullName.trim()) {
@@ -87,6 +101,15 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       ) {
         throw new Error("Checkpoint working directory must be a string");
       }
+      if (
+        sensitiveAuthorizationToken !== undefined &&
+        (typeof sensitiveAuthorizationToken !== "string" ||
+          !sensitiveAuthorizationToken.trim())
+      ) {
+        throw new Error(
+          "Sensitive command authorization token must be a string"
+        );
+      }
       if (typeof streamId !== "string" || !streamId.trim()) {
         throw new Error("Tool stream ID is required");
       }
@@ -97,6 +120,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         argsJson,
         (checkpointIds as string[] | undefined)?.map((id) => id.trim()),
         (checkpointWorkDir as string | undefined)?.trim(),
+        (sensitiveAuthorizationToken as string | undefined)?.trim(),
         (chunk: BashStreamChunk) => {
           if (event.sender.isDestroyed()) {
             return;

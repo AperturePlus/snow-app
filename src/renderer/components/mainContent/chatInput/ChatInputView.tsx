@@ -72,6 +72,7 @@ export const ChatInputView = ({
   onRefreshYoloMode,
   autoScrollEnabled,
   onAutoScrollChange,
+  isCompacting,
   setManualValue,
   setIsManualMode,
   setIsThinkingDropdownOpen,
@@ -89,8 +90,7 @@ export const ChatInputView = ({
   restoreContent,
 }: ChatInputViewProps): React.JSX.Element => {
   const { t } = useI18n();
-  const { handleNewChat, messages, isCompacting } =
-    useChatConversationContext();
+  const { handleNewChat, messages } = useChatConversationContext();
   const isDraggingOverRef = useRef(false);
   const [isMentionOpen, setIsMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
@@ -616,8 +616,10 @@ export const ChatInputView = ({
         <div className="input-box">
           <div
             ref={textareaRef}
-            className="input-field input-field-editable"
-            contentEditable
+            className={`input-field input-field-editable${
+              isCompacting ? " is-disabled" : ""
+            }`}
+            contentEditable={!isCompacting}
             suppressContentEditableWarning
             data-placeholder={placeholder}
             data-empty="true"
@@ -914,7 +916,7 @@ export const ChatInputView = ({
                   aria-label="Send"
                   title="Send"
                   onClick={handleSend}
-                  disabled={!value.trim()}
+                  disabled={!value.trim() || isCompacting}
                   type="button"
                 >
                   <ArrowUp size={16} />

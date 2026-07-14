@@ -402,6 +402,13 @@ export type NativeBridge = {
     commandId: string,
     scope: string
   ) => Promise<void>;
+  checkSensitiveCommandMatch: (command: string) => Promise<
+    Array<{
+      commandId: string;
+      pattern: string;
+      description: string;
+    }>
+  >;
   listChatConversations: (
     directoryId: string
   ) => Promise<ChatConversationRecord[]>;
@@ -443,11 +450,13 @@ export type NativeBridge = {
   ) => Promise<ResponsesApiResult>;
   abortResponseStream: (streamId: string) => boolean;
   listMcpTools: () => Promise<McpToolDefinition[]>;
+  authorizeSensitiveCommand: (command: string, token: string) => Promise<void>;
   callMcpTool: (
     toolFullName: string,
     argsJson: string,
     checkpointIds: string[] | undefined,
     checkpointWorkDir: string | undefined,
+    sensitiveAuthorizationToken: string | undefined,
     onChunk: (chunk: BashStreamChunk) => void
   ) => Promise<string>;
   engineInfo: () => string;

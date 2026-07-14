@@ -55,4 +55,13 @@ export const configApi = {
   importSnowCliSensitiveCommandConfig: (): Promise<
     SensitiveCommandConfigRecord[]
   > => ipcRenderer.invoke("sensitive-command-configs:import-snow-cli"),
+  checkSensitiveCommandMatch: (
+    command: string
+  ): Promise<
+    Array<{
+      commandId: string;
+      pattern: string;
+      description: string;
+    }>
+  > => ipcRenderer.invoke("sensitive-command-configs:check-match", command),
 };

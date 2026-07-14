@@ -6,8 +6,8 @@ use crate::storage::{
     ChatConversationRecord, ChatMessagePage, ChatMessageRecord, CustomHeaderSchemeInput,
     CustomHeaderSchemeRecord, McpServerConfigInput,
     McpServerConfigRecord, SensitiveCommandConfigInput, SensitiveCommandConfigRecord,
-    SystemPromptItemInput, SystemPromptItemRecord, WorkspaceDirectoryInput,
-    WorkspaceDirectoryRecord,
+    SensitiveCommandMatchResult, SystemPromptItemInput, SystemPromptItemRecord,
+    WorkspaceDirectoryInput, WorkspaceDirectoryRecord,
 };
 use crate::storage::services::fs_explorer::{DirectoryEntry, FileContentResult, FileSearchResult};
 
@@ -262,6 +262,17 @@ pub async fn upsert_sensitive_command_config(item: SensitiveCommandConfigInput) 
 pub async fn delete_sensitive_command_config(command_id: String, scope: String) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || {
         crate::storage::delete_sensitive_command_config(command_id, scope)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn check_sensitive_command_match(
+    command: String,
+) -> napi::Result<Vec<SensitiveCommandMatchResult>> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::check_sensitive_command_match(command)
     })
     .await
     .map_err(map_spawn_error)?

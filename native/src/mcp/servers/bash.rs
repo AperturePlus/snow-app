@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use std::process::Stdio;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
 
 use crate::exports::terminal::detect_default_terminal;
 
@@ -37,6 +38,59 @@ const MAX_OUTPUT_LENGTH: usize = 10000;
 const DEFAULT_TIMEOUT_MS: u64 = 30000;
 const OUTPUT_TRUNCATED_MARKER: &str = "... (output truncated)";
 const TERMINAL_SETTINGS_CODE: &str = "terminal_settings";
+const SENSITIVE_AUTHORIZATION_TTL: Duration = Duration::from_secs(60);
+
+struct SensitiveCommandAuthorization {
+    command: String,
+    expires_at: Instant,
+}
+
+static SENSITIVE_COMMAND_AUTHORIZATIONS: OnceLock<
+    tokio::sync::Mutex<HashMap<String, SensitiveCommandAuthorization>>,
+> = OnceLock::new();
+
+fn sensitive_command_authorizations(
+) -> &'static tokio::sync::Mutex<HashMap<String, SensitiveCommandAuthorization>> {
+    SENSITIVE_COMMAND_AUTHORIZATIONS.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()))
+}
+
+pub async fn authorize_sensitive_command(command: String, token: String) -> napi::Result<()> {
+    if command.trim().is_empty() || token.trim().is_empty() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Sensitive command and authorization token are required".to_string(),
+        ));
+    }
+
+    let now = Instant::now();
+    let mut authorizations = sensitive_command_authorizations().lock().await;
+    authorizations.retain(|_, authorization| authorization.expires_at > now);
+    authorizations.insert(
+        token,
+        SensitiveCommandAuthorization {
+            command,
+            expires_at: now + SENSITIVE_AUTHORIZATION_TTL,
+        },
+    );
+    Ok(())
+}
+
+async fn consume_sensitive_command_authorization(
+    command: &str,
+    token: Option<&str>,
+) -> bool {
+    let Some(token) = token.filter(|value| !value.is_empty()) else {
+        return false;
+    };
+
+    let now = Instant::now();
+    let mut authorizations = sensitive_command_authorizations().lock().await;
+    authorizations.retain(|_, authorization| authorization.expires_at > now);
+    authorizations
+        .remove(token)
+        .map(|authorization| authorization.command == command && authorization.expires_at > now)
+        .unwrap_or(false)
+}
 
 #[derive(serde::Deserialize)]
 struct TerminalSettingsJson {
@@ -103,6 +157,7 @@ impl BashService {
     pub async fn execute_terminal_stream(
         &self,
         args: &Value,
+        sensitive_authorization_token: Option<&str>,
         on_chunk: BashStreamCallback,
     ) -> napi::Result<Value> {
         let command = args
@@ -146,6 +201,30 @@ impl BashService {
                     "[SELF-PROTECTION] Command blocked: {}. {}",
                     self_destruct.reason, self_destruct.suggestion
                 ),
+            ));
+        }
+
+        // Sensitive commands require a short-lived, one-time authorization
+        // token issued after explicit user confirmation. The token travels
+        // outside the model-controlled tool arguments and is bound to this
+        // exact command.
+        let sensitive_matches = check_sensitive_commands(&command).await;
+        if !sensitive_matches.is_empty()
+            && !consume_sensitive_command_authorization(
+                &command,
+                sensitive_authorization_token,
+            )
+            .await
+        {
+            let error_payload = json!({
+                "error": "SENSITIVE_COMMAND_DETECTED",
+                "message": "Command matched a sensitive command rule and requires confirmation",
+                "command": command,
+                "matches": sensitive_matches,
+            });
+            return Err(Error::new(
+                Status::GenericFailure,
+                error_payload.to_string(),
             ));
         }
 
@@ -467,6 +546,30 @@ fn emit_stream_chunk(
 // ============================================================================
 // Security utilities (ported from snow-cli security.utils.ts)
 // ============================================================================
+
+/// Check if a command matches any user-configured sensitive command rules.
+/// Uses spawn_blocking to avoid blocking the async runtime with SQLite I/O.
+/// Returns a JSON array of matched rules (command_id, pattern, description).
+async fn check_sensitive_commands(command: &str) -> Vec<Value> {
+    let command_owned = command.to_string();
+    match tokio::task::spawn_blocking(move || {
+        crate::storage::check_sensitive_command_match(command_owned)
+    })
+    .await
+    {
+        Ok(Ok(matches)) => matches
+            .into_iter()
+            .map(|m| {
+                json!({
+                    "commandId": m.command_id,
+                    "pattern": m.pattern,
+                    "description": m.description,
+                })
+            })
+            .collect(),
+        Ok(Err(_)) | Err(_) => Vec::new(),
+    }
+}
 
 /// Dangerous command patterns that should be blocked
 fn is_dangerous_command(command: &str) -> bool {

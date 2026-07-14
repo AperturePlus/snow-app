@@ -6,22 +6,27 @@ import {
   AlertCircle,
   FileText,
   Hash,
+  Files,
 } from "lucide-react";
 import type { ToolCallInfo } from "../useChatConversation";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
 import { ToolNameBadge } from "./shared/ToolNameBadge";
 
-type FilesystemReadToolCallProps = {
-  toolCall: ToolCallInfo;
-};
-
-type ParsedArgs = {
-  filePath: string;
+type ParsedPathItem = {
+  path: string;
   startLine?: number;
   endLine?: number;
 };
 
-type ParsedResult =
+type ParsedArgs = {
+  isMulti: boolean;
+  filePath?: string;
+  startLine?: number;
+  endLine?: number;
+  paths?: ParsedPathItem[];
+};
+
+type SingleFileResult =
   | {
       type: "file";
       content: string;
@@ -35,30 +40,160 @@ type ParsedResult =
   | { type: "raw"; text: string }
   | { type: "empty" };
 
+type ParsedResult =
+  | SingleFileResult
+  | { type: "multi"; files: { filePath: string; result: SingleFileResult }[] };
+
+const parsePathItems = (
+  items: unknown[],
+  defaultStartLine?: number,
+  defaultEndLine?: number
+): ParsedPathItem[] => {
+  return items
+    .map((item): ParsedPathItem | null => {
+      if (typeof item === "string") {
+        if (!item) return null;
+        return {
+          path: item,
+          startLine: defaultStartLine,
+          endLine: defaultEndLine,
+        };
+      }
+      if (
+        typeof item === "object" &&
+        item !== null &&
+        typeof (item as { path?: unknown }).path === "string"
+      ) {
+        const obj = item as {
+          path: string;
+          startLine?: number;
+          endLine?: number;
+        };
+        if (!obj.path) return null;
+        return {
+          path: obj.path,
+          startLine:
+            typeof obj.startLine === "number" ? obj.startLine : defaultStartLine,
+          endLine:
+            typeof obj.endLine === "number" ? obj.endLine : defaultEndLine,
+        };
+      }
+      return null;
+    })
+    .filter((item): item is ParsedPathItem => item !== null);
+};
+
 const parseArgs = (args: string): ParsedArgs | null => {
   try {
     const parsed = JSON.parse(args);
     if (typeof parsed !== "object" || parsed === null) {
       return null;
     }
-    const filePath = typeof parsed.filePath === "string" ? parsed.filePath : "";
-    if (!filePath) {
-      return null;
+
+    const filePath = parsed.filePath;
+    const defaultStartLine =
+      typeof parsed.startLine === "number" ? parsed.startLine : undefined;
+    const defaultEndLine =
+      typeof parsed.endLine === "number" ? parsed.endLine : undefined;
+
+    // Array case: multi-file
+    if (Array.isArray(filePath)) {
+      const paths = parsePathItems(filePath, defaultStartLine, defaultEndLine);
+      if (paths.length === 0) {
+        return null;
+      }
+      return { isMulti: true, paths };
     }
-    return {
-      filePath,
-      startLine:
-        typeof parsed.startLine === "number" ? parsed.startLine : undefined,
-      endLine: typeof parsed.endLine === "number" ? parsed.endLine : undefined,
-    };
+
+    // String case: single file (or JSON array string for multi-file)
+    if (typeof filePath === "string") {
+      if (!filePath) {
+        return null;
+      }
+
+      // Check if it's a JSON array string (matching Rust's try_parse_as_json_array)
+      const trimmed = filePath.trim();
+      if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+        try {
+          const arr = JSON.parse(trimmed);
+          if (Array.isArray(arr)) {
+            const paths = parsePathItems(
+              arr,
+              defaultStartLine,
+              defaultEndLine
+            );
+            if (paths.length > 0) {
+              return { isMulti: true, paths };
+            }
+          }
+        } catch {
+          // Not a valid JSON array, treat as single file path
+        }
+      }
+
+      return {
+        isMulti: false,
+        filePath,
+        startLine: defaultStartLine,
+        endLine: defaultEndLine,
+      };
+    }
+
+    return null;
   } catch {
     return null;
   }
 };
 
+const parseSingleResultValue = (
+  parsed: unknown,
+  resultText: string
+): SingleFileResult => {
+  if (typeof parsed === "object" && parsed !== null) {
+    const obj = parsed as Record<string, unknown>;
+
+    if (typeof obj.error === "string") {
+      return { type: "error", message: obj.error };
+    }
+
+    if (typeof obj.content === "string") {
+      if (obj.isImage === true) {
+        return {
+          type: "image",
+          content: obj.content,
+          mediaType:
+            typeof obj.mediaType === "string" ? obj.mediaType : "image",
+        };
+      }
+
+      if (
+        typeof obj.totalLines === "number" &&
+        typeof obj.startLine === "number" &&
+        typeof obj.endLine === "number"
+      ) {
+        return {
+          type: "file",
+          content: obj.content,
+          totalLines: obj.totalLines,
+          startLine: obj.startLine,
+          endLine: obj.endLine,
+        };
+      }
+
+      // No line metadata -> directory listing
+      const entries = (obj.content as string)
+        .split("\n")
+        .filter((line: string) => line.length > 0);
+      return { type: "directory", entries };
+    }
+  }
+
+  return { type: "raw", text: resultText };
+};
+
 const parseResult = (
   result: string | undefined,
-  filePath: string
+  parsedArgs: ParsedArgs | null
 ): ParsedResult => {
   if (!result) {
     return { type: "empty" };
@@ -67,53 +202,59 @@ const parseResult = (
   try {
     const parsed = JSON.parse(result);
 
-    if (typeof parsed === "object" && parsed !== null) {
-      if (typeof parsed.error === "string") {
-        return { type: "error", message: parsed.error };
-      }
-
-      if (typeof parsed.content === "string") {
-        if (parsed.isImage === true) {
-          return {
-            type: "image",
-            content: parsed.content,
-            mediaType:
-              typeof parsed.mediaType === "string" ? parsed.mediaType : "image",
-          };
-        }
-
-        if (
-          typeof parsed.totalLines === "number" &&
-          typeof parsed.startLine === "number" &&
-          typeof parsed.endLine === "number"
-        ) {
-          return {
-            type: "file",
-            content: parsed.content,
-            totalLines: parsed.totalLines,
-            startLine: parsed.startLine,
-            endLine: parsed.endLine,
-          };
-        }
-
-        // No line metadata -> directory listing
-        const entries = parsed.content
-          .split("\n")
-          .filter((line: string) => line.length > 0);
-        return { type: "directory", entries };
-      }
+    // Multi-file result: { "files": [...] }
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      Array.isArray((parsed as Record<string, unknown>).files)
+    ) {
+      const files = (
+        parsed as { files: Record<string, unknown>[] }
+      ).files.map((file, index) => {
+        const filePath =
+          typeof file.filePath === "string"
+            ? file.filePath
+            : `file[${index}]`;
+        return {
+          filePath,
+          result: parseSingleResultValue(file, JSON.stringify(file)),
+        };
+      });
+      return { type: "multi", files };
     }
 
-    return { type: "raw", text: result };
+    // Single file result
+    return parseSingleResultValue(parsed, result);
   } catch {
     return { type: "raw", text: result };
   }
+};
+
+const getFileName = (path: string): string =>
+  path.split(/[\\/]/).filter(Boolean).pop() || path;
+
+const getSingleFileRangeLabel = (result: SingleFileResult): string => {
+  if (result.type === "directory") {
+    return "directory";
+  }
+  if (result.type === "file") {
+    const { startLine, endLine, totalLines } = result;
+    if (endLine - startLine + 1 >= totalLines) {
+      return `${totalLines} lines`;
+    }
+    return `L${startLine}-${endLine}`;
+  }
+  return "";
 };
 
 const getLineRangeLabel = (
   parsedArgs: ParsedArgs | null,
   parsedResult: ParsedResult
 ): string => {
+  if (parsedResult.type === "multi") {
+    return `${parsedResult.files.length} files`;
+  }
+
   if (parsedResult.type === "directory") {
     return "directory";
   }
@@ -126,13 +267,84 @@ const getLineRangeLabel = (
     return `L${startLine}-${endLine}`;
   }
 
-  if (parsedArgs?.startLine || parsedArgs?.endLine) {
-    const start = parsedArgs.startLine ?? 1;
-    const end = parsedArgs.endLine ?? start;
-    return end > start ? `L${start}-${end}` : `L${start}`;
+  if (parsedArgs && !parsedArgs.isMulti) {
+    if (parsedArgs.startLine || parsedArgs.endLine) {
+      const start = parsedArgs.startLine ?? 1;
+      const end = parsedArgs.endLine ?? start;
+      return end > start ? `L${start}-${end}` : `L${start}`;
+    }
   }
 
   return "";
+};
+
+const renderFileContent = (
+  result: SingleFileResult
+): React.JSX.Element | null => {
+  switch (result.type) {
+    case "error":
+      return (
+        <div className="tool-call-error">
+          <AlertCircle size={12} aria-hidden="true" />
+          <span>{result.message}</span>
+        </div>
+      );
+    case "directory":
+      return (
+        <div className="tool-call-dir-listing">
+          {result.entries.map((entry, i) => {
+            const isDir = entry.endsWith("/");
+            return (
+              <div key={i} className="tool-call-dir-entry">
+                {getFileTypeIcon(
+                  isDir ? entry.slice(0, -1) : entry,
+                  isDir,
+                  false,
+                  { size: 12, "aria-hidden": true }
+                )}
+                <span>{isDir ? entry.slice(0, -1) : entry}</span>
+              </div>
+            );
+          })}
+        </div>
+      );
+    case "file":
+      return (
+        <div className="tool-call-file-result">
+          <div className="tool-call-file-meta">
+            <span>
+              Lines {result.startLine}-{result.endLine} of {result.totalLines}
+            </span>
+          </div>
+          <pre className="tool-call-section-pre tool-call-file-content">
+            {result.content}
+          </pre>
+        </div>
+      );
+    case "image":
+      return (
+        <div className="tool-call-image-result">
+          <div className="tool-call-file-meta">
+            <span>{result.mediaType}</span>
+          </div>
+          <img
+            src={
+              result.content.match(/@@image:([^@]+)@@/)?.[1] ?? result.content
+            }
+            alt={`Image preview (${result.mediaType})`}
+            className="tool-call-image-preview"
+          />
+        </div>
+      );
+    case "raw":
+      return <pre className="tool-call-section-pre">{result.text}</pre>;
+    case "empty":
+      return null;
+  }
+};
+
+type FilesystemReadToolCallProps = {
+  toolCall: ToolCallInfo;
 };
 
 export const FilesystemReadToolCall = ({
@@ -143,15 +355,24 @@ export const FilesystemReadToolCall = ({
     [toolCall.arguments]
   );
   const parsedResult = useMemo(
-    () => parseResult(toolCall.result, parsedArgs?.filePath ?? ""),
+    () => parseResult(toolCall.result, parsedArgs),
     [toolCall.result, parsedArgs]
   );
 
+  const isMulti =
+    parsedArgs?.isMulti === true || parsedResult.type === "multi";
   const isDirectory = parsedResult.type === "directory";
 
   const rangeLabel = getLineRangeLabel(parsedArgs, parsedResult);
+
   const filePath = parsedArgs?.filePath ?? "read";
-  const fileName = filePath.split(/[\\/]/).filter(Boolean).pop() || filePath;
+  const fileName = getFileName(filePath);
+
+  const fileCount = isMulti
+    ? parsedArgs?.paths?.length ??
+      (parsedResult.type === "multi" ? parsedResult.files.length : 0)
+    : 0;
+  const displayName = isMulti ? `${fileCount} files` : fileName;
 
   const hasError = parsedResult.type === "error";
   const effectiveStatus = hasError ? "error" : toolCall.status;
@@ -174,14 +395,24 @@ export const FilesystemReadToolCall = ({
           aria-hidden="true"
         />
         <ToolNameBadge name="read" category="read" />
-        {getFileTypeIcon(fileName, isDirectory, false, {
-          size: 14,
-          className:
-            toolCall.status === "running" ? "tool-call-icon-spinning" : "",
-          "aria-hidden": true,
-        })}
-        <span className="tool-call-name" title={filePath}>
-          {fileName}
+        {isMulti ? (
+          <Files
+            size={14}
+            className={
+              toolCall.status === "running" ? "tool-call-icon-spinning" : ""
+            }
+            aria-hidden="true"
+          />
+        ) : (
+          getFileTypeIcon(fileName, isDirectory, false, {
+            size: 14,
+            className:
+              toolCall.status === "running" ? "tool-call-icon-spinning" : "",
+            "aria-hidden": true,
+          })
+        )}
+        <span className="tool-call-name" title={isMulti ? "" : filePath}>
+          {displayName}
         </span>
         {rangeLabel ? (
           <span className="tool-call-line-range">
@@ -196,70 +427,66 @@ export const FilesystemReadToolCall = ({
         </span>
       </summary>
       <div className="tool-call-body">
-        <div className="tool-call-file-path">{filePath}</div>
-        {hasError ? (
+        {parsedResult.type === "error" ? (
           <div className="tool-call-error">
             <AlertCircle size={12} aria-hidden="true" />
             <span>{parsedResult.message}</span>
           </div>
-        ) : null}
-
-        {parsedResult.type === "directory" ? (
-          <div className="tool-call-dir-listing">
-            {parsedResult.entries.map((entry, i) => {
-              const isDir = entry.endsWith("/");
+        ) : parsedResult.type === "multi" ? (
+          <div className="tool-call-multi-files">
+            {parsedResult.files.map((file, i) => {
+              const subFileName = getFileName(file.filePath);
+              const subIsDir = file.result.type === "directory";
+              const subRange = getSingleFileRangeLabel(file.result);
               return (
-                <div key={i} className="tool-call-dir-entry">
-                  {getFileTypeIcon(
-                    isDir ? entry.slice(0, -1) : entry,
-                    isDir,
-                    false,
-                    { size: 12, "aria-hidden": true }
-                  )}
-                  <span>{isDir ? entry.slice(0, -1) : entry}</span>
+                <div key={i} className="tool-call-multi-file-section">
+                  <div className="tool-call-multi-file-header">
+                    {getFileTypeIcon(subFileName, subIsDir, false, {
+                      size: 12,
+                      "aria-hidden": true,
+                    })}
+                    <span
+                      className="tool-call-multi-file-name"
+                      title={file.filePath}
+                    >
+                      {subFileName}
+                    </span>
+                    {subRange ? (
+                      <span className="tool-call-line-range">
+                        <Hash size={10} aria-hidden="true" />
+                        {subRange}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="tool-call-multi-file-path">
+                    {file.filePath}
+                  </div>
+                  {renderFileContent(file.result)}
                 </div>
               );
             })}
           </div>
-        ) : null}
-
-        {parsedResult.type === "file" ? (
-          <div className="tool-call-file-result">
-            <div className="tool-call-file-meta">
-              <span>
-                Lines {parsedResult.startLine}-{parsedResult.endLine} of{" "}
-                {parsedResult.totalLines}
-              </span>
-            </div>
-            <pre className="tool-call-section-pre tool-call-file-content">
-              {parsedResult.content}
-            </pre>
-          </div>
-        ) : null}
-
-        {parsedResult.type === "image" ? (
-          <div className="tool-call-image-result">
-            <div className="tool-call-file-meta">
-              <span>{parsedResult.mediaType}</span>
-            </div>
-            <img
-              src={
-                parsedResult.content.match(/@@image:([^@]+)@@/)?.[1] ??
-                parsedResult.content
-              }
-              alt={`Image preview (${parsedResult.mediaType})`}
-              className="tool-call-image-preview"
-            />
-          </div>
-        ) : null}
-
-        {parsedResult.type === "raw" ? (
-          <pre className="tool-call-section-pre">{parsedResult.text}</pre>
-        ) : null}
-
-        {parsedResult.type === "empty" && !hasError ? (
+        ) : parsedResult.type === "empty" ? (
           <div className="tool-call-pending">
-            {parsedArgs ? (
+            {isMulti ? (
+              parsedArgs?.paths ? (
+                <div className="tool-call-dir-listing">
+                  {parsedArgs.paths.map((p, i) => (
+                    <div key={i} className="tool-call-dir-entry">
+                      {getFileTypeIcon(getFileName(p.path), false, false, {
+                        size: 12,
+                        "aria-hidden": true,
+                      })}
+                      <span>{p.path}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <span className="tool-call-section-label">
+                  No arguments
+                </span>
+              )
+            ) : parsedArgs ? (
               <pre className="tool-call-section-pre">
                 {JSON.stringify(parsedArgs, null, 2)}
               </pre>
@@ -267,7 +494,12 @@ export const FilesystemReadToolCall = ({
               <span className="tool-call-section-label">No arguments</span>
             )}
           </div>
-        ) : null}
+        ) : (
+          <>
+            <div className="tool-call-file-path">{filePath}</div>
+            {renderFileContent(parsedResult)}
+          </>
+        )}
       </div>
     </details>
   );

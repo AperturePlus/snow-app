@@ -91,37 +91,41 @@ export const CommandPanel = forwardRef<CommandPanelHandle, CommandPanelProps>(
         role="listbox"
         aria-label={t("chatCommand.title")}
       >
-        {filteredCommands.length > 0 ? (
-          filteredCommands.map((command, index) => {
-            const CommandIcon = command.icon;
-            const isSelected = index === selectedIndex;
+        <div className="chat-command-list">
+          {filteredCommands.length > 0 ? (
+            filteredCommands.map((command, index) => {
+              const CommandIcon = command.icon;
+              const isSelected = index === selectedIndex;
 
-            return (
-              <button
-                key={command.id}
-                className={`chat-command-item${isSelected ? " selected" : ""}`}
-                type="button"
-                role="option"
-                aria-selected={isSelected}
-                disabled={command.disabled}
-                onMouseEnter={() => setSelectedIndex(index)}
-                onClick={() => onSelect(command)}
-              >
-                <CommandIcon size={15} className="chat-command-item-icon" />
-                <span className="chat-command-item-content">
-                  <span className="chat-command-item-name">
-                    /{command.label}
+              return (
+                <button
+                  key={command.id}
+                  className={`chat-command-item${
+                    isSelected ? " selected" : ""
+                  }`}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  disabled={command.disabled}
+                  onMouseEnter={() => setSelectedIndex(index)}
+                  onClick={() => onSelect(command)}
+                >
+                  <CommandIcon size={15} className="chat-command-item-icon" />
+                  <span className="chat-command-item-content">
+                    <span className="chat-command-item-name">
+                      /{command.label}
+                    </span>
+                    <span className="chat-command-item-description">
+                      {command.description}
+                    </span>
                   </span>
-                  <span className="chat-command-item-description">
-                    {command.description}
-                  </span>
-                </span>
-              </button>
-            );
-          })
-        ) : (
-          <div className="chat-command-empty">{t("chatCommand.empty")}</div>
-        )}
+                </button>
+              );
+            })
+          ) : (
+            <div className="chat-command-empty">{t("chatCommand.empty")}</div>
+          )}
+        </div>
         <div className="chat-command-footer">
           <span>
             <kbd>↑</kbd>

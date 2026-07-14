@@ -188,6 +188,7 @@ pub async fn call_mcp_tool(
     args_json: String,
     checkpoint_ids: Vec<String>,
     checkpoint_work_dir: Option<String>,
+    sensitive_authorization_token: Option<String>,
     on_chunk: BashStreamCallback,
 ) -> napi::Result<String> {
     let args = parse_tool_args(&tool_full_name, &args_json)?;
@@ -214,7 +215,11 @@ pub async fn call_mcp_tool(
 
     let result = if tool_full_name == "mcp__bash__terminal-execute" {
         let terminal_result = BashService::new()
-            .execute_terminal_stream(&args, on_chunk)
+            .execute_terminal_stream(
+                &args,
+                sensitive_authorization_token.as_deref(),
+                on_chunk,
+            )
             .await;
         tokio::task::spawn_blocking(move || {
             capture_checkpoint_after_tool(checkpoint_ids_after, checkpoint_work_dir_after)

@@ -1,9 +1,11 @@
 import { Loader2 } from "lucide-react";
+import { useMemo } from "react";
 import { useI18n } from "../../../i18n";
 import { AiResponseActions } from "./AiResponseActions";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallItem } from "./ToolCallItem";
 import { ToolAuthorizationDialog } from "./ToolAuthorizationDialog";
+import { SensitiveCommandConfirmDialog } from "./toolCallRenderers/SensitiveCommandConfirmDialog";
 import { MarkdownBlock } from "./markdownRenderer";
 import type { AiResponseProps } from "./types";
 
@@ -32,6 +34,23 @@ export const AiResponse = ({
   const normalizedSummary = summary.trim();
   const summaryClassName = "ai-message-summary";
   const hasToolCalls = toolCalls.length > 0;
+
+  const sensitiveCommandAuthorizations = useMemo(
+    () =>
+      pendingToolAuthorizations.filter(
+        (tc) =>
+          tc.sensitiveCommandMatches && tc.sensitiveCommandMatches.length > 0
+      ),
+    [pendingToolAuthorizations]
+  );
+  const normalAuthorizations = useMemo(
+    () =>
+      pendingToolAuthorizations.filter(
+        (tc) =>
+          !tc.sensitiveCommandMatches || tc.sensitiveCommandMatches.length === 0
+      ),
+    [pendingToolAuthorizations]
+  );
 
   return (
     <article className="ai-message" aria-label="AI response">
@@ -80,12 +99,19 @@ export const AiResponse = ({
         {onApproveToolAuthorization &&
         onApproveToolAuthorizationAlways &&
         onRejectToolAuthorization ? (
-          <ToolAuthorizationDialog
-            toolCalls={pendingToolAuthorizations}
-            onApprove={onApproveToolAuthorization}
-            onApproveAlways={onApproveToolAuthorizationAlways}
-            onReject={onRejectToolAuthorization}
-          />
+          <>
+            <SensitiveCommandConfirmDialog
+              toolCalls={sensitiveCommandAuthorizations}
+              onApprove={onApproveToolAuthorization}
+              onReject={onRejectToolAuthorization}
+            />
+            <ToolAuthorizationDialog
+              toolCalls={normalAuthorizations}
+              onApprove={onApproveToolAuthorization}
+              onApproveAlways={onApproveToolAuthorizationAlways}
+              onReject={onRejectToolAuthorization}
+            />
+          </>
         ) : null}
 
         {/* 5. Loading indicator — persists throughout the entire AI loop */}

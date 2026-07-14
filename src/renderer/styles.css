@@ -3784,32 +3784,147 @@ input {
   opacity: 0.7;
 }
 
-.chat-context-boundary-group {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
+.context-compaction-message {
+  width: min(100%, 980px);
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island);
+  box-shadow: inset 0 1px 0 var(--surface-island-strong);
 }
 
-.chat-context-divider {
+.context-compaction-message-header {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 12px 0 0;
+  align-items: stretch;
 }
 
-.chat-context-divider-line {
+.context-compaction-message-toggle {
+  display: flex;
+  min-width: 0;
+  min-height: 54px;
   flex: 1;
-  height: 1px;
-  background: var(--border-color);
+  align-items: center;
+  gap: 11px;
+  padding: 9px 8px 9px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.14s ease;
 }
 
-.chat-context-divider-label {
+.context-compaction-message-toggle:hover {
+  background: var(--bg-hover);
+}
+
+.context-compaction-message-rollback {
   display: inline-flex;
+  width: 42px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-left: 1px solid var(--border-light);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.context-compaction-message-rollback:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.context-compaction-message-icon {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--accent-blue-bg);
+  color: var(--accent-blue-text);
+}
+
+.context-compaction-message-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.context-compaction-message-copy strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-compaction-message-description {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-compaction-message-action {
+  display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 5px;
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: 11px;
   white-space: nowrap;
+}
+
+.context-compaction-message-chevron {
+  transition: transform 0.18s ease;
+}
+
+.context-compaction-message.is-expanded .context-compaction-message-chevron {
+  transform: rotate(180deg);
+}
+
+.context-compaction-message-body {
+  max-height: min(46vh, 420px);
+  overflow: auto;
+  padding: 16px 18px 20px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-primary);
+}
+
+.context-compaction-message-body .context-compaction-markdown {
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.context-compaction-message-body .context-compaction-markdown h1,
+.context-compaction-message-body .context-compaction-markdown h2,
+.context-compaction-message-body .context-compaction-markdown h3,
+.context-compaction-message-body .context-compaction-markdown h4 {
+  margin: 16px 0 8px;
+}
+
+.context-compaction-message-body .context-compaction-markdown h1 {
+  font-size: 17px;
+}
+
+.context-compaction-message-body .context-compaction-markdown h2 {
+  font-size: 15px;
+}
+
+.context-compaction-message-body .context-compaction-markdown h3,
+.context-compaction-message-body .context-compaction-markdown h4 {
+  font-size: 14px;
 }
 
 .context-compaction-stream,
@@ -4789,17 +4904,19 @@ input {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-tertiary);
-  background: var(--bg-active);
-  padding: 1px 6px;
+  padding: 2px 6px;
   border-radius: var(--radius-sm);
   flex-shrink: 0;
+  background: var(--bg-active);
+  color: var(--text-tertiary);
   font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
 }
 
 .tool-call-tool-name-icon {
+  display: block;
   flex-shrink: 0;
   opacity: 0.7;
 }
@@ -4931,18 +5048,19 @@ input {
 
 .tool-call-error {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 6px;
-  font-size: 12px;
-  color: var(--accent-red-text);
-  background: var(--accent-red-bg);
   padding: 6px 8px;
   border-radius: var(--radius-sm);
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .tool-call-error svg {
+  display: block;
   flex-shrink: 0;
-  margin-top: 1px;
 }
 
 .tool-call-dir-listing {
@@ -5017,6 +5135,52 @@ input {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+/* Filesystem Read - Multi-file */
+.tool-call-multi-files {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tool-call-multi-file-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+}
+
+.tool-call-multi-file-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tool-call-multi-file-header svg {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.tool-call-multi-file-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-call-multi-file-path {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Filesystem Edit / Create Tool Call */
@@ -5167,9 +5331,11 @@ input {
   color: var(--text-tertiary);
   font-family: var(--font-mono);
   font-size: 11px;
+  line-height: 1.4;
 }
 
 .tool-call-bash-workdir svg {
+  display: block;
   flex-shrink: 0;
 }
 
@@ -5194,11 +5360,12 @@ input {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 5px 8px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--border-light);
   background: var(--bg-tertiary);
   color: var(--text-tertiary);
   font-size: 10.5px;
+  line-height: 1.2;
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
@@ -5209,13 +5376,18 @@ input {
   gap: 5px;
 }
 
-.tool-call-bash-command {
+.tool-call-bash-terminal-title svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.tool-call-bash .tool-call-bash-command {
   display: flex;
   align-items: flex-start;
-  gap: 7px;
+  gap: 8px;
   max-height: 180px;
   margin: 0;
-  padding: 8px 10px;
+  padding: 10px 12px;
   overflow: auto;
   color: var(--text-primary);
   font-family: var(--font-mono);
@@ -5226,7 +5398,7 @@ input {
   user-select: text;
 }
 
-.tool-call-bash-command code {
+.tool-call-bash .tool-call-bash-command code {
   min-width: 0;
   padding: 0;
   border-radius: 0;
@@ -5282,10 +5454,10 @@ input {
   text-transform: none;
 }
 
-.tool-call-bash-output-pre {
+.tool-call-bash .tool-call-bash-output-pre {
   max-height: 320px;
   margin: 0;
-  padding: 8px 10px;
+  padding: 10px 12px;
   overflow: auto;
   color: var(--text-secondary);
   font-family: var(--font-mono);
@@ -6109,12 +6281,17 @@ input {
   animation: mention-popup-in 0.12s ease-out;
 }
 
+.chat-command-list {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
 .chat-command-item {
   display: flex;
   align-items: center;
   width: 100%;
-  gap: 9px;
-  padding: 9px 12px;
+  gap: 8px;
+  padding: 5px 12px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -6148,7 +6325,7 @@ input {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .chat-command-item-name {
@@ -6164,14 +6341,14 @@ input {
 }
 
 .chat-command-empty {
-  padding: 18px 12px;
+  padding: 14px 12px;
   text-align: center;
 }
 
 .chat-command-footer {
   display: flex;
   gap: 12px;
-  padding: 5px 10px;
+  padding: 4px 10px;
   border-top: 1px solid var(--border-color);
   color: var(--text-muted);
   font-size: 10.5px;
@@ -8023,6 +8200,38 @@ input {
   font: 11.5px/1.5 var(--font-mono);
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.tool-authorization-rejection-reason {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tool-authorization-rejection-reason textarea {
+  width: 100%;
+  min-height: 54px;
+  padding: 7px 8px;
+  resize: vertical;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: 12px/1.45 var(--font-sans);
+}
+
+.tool-authorization-rejection-reason textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+.tool-authorization-rejection-reason textarea:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 1px;
+}
+
+.tool-authorization-rejection-reason textarea:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 
 .tool-authorization-actions {

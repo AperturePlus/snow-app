@@ -15,7 +15,7 @@ type ToolAuthorizationDialogProps = {
   toolCalls: ToolCallInfo[];
   onApprove: (toolCall: ToolCallInfo) => void;
   onApproveAlways: (toolCall: ToolCallInfo) => void;
-  onReject: (toolCall: ToolCallInfo) => void;
+  onReject: (toolCall: ToolCallInfo, reason: string) => void;
 };
 
 type FileMutationKind = "edit" | "create";
@@ -184,9 +184,10 @@ const AuthorizationToolItem = ({
   isSubmitting: boolean;
   onApprove: (toolCall: ToolCallInfo) => void;
   onApproveAlways: (toolCall: ToolCallInfo) => void;
-  onReject: (toolCall: ToolCallInfo) => void;
+  onReject: (toolCall: ToolCallInfo, reason: string) => void;
 }): React.JSX.Element => {
   const { t } = useI18n();
+  const [rejectionReason, setRejectionReason] = useState("");
   const authorizationId =
     toolCall.authorizationId ??
     `${toolCall.name}-${toolCall.callId ?? toolCall.arguments}`;
@@ -218,12 +219,28 @@ const AuthorizationToolItem = ({
           </div>
         </>
       )}
+      <label className="tool-authorization-rejection-reason">
+        <span className="tool-authorization-tool-label">
+          {t("toolAuthorization.rejectionReason")}
+        </span>
+        <textarea
+          disabled={isSubmitting}
+          onChange={(event) => setRejectionReason(event.target.value)}
+          placeholder={t("toolAuthorization.rejectionReasonPlaceholder")}
+          rows={2}
+          value={rejectionReason}
+        />
+      </label>
       <div className="tool-authorization-actions">
         <button
           className="tool-authorization-action tool-authorization-reject"
           disabled={isSubmitting}
           onClick={() => {
-            onReject(toolCall);
+            onReject(
+              toolCall,
+              rejectionReason.trim() ||
+                t("toolAuthorization.defaultRejectionReason")
+            );
           }}
           type="button"
         >
@@ -320,11 +337,11 @@ export const ToolAuthorizationDialog = ({
                 );
                 onApproveAlways(item);
               }}
-              onReject={(item) => {
+              onReject={(item, reason) => {
                 setSubmittingAuthorizationId(
                   item.authorizationId ?? authorizationId
                 );
-                onReject(item);
+                onReject(item, reason);
               }}
             />
           );

@@ -199,6 +199,12 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to delete sensitive command configs"
           )
         ),
+      checkSensitiveCommandMatch: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to check sensitive command matches"
+          )
+        ),
       listChatConversations: () =>
         Promise.reject(
           new Error("Rust native bridge is required to list chat conversations")
@@ -317,6 +323,12 @@ export const loadNativeBridge = (): NativeBridge => {
       listMcpTools: () =>
         Promise.reject(
           new Error("Rust native bridge is required to list MCP tools")
+        ),
+      authorizeSensitiveCommand: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to authorize sensitive commands"
+          )
         ),
       callMcpTool: () =>
         Promise.reject(

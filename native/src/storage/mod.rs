@@ -6,6 +6,7 @@ use std::{fs, path::PathBuf};
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use regex::Regex;
 
 #[napi(object)]
 pub struct AppStorageInfo {
@@ -199,6 +200,13 @@ pub struct SensitiveCommandConfigRecord {
     pub sort_order: i32,
     pub source: String,
     pub updated_at: String,
+}
+
+#[napi(object)]
+pub struct SensitiveCommandMatchResult {
+    pub command_id: String,
+    pub pattern: String,
+    pub description: String,
 }
 
 #[napi(object)]
@@ -405,6 +413,34 @@ pub fn delete_sensitive_command_config(command_id: String, scope: String) -> Res
         &command_id,
         &scope,
     )
+}
+
+pub fn check_sensitive_command_match(command: String) -> Result<Vec<SensitiveCommandMatchResult>> {
+    let database_path = ensure_database_file()?;
+    let configs = services::sensitive_command_configs::list_sensitive_command_configs(&database_path)?;
+
+    let mut matches = Vec::new();
+    for config in configs {
+        if !config.enabled {
+            continue;
+        }
+
+        // Sensitive command patterns are user-provided regular expressions.
+        // Skip a malformed rule so one invalid configuration cannot disable
+        // all remaining checks.
+        let Ok(regex) = Regex::new(&config.pattern) else {
+            continue;
+        };
+        if regex.is_match(&command) {
+            matches.push(SensitiveCommandMatchResult {
+                command_id: config.command_id,
+                pattern: config.pattern,
+                description: config.description,
+            });
+        }
+    }
+
+    Ok(matches)
 }
 
 pub fn list_chat_conversations(directory_id: String) -> Result<Vec<ChatConversationRecord>> {

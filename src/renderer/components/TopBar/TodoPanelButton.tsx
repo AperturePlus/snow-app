@@ -93,7 +93,10 @@ export const TodoPanelButton = ({
     void window.snow
       .callMcpTool(
         "mcp__todo__todo-manage",
-        JSON.stringify({ action: "get", sessionId })
+        JSON.stringify({ action: "get", sessionId }),
+        undefined,
+        undefined,
+        undefined
       )
       .then((result) => {
         if (!cancelled) {
@@ -147,7 +150,10 @@ export const TodoPanelButton = ({
       try {
         const result = await window.snow.callMcpTool(
           "mcp__todo__todo-manage",
-          JSON.stringify({ action: "delete", sessionId, todoId: todoIds })
+          JSON.stringify({ action: "delete", sessionId, todoId: todoIds }),
+          undefined,
+          undefined,
+          undefined
         );
         const newTodos = parseTodos(result);
         if (newTodos) {
