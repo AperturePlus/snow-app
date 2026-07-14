@@ -7,7 +7,10 @@ import {
   useWebviewScreenshot,
 } from "./browser";
 import { DEFAULT_BROWSER_HOMEPAGE } from "./browser/browserHomepageConstants";
-import { registerBrowserMcpInstance } from "./browser/browserMcpController";
+import {
+  focusBrowserMcpInstance,
+  registerBrowserMcpInstance,
+} from "./browser/browserMcpController";
 import { executeBrowserMcpOperation } from "./browser/browserMcpOperations";
 
 export type BrowserPanelContentProps = {
@@ -104,9 +107,6 @@ export const BrowserPanelContent = ({
   const [findText, setFindText] = useState("");
   const [findResult, setFindResult] = useState<BrowserFindResult | null>(null);
 
-  // isActive is reserved for future panel visibility optimisation.
-  void isActive;
-
   useEffect(() => {
     const webview = webviewRef.current;
     if (!webview) {
@@ -135,6 +135,12 @@ export const BrowserPanelContent = ({
     );
     return unregister;
   }, [instanceId]);
+
+  useEffect(() => {
+    if (isActive) {
+      focusBrowserMcpInstance(instanceId);
+    }
+  }, [instanceId, isActive]);
 
   useEffect(() => {
     const webview = webviewRef.current;

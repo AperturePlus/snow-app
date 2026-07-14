@@ -71,7 +71,7 @@ pub fn tools_as_openai_chat_json() -> Result<Value> {
     let functions: Vec<Value> = tools
         .iter()
         .map(|tool| {
-            let sanitized_schema = sanitize_openai_parameters_schema(&tool.input_schema);
+            let sanitized_schema = sanitize_tool_input_schema(&tool.input_schema);
             json!({
                 "type": "function",
                 "function": {
@@ -86,34 +86,21 @@ pub fn tools_as_openai_chat_json() -> Result<Value> {
     Ok(Value::Array(functions))
 }
 
-/// OpenAI Chat Completions API requires the top-level `parameters` schema to be
-/// a JSON Schema of `type: "object"`. Some tool definitions may use `oneOf` or
-/// omit `type` at the top level, which causes a 400 Bad Request. This function
-/// ensures the top-level schema always has `"type": "object"` by removing
-/// incompatible top-level keywords (`oneOf`, `anyOf`, `allOf`) and forcing
-/// `type` to `"object"` when it is missing or null.
-fn sanitize_openai_parameters_schema(schema: &Value) -> Value {
-    let mut result = schema.clone();
+/// Tool APIs require the root input schema to describe an object. Some
+/// compatible gateways reject root `oneOf`/`anyOf`/`allOf` combinators when a
+/// branch does not explicitly declare an object, even if the root has
+/// `type: "object"`. Keep nested constraints intact, but remove root
+/// combinators and always emit an object schema. Runtime tool validation still
+/// enforces cross-field requirements that cannot be represented at the root.
+fn sanitize_tool_input_schema(schema: &Value) -> Value {
+    let mut result = schema.as_object().cloned().unwrap_or_default();
 
-    if let Some(obj) = result.as_object_mut() {
-        // Remove top-level combinators that conflict with a concrete type.
-        obj.remove("oneOf");
-        obj.remove("anyOf");
-        obj.remove("allOf");
+    result.remove("oneOf");
+    result.remove("anyOf");
+    result.remove("allOf");
+    result.insert("type".to_string(), Value::String("object".to_string()));
 
-        // Force top-level type to "object" if missing or not a string.
-        let needs_fix = match obj.get("type") {
-            None => true,
-            Some(Value::String(s)) => s != "object",
-            Some(Value::Null) => true,
-            Some(_) => true,
-        };
-        if needs_fix {
-            obj.insert("type".to_string(), Value::String("object".to_string()));
-        }
-    }
-
-    result
+    Value::Object(result)
 }
 
 pub fn tools_as_anthropic_json() -> Result<Value> {
@@ -122,10 +109,11 @@ pub fn tools_as_anthropic_json() -> Result<Value> {
     let tools_json: Vec<Value> = tools
         .iter()
         .map(|tool| {
+            let sanitized_schema = sanitize_tool_input_schema(&tool.input_schema);
             json!({
                 "name": tool.full_name(),
                 "description": tool.description,
-                "input_schema": tool.input_schema,
+                "input_schema": sanitized_schema,
             })
         })
         .collect();
@@ -343,4 +331,53 @@ fn capture_checkpoint_after_tool(
         checkpoint_ids,
         work_dir,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_tool_input_schema_removes_only_root_combinators() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "target": {
+                    "oneOf": [
+                        { "type": "string" },
+                        { "type": "number" }
+                    ]
+                }
+            },
+            "anyOf": [
+                { "required": ["selector"] },
+                { "type": "string" }
+            ],
+            "oneOf": [
+                { "type": "object" },
+                { "type": "string" }
+            ],
+            "allOf": [
+                { "type": "object" }
+            ]
+        });
+
+        let sanitized = sanitize_tool_input_schema(&schema);
+
+        assert_eq!(sanitized.get("type").and_then(Value::as_str), Some("object"));
+        assert!(sanitized.get("anyOf").is_none());
+        assert!(sanitized.get("oneOf").is_none());
+        assert!(sanitized.get("allOf").is_none());
+        assert!(sanitized.pointer("/properties/target/oneOf").is_some());
+    }
+
+    #[test]
+    fn sanitize_tool_input_schema_converts_non_object_root() {
+        let sanitized = sanitize_tool_input_schema(&json!([
+            { "type": "object" },
+            { "type": "string" }
+        ]));
+
+        assert_eq!(sanitized, json!({ "type": "object" }));
+    }
 }

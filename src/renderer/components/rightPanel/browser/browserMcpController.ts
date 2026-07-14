@@ -13,6 +13,7 @@ type InstanceWaiter = {
 
 const instances = new Map<string, BrowserMcpCommandHandler>();
 const instanceWaiters = new Map<string, Set<InstanceWaiter>>();
+let focusedInstanceId: string | null = null;
 
 const parseCommandArgs = (argsJson: string): BrowserMcpCommandArgs => {
   const value = JSON.parse(argsJson) as unknown;
@@ -22,14 +23,30 @@ const parseCommandArgs = (argsJson: string): BrowserMcpCommandArgs => {
   return value as BrowserMcpCommandArgs;
 };
 
+const getFallbackInstanceId = (): string | null => {
+  if (focusedInstanceId && instances.has(focusedInstanceId)) {
+    return focusedInstanceId;
+  }
+
+  const registeredInstanceIds = [...instances.keys()];
+  return registeredInstanceIds.at(-1) ?? null;
+};
+
 export const createBrowserInstanceId = (): string =>
   `browser-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+export const focusBrowserMcpInstance = (instanceId: string): void => {
+  if (instances.has(instanceId)) {
+    focusedInstanceId = instanceId;
+  }
+};
 
 export const registerBrowserMcpInstance = (
   instanceId: string,
   handler: BrowserMcpCommandHandler
 ): (() => void) => {
   instances.set(instanceId, handler);
+  focusedInstanceId = instanceId;
   const waiters = instanceWaiters.get(instanceId);
   if (waiters) {
     for (const waiter of waiters) {
@@ -42,6 +59,9 @@ export const registerBrowserMcpInstance = (
   return () => {
     if (instances.get(instanceId) === handler) {
       instances.delete(instanceId);
+      if (focusedInstanceId === instanceId) {
+        focusedInstanceId = getFallbackInstanceId();
+      }
     }
   };
 };
@@ -64,7 +84,8 @@ export const waitForBrowserMcpInstance = (
       reject(new Error(`Browser instance did not become ready: ${instanceId}`));
     }, timeoutMs);
     const waiter: InstanceWaiter = { resolve, reject, timer };
-    const waiters = instanceWaiters.get(instanceId) ?? new Set<InstanceWaiter>();
+    const waiters =
+      instanceWaiters.get(instanceId) ?? new Set<InstanceWaiter>();
     waiters.add(waiter);
     instanceWaiters.set(instanceId, waiters);
   });
@@ -75,17 +96,24 @@ export const executeBrowserMcpCommand = async (
   argsJson: string
 ): Promise<string> => {
   const args = parseCommandArgs(argsJson);
-  const instanceId =
+  const requestedInstanceId =
     typeof args.instanceId === "string" ? args.instanceId.trim() : "";
+  const useFocusedInstance =
+    !requestedInstanceId || requestedInstanceId.toLowerCase() === "current";
+  const instanceId = useFocusedInstance
+    ? getFallbackInstanceId()
+    : requestedInstanceId;
   if (!instanceId) {
-    throw new Error(`instanceId is required for browser ${operation}`);
+    throw new Error(
+      `No embedded browser is available for browser ${operation}; open and focus a browser tab first`
+    );
   }
 
   const handler = instances.get(instanceId);
   if (!handler) {
     throw new Error(`Browser instance was not found: ${instanceId}`);
   }
-  const result = await handler(operation, args);
+  const result = await handler(operation, { ...args, instanceId });
   return JSON.stringify(result);
 };
 

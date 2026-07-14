@@ -79,7 +79,7 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "create".to_string(),
-                description: "Create an embedded Electron browser instance in the right panel. Returns an instanceId that must be used by subsequent browser tools. Optionally opens an initial URL.".to_string(),
+                description: "Create an embedded Electron browser instance in the right panel. Returns an instanceId for explicitly targeting it later. Optionally opens an initial URL.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -93,13 +93,13 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "navigate".to_string(),
-                description: "Navigate an existing embedded browser instance to an HTTP or HTTPS URL and wait asynchronously for loading to finish.".to_string(),
+                description: "Navigate an embedded browser instance to an HTTP or HTTPS URL and wait asynchronously for loading to finish. Omit instanceId to use the most recently focused browser tab, including a browser opened by the user.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Browser instance ID returned by browser create."
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
                         },
                         "url": {
                             "type": "string",
@@ -113,19 +113,19 @@ impl McpService for BrowserService {
                             "maximum": MAX_TIMEOUT_MS
                         }
                     },
-                    "required": ["instanceId", "url"]
+                    "required": ["url"]
                 }),
             },
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "click".to_string(),
-                description: "Click page content in an existing browser instance. Target an element with a CSS selector or visible text. Returns details about the clicked element.".to_string(),
+                description: "Click page content in an embedded browser with a real Electron mouse input event. Target an element with a CSS selector or visible text. Omit instanceId to use the most recently focused browser tab, including a browser opened by the user.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Browser instance ID returned by browser create."
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
                         },
                         "selector": {
                             "type": "string",
@@ -141,39 +141,41 @@ impl McpService for BrowserService {
                             "default": false
                         }
                     },
-                    "required": ["instanceId"]
+                    "anyOf": [
+                        { "required": ["selector"] },
+                        { "required": ["text"] }
+                    ]
                 }),
             },
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "screenshot".to_string(),
-                description: "Capture an existing embedded browser page as PNG. Returns page metadata and an image content block containing base64 PNG data.".to_string(),
+                description: "Capture an embedded browser page as PNG. Omit instanceId to capture the most recently focused browser tab, including a browser opened by the user. Returns page metadata and an image content block containing base64 PNG data.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Browser instance ID returned by browser create."
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
                         },
                         "fullPage": {
                             "type": "boolean",
                             "description": "Capture the full scrollable page instead of only the viewport (default true).",
                             "default": true
                         }
-                    },
-                    "required": ["instanceId"]
+                    }
                 }),
             },
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "devtools".to_string(),
-                description: "Inspect developer-tools-related information for an embedded browser. Use action=snapshot for page metadata and text, action=console for captured console messages, or action=open to open Electron DevTools for the page.".to_string(),
+                description: "Inspect developer-tools-related information for an embedded browser. Omit instanceId to inspect the most recently focused browser tab, including a browser opened by the user. Use action=snapshot for page metadata and text, action=console for captured console messages, or action=open to open Electron DevTools for the page.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "instanceId": {
                             "type": "string",
-                            "description": "Browser instance ID returned by browser create."
+                            "description": "Optional browser instance ID. Omit it or use current to target the most recently focused embedded browser tab."
                         },
                         "action": {
                             "type": "string",
@@ -193,8 +195,7 @@ impl McpService for BrowserService {
                             "minimum": MIN_MAX_CONTENT_LENGTH,
                             "maximum": MAX_MAX_CONTENT_LENGTH
                         }
-                    },
-                    "required": ["instanceId"]
+                    }
                 }),
             },
         ]
@@ -228,7 +229,7 @@ fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi::Result<Va
             }
         }
         "navigate" => {
-            required_non_empty_string(args, "instanceId", tool_name)?;
+            optional_non_empty_string(args, "instanceId")?;
             let url = required_non_empty_string(args, "url", tool_name)?;
             validate_web_url(url)?;
             let timeout = bounded_u64(
@@ -241,7 +242,7 @@ fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi::Result<Va
             normalized.insert("timeoutMs".to_string(), json!(timeout));
         }
         "click" => {
-            required_non_empty_string(args, "instanceId", tool_name)?;
+            optional_non_empty_string(args, "instanceId")?;
             let selector = optional_non_empty_string(args, "selector")?;
             let text = optional_non_empty_string(args, "text")?;
             if selector.is_none() && text.is_none() {
@@ -253,11 +254,11 @@ fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi::Result<Va
             optional_boolean(args, "exact")?;
         }
         "screenshot" => {
-            required_non_empty_string(args, "instanceId", tool_name)?;
+            optional_non_empty_string(args, "instanceId")?;
             optional_boolean(args, "fullPage")?;
         }
         "devtools" => {
-            required_non_empty_string(args, "instanceId", tool_name)?;
+            optional_non_empty_string(args, "instanceId")?;
             let action = args
                 .get("action")
                 .and_then(Value::as_str)
