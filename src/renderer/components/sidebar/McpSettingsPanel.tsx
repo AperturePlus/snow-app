@@ -2,6 +2,7 @@ import { Download, Loader2, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
+import { Modal } from "../common/Modal";
 import { McpSettingsEditor } from "./mcpSettings/McpSettingsEditor";
 import { McpSettingsList } from "./mcpSettings/McpSettingsList";
 import { McpSettingsSummary } from "./mcpSettings/McpSettingsSummary";
@@ -13,7 +14,11 @@ import {
   toDraft,
   toInput,
 } from "./mcpSettings/mcpSettingsUtils";
-import type { McpServerConfig, McpServerDraft } from "./mcpSettings/types";
+import type {
+  McpServerConfig,
+  McpServerDraft,
+  McpServerTool,
+} from "./mcpSettings/types";
 
 type McpSettingsPanelProps = {
   onClose?: () => void;
@@ -27,6 +32,12 @@ export function McpSettingsPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [draft, setDraft] = useState<McpServerDraft | null>(null);
+  const [toolsByServerId, setToolsByServerId] = useState<
+    Record<string, McpServerTool[]>
+  >({});
+  const [fetchingToolServerIds, setFetchingToolServerIds] = useState<
+    Set<string>
+  >(() => new Set());
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
 
@@ -276,7 +287,6 @@ export function McpSettingsPanel({
     try {
       const items = await window.snow.upsertMcpServerConfig({
         serverId: server.serverId,
-        scope: server.scope,
         name: server.name,
         transportType: server.transportType,
         url: server.url,
@@ -301,6 +311,44 @@ export function McpSettingsPanel({
     }
   };
 
+  const handleFetchTools = async (server: McpServerConfig) => {
+    setFetchingToolServerIds((previous) => {
+      const next = new Set(previous);
+      next.add(server.serverId);
+      return next;
+    });
+    setError("");
+    setStatus("");
+
+    try {
+      const tools = await window.snow.listMcpServerTools(server.serverId);
+      setToolsByServerId((previous) => ({
+        ...previous,
+        [server.serverId]: tools,
+      }));
+      setStatus(
+        t("settings.mcpFetchToolsSuccess", {
+          defaultValue: "Fetched {{count}} tool(s) from {{name}}.",
+          values: { count: tools.length, name: server.name },
+        })
+      );
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : t("settings.mcpFetchToolsError", {
+              defaultValue: "Failed to fetch MCP tools",
+            })
+      );
+    } finally {
+      setFetchingToolServerIds((previous) => {
+        const next = new Set(previous);
+        next.delete(server.serverId);
+        return next;
+      });
+    }
+  };
+
   const handleDelete = async (server: McpServerConfig) => {
     setError("");
     setStatus("");
@@ -308,6 +356,11 @@ export function McpSettingsPanel({
     try {
       const items = await window.snow.deleteMcpServerConfig(server.serverId);
       setServers(items);
+      setToolsByServerId((previous) => {
+        const next = { ...previous };
+        delete next[server.serverId];
+        return next;
+      });
       setStatus(
         t("settings.mcpDeleteSuccess", {
           defaultValue: "Deleted MCP server.",
@@ -408,32 +461,63 @@ export function McpSettingsPanel({
         </div>
 
         <div className="api-settings-form-body">
-          {draft && (
-            <McpSettingsEditor
-              draft={draft}
-              isBusy={isBusy}
-              isSaving={isSaving}
-              onDraftChange={patchDraft}
-              onUpdatePair={updatePair}
-              onAddPair={addPair}
-              onRemovePair={removePair}
-              onUpdateArg={updateArg}
-              onAddArg={addArg}
-              onRemoveArg={removeArg}
-              onCancel={cancelDraft}
-              onSave={() => void saveDraft()}
-            />
-          )}
-
           <McpSettingsList
             servers={servers}
             isBusy={isBusy}
+            toolsByServerId={toolsByServerId}
+            fetchingToolServerIds={fetchingToolServerIds}
             onToggleEnabled={(server) => void toggleEnabled(server)}
+            onFetchTools={(server) => void handleFetchTools(server)}
             onEdit={startEdit}
             onDelete={(server) => void handleDelete(server)}
           />
         </div>
       </div>
+
+      <Modal
+        open={Boolean(draft)}
+        title={t("settings.mcpEditorTitle", {
+          defaultValue: "MCP server editor",
+        })}
+        description={
+          draft?.name || t("settings.mcpAddNew", { defaultValue: "Add server" })
+        }
+        closeLabel={t("settings.cancel", { defaultValue: "Cancel" })}
+        onClose={cancelDraft}
+        closeDisabled={isBusy}
+        size="large"
+        className="mcp-settings-editor-modal"
+      >
+        {draft && (
+          <McpSettingsEditor
+            draft={draft}
+            isBusy={isBusy}
+            isSaving={isSaving}
+            tools={draft.serverId ? toolsByServerId[draft.serverId] : undefined}
+            isFetchingTools={
+              Boolean(draft.serverId) &&
+              fetchingToolServerIds.has(draft.serverId)
+            }
+            onFetchTools={() => {
+              const server = servers.find(
+                (item) => item.serverId === draft.serverId
+              );
+              if (server) {
+                void handleFetchTools(server);
+              }
+            }}
+            onDraftChange={patchDraft}
+            onUpdatePair={updatePair}
+            onAddPair={addPair}
+            onRemovePair={removePair}
+            onUpdateArg={updateArg}
+            onAddArg={addArg}
+            onRemoveArg={removeArg}
+            onCancel={cancelDraft}
+            onSave={() => void saveDraft()}
+          />
+        )}
+      </Modal>
     </div>
   );
 }

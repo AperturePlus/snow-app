@@ -4,10 +4,7 @@ import type {
   McpServerConfigRecord,
   NativeBridge,
 } from "../native/types";
-import {
-  SNOW_CLI_GLOBAL_SETTINGS_FILE,
-  SNOW_CLI_PROJECT_SETTINGS_FILE,
-} from "../snowCli/paths";
+import { SNOW_CLI_GLOBAL_SETTINGS_FILE } from "../snowCli/paths";
 import { readJsonFile } from "../utils/jsonFile";
 import { isRecord, toBoolean, toIntegerOrNull, toText } from "../utils/value";
 
@@ -16,7 +13,7 @@ const MCP_SOURCE_MANUAL = "manual";
 const DEFAULT_SCOPE = "global";
 const DEFAULT_TRANSPORT_TYPE = "stdio";
 
-type McpScope = "global" | "project";
+type McpScope = "global";
 
 type SnowCliMcpServer = {
   name: string;
@@ -38,8 +35,7 @@ type SnowCliMcpConfig = {
 const toServerId = (scope: string, name: string): string =>
   `${scope.trim() || DEFAULT_SCOPE}:${name.trim()}`;
 
-const normalizeScope = (value: unknown): McpScope =>
-  value === "project" ? "project" : "global";
+const normalizeScope = (_value: unknown): McpScope => "global";
 
 const normalizeTransportType = (
   value: unknown,
@@ -136,7 +132,6 @@ const toNativeInput = (
   sortOrder: number
 ): McpServerConfigInput => ({
   serverId: toServerId(scope, server.name),
-  scope,
   name: server.name,
   transportType: server.type,
   url: server.url,
@@ -175,10 +170,7 @@ const persistMcpConfigs = async (
 export const readSnowCliMcpConfig = async (
   native: NativeBridge
 ): Promise<McpServerConfigRecord[]> => {
-  const configs = [
-    readConfigByScope("global", SNOW_CLI_GLOBAL_SETTINGS_FILE),
-    readConfigByScope("project", SNOW_CLI_PROJECT_SETTINGS_FILE),
-  ];
+  const configs = [readConfigByScope("global", SNOW_CLI_GLOBAL_SETTINGS_FILE)];
 
   await persistMcpConfigs(native, configs);
   return native.listMcpServerConfigs();
@@ -226,7 +218,6 @@ export const normalizeMcpServerConfig = (
   value: unknown
 ): McpServerConfigInput => {
   const source = isRecord(value) ? value : {};
-  const scope = normalizeScope(source.scope);
   const name = toText(source.name).trim();
   const transportType = normalizeTransportType(source.transportType, source);
   const argsJson = toText(source.argsJson, "[]");
@@ -253,8 +244,7 @@ export const normalizeMcpServerConfig = (
   }
 
   return {
-    serverId: toText(source.serverId).trim() || toServerId(scope, name),
-    scope,
+    serverId: toText(source.serverId).trim() || toServerId(DEFAULT_SCOPE, name),
     name,
     transportType,
     url,

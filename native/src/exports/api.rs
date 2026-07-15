@@ -19,7 +19,14 @@ use crate::mcp::servers::bash::{authorize_sensitive_command as authorize_command
 use crate::mcp::servers::browser::BrowserCommandCallback;
 use crate::mcp::servers::user_interaction::UserQuestionCallback;
 use crate::mcp::tools::{
-    call_mcp_tool as call_tool, list_mcp_tools as list_all_mcp_tools, McpToolDefinition,
+    call_mcp_tool as call_tool,
+    list_mcp_project_server_tools as list_project_server_tools,
+    list_mcp_project_servers as list_project_servers,
+    list_mcp_server_tools as list_server_tools,
+    list_mcp_tools as list_all_mcp_tools,
+    set_mcp_project_server_enabled as set_project_server_enabled,
+    set_mcp_project_tool_enabled as set_project_tool_enabled,
+    McpProjectServerStatus, McpProjectToolStatus, McpToolDefinition,
 };
 use crate::storage::initialize_app_storage;
 
@@ -77,18 +84,49 @@ pub fn abort_response_stream(stream_id: String) -> napi::Result<bool> {
 pub async fn generate_conversation_summary(conversation_id: String) -> napi::Result<String> {
     generate_summary(conversation_id).await
 }
-
 #[napi]
 pub async fn list_mcp_tools() -> napi::Result<Vec<McpToolDefinition>> {
-    // 使用 spawn_blocking 确保 SQLite I/O 不阻塞 Node.js 主线程
-    tokio::task::spawn_blocking(move || list_all_mcp_tools())
-        .await
-        .map_err(|e| {
-            Error::new(
-                Status::GenericFailure,
-                format!("Failed to execute list_mcp_tools: {}", e),
-            )
-        })?
+    list_all_mcp_tools().await
+}
+
+#[napi]
+pub async fn list_mcp_server_tools(
+    config_server_id: String,
+) -> napi::Result<Vec<McpToolDefinition>> {
+    list_server_tools(config_server_id).await
+}
+
+#[napi]
+pub async fn list_mcp_project_servers(
+    project_id: String,
+) -> napi::Result<Vec<McpProjectServerStatus>> {
+    list_project_servers(project_id).await
+}
+
+#[napi]
+pub async fn list_mcp_project_server_tools(
+    project_id: String,
+    server_id: String,
+) -> napi::Result<Vec<McpProjectToolStatus>> {
+    list_project_server_tools(project_id, server_id).await
+}
+
+#[napi]
+pub async fn set_mcp_project_server_enabled(
+    project_id: String,
+    server_id: String,
+    enabled: bool,
+) -> napi::Result<()> {
+    set_project_server_enabled(project_id, server_id, enabled).await
+}
+
+#[napi]
+pub async fn set_mcp_project_tool_enabled(
+    project_id: String,
+    tool_name: String,
+    enabled: bool,
+) -> napi::Result<()> {
+    set_project_tool_enabled(project_id, tool_name, enabled).await
 }
 
 #[napi]
@@ -97,12 +135,13 @@ pub async fn authorize_sensitive_command(command: String, token: String) -> napi
 }
 
 #[napi(
-    ts_args_type = "toolFullName: string, argsJson: string, checkpointIds: string[] | undefined, checkpointWorkDir: string | undefined, sensitiveAuthorizationToken: string | undefined, onChunk: (chunk: BashStreamChunk) => void, onBrowserCommand: (command: BrowserCommand) => Promise<string>, onUserQuestion: (question: UserQuestionCommand) => Promise<string>",
+    ts_args_type = "toolFullName: string, argsJson: string, projectId: string | undefined, checkpointIds: string[] | undefined, checkpointWorkDir: string | undefined, sensitiveAuthorizationToken: string | undefined, onChunk: (chunk: BashStreamChunk) => void, onBrowserCommand: (command: BrowserCommand) => Promise<string>, onUserQuestion: (question: UserQuestionCommand) => Promise<string>",
     ts_return_type = "Promise<string>"
 )]
 pub async fn call_mcp_tool(
     tool_full_name: String,
     args_json: String,
+    project_id: Option<String>,
     checkpoint_ids: Option<Vec<String>>,
     checkpoint_work_dir: Option<String>,
     sensitive_authorization_token: Option<String>,
@@ -113,6 +152,7 @@ pub async fn call_mcp_tool(
     call_tool(
         tool_full_name,
         args_json,
+        project_id,
         checkpoint_ids.unwrap_or_default(),
         checkpoint_work_dir,
         sensitive_authorization_token,

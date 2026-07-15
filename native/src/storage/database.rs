@@ -186,7 +186,6 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
          CREATE TABLE IF NOT EXISTS mcp_server_configs (
            id TEXT PRIMARY KEY NOT NULL,
            server_id TEXT NOT NULL UNIQUE,
-           scope TEXT NOT NULL DEFAULT 'global',
            name TEXT NOT NULL DEFAULT '',
            transport_type TEXT NOT NULL DEFAULT 'stdio',
            url TEXT NOT NULL DEFAULT '',
@@ -201,8 +200,6 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            created_at TEXT NOT NULL DEFAULT (datetime('now')),
            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
          );
-         CREATE INDEX IF NOT EXISTS idx_mcp_server_configs_scope
-           ON mcp_server_configs(scope);
          CREATE INDEX IF NOT EXISTS idx_mcp_server_configs_enabled
            ON mcp_server_configs(enabled);
          CREATE INDEX IF NOT EXISTS idx_mcp_server_configs_source

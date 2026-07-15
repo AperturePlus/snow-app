@@ -2,6 +2,7 @@ import { Download, Loader2, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
+import { Modal } from "../common/Modal";
 import { CustomHeadersEditor } from "./customHeaders/CustomHeadersEditor";
 import { CustomHeadersSchemeList } from "./customHeaders/CustomHeadersSchemeList";
 import { CustomHeadersSummary } from "./customHeaders/CustomHeadersSummary";
@@ -361,24 +362,6 @@ export function CustomHeadersSettingsPanel({
         </div>
 
         <div className="api-settings-form-body">
-          {draft && (
-            <CustomHeadersEditor
-              draft={draft}
-              isBusy={isBusy}
-              isSaving={isSaving}
-              onNameChange={(name) =>
-                setDraft((previous) =>
-                  previous ? { ...previous, name } : null
-                )
-              }
-              onUpdateHeaderPair={updateHeaderPair}
-              onAddHeaderPair={addHeaderPair}
-              onRemoveHeaderPair={removeHeaderPair}
-              onCancel={cancelDraft}
-              onSave={() => void saveDraft()}
-            />
-          )}
-
           <CustomHeadersSchemeList
             schemes={schemes}
             isBusy={isBusy}
@@ -388,6 +371,38 @@ export function CustomHeadersSettingsPanel({
           />
         </div>
       </div>
+
+      <Modal
+        open={Boolean(draft)}
+        title={t("settings.customHeadersEditorTitle", {
+          defaultValue: "Scheme editor",
+        })}
+        description={
+          draft?.name ||
+          t("settings.customHeadersAddNew", { defaultValue: "Add scheme" })
+        }
+        closeLabel={t("settings.cancel", { defaultValue: "Cancel" })}
+        onClose={cancelDraft}
+        closeDisabled={isBusy}
+        size="large"
+        className="custom-headers-editor-modal"
+      >
+        {draft && (
+          <CustomHeadersEditor
+            draft={draft}
+            isBusy={isBusy}
+            isSaving={isSaving}
+            onNameChange={(name) =>
+              setDraft((previous) => (previous ? { ...previous, name } : null))
+            }
+            onUpdateHeaderPair={updateHeaderPair}
+            onAddHeaderPair={addHeaderPair}
+            onRemoveHeaderPair={removeHeaderPair}
+            onCancel={cancelDraft}
+            onSave={() => void saveDraft()}
+          />
+        )}
+      </Modal>
     </div>
   );
 }

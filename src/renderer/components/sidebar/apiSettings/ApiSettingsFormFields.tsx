@@ -285,7 +285,7 @@ export function ApiSettingsFormFields({
           })}
         </strong>
         <div className="api-settings-form-grid">
-          <div className="api-settings-field wide">
+          <div className="api-settings-field">
             <span>
               {t("settings.apiSystemPrompts", {
                 defaultValue: "System prompts",

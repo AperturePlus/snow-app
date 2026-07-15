@@ -10,7 +10,7 @@ import {
   RefreshCw,
   Square,
 } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "../../../i18n";
 import type { ChatInputViewProps } from "./types";
@@ -30,6 +30,7 @@ import {
 import { useDropdownDirection } from "./useDropdownDirection";
 import { PlusMenu, type PlusMenuSection } from "./PlusMenu";
 import { PendingMessages } from "./PendingMessages";
+import { ProjectMcpPanel } from "./ProjectMcpPanel";
 import { useChatConversationContext } from "../chatMessages";
 import { CommandPanel, type CommandPanelHandle } from "./commands/CommandPanel";
 import { createChatCommands } from "./commands/commandRegistry";
@@ -37,6 +38,8 @@ import type { ChatCommand } from "./commands/types";
 
 export const ChatInputView = ({
   placeholder,
+  projectId,
+  projectName,
   value,
   textareaRef,
   models,
@@ -100,16 +103,31 @@ export const ChatInputView = ({
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState("");
   const commandPanelRef = useRef<CommandPanelHandle>(null);
+  const [isProjectMcpOpen, setIsProjectMcpOpen] = useState(false);
+  const [isCustomThinkingMode, setIsCustomThinkingMode] = useState(false);
+  const [customThinkingValue, setCustomThinkingValue] = useState("");
+
+  useEffect(() => {
+    if (!isThinkingDropdownOpen) {
+      setIsCustomThinkingMode(false);
+    }
+  }, [isThinkingDropdownOpen]);
+
   const commands = useMemo(
     () =>
       createChatCommands({
         onNewChat: handleNewChat,
         onCompactConversation,
+        onOpenMcpPanel: () => setIsProjectMcpOpen(true),
         model: selectedModel || undefined,
         compactDisabled: messages.length === 0 || isStreaming || isCompacting,
+        mcpDisabled: !projectId,
         labels: {
           clearDescription: t("chatCommand.clearDescription"),
           compactDescription: t("chatCommand.compactDescription"),
+          mcpDescription: projectId
+            ? t("chatCommand.mcpDescription")
+            : t("chatCommand.mcpNoProject"),
         },
       }),
     [
@@ -118,6 +136,7 @@ export const ChatInputView = ({
       isStreaming,
       messages.length,
       onCompactConversation,
+      projectId,
       selectedModel,
       t,
     ]
@@ -137,6 +156,9 @@ export const ChatInputView = ({
   const thinkingDropdownDir = useDropdownDirection(
     thinkingDropdownRef,
     isThinkingDropdownOpen
+  );
+  const isCustomThinkingValue = !thinkingOptions.some(
+    (option) => option.value === thinkingValue
   );
 
   const syncContent = useCallback(() => {
@@ -588,8 +610,45 @@ export const ChatInputView = ({
     [onWithdrawPendingMessage, restoreContent]
   );
 
+  const handleOpenCustomThinking = useCallback(() => {
+    setCustomThinkingValue(isCustomThinkingValue ? thinkingValue : "");
+    setIsCustomThinkingMode(true);
+  }, [isCustomThinkingValue, thinkingValue]);
+
+  const handleConfirmCustomThinking = useCallback(async () => {
+    const nextValue = customThinkingValue.trim();
+    if (!nextValue || isSavingThinking) {
+      return;
+    }
+
+    await handleSelectThinking(nextValue);
+    setIsCustomThinkingMode(false);
+  }, [customThinkingValue, handleSelectThinking, isSavingThinking]);
+
+  const handleCustomThinkingKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === "Enter") {
+        if (event.nativeEvent.isComposing) {
+          return;
+        }
+
+        event.preventDefault();
+        void handleConfirmCustomThinking();
+      } else if (event.key === "Escape") {
+        setIsCustomThinkingMode(false);
+      }
+    },
+    [handleConfirmCustomThinking]
+  );
+
   return (
     <div className="input-area">
+      <ProjectMcpPanel
+        open={isProjectMcpOpen}
+        projectId={projectId}
+        projectName={projectName}
+        onClose={() => setIsProjectMcpOpen(false)}
+      />
       <div className="input-content" ref={mentionAnchorRef}>
         <FileMentionPopup
           ref={mentionPopupRef}
@@ -817,7 +876,7 @@ export const ChatInputView = ({
                   className={`toolbar-btn quality ${
                     thinkingError ? "thinking-error" : ""
                   }`}
-                  aria-label="Thinking strength"
+                  aria-label={t("chat.thinkingStrength")}
                   aria-expanded={isThinkingDropdownOpen}
                   onClick={() => setIsThinkingDropdownOpen((open) => !open)}
                   disabled={
@@ -826,8 +885,10 @@ export const ChatInputView = ({
                   title={
                     thinkingError ??
                     (isLoadingApiConfig
-                      ? "Loading API configuration"
-                      : `Thinking strength: ${thinkingLabel}`)
+                      ? t("chat.loadingApiConfig")
+                      : t("chat.thinkingStrengthWithValue", {
+                          values: { value: thinkingLabel },
+                        }))
                   }
                   type="button"
                 >
@@ -845,42 +906,101 @@ export const ChatInputView = ({
                   <div
                     className={`model-dropdown thinking-dropdown drop-${thinkingDropdownDir}`}
                   >
-                    <div className="thinking-dropdown-header">
-                      <span>Thinking strength</span>
-                      <small>{requestMethod}</small>
-                    </div>
-                    <div className="model-dropdown-list">
-                      {thinkingOptions.map((option) => {
-                        const ThinkingOptionIcon = option.icon;
-
-                        return (
+                    {isCustomThinkingMode ? (
+                      <div className="model-manual-input thinking-custom-input">
+                        <div className="model-manual-header thinking-custom-header">
+                          <Keyboard size={14} />
+                          <span>{t("chat.customThinkingStrength")}</span>
+                        </div>
+                        <input
+                          autoFocus
+                          value={customThinkingValue}
+                          onChange={(event) =>
+                            setCustomThinkingValue(event.target.value)
+                          }
+                          onKeyDown={handleCustomThinkingKeyDown}
+                          placeholder={t("chat.customThinkingPlaceholder")}
+                          className="model-manual-field thinking-custom-field"
+                          maxLength={64}
+                        />
+                        <div className="model-manual-actions thinking-custom-actions">
                           <button
-                            key={option.value}
-                            className={`model-dropdown-item ${
-                              thinkingValue === option.value ? "active" : ""
-                            }`}
-                            onClick={() =>
-                              void handleSelectThinking(option.value)
+                            className="model-manual-btn thinking-custom-btn secondary"
+                            onClick={() => setIsCustomThinkingMode(false)}
+                            type="button"
+                          >
+                            {labels.cancel}
+                          </button>
+                          <button
+                            className="model-manual-btn thinking-custom-btn primary"
+                            onClick={() => void handleConfirmCustomThinking()}
+                            disabled={
+                              !customThinkingValue.trim() || isSavingThinking
                             }
                             type="button"
                           >
-                            <span className="model-dropdown-item-name with-icon">
-                              <ThinkingOptionIcon
-                                size={14}
-                                className="thinking-option-icon"
-                              />
-                              <span>{option.label}</span>
-                            </span>
-                            {thinkingValue === option.value && (
+                            {labels.confirm}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="thinking-dropdown-header">
+                          <span>{t("chat.thinkingStrength")}</span>
+                          <small>{requestMethod}</small>
+                        </div>
+                        <div className="model-dropdown-list">
+                          {thinkingOptions.map((option) => {
+                            const ThinkingOptionIcon = option.icon;
+
+                            return (
+                              <button
+                                key={option.value}
+                                className={`model-dropdown-item ${
+                                  thinkingValue === option.value ? "active" : ""
+                                }`}
+                                onClick={() =>
+                                  void handleSelectThinking(option.value)
+                                }
+                                type="button"
+                              >
+                                <span className="model-dropdown-item-name with-icon">
+                                  <ThinkingOptionIcon
+                                    size={14}
+                                    className="thinking-option-icon"
+                                  />
+                                  <span>{option.label}</span>
+                                </span>
+                                {thinkingValue === option.value && (
+                                  <Check
+                                    size={14}
+                                    className="model-dropdown-check"
+                                  />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="model-dropdown-footer">
+                          <button
+                            className={`model-dropdown-action ${
+                              isCustomThinkingValue ? "active" : ""
+                            }`}
+                            onClick={handleOpenCustomThinking}
+                            type="button"
+                          >
+                            <Keyboard size={14} />
+                            <span>{t("chat.customThinking")}</span>
+                            {isCustomThinkingValue && (
                               <Check
                                 size={14}
                                 className="model-dropdown-check"
                               />
                             )}
                           </button>
-                        );
-                      })}
-                    </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
               </div>

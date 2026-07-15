@@ -5,6 +5,8 @@ import { useI18n } from "../../i18n";
 
 export const ChatInput = ({
   placeholder,
+  projectId,
+  projectName,
   onSend,
   isStreaming = false,
   isAborting = false,
@@ -36,6 +38,8 @@ export const ChatInput = ({
   return (
     <ChatInputView
       placeholder={placeholder ?? t("chatInput.placeholder")}
+      projectId={projectId}
+      projectName={projectName}
       {...controller}
       tokenUsage={tokenUsage}
       pendingMessages={pendingMessages}

@@ -1,13 +1,22 @@
-import { Loader2, Save, X } from "lucide-react";
+import { Loader2, Save, Wrench, X } from "lucide-react";
 import { useI18n } from "../../../i18n";
+import { CustomSelect } from "../../common/CustomSelect";
 import { McpKeyValueEditor } from "./McpKeyValueEditor";
 import { McpStringListEditor } from "./McpStringListEditor";
-import type { McpServerDraft } from "./types";
+import type { McpServerDraft, McpServerTool } from "./types";
+
+const TRANSPORT_OPTIONS = [
+  { value: "stdio", label: "stdio" },
+  { value: "http", label: "http" },
+];
 
 type McpSettingsEditorProps = {
   draft: McpServerDraft;
   isBusy: boolean;
   isSaving: boolean;
+  tools?: readonly McpServerTool[];
+  isFetchingTools: boolean;
+  onFetchTools: () => void;
   onDraftChange: (patch: Partial<McpServerDraft>) => void;
   onUpdatePair: (
     group: "env" | "headers",
@@ -24,10 +33,21 @@ type McpSettingsEditorProps = {
   onSave: () => void;
 };
 
+const formatInputSchema = (inputSchemaJson: string): string => {
+  try {
+    return JSON.stringify(JSON.parse(inputSchemaJson), null, 2);
+  } catch {
+    return inputSchemaJson || "{}";
+  }
+};
+
 export function McpSettingsEditor({
   draft,
   isBusy,
   isSaving,
+  tools,
+  isFetchingTools,
+  onFetchTools,
   onDraftChange,
   onUpdatePair,
   onAddPair,
@@ -42,11 +62,13 @@ export function McpSettingsEditor({
   const isHttp = draft.transportType === "http";
 
   return (
-    <div className="api-settings-form-section">
-      <strong className="api-settings-form-section-title">
-        {t("settings.mcpEditorTitle", { defaultValue: "MCP server editor" })}
-      </strong>
-
+    <form
+      className="api-settings-form-section mcp-settings-editor-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave();
+      }}
+    >
       <div className="api-settings-form-grid">
         <label className="api-settings-field">
           <span>
@@ -61,36 +83,17 @@ export function McpSettingsEditor({
             disabled={isBusy}
           />
         </label>
-        <label className="api-settings-field">
-          <span>{t("settings.mcpScope", { defaultValue: "Scope" })}</span>
-          <select
-            value={draft.scope}
-            onChange={(event) => onDraftChange({ scope: event.target.value })}
-            disabled={isBusy}
-          >
-            <option value="global">
-              {t("settings.mcpScopeGlobal", { defaultValue: "Global" })}
-            </option>
-            <option value="project">
-              {t("settings.mcpScopeProject", { defaultValue: "Project" })}
-            </option>
-          </select>
-        </label>
-        <label className="api-settings-field">
+        <div className="api-settings-field">
           <span>
             {t("settings.mcpTransportType", { defaultValue: "Transport" })}
           </span>
-          <select
+          <CustomSelect
             value={draft.transportType}
-            onChange={(event) =>
-              onDraftChange({ transportType: event.target.value })
-            }
+            options={TRANSPORT_OPTIONS}
+            onChange={(value) => onDraftChange({ transportType: value })}
             disabled={isBusy}
-          >
-            <option value="stdio">stdio</option>
-            <option value="http">http</option>
-          </select>
-        </label>
+          />
+        </div>
         <label className="api-settings-field">
           <span>
             {t("settings.mcpTimeoutMs", { defaultValue: "Timeout (ms)" })}
@@ -181,7 +184,81 @@ export function McpSettingsEditor({
         onRemovePair={(pairId) => onRemovePair("headers", pairId)}
       />
 
-      <div className="api-settings-form-actions">
+      <div className="mcp-tool-details-section">
+        <div className="mcp-tool-details-header">
+          <div>
+            <strong>
+              {t("settings.mcpToolDetailsTitle", {
+                defaultValue: "Server tools",
+              })}
+            </strong>
+            <span>
+              {tools
+                ? t("settings.mcpToolDetailsCount", {
+                    defaultValue: "{{count}} tool(s) fetched",
+                    values: { count: tools.length },
+                  })
+                : t("settings.mcpToolDetailsNotFetched", {
+                    defaultValue: "Tool list has not been fetched",
+                  })}
+            </span>
+          </div>
+          <button
+            className="api-settings-form-btn secondary compact"
+            onClick={onFetchTools}
+            type="button"
+            disabled={
+              isBusy || isFetchingTools || !draft.serverId || !draft.enabled
+            }
+            title={
+              draft.serverId
+                ? t("settings.mcpFetchTools", { defaultValue: "Fetch tools" })
+                : t("settings.mcpSaveBeforeFetchTools", {
+                    defaultValue: "Save this server before fetching tools",
+                  })
+            }
+          >
+            {isFetchingTools ? (
+              <Loader2 size={14} className="spin" />
+            ) : (
+              <Wrench size={14} strokeWidth={1.9} />
+            )}
+            <span>
+              {t("settings.mcpFetchTools", { defaultValue: "Fetch tools" })}
+            </span>
+          </button>
+        </div>
+
+        {tools &&
+          (tools.length === 0 ? (
+            <div className="system-prompt-empty compact">
+              {t("settings.mcpToolDetailsEmpty", {
+                defaultValue: "This server did not return any tools.",
+              })}
+            </div>
+          ) : (
+            <div className="mcp-tool-details-list">
+              {tools.map((tool) => (
+                <details className="mcp-tool-detail-item" key={tool.name}>
+                  <summary>
+                    <strong>{tool.name}</strong>
+                    <span>{tool.description || "-"}</span>
+                  </summary>
+                  <div className="mcp-tool-detail-content">
+                    <span>
+                      {t("settings.mcpToolInputSchema", {
+                        defaultValue: "Input schema",
+                      })}
+                    </span>
+                    <pre>{formatInputSchema(tool.inputSchemaJson)}</pre>
+                  </div>
+                </details>
+              ))}
+            </div>
+          ))}
+      </div>
+
+      <div className="api-settings-form-actions mcp-settings-editor-actions">
         <button
           className="api-settings-form-btn secondary"
           onClick={onCancel}
@@ -193,8 +270,7 @@ export function McpSettingsEditor({
         </button>
         <button
           className="api-settings-form-btn primary"
-          onClick={onSave}
-          type="button"
+          type="submit"
           disabled={isBusy}
         >
           {isSaving ? (
@@ -207,6 +283,6 @@ export function McpSettingsEditor({
           </span>
         </button>
       </div>
-    </div>
+    </form>
   );
 }

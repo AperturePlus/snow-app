@@ -5,6 +5,8 @@ import type {
   BrowserCommandResponse,
   CheckpointFileChange,
   CheckpointFileDiff,
+  McpProjectServerStatus,
+  McpProjectToolStatus,
   McpToolDefinition,
   UserQuestionRequest,
   UserQuestionResponse,
@@ -37,6 +39,39 @@ const normalizeBashStreamChunk = (value: unknown): BashStreamChunk | null => {
 export const systemApi = {
   listMcpTools: (): Promise<McpToolDefinition[]> =>
     ipcRenderer.invoke("mcp:list-tools"),
+  listMcpServerTools: (configServerId: string): Promise<McpToolDefinition[]> =>
+    ipcRenderer.invoke("mcp:list-server-tools", configServerId),
+  listMcpProjectServers: (
+    projectId: string
+  ): Promise<McpProjectServerStatus[]> =>
+    ipcRenderer.invoke("mcp:list-project-servers", projectId),
+  listMcpProjectServerTools: (
+    projectId: string,
+    serverId: string
+  ): Promise<McpProjectToolStatus[]> =>
+    ipcRenderer.invoke("mcp:list-project-server-tools", projectId, serverId),
+  setMcpProjectServerEnabled: (
+    projectId: string,
+    serverId: string,
+    enabled: boolean
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "mcp:set-project-server-enabled",
+      projectId,
+      serverId,
+      enabled
+    ),
+  setMcpProjectToolEnabled: (
+    projectId: string,
+    toolName: string,
+    enabled: boolean
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "mcp:set-project-tool-enabled",
+      projectId,
+      toolName,
+      enabled
+    ),
   registerBrowserCommandHandler: (
     handler: (request: BrowserCommandRequest) => Promise<string>
   ): (() => void) => {
@@ -122,6 +157,7 @@ export const systemApi = {
   callMcpTool: (
     toolFullName: string,
     argsJson: string,
+    projectId?: string,
     checkpointIds?: string[],
     checkpointWorkDir?: string,
     sensitiveAuthorizationToken?: string,
@@ -147,6 +183,7 @@ export const systemApi = {
         "mcp:call-tool",
         toolFullName,
         argsJson,
+        projectId,
         checkpointIds,
         checkpointWorkDir,
         sensitiveAuthorizationToken,

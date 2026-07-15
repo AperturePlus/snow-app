@@ -1,6 +1,10 @@
-import type { McpServerConfigRecord } from "../../../../preload";
+import type {
+  McpServerConfigRecord,
+  McpToolDefinition,
+} from "../../../../preload";
 
 export type McpServerConfig = McpServerConfigRecord;
+export type McpServerTool = McpToolDefinition;
 
 export type McpKeyValuePair = {
   id: string;
@@ -15,7 +19,6 @@ export type McpStringItem = {
 
 export type McpServerDraft = {
   serverId: string;
-  scope: string;
   name: string;
   transportType: string;
   url: string;

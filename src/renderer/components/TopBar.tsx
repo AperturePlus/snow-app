@@ -173,6 +173,7 @@ export const TopBar = ({
         </div>
         <TodoPanelButton
           messages={messages}
+          projectId={conversationDirectoryId ?? activeDirectory?.directoryId}
           onOpenChange={setIsTodoPanelOpen}
         />
       </div>

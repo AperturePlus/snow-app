@@ -6,6 +6,8 @@ export type ChatInputSendOptions = {
 };
 export type ChatInputProps = {
   placeholder?: string;
+  projectId?: string;
+  projectName?: string;
   onSend?: (message: string, options: ChatInputSendOptions) => void;
   isStreaming?: boolean;
   isAborting?: boolean;
@@ -95,6 +97,8 @@ export type ChatInputActions = {
 export type ChatInputViewProps = ChatInputState &
   ChatInputActions & {
     placeholder: string;
+    projectId?: string;
+    projectName?: string;
     tokenUsage: TokenUsage | null;
     pendingMessages: string[];
     onWithdrawPendingMessage?: (index: number) => string | null;

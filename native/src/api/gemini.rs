@@ -103,7 +103,24 @@ async fn create_gemini_response_async(
     let client = reqwest::Client::builder()
         .build()
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
-    let payload = build_gemini_payload(&prepared_request.messages, &database_path, &request, &api_config)?;
+    let tools = if request.context_compaction.unwrap_or(false) {
+        None
+    } else {
+        match crate::mcp::tools::collect_all_mcp_tools(request.directory_id.as_deref()).await {
+            Ok(tools) => Some(crate::mcp::tools::tools_as_gemini_json(&tools)),
+            Err(error) => {
+                eprintln!("Failed to prepare MCP tools for Gemini: {error}");
+                None
+            }
+        }
+    };
+    let payload = build_gemini_payload(
+        &prepared_request.messages,
+        &database_path,
+        &request,
+        &api_config,
+        tools,
+    )?;
     let retry_options = RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
     let streamed_response = collect_gemini_stream(
         &client,
@@ -189,10 +206,10 @@ fn resolve_gemini_endpoint(api_config: &ApiConfigRecord, model: &str, api_key: &
 fn build_gemini_payload(
     messages: &[ChatContextMessage],
     database_path: &Path,
-    request: &ResponsesApiRequest,
+    _request: &ResponsesApiRequest,
     api_config: &ApiConfigRecord,
+    tools: Option<Value>,
 ) -> Result<Value> {
-    let _ = request;
 
     let mut system_parts = Vec::new();
     let mut contents = Vec::new();
@@ -266,13 +283,13 @@ fn build_gemini_payload(
         payload["generationConfig"] = generation_config;
     }
 
-    if !request.context_compaction.unwrap_or(false) {
-        if let Ok(tools) = crate::mcp::tools::tools_as_gemini_json() {
-            if let Some(obj) = tools.as_object() {
-                if !obj.is_empty() {
-                    payload["tools"] = json!([tools]);
-                }
-            }
+    if let Some(tools) = tools {
+        if tools
+            .get("functionDeclarations")
+            .and_then(Value::as_array)
+            .is_some_and(|items| !items.is_empty())
+        {
+            payload["tools"] = json!([tools]);
         }
     }
 

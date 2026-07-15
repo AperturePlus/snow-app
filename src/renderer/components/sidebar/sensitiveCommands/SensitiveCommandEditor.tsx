@@ -22,13 +22,7 @@ export function SensitiveCommandEditor({
   const { t } = useI18n();
 
   return (
-    <div className="api-settings-form-section">
-      <strong className="api-settings-form-section-title">
-        {t("settings.sensitiveCommandEditorTitle", {
-          defaultValue: "Sensitive command rule editor",
-        })}
-      </strong>
-
+    <>
       <div className="api-settings-form-grid">
         <label className="api-settings-field wide">
           <span>
@@ -61,7 +55,9 @@ export function SensitiveCommandEditor({
           />
         </label>
         <label className="api-settings-field">
-          <span>{t("settings.sensitiveCommandScope", { defaultValue: "Scope" })}</span>
+          <span>
+            {t("settings.sensitiveCommandScope", { defaultValue: "Scope" })}
+          </span>
           <select
             value={draft.scope}
             onChange={(event) => onDraftChange({ scope: event.target.value })}
@@ -123,6 +119,6 @@ export function SensitiveCommandEditor({
           </span>
         </button>
       </div>
-    </div>
+    </>
   );
 }

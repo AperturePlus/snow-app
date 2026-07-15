@@ -78,6 +78,76 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   );
 
   ipcMain.handle("mcp:list-tools", () => native.listMcpTools());
+  ipcMain.handle("mcp:list-server-tools", (_event, configServerId: unknown) => {
+    if (typeof configServerId !== "string" || !configServerId.trim()) {
+      throw new Error("MCP server id is required");
+    }
+
+    return native.listMcpServerTools(configServerId.trim());
+  });
+  ipcMain.handle("mcp:list-project-servers", (_event, projectId: unknown) => {
+    if (typeof projectId !== "string" || !projectId.trim()) {
+      throw new Error("Project id is required");
+    }
+
+    return native.listMcpProjectServers(projectId.trim());
+  });
+  ipcMain.handle(
+    "mcp:list-project-server-tools",
+    (_event, projectId: unknown, serverId: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      if (typeof serverId !== "string" || !serverId.trim()) {
+        throw new Error("MCP server id is required");
+      }
+
+      return native.listMcpProjectServerTools(
+        projectId.trim(),
+        serverId.trim()
+      );
+    }
+  );
+  ipcMain.handle(
+    "mcp:set-project-server-enabled",
+    (_event, projectId: unknown, serverId: unknown, enabled: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      if (typeof serverId !== "string" || !serverId.trim()) {
+        throw new Error("MCP server id is required");
+      }
+      if (typeof enabled !== "boolean") {
+        throw new Error("MCP server enabled state must be a boolean");
+      }
+
+      return native.setMcpProjectServerEnabled(
+        projectId.trim(),
+        serverId.trim(),
+        enabled
+      );
+    }
+  );
+  ipcMain.handle(
+    "mcp:set-project-tool-enabled",
+    (_event, projectId: unknown, toolName: unknown, enabled: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      if (typeof toolName !== "string" || !toolName.trim()) {
+        throw new Error("MCP tool name is required");
+      }
+      if (typeof enabled !== "boolean") {
+        throw new Error("MCP tool enabled state must be a boolean");
+      }
+
+      return native.setMcpProjectToolEnabled(
+        projectId.trim(),
+        toolName.trim(),
+        enabled
+      );
+    }
+  );
   ipcMain.handle("browser:renderer-register", (event) => {
     registerBrowserRenderer(event.sender);
   });
@@ -120,6 +190,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       event,
       toolFullName: unknown,
       argsJson: unknown,
+      projectId: unknown,
       checkpointIds: unknown,
       checkpointWorkDir: unknown,
       sensitiveAuthorizationToken: unknown,
@@ -131,6 +202,12 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       }
       if (typeof argsJson !== "string") {
         throw new Error("Arguments JSON string is required");
+      }
+      if (
+        projectId !== undefined &&
+        (typeof projectId !== "string" || !projectId.trim())
+      ) {
+        throw new Error("Project id must be a non-empty string");
       }
       if (
         checkpointIds !== undefined &&
@@ -166,6 +243,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       return native.callMcpTool(
         toolFullName.trim(),
         argsJson,
+        (projectId as string | undefined)?.trim(),
         (checkpointIds as string[] | undefined)?.map((id) => id.trim()),
         (checkpointWorkDir as string | undefined)?.trim(),
         (sensitiveAuthorizationToken as string | undefined)?.trim(),

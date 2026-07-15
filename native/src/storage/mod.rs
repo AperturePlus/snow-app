@@ -143,7 +143,6 @@ pub struct WorkspaceDirectoryRecord {
 #[napi(object)]
 pub struct McpServerConfigInput {
     pub server_id: String,
-    pub scope: String,
     pub name: String,
     pub transport_type: String,
     pub url: String,
@@ -161,7 +160,6 @@ pub struct McpServerConfigInput {
 pub struct McpServerConfigRecord {
     pub id: String,
     pub server_id: String,
-    pub scope: String,
     pub name: String,
     pub transport_type: String,
     pub url: String,

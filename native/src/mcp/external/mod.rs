@@ -1,0 +1,450 @@
+mod http;
+mod stdio;
+
+use std::collections::{HashMap, HashSet};
+
+use futures::{stream, StreamExt};
+use napi::{Error, Result};
+use serde_json::Value;
+
+use crate::storage::services::system_settings::McpProjectScopeSettings;
+use crate::storage::McpServerConfigRecord;
+
+use super::protocol::RemoteMcpTool;
+use super::tools::McpTool;
+
+const DISCOVERY_CONCURRENCY: usize = 4;
+const SERVER_NAME_MAX_LEN: usize = 18;
+const TOOL_NAME_MAX_LEN: usize = 24;
+const BUILTIN_SERVER_NAMES: &[&str] = &[
+    "filesystem",
+    "bash",
+    "todo",
+    "grep",
+    "websearch",
+    "browser",
+    "user-interaction",
+];
+
+pub struct ExternalMcpProjectServer {
+    pub config_server_id: String,
+    pub name: String,
+    pub global_enabled: bool,
+}
+
+pub fn project_scope_server_id(config_server_id: &str) -> String {
+    format!("external:{config_server_id}")
+}
+
+pub async fn discover_tools(
+    scope: Option<&McpProjectScopeSettings>,
+) -> Result<Vec<McpTool>> {
+    let configs = load_configs().await?;
+    let server_names = public_server_names(&configs);
+    let disabled_server_ids = scope
+        .map(|settings| settings.disabled_server_ids.clone())
+        .unwrap_or_default();
+    let disabled_tool_names = scope
+        .map(|settings| settings.disabled_tool_names.clone())
+        .unwrap_or_default();
+    let discoveries = stream::iter(
+        configs
+            .into_iter()
+            .filter(|config| {
+                config.enabled
+                    && !disabled_server_ids.contains(&project_scope_server_id(&config.server_id))
+            })
+            .map(|config| {
+                let server_name = server_names
+                    .get(&config.server_id)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        sanitize_name(&config.name, SERVER_NAME_MAX_LEN, "external")
+                    });
+                async move { discover_config_tools(config, server_name).await }
+            }),
+    )
+    .buffered(DISCOVERY_CONCURRENCY)
+    .collect::<Vec<_>>()
+    .await;
+
+    let mut tools = Vec::new();
+    let mut names = HashSet::new();
+    for discovered in discoveries {
+        match discovered {
+            Ok(discovered_tools) => {
+                for tool in discovered_tools {
+                    let full_name = tool.full_name();
+                    if !disabled_tool_names.contains(&full_name) && names.insert(full_name) {
+                        tools.push(tool);
+                    }
+                }
+            }
+            Err(error) => eprintln!("Failed to discover an external MCP server: {error}"),
+        }
+    }
+
+    Ok(tools)
+}
+
+pub async fn discover_project_servers() -> Result<Vec<ExternalMcpProjectServer>> {
+    let configs = load_configs().await?;
+    Ok(configs
+        .into_iter()
+        .map(|config| ExternalMcpProjectServer {
+            config_server_id: config.server_id,
+            name: config.name,
+            global_enabled: config.enabled,
+        })
+        .collect())
+}
+
+pub async fn discover_server_tools(config_server_id: &str) -> Result<Vec<McpTool>> {
+    let configs = load_configs().await?;
+    let server_names = public_server_names(&configs);
+    let config = configs
+        .into_iter()
+        .find(|config| config.server_id == config_server_id)
+        .ok_or_else(|| {
+            Error::from_reason(format!(
+                "External MCP server {config_server_id} is no longer configured"
+            ))
+        })?;
+    let server_name = server_names
+        .get(config_server_id)
+        .cloned()
+        .unwrap_or_else(|| sanitize_name(&config.name, SERVER_NAME_MAX_LEN, "external"));
+
+    discover_config_tools(config, server_name).await
+}
+
+pub async fn resolve_project_scope_server_id(tool_full_name: &str) -> Result<Option<String>> {
+    let Some((server_name, public_tool_name)) = parse_external_tool_name(tool_full_name) else {
+        return Ok(None);
+    };
+    let configs = load_configs().await?;
+    let server_names = public_server_names(&configs);
+    let Some(config) = configs.into_iter().find(|config| {
+        server_names.get(&config.server_id).map(String::as_str) == Some(server_name)
+    }) else {
+        return Ok(None);
+    };
+    if !config.enabled {
+        return Err(Error::from_reason(format!(
+            "External MCP server for tool {tool_full_name} is disabled or no longer configured"
+        )));
+    }
+
+    let project_server_id = project_scope_server_id(&config.server_id);
+    let mut client = ExternalMcpClient::connect(&config).await?;
+    let tools_result = client.list_all_tools().await;
+    client.close().await;
+    let tools = tools_result?;
+    let tool_names = public_tool_names(&tools);
+    let tool_exists = tools.iter().any(|tool| {
+        tool_names.get(&tool.name).map(String::as_str) == Some(public_tool_name)
+    });
+    if !tool_exists {
+        return Err(Error::from_reason(format!(
+            "External MCP tool {tool_full_name} is no longer available"
+        )));
+    }
+
+    Ok(Some(project_server_id))
+}
+
+pub async fn call_tool(tool_full_name: &str, arguments: &Value) -> Result<Option<Value>> {
+    let Some((server_name, public_tool_name)) = parse_external_tool_name(tool_full_name) else {
+        return Ok(None);
+    };
+
+    let configs = load_configs().await?;
+    let server_names = public_server_names(&configs);
+    let Some(config) = configs.into_iter().find(|config| {
+        server_names.get(&config.server_id).map(String::as_str) == Some(server_name)
+    }) else {
+        return Ok(None);
+    };
+    if !config.enabled {
+        return Err(Error::from_reason(format!(
+            "External MCP server for tool {tool_full_name} is disabled or no longer configured"
+        )));
+    }
+
+    let mut client = ExternalMcpClient::connect(&config).await?;
+    let result = async {
+        let tools = client.list_all_tools().await?;
+        let tool_names = public_tool_names(&tools);
+        let remote_tool = tools
+            .into_iter()
+            .find(|tool| {
+                tool_names.get(&tool.name).map(String::as_str) == Some(public_tool_name)
+            })
+            .ok_or_else(|| {
+                Error::from_reason(format!(
+                    "External MCP tool {tool_full_name} is no longer available"
+                ))
+            })?;
+        client.call_tool(&remote_tool.name, arguments).await
+    }
+    .await;
+    client.close().await;
+
+    result.map(Some)
+}
+
+async fn discover_config_tools(
+    config: McpServerConfigRecord,
+    server_name: String,
+) -> Result<Vec<McpTool>> {
+    let mut client = ExternalMcpClient::connect(&config).await?;
+    let result = client.list_all_tools().await;
+    client.close().await;
+
+    result.map(|tools| {
+        let tool_names = public_tool_names(&tools);
+        tools
+            .into_iter()
+            .map(|tool| {
+                let tool_name = tool_names
+                    .get(&tool.name)
+                    .cloned()
+                    .unwrap_or_else(|| sanitize_name(&tool.name, TOOL_NAME_MAX_LEN, "tool"));
+                to_public_tool(&config, &server_name, tool_name, tool)
+            })
+            .collect()
+    })
+}
+
+fn to_public_tool(
+    config: &McpServerConfigRecord,
+    server_name: &str,
+    tool_name: String,
+    tool: RemoteMcpTool,
+) -> McpTool {
+    let description = if tool.description.trim().is_empty() {
+        format!("External MCP tool provided by {}", config.name)
+    } else {
+        format!("[External MCP: {}] {}", config.name, tool.description)
+    };
+
+    McpTool {
+        server_id: server_name.to_string(),
+        name: tool_name,
+        description,
+        input_schema: tool.input_schema,
+    }
+}
+
+async fn load_configs() -> Result<Vec<McpServerConfigRecord>> {
+    tokio::task::spawn_blocking(|| {
+        let storage_info = crate::storage::initialize_app_storage()?;
+        let database_path = std::path::PathBuf::from(storage_info.database_path);
+        crate::storage::services::mcp_server_configs::list_mcp_server_configs(&database_path)
+    })
+    .await
+    .map_err(|error| {
+        Error::from_reason(format!(
+            "Failed to load external MCP server configs: {error}"
+        ))
+    })?
+}
+
+fn parse_external_tool_name(full_name: &str) -> Option<(&str, &str)> {
+    let mut parts = full_name.splitn(3, "__");
+    if parts.next()? != "mcp" {
+        return None;
+    }
+    let server_name = parts.next()?;
+    let tool_name = parts.next()?;
+    if server_name.is_empty()
+        || tool_name.is_empty()
+        || BUILTIN_SERVER_NAMES.contains(&server_name)
+    {
+        return None;
+    }
+    Some((server_name, tool_name))
+}
+
+fn public_server_names(configs: &[McpServerConfigRecord]) -> HashMap<String, String> {
+    let candidates = configs
+        .iter()
+        .map(|config| {
+            (
+                config.server_id.clone(),
+                sanitize_name(&config.name, SERVER_NAME_MAX_LEN, "external"),
+            )
+        })
+        .collect::<Vec<_>>();
+    assign_unique_names(candidates, BUILTIN_SERVER_NAMES)
+}
+
+fn public_tool_names(tools: &[RemoteMcpTool]) -> HashMap<String, String> {
+    let candidates = tools
+        .iter()
+        .map(|tool| {
+            (
+                tool.name.clone(),
+                sanitize_name(&tool.name, TOOL_NAME_MAX_LEN, "tool"),
+            )
+        })
+        .collect::<Vec<_>>();
+    assign_unique_names(candidates, &[])
+}
+
+fn assign_unique_names(
+    candidates: Vec<(String, String)>,
+    reserved_names: &[&str],
+) -> HashMap<String, String> {
+    let mut base_name_counts = HashMap::<String, usize>::new();
+    for (_, base_name) in &candidates {
+        *base_name_counts.entry(base_name.clone()).or_default() += 1;
+    }
+
+    let mut used_names = reserved_names
+        .iter()
+        .map(|name| (*name).to_string())
+        .collect::<HashSet<_>>();
+    let mut assigned_names = HashMap::new();
+    for (identity, base_name) in candidates {
+        let is_conflicting = base_name_counts.get(&base_name).copied().unwrap_or_default() > 1
+            || used_names.contains(&base_name);
+        let mut public_name = if is_conflicting {
+            format!("{base_name}_{}", short_hash(&identity))
+        } else {
+            base_name.clone()
+        };
+        let mut suffix = 2;
+        while used_names.contains(&public_name) {
+            public_name = format!("{base_name}_{}_{suffix}", short_hash(&identity));
+            suffix += 1;
+        }
+        used_names.insert(public_name.clone());
+        assigned_names.insert(identity, public_name);
+    }
+    assigned_names
+}
+
+fn sanitize_name(value: &str, max_len: usize, fallback: &str) -> String {
+    let mut result = String::new();
+    let mut previous_underscore = false;
+    for character in value.chars() {
+        let normalized = if character.is_ascii_alphanumeric() {
+            character.to_ascii_lowercase()
+        } else {
+            '_'
+        };
+        if normalized == '_' && previous_underscore {
+            continue;
+        }
+        result.push(normalized);
+        previous_underscore = normalized == '_';
+        if result.len() >= max_len {
+            break;
+        }
+    }
+
+    let trimmed = result.trim_matches('_');
+    if trimmed.is_empty() {
+        fallback.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn short_hash(value: &str) -> String {
+    blake3::hash(value.as_bytes()).to_hex()[..6].to_string()
+}
+
+enum ExternalMcpClient {
+    Stdio(stdio::StdioMcpClient),
+    Http(http::HttpMcpClient),
+}
+
+impl ExternalMcpClient {
+    async fn connect(config: &McpServerConfigRecord) -> Result<Self> {
+        match config.transport_type.as_str() {
+            "stdio" | "local" => stdio::StdioMcpClient::connect(config)
+                .await
+                .map(Self::Stdio),
+            "http" => http::HttpMcpClient::connect(config).await.map(Self::Http),
+            transport => Err(Error::from_reason(format!(
+                "Unsupported external MCP transport: {transport}"
+            ))),
+        }
+    }
+
+    async fn list_all_tools(&mut self) -> Result<Vec<RemoteMcpTool>> {
+        match self {
+            Self::Stdio(client) => client.list_all_tools().await,
+            Self::Http(client) => client.list_all_tools().await,
+        }
+    }
+
+    async fn call_tool(&mut self, name: &str, arguments: &Value) -> Result<Value> {
+        match self {
+            Self::Stdio(client) => client.call_tool(name, arguments).await,
+            Self::Http(client) => client.call_tool(name, arguments).await,
+        }
+    }
+
+    async fn close(self) {
+        match self {
+            Self::Stdio(client) => client.close().await,
+            Self::Http(client) => client.close().await,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn simple_names_remain_readable() {
+        let names = assign_unique_names(
+            vec![
+                ("server-1".to_string(), "context7".to_string()),
+                ("server-2".to_string(), "github".to_string()),
+            ],
+            BUILTIN_SERVER_NAMES,
+        );
+
+        assert_eq!(names.get("server-1").map(String::as_str), Some("context7"));
+        assert_eq!(names.get("server-2").map(String::as_str), Some("github"));
+        assert_eq!(
+            sanitize_name("resolve-library-id", TOOL_NAME_MAX_LEN, "tool"),
+            "resolve_library_id"
+        );
+    }
+
+    #[test]
+    fn hashes_are_only_added_for_name_conflicts() {
+        let names = assign_unique_names(
+            vec![
+                ("server-1".to_string(), "context_7".to_string()),
+                ("server-2".to_string(), "context_7".to_string()),
+                ("server-3".to_string(), "filesystem".to_string()),
+            ],
+            BUILTIN_SERVER_NAMES,
+        );
+
+        assert!(names["server-1"].starts_with("context_7_"));
+        assert!(names["server-2"].starts_with("context_7_"));
+        assert_ne!(names["server-1"], names["server-2"]);
+        assert!(names["server-3"].starts_with("filesystem_"));
+        assert!(!names.values().any(|name| name.contains("__")));
+    }
+
+    #[test]
+    fn external_names_still_use_the_three_part_mcp_format() {
+        assert_eq!(
+            parse_external_tool_name("mcp__context7__resolve_library_id"),
+            Some(("context7", "resolve_library_id"))
+        );
+        assert_eq!(
+            parse_external_tool_name("mcp__filesystem__read"),
+            None
+        );
+    }
+}

@@ -22,7 +22,6 @@ export const createMcpStringItem = (value = ""): McpStringItem => ({
 
 export const EMPTY_MCP_SERVER_DRAFT: McpServerDraft = {
   serverId: "",
-  scope: "global",
   name: "",
   transportType: "stdio",
   url: "",
@@ -101,7 +100,6 @@ export const hasDuplicatePairKey = (pairs: McpKeyValuePair[]): boolean => {
 
 export const toDraft = (server: McpServerConfig): McpServerDraft => ({
   serverId: server.serverId,
-  scope: server.scope,
   name: server.name,
   transportType: server.transportType,
   url: server.url,
@@ -119,8 +117,7 @@ export const toInput = (
   draft: McpServerDraft,
   fallbackSortOrder: number
 ): McpServerConfigInput => ({
-  serverId: draft.serverId || `${draft.scope}:${draft.name.trim()}`,
-  scope: draft.scope,
+  serverId: draft.serverId || `global:${draft.name.trim()}`,
   name: draft.name.trim(),
   transportType: draft.transportType,
   url: draft.url.trim(),
@@ -136,10 +133,3 @@ export const toInput = (
 
 export const getMcpServerEndpoint = (server: McpServerConfig): string =>
   server.transportType === "http" ? server.url : server.command;
-
-export const getMcpServerDetailCount = (server: McpServerConfig): number => {
-  const envCount = Object.keys(parseJsonObject(server.envJson)).length;
-  const headerCount = Object.keys(parseJsonObject(server.headersJson)).length;
-  const argsCount = argsFromJson(server.argsJson).length;
-  return envCount + headerCount + argsCount;
-};

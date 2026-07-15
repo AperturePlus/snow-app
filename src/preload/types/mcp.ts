@@ -3,6 +3,21 @@ export type McpToolDefinition = {
   description: string;
   inputSchemaJson: string;
 };
+
+export type McpProjectToolStatus = McpToolDefinition & {
+  enabled: boolean;
+};
+
+export type McpProjectServerStatus = {
+  id: string;
+  name: string;
+  source: "system" | "external";
+  globalEnabled: boolean;
+  enabled: boolean;
+  tools: McpProjectToolStatus[];
+  error?: string;
+};
+
 export type BashStreamChunk = {
   stream: "stdout" | "stderr";
   data: string;
@@ -35,7 +50,6 @@ export type UserQuestionResponse = {
 
 export type McpServerConfigInput = {
   serverId: string;
-  scope: string;
   name: string;
   transportType: string;
   url: string;

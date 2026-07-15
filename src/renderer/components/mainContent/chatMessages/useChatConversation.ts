@@ -1722,6 +1722,7 @@ export const useChatConversation = (
                   result = await window.snow.callMcpTool(
                     toolCall.name,
                     toolArgs,
+                    sessionDirId,
                     checkpointIds,
                     checkpointIds.length > 0 ? directoryPath : undefined,
                     sensitiveAuthorizationToken,

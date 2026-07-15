@@ -17,7 +17,6 @@ import {
 } from "./constants";
 import {
   getThinkingValueFromConfig,
-  isOptionValue,
   normalizeRequestMethod,
   toConfigUpdatePayload,
   toModelUpdatePayload,
@@ -437,25 +436,15 @@ export const useChatInputController = ({
 
   const requestMethod = normalizeRequestMethod(activeApiConfig?.requestMethod);
   const thinkingOptions = THINKING_OPTIONS_BY_METHOD[requestMethod];
-  const activeThinkingOption = useMemo(
-    () =>
-      thinkingOptions.find((option) => option.value === thinkingValue) ??
-      thinkingOptions[0] ?? {
-        value: DEFAULT_THINKING_VALUE,
-        label: "High",
-        icon: BrainCircuit,
-      },
-    [thinkingOptions, thinkingValue]
-  );
+  const activeThinkingOption = useMemo(() => {
+    const matchingOption = thinkingOptions.find(
+      (option) => option.value === thinkingValue
+    );
 
-  useEffect(() => {
-    if (thinkingOptions.length === 0) {
-      return;
-    }
-
-    if (!isOptionValue(thinkingOptions, thinkingValue)) {
-      setThinkingValue(thinkingOptions[0]?.value ?? DEFAULT_THINKING_VALUE);
-    }
+    return {
+      label: matchingOption?.label ?? thinkingValue,
+      icon: matchingOption?.icon ?? BrainCircuit,
+    };
   }, [thinkingOptions, thinkingValue]);
 
   const handleSelectThinking = useCallback(
@@ -488,13 +477,13 @@ export const useChatInputController = ({
         setThinkingError(
           error instanceof Error
             ? error.message
-            : "Failed to save thinking strength"
+            : t("chat.saveThinkingStrengthError")
         );
       } finally {
         setIsSavingThinking(false);
       }
     },
-    [activeApiConfig]
+    [activeApiConfig, t]
   );
 
   useLayoutEffect(() => {

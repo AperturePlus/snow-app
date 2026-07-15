@@ -2,6 +2,7 @@ import { Download, Loader2, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
+import { Modal } from "../common/Modal";
 import { SensitiveCommandEditor } from "./sensitiveCommands/SensitiveCommandEditor";
 import { SensitiveCommandList } from "./sensitiveCommands/SensitiveCommandList";
 import { SensitiveCommandSummary } from "./sensitiveCommands/SensitiveCommandSummary";
@@ -324,17 +325,6 @@ export function SensitiveCommandsPanel({
         </div>
 
         <div className="api-settings-form-body">
-          {draft && (
-            <SensitiveCommandEditor
-              draft={draft}
-              isBusy={isBusy}
-              isSaving={isSaving}
-              onDraftChange={patchDraft}
-              onCancel={cancelDraft}
-              onSave={() => void saveDraft()}
-            />
-          )}
-
           <SensitiveCommandList
             commands={commands}
             isBusy={isBusy}
@@ -344,6 +334,33 @@ export function SensitiveCommandsPanel({
           />
         </div>
       </div>
+
+      <Modal
+        open={Boolean(draft)}
+        title={t("settings.sensitiveCommandEditorTitle", {
+          defaultValue: "Sensitive command rule editor",
+        })}
+        description={
+          draft?.pattern ||
+          t("settings.sensitiveCommandAddNew", { defaultValue: "Add rule" })
+        }
+        closeLabel={t("settings.cancel", { defaultValue: "Cancel" })}
+        onClose={cancelDraft}
+        closeDisabled={isBusy}
+        size="large"
+        className="sensitive-command-editor-modal"
+      >
+        {draft && (
+          <SensitiveCommandEditor
+            draft={draft}
+            isBusy={isBusy}
+            isSaving={isSaving}
+            onDraftChange={patchDraft}
+            onCancel={cancelDraft}
+            onSave={() => void saveDraft()}
+          />
+        )}
+      </Modal>
     </div>
   );
 }

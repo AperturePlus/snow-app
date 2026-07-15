@@ -133,7 +133,6 @@ export type FileContentResult = {
 
 export type McpServerConfigInput = {
   serverId: string;
-  scope: string;
   name: string;
   transportType: string;
   url: string;
@@ -272,6 +271,21 @@ export type McpToolDefinition = {
   description: string;
   inputSchemaJson: string;
 };
+
+export type McpProjectToolStatus = McpToolDefinition & {
+  enabled: boolean;
+};
+
+export type McpProjectServerStatus = {
+  id: string;
+  name: string;
+  source: "system" | "external";
+  globalEnabled: boolean;
+  enabled: boolean;
+  tools: McpProjectToolStatus[];
+  error?: string;
+};
+
 export type BashStreamChunk = {
   stream: "stdout" | "stderr";
   data: string;
@@ -480,10 +494,29 @@ export type NativeBridge = {
   ) => Promise<ResponsesApiResult>;
   abortResponseStream: (streamId: string) => boolean;
   listMcpTools: () => Promise<McpToolDefinition[]>;
+  listMcpServerTools: (configServerId: string) => Promise<McpToolDefinition[]>;
+  listMcpProjectServers: (
+    projectId: string
+  ) => Promise<McpProjectServerStatus[]>;
+  listMcpProjectServerTools: (
+    projectId: string,
+    serverId: string
+  ) => Promise<McpProjectToolStatus[]>;
+  setMcpProjectServerEnabled: (
+    projectId: string,
+    serverId: string,
+    enabled: boolean
+  ) => Promise<void>;
+  setMcpProjectToolEnabled: (
+    projectId: string,
+    toolName: string,
+    enabled: boolean
+  ) => Promise<void>;
   authorizeSensitiveCommand: (command: string, token: string) => Promise<void>;
   callMcpTool: (
     toolFullName: string,
     argsJson: string,
+    projectId: string | undefined,
     checkpointIds: string[] | undefined,
     checkpointWorkDir: string | undefined,
     sensitiveAuthorizationToken: string | undefined,

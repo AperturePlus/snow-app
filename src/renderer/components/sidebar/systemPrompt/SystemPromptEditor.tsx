@@ -24,12 +24,7 @@ export function SystemPromptEditor({
   const { t } = useI18n();
 
   return (
-    <div className="api-settings-form-section">
-      <strong className="api-settings-form-section-title">
-        {t("settings.systemPromptEditorTitle", {
-          defaultValue: "Prompt editor",
-        })}
-      </strong>
+    <>
       <div className="api-settings-form-grid">
         <label className="api-settings-field">
           <span>
@@ -92,6 +87,6 @@ export function SystemPromptEditor({
           </span>
         </button>
       </div>
-    </div>
+    </>
   );
 }

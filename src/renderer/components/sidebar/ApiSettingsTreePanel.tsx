@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
+import { Modal } from "../common/Modal";
 import { useI18n } from "../../i18n";
 import type { ApiConfigRecord } from "../../../preload";
 import { ApiSettingsActions } from "./apiSettings/ApiSettingsActions";
@@ -370,47 +371,6 @@ export function ApiSettingsTreePanel({
         onToggleAddForm={toggleAddForm}
       />
 
-      {showAddForm && (
-        <ApiSettingsFormPanel
-          title={t("settings.apiManualFormTitle", {
-            defaultValue: "Manual API profile",
-          })}
-          info={t("settings.apiManualFormInfo", {
-            defaultValue: "Add a provider without importing Snow CLI profiles.",
-          })}
-          data={addForm}
-          isSaving={isSaving}
-          isNew
-          onChange={onFieldChange("add")}
-          onCancel={toggleAddForm}
-          onSave={() => void handleAddSubmit()}
-          saveLabel={t("settings.saveApiConfig", {
-            defaultValue: "Save API profile",
-          })}
-          asForm
-        />
-      )}
-
-      {editingProfileName && editForm && (
-        <ApiSettingsFormPanel
-          title={`${t("settings.apiEditTitle", {
-            defaultValue: "Edit profile",
-          })}: ${editForm.profileName}`}
-          info={t("settings.apiEditInfo", {
-            defaultValue: "Leave API key blank to keep the existing value.",
-          })}
-          data={editForm}
-          isSaving={isSaving}
-          isNew={false}
-          onChange={onFieldChange("edit")}
-          onCancel={handleCancelEdit}
-          onSave={() => void handleSaveEdit()}
-          saveLabel={t("settings.saveApiConfig", {
-            defaultValue: "Save API profile",
-          })}
-        />
-      )}
-
       <AutoDismissNotice
         message={error || status}
         tone={error ? "error" : "success"}
@@ -429,6 +389,63 @@ export function ApiSettingsTreePanel({
         }
         onToggleActive={(config) => void handleToggleActive(config)}
       />
+
+      <Modal
+        open={showAddForm}
+        title={t("settings.apiManualFormTitle", {
+          defaultValue: "Manual API profile",
+        })}
+        description={t("settings.apiManualFormInfo", {
+          defaultValue: "Add a provider without importing Snow CLI profiles.",
+        })}
+        closeLabel={t("settings.cancel", { defaultValue: "Cancel" })}
+        onClose={toggleAddForm}
+        closeDisabled={isBusy}
+        size="large"
+        className="api-settings-editor-modal"
+      >
+        <ApiSettingsFormPanel
+          data={addForm}
+          isSaving={isSaving}
+          isNew
+          onChange={onFieldChange("add")}
+          onCancel={toggleAddForm}
+          onSave={() => void handleAddSubmit()}
+          saveLabel={t("settings.saveApiConfig", {
+            defaultValue: "Save API profile",
+          })}
+          asForm
+        />
+      </Modal>
+
+      <Modal
+        open={Boolean(editingProfileName && editForm)}
+        title={`${t("settings.apiEditTitle", {
+          defaultValue: "Edit profile",
+        })}: ${editForm?.profileName ?? ""}`}
+        description={t("settings.apiEditInfo", {
+          defaultValue: "Leave API key blank to keep the existing value.",
+        })}
+        closeLabel={t("settings.cancel", { defaultValue: "Cancel" })}
+        onClose={handleCancelEdit}
+        closeDisabled={isBusy}
+        size="large"
+        className="api-settings-editor-modal"
+      >
+        {editForm && (
+          <ApiSettingsFormPanel
+            data={editForm}
+            isSaving={isSaving}
+            isNew={false}
+            onChange={onFieldChange("edit")}
+            onCancel={handleCancelEdit}
+            onSave={() => void handleSaveEdit()}
+            saveLabel={t("settings.saveApiConfig", {
+              defaultValue: "Save API profile",
+            })}
+          />
+        )}
+      </Modal>
     </div>
   );
 }

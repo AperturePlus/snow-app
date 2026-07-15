@@ -1,9 +1,6 @@
 import type { ApiConfigRecord } from "../../../../preload";
-import {
-  DEFAULT_THINKING_VALUE,
-  THINKING_OPTIONS_BY_METHOD,
-} from "./constants";
-import type { RequestMethod, ThinkingOption } from "./types";
+import { DEFAULT_THINKING_VALUE } from "./constants";
+import type { RequestMethod } from "./types";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -41,14 +38,7 @@ const readNestedBoolean = (
   return typeof value === "boolean" ? value : undefined;
 };
 
-export const isOptionValue = (
-  options: ThinkingOption[],
-  value: string | undefined
-): value is string =>
-  typeof value === "string" && options.some((option) => option.value === value);
-
 const resolveThinkingValue = (
-  options: ThinkingOption[],
   thinkingConfig: Record<string, unknown>,
   valueKey: string
 ): string => {
@@ -56,10 +46,8 @@ const resolveThinkingValue = (
     return "none";
   }
 
-  const configuredValue = readNestedString(thinkingConfig, valueKey);
-  return isOptionValue(options, configuredValue)
-    ? configuredValue
-    : DEFAULT_THINKING_VALUE;
+  const configuredValue = readNestedString(thinkingConfig, valueKey)?.trim();
+  return configuredValue || DEFAULT_THINKING_VALUE;
 };
 
 export const getThinkingValueFromConfig = (config: ApiConfigRecord): string => {
@@ -68,31 +56,29 @@ export const getThinkingValueFromConfig = (config: ApiConfigRecord): string => {
   const requestMethod = normalizeRequestMethod(
     config.requestMethod || snowcfg.requestMethod
   );
-  const options = THINKING_OPTIONS_BY_METHOD[requestMethod];
-
   if (requestMethod === "anthropic") {
     const thinking = isRecord(snowcfg.thinking) ? snowcfg.thinking : {};
-    return resolveThinkingValue(options, thinking, "effort");
+    return resolveThinkingValue(thinking, "effort");
   }
 
   if (requestMethod === "gemini") {
     const geminiThinking = isRecord(snowcfg.geminiThinking)
       ? snowcfg.geminiThinking
       : {};
-    return resolveThinkingValue(options, geminiThinking, "thinkingLevel");
+    return resolveThinkingValue(geminiThinking, "thinkingLevel");
   }
 
   if (requestMethod === "responses") {
     const responsesReasoning = isRecord(snowcfg.responsesReasoning)
       ? snowcfg.responsesReasoning
       : {};
-    return resolveThinkingValue(options, responsesReasoning, "effort");
+    return resolveThinkingValue(responsesReasoning, "effort");
   }
 
   const chatThinking = isRecord(snowcfg.chatThinking)
     ? snowcfg.chatThinking
     : {};
-  return resolveThinkingValue(options, chatThinking, "reasoning_effort");
+  return resolveThinkingValue(chatThinking, "reasoning_effort");
 };
 
 const buildConfigJsonWithThinking = (

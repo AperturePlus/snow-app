@@ -32,12 +32,7 @@ export function CustomHeadersEditor({
   const { t } = useI18n();
 
   return (
-    <div className="api-settings-form-section">
-      <strong className="api-settings-form-section-title">
-        {t("settings.customHeadersEditorTitle", {
-          defaultValue: "Scheme editor",
-        })}
-      </strong>
+    <>
       <div className="api-settings-form-grid">
         <label className="api-settings-field wide">
           <span>
@@ -94,7 +89,7 @@ export function CustomHeadersEditor({
               />
             </label>
             <button
-              className="icon-btn ghost custom-headers-remove-btn"
+              className="icon-btn ghost danger custom-headers-remove-btn"
               onClick={() => onRemoveHeaderPair(pair.id)}
               type="button"
               aria-label={t("settings.customHeadersRemoveHeader", {
@@ -152,6 +147,6 @@ export function CustomHeadersEditor({
           </span>
         </button>
       </div>
-    </div>
+    </>
   );
 }

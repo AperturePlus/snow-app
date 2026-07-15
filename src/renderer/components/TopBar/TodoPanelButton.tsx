@@ -14,9 +14,9 @@ import type {
   TodoItem,
   TodoStatus,
 } from "../mainContent/chatMessages/useTodoPanel";
-
 type TodoPanelButtonProps = {
   messages: ChatConversationMessage[];
+  projectId?: string;
   onOpenChange?: (open: boolean) => void;
 };
 
@@ -58,6 +58,7 @@ const parseTodos = (result: string): TodoItem[] | null => {
 
 export const TodoPanelButton = ({
   messages,
+  projectId,
   onOpenChange,
 }: TodoPanelButtonProps): React.JSX.Element | null => {
   const { t } = useI18n();
@@ -94,6 +95,7 @@ export const TodoPanelButton = ({
       .callMcpTool(
         "mcp__todo__todo-manage",
         JSON.stringify({ action: "get", sessionId }),
+        projectId,
         undefined,
         undefined,
         undefined
@@ -113,7 +115,7 @@ export const TodoPanelButton = ({
     return () => {
       cancelled = true;
     };
-  }, [messages, sessionId]);
+  }, [messages, projectId, sessionId]);
 
   useEffect(() => {
     onOpenChange?.(isOpen);
@@ -151,6 +153,7 @@ export const TodoPanelButton = ({
         const result = await window.snow.callMcpTool(
           "mcp__todo__todo-manage",
           JSON.stringify({ action: "delete", sessionId, todoId: todoIds }),
+          projectId,
           undefined,
           undefined,
           undefined
@@ -166,7 +169,7 @@ export const TodoPanelButton = ({
         setIsDeleting(false);
       }
     },
-    [sessionId]
+    [projectId, sessionId]
   );
 
   const toggleTodoSelection = (todoId: string): void => {

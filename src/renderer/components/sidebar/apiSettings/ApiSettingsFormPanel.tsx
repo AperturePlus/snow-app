@@ -4,8 +4,6 @@ import { ApiSettingsFormFields } from "./ApiSettingsFormFields";
 import type { ApiConfigFormData } from "./types";
 
 type ApiSettingsFormPanelProps = {
-  title: string;
-  info: string;
   data: ApiConfigFormData;
   isSaving: boolean;
   isNew: boolean;
@@ -17,8 +15,6 @@ type ApiSettingsFormPanelProps = {
 };
 
 export function ApiSettingsFormPanel({
-  title,
-  info,
   data,
   isSaving,
   isNew,
@@ -31,10 +27,6 @@ export function ApiSettingsFormPanel({
   const { t } = useI18n();
   const content = (
     <>
-      <div className="api-settings-manual-header">
-        <strong>{title}</strong>
-        <span>{info}</span>
-      </div>
       <ApiSettingsFormFields
         data={data}
         onChange={onChange}
@@ -71,7 +63,6 @@ export function ApiSettingsFormPanel({
   if (asForm) {
     return (
       <form
-        className="api-settings-manual-form"
         onSubmit={(event) => {
           event.preventDefault();
           onSave();
@@ -82,5 +73,5 @@ export function ApiSettingsFormPanel({
     );
   }
 
-  return <div className="api-settings-edit-panel">{content}</div>;
+  return content;
 }

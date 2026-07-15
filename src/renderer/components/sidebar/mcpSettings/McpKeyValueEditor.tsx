@@ -71,7 +71,7 @@ export function McpKeyValueEditor({
                 />
               </label>
               <button
-                className="icon-btn ghost custom-headers-remove-btn"
+                className="icon-btn ghost danger custom-headers-remove-btn"
                 onClick={() => onRemovePair(pair.id)}
                 type="button"
                 aria-label={t("settings.remove", { defaultValue: "Remove" })}

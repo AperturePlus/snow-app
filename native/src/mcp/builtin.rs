@@ -39,11 +39,19 @@ pub fn builtin_services() -> HashMap<String, Arc<dyn McpService>> {
         .collect()
 }
 
-/// 返回所有内置服务的工具定义，保持与注册列表一致的固定顺序。
-pub fn get_builtin_tools() -> Vec<McpTool> {
+/// 返回所有内置服务及其工具定义，保持与注册列表一致的固定顺序。
+pub fn get_builtin_servers_with_tools() -> Vec<(String, Vec<McpTool>)> {
     builtin_services_in_order()
         .into_iter()
-        .flat_map(|service| service.tools())
+        .map(|service| (service.id().to_string(), service.tools()))
+        .collect()
+}
+
+/// 返回所有内置服务的工具定义，保持与注册列表一致的固定顺序。
+pub fn get_builtin_tools() -> Vec<McpTool> {
+    get_builtin_servers_with_tools()
+        .into_iter()
+        .flat_map(|(_, tools)| tools)
         .collect()
 }
 

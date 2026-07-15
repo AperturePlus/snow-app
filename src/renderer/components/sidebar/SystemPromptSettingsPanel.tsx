@@ -1,6 +1,7 @@
 import { Download, Loader2, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
+import { Modal } from "../common/Modal";
 import { useI18n } from "../../i18n";
 import { SystemPromptEditor } from "./systemPrompt/SystemPromptEditor";
 import { SystemPromptList } from "./systemPrompt/SystemPromptList";
@@ -122,14 +123,20 @@ export function SystemPromptSettingsPanel({
         (max, prompt) => Math.max(max, prompt.sortOrder),
         -1
       );
-      const existing = prompts.find((prompt) => prompt.promptId === draft.promptId);
+      const existing = prompts.find(
+        (prompt) => prompt.promptId === draft.promptId
+      );
 
       await window.snow.upsertSystemPrompt({
         promptId: draft.promptId || String(Date.now()),
         name,
         content: draft.content,
-        isActive: isExisting ? existing?.isActive ?? false : prompts.length === 0,
-        sortOrder: isExisting ? existing?.sortOrder ?? maxSortOrder + 1 : maxSortOrder + 1,
+        isActive: isExisting
+          ? existing?.isActive ?? false
+          : prompts.length === 0,
+        sortOrder: isExisting
+          ? existing?.sortOrder ?? maxSortOrder + 1
+          : maxSortOrder + 1,
       });
 
       await load();
@@ -295,23 +302,6 @@ export function SystemPromptSettingsPanel({
         </div>
 
         <div className="api-settings-form-body">
-          {draft && (
-            <SystemPromptEditor
-              draft={draft}
-              isBusy={isBusy}
-              isSaving={isSaving}
-              onNameChange={(name) =>
-                setDraft((previous) => (previous ? { ...previous, name } : null))
-              }
-              onContentChange={(content) =>
-                setDraft((previous) =>
-                  previous ? { ...previous, content } : null
-                )
-              }
-              onCancel={cancelDraft}
-              onSave={() => void saveDraft()}
-            />
-          )}
           <SystemPromptList
             prompts={prompts}
             isBusy={isBusy}
@@ -321,6 +311,40 @@ export function SystemPromptSettingsPanel({
           />
         </div>
       </div>
+
+      <Modal
+        open={Boolean(draft)}
+        title={t("settings.systemPromptEditorTitle", {
+          defaultValue: "Prompt editor",
+        })}
+        description={
+          draft?.name ||
+          t("settings.systemPromptAddNew", { defaultValue: "Add prompt" })
+        }
+        closeLabel={t("settings.cancel", { defaultValue: "Cancel" })}
+        onClose={cancelDraft}
+        closeDisabled={isBusy}
+        size="large"
+        className="system-prompt-editor-modal"
+      >
+        {draft && (
+          <SystemPromptEditor
+            draft={draft}
+            isBusy={isBusy}
+            isSaving={isSaving}
+            onNameChange={(name) =>
+              setDraft((previous) => (previous ? { ...previous, name } : null))
+            }
+            onContentChange={(content) =>
+              setDraft((previous) =>
+                previous ? { ...previous, content } : null
+              )
+            }
+            onCancel={cancelDraft}
+            onSave={() => void saveDraft()}
+          />
+        )}
+      </Modal>
     </div>
   );
 }

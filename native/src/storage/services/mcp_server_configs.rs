@@ -33,7 +33,6 @@ fn query_mcp_server_configs(
     let mut statement = connection.prepare(
         "SELECT id,
                 server_id,
-                scope,
                 name,
                 transport_type,
                 url,
@@ -47,28 +46,27 @@ fn query_mcp_server_configs(
                 source,
                 updated_at
            FROM mcp_server_configs
-          ORDER BY scope ASC, sort_order ASC, id ASC",
+          ORDER BY sort_order ASC, id ASC",
     )?;
 
     let rows = statement.query_map([], |row| {
-        let enabled: i64 = row.get(10)?;
+        let enabled: i64 = row.get(9)?;
 
         Ok(McpServerConfigRecord {
             id: row.get(0)?,
             server_id: row.get(1)?,
-            scope: row.get(2)?,
-            name: row.get(3)?,
-            transport_type: row.get(4)?,
-            url: row.get(5)?,
-            command: row.get(6)?,
-            args_json: row.get(7)?,
-            env_json: row.get(8)?,
-            headers_json: row.get(9)?,
+            name: row.get(2)?,
+            transport_type: row.get(3)?,
+            url: row.get(4)?,
+            command: row.get(5)?,
+            args_json: row.get(6)?,
+            env_json: row.get(7)?,
+            headers_json: row.get(8)?,
             enabled: enabled != 0,
-            timeout_ms: row.get(11)?,
-            sort_order: row.get(12)?,
-            source: row.get(13)?,
-            updated_at: row.get(14)?,
+            timeout_ms: row.get(10)?,
+            sort_order: row.get(11)?,
+            source: row.get(12)?,
+            updated_at: row.get(13)?,
         })
     })?;
 
@@ -83,7 +81,6 @@ fn upsert_mcp_server_config_with_connection(
         "INSERT INTO mcp_server_configs (
            id,
            server_id,
-           scope,
            name,
            transport_type,
            url,
@@ -98,10 +95,9 @@ fn upsert_mcp_server_config_with_connection(
            created_at,
            updated_at
          ) VALUES (
-           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, datetime('now'), datetime('now')
+           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, datetime('now'), datetime('now')
          )
          ON CONFLICT(server_id) DO UPDATE SET
-           scope = excluded.scope,
            name = excluded.name,
            transport_type = excluded.transport_type,
            url = excluded.url,
@@ -117,7 +113,6 @@ fn upsert_mcp_server_config_with_connection(
         params![
             database::create_snowflake_id(),
             item.server_id,
-            item.scope,
             item.name,
             item.transport_type,
             item.url,

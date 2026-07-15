@@ -52,13 +52,15 @@ export function McpStringListEditor({
                 <span>{itemLabel}</span>
                 <input
                   value={item.value}
-                  onChange={(event) => onUpdateItem(item.id, event.target.value)}
+                  onChange={(event) =>
+                    onUpdateItem(item.id, event.target.value)
+                  }
                   placeholder={valuePlaceholder}
                   disabled={isBusy}
                 />
               </label>
               <button
-                className="icon-btn ghost custom-headers-remove-btn"
+                className="icon-btn ghost danger custom-headers-remove-btn"
                 onClick={() => onRemoveItem(item.id)}
                 type="button"
                 aria-label={t("settings.remove", { defaultValue: "Remove" })}

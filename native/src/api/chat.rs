@@ -88,7 +88,24 @@ async fn create_chat_completion_response_async(
     let client = reqwest::Client::builder()
         .build()
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
-    let payload = build_chat_completions_payload(&prepared_request.messages, &database_path, &request, &api_config)?;
+    let tools = if request.context_compaction.unwrap_or(false) {
+        None
+    } else {
+        match crate::mcp::tools::collect_all_mcp_tools(request.directory_id.as_deref()).await {
+            Ok(tools) => Some(crate::mcp::tools::tools_as_openai_chat_json(&tools)),
+            Err(error) => {
+                eprintln!("Failed to prepare MCP tools for OpenAI Chat: {error}");
+                None
+            }
+        }
+    };
+    let payload = build_chat_completions_payload(
+        &prepared_request.messages,
+        &database_path,
+        &request,
+        &api_config,
+        tools,
+    )?;
     let retry_options = RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
     let streamed_response = collect_chat_completions_stream(
         &client,
@@ -161,6 +178,7 @@ fn build_chat_completions_payload(
     database_path: &Path,
     request: &ResponsesApiRequest,
     api_config: &ApiConfigRecord,
+    tools: Option<Value>,
 ) -> Result<Value> {
     let model = request
         .model
@@ -233,11 +251,9 @@ fn build_chat_completions_payload(
         payload["reasoning_effort"] = json!(reasoning_effort);
     }
 
-    if !request.context_compaction.unwrap_or(false) {
-        if let Ok(tools) = crate::mcp::tools::tools_as_openai_chat_json() {
-            if tools.as_array().is_some_and(|arr| !arr.is_empty()) {
-                payload["tools"] = tools;
-            }
+    if let Some(tools) = tools {
+        if tools.as_array().is_some_and(|items| !items.is_empty()) {
+            payload["tools"] = tools;
         }
     }
 

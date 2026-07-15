@@ -325,6 +325,8 @@ const ChatContentBody = ({
       </div>
 
       <ChatInput
+        projectId={activeDirectory?.directoryId}
+        projectName={activeDirectory?.name}
         onSend={handleSendWithScroll}
         isStreaming={isStreaming}
         isAborting={isAborting}

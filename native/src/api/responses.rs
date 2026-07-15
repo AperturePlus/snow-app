@@ -160,7 +160,24 @@ async fn create_response_async(
     }
 
     let client = build_openai_client(&base_url, api_key, &effective_headers)?;
-    let payload = build_responses_payload(&prepared_request.messages, &database_path, &request, &api_config)?;
+    let tools = if request.context_compaction.unwrap_or(false) {
+        None
+    } else {
+        match crate::mcp::tools::collect_all_mcp_tools(request.directory_id.as_deref()).await {
+            Ok(tools) => Some(crate::mcp::tools::tools_as_openai_responses_json(&tools)),
+            Err(error) => {
+                eprintln!("Failed to prepare MCP tools for OpenAI Responses: {error}");
+                None
+            }
+        }
+    };
+    let payload = build_responses_payload(
+        &prepared_request.messages,
+        &database_path,
+        &request,
+        &api_config,
+        tools,
+    )?;
     let retry_options = RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
     let streamed_response = collect_streaming_response(&client, payload, on_chunk, &cancel_token, &retry_options).await?;
     let raw_response_json = serde_json::to_string(&streamed_response.raw_events)
@@ -258,6 +275,7 @@ fn build_responses_payload(
     database_path: &Path,
     request: &ResponsesApiRequest,
     api_config: &ApiConfigRecord,
+    tools: Option<Value>,
 ) -> Result<Value> {
     let model = request
         .model
@@ -329,11 +347,9 @@ fn build_responses_payload(
         payload["reasoning"] = reasoning;
     }
 
-    if !request.context_compaction.unwrap_or(false) {
-        if let Ok(tools) = crate::mcp::tools::tools_as_openai_responses_json() {
-            if tools.as_array().is_some_and(|arr| !arr.is_empty()) {
-                payload["tools"] = tools;
-            }
+    if let Some(tools) = tools {
+        if tools.as_array().is_some_and(|items| !items.is_empty()) {
+            payload["tools"] = tools;
         }
     }
 

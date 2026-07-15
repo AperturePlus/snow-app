@@ -1,15 +1,15 @@
-import { Pencil, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Trash2, Wrench } from "lucide-react";
 import { useI18n } from "../../../i18n";
-import {
-  getMcpServerDetailCount,
-  getMcpServerEndpoint,
-} from "./mcpSettingsUtils";
-import type { McpServerConfig } from "./types";
+import { getMcpServerEndpoint } from "./mcpSettingsUtils";
+import type { McpServerConfig, McpServerTool } from "./types";
 
 type McpSettingsListProps = {
   servers: McpServerConfig[];
   isBusy: boolean;
+  toolsByServerId: Readonly<Record<string, readonly McpServerTool[]>>;
+  fetchingToolServerIds: ReadonlySet<string>;
   onToggleEnabled: (server: McpServerConfig) => void;
+  onFetchTools: (server: McpServerConfig) => void;
   onEdit: (server: McpServerConfig) => void;
   onDelete: (server: McpServerConfig) => void;
 };
@@ -17,7 +17,10 @@ type McpSettingsListProps = {
 export function McpSettingsList({
   servers,
   isBusy,
+  toolsByServerId,
+  fetchingToolServerIds,
   onToggleEnabled,
+  onFetchTools,
   onEdit,
   onDelete,
 }: McpSettingsListProps): React.JSX.Element {
@@ -47,6 +50,14 @@ export function McpSettingsList({
             const activeStateLabel = server.enabled
               ? t("settings.active", { defaultValue: "Active" })
               : t("settings.inactive", { defaultValue: "Inactive" });
+            const isFetchingTools = fetchingToolServerIds.has(server.serverId);
+            const tools = toolsByServerId[server.serverId];
+            const toolCount = tools?.length;
+            const fetchToolsLabel = server.enabled
+              ? t("settings.mcpFetchTools", { defaultValue: "Fetch tools" })
+              : t("settings.mcpEnableBeforeFetchTools", {
+                  defaultValue: "Enable this server before fetching tools",
+                });
 
             return (
               <div
@@ -74,15 +85,27 @@ export function McpSettingsList({
                   <div className="system-prompt-item-info">
                     <strong>{server.name}</strong>
                     <span>
-                      {server.scope} · {server.transportType} ·{" "}
+                      {server.transportType} ·{" "}
                       {getMcpServerEndpoint(server) || "-"}
                     </span>
                   </div>
                 </div>
                 <div className="system-prompt-item-actions">
-                  <span className="custom-headers-count-badge">
-                    {getMcpServerDetailCount(server)}
-                  </span>
+                  <button
+                    className="mcp-tools-count-button"
+                    onClick={() => onFetchTools(server)}
+                    type="button"
+                    aria-label={fetchToolsLabel}
+                    title={fetchToolsLabel}
+                    disabled={isBusy || isFetchingTools || !server.enabled}
+                  >
+                    {isFetchingTools ? (
+                      <Loader2 size={13} className="spin" />
+                    ) : (
+                      <Wrench size={13} strokeWidth={1.9} />
+                    )}
+                    <span>{toolCount ?? "-"}</span>
+                  </button>
                   <button
                     className="icon-btn ghost"
                     onClick={() => onEdit(server)}
