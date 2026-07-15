@@ -80,14 +80,13 @@ pub fn upsert_sensitive_command_config(
 pub fn delete_sensitive_command_config(
     database_path: &Path,
     command_id: &str,
-    scope: &str,
 ) -> Result<()> {
     Connection::open(database_path)
         .and_then(|connection| {
             connection.execute(
                 "DELETE FROM sensitive_command_configs
-                  WHERE command_id = ?1 AND scope = ?2 AND is_preset = 0",
-                params![command_id, scope],
+                  WHERE command_id = ?1 AND is_preset = 0",
+                params![command_id],
             )?;
             Ok(())
         })
@@ -100,7 +99,6 @@ fn seed_defaults_with_connection(connection: &Connection) -> rusqlite::Result<()
             "INSERT OR IGNORE INTO sensitive_command_configs (
                id,
                command_id,
-               scope,
                pattern,
                description,
                enabled,
@@ -109,7 +107,7 @@ fn seed_defaults_with_connection(connection: &Connection) -> rusqlite::Result<()
                source,
                created_at,
                updated_at
-             ) VALUES (?1, ?2, 'global', ?3, ?4, ?5, 1, ?6, 'preset', datetime('now'), datetime('now'))",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, 'preset', datetime('now'), datetime('now'))",
             params![
                 database::create_snowflake_id(),
                 command.command_id,
@@ -130,7 +128,6 @@ fn query_sensitive_command_configs(
     let mut statement = connection.prepare(
         "SELECT id,
                 command_id,
-                scope,
                 pattern,
                 description,
                 enabled,
@@ -139,24 +136,23 @@ fn query_sensitive_command_configs(
                 source,
                 updated_at
            FROM sensitive_command_configs
-          ORDER BY scope ASC, is_preset DESC, sort_order ASC, id ASC",
+          ORDER BY is_preset DESC, sort_order ASC, id ASC",
     )?;
 
     let rows = statement.query_map([], |row| {
-        let enabled: i64 = row.get(5)?;
-        let is_preset: i64 = row.get(6)?;
+        let enabled: i64 = row.get(4)?;
+        let is_preset: i64 = row.get(5)?;
 
         Ok(SensitiveCommandConfigRecord {
             id: row.get(0)?,
             command_id: row.get(1)?,
-            scope: row.get(2)?,
-            pattern: row.get(3)?,
-            description: row.get(4)?,
+            pattern: row.get(2)?,
+            description: row.get(3)?,
             enabled: enabled != 0,
             is_preset: is_preset != 0,
-            sort_order: row.get(7)?,
-            source: row.get(8)?,
-            updated_at: row.get(9)?,
+            sort_order: row.get(6)?,
+            source: row.get(7)?,
+            updated_at: row.get(8)?,
         })
     })?;
 
@@ -171,7 +167,6 @@ fn upsert_sensitive_command_config_with_connection(
         "INSERT INTO sensitive_command_configs (
            id,
            command_id,
-           scope,
            pattern,
            description,
            enabled,
@@ -180,8 +175,8 @@ fn upsert_sensitive_command_config_with_connection(
            source,
            created_at,
            updated_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, datetime('now'), datetime('now'))
-         ON CONFLICT(scope, command_id) DO UPDATE SET
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, datetime('now'), datetime('now'))
+         ON CONFLICT(command_id) DO UPDATE SET
            pattern = excluded.pattern,
            description = excluded.description,
            enabled = excluded.enabled,
@@ -192,7 +187,6 @@ fn upsert_sensitive_command_config_with_connection(
         params![
             database::create_snowflake_id(),
             item.command_id,
-            item.scope,
             item.pattern,
             item.description,
             item.enabled as i32,

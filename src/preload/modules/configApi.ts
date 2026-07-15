@@ -4,6 +4,8 @@ import type {
   CustomHeaderSchemeRecord,
   McpServerConfigInput,
   McpServerConfigRecord,
+  ProjectSensitiveCommandConfigInput,
+  ProjectSensitiveCommandConfigRecord,
   SensitiveCommandConfigInput,
   SensitiveCommandConfigRecord,
   SystemPromptItemInput,
@@ -48,20 +50,58 @@ export const configApi = {
   ): Promise<SensitiveCommandConfigRecord[]> =>
     ipcRenderer.invoke("sensitive-command-configs:upsert", item),
   deleteSensitiveCommandConfig: (
-    commandId: string,
-    scope: string
+    commandId: string
   ): Promise<SensitiveCommandConfigRecord[]> =>
-    ipcRenderer.invoke("sensitive-command-configs:delete", commandId, scope),
+    ipcRenderer.invoke("sensitive-command-configs:delete", commandId),
   importSnowCliSensitiveCommandConfig: (): Promise<
     SensitiveCommandConfigRecord[]
   > => ipcRenderer.invoke("sensitive-command-configs:import-snow-cli"),
+  listProjectSensitiveCommandConfigs: (
+    projectId: string
+  ): Promise<ProjectSensitiveCommandConfigRecord[]> =>
+    ipcRenderer.invoke("project-sensitive-command-configs:list", projectId),
+  setProjectSensitiveCommandEnabled: (
+    projectId: string,
+    commandId: string,
+    enabled: boolean
+  ): Promise<ProjectSensitiveCommandConfigRecord[]> =>
+    ipcRenderer.invoke(
+      "project-sensitive-command-configs:set-enabled",
+      projectId,
+      commandId,
+      enabled
+    ),
+  upsertProjectSensitiveCommandConfig: (
+    projectId: string,
+    item: ProjectSensitiveCommandConfigInput
+  ): Promise<ProjectSensitiveCommandConfigRecord[]> =>
+    ipcRenderer.invoke(
+      "project-sensitive-command-configs:upsert",
+      projectId,
+      item
+    ),
+  deleteProjectSensitiveCommandConfig: (
+    projectId: string,
+    commandId: string
+  ): Promise<ProjectSensitiveCommandConfigRecord[]> =>
+    ipcRenderer.invoke(
+      "project-sensitive-command-configs:delete",
+      projectId,
+      commandId
+    ),
   checkSensitiveCommandMatch: (
-    command: string
+    command: string,
+    projectId?: string
   ): Promise<
     Array<{
       commandId: string;
       pattern: string;
       description: string;
     }>
-  > => ipcRenderer.invoke("sensitive-command-configs:check-match", command),
+  > =>
+    ipcRenderer.invoke(
+      "sensitive-command-configs:check-match",
+      command,
+      projectId
+    ),
 };

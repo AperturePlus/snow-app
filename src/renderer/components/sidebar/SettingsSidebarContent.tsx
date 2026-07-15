@@ -10,6 +10,7 @@ import {
   Plug,
   Puzzle,
   Search,
+  Sparkles,
   ShieldAlert,
   Terminal,
   Users,
@@ -80,6 +81,14 @@ const SETTINGS_ITEMS: SettingsItem[] = [
     defaultDescription: "Configure MCP servers and tools.",
   },
   {
+    id: "skills",
+    icon: Sparkles,
+    labelKey: "settings.skillsSettings",
+    defaultLabel: "Skills settings",
+    descriptionKey: "settings.skillsSettingsInfo",
+    defaultDescription: "View effective project and global Skills.",
+  },
+  {
     id: "subagent",
     icon: Users,
     labelKey: "settings.subAgentSettings",
@@ -146,6 +155,7 @@ export function SettingsSidebarContent({
       activeMainView === "system-prompt-settings" ||
       activeMainView === "custom-headers-settings" ||
       activeMainView === "mcp-settings" ||
+      activeMainView === "skills-settings" ||
       activeMainView === "sensitive-command-settings" ||
       activeMainView === "terminal-settings"
     ) {
@@ -188,6 +198,8 @@ export function SettingsSidebarContent({
                   ? "custom-headers-settings"
                   : item.id === "mcp"
                   ? "mcp-settings"
+                  : item.id === "skills"
+                  ? "skills-settings"
                   : item.id === "sensitive-commands"
                   ? "sensitive-command-settings"
                   : item.id === "terminal"

@@ -72,6 +72,66 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   );
 
   ipcMain.handle("mcp:list-tools", () => native.listMcpTools());
+  ipcMain.handle("skills:list", (_event, projectId: unknown) => {
+    if (
+      projectId !== undefined &&
+      (typeof projectId !== "string" || !projectId.trim())
+    ) {
+      throw new Error("Project id must be a non-empty string");
+    }
+
+    return native.listAvailableSkills(
+      typeof projectId === "string" ? projectId.trim() : undefined
+    );
+  });
+  ipcMain.handle(
+    "skills:set-enabled",
+    (_event, projectId: unknown, skillId: unknown, enabled: unknown) => {
+      if (
+        projectId !== undefined &&
+        (typeof projectId !== "string" || !projectId.trim())
+      ) {
+        throw new Error("Project id must be a non-empty string");
+      }
+      if (typeof skillId !== "string" || !skillId.trim()) {
+        throw new Error("Skill id is required");
+      }
+      if (typeof enabled !== "boolean") {
+        throw new Error("Skill enabled state must be a boolean");
+      }
+
+      return native.setSkillEnabled(
+        typeof projectId === "string" ? projectId.trim() : undefined,
+        skillId.trim(),
+        enabled
+      );
+    }
+  );
+  ipcMain.handle("skills:list-project", (_event, projectId: unknown) => {
+    if (typeof projectId !== "string" || !projectId.trim()) {
+      throw new Error("Project id is required");
+    }
+    return native.listProjectSkills(projectId.trim());
+  });
+  ipcMain.handle(
+    "skills:set-project-enabled",
+    (_event, projectId: unknown, skillId: unknown, enabled: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      if (typeof skillId !== "string" || !skillId.trim()) {
+        throw new Error("Skill id is required");
+      }
+      if (typeof enabled !== "boolean") {
+        throw new Error("Skill enabled state must be a boolean");
+      }
+      return native.setProjectSkillEnabled(
+        projectId.trim(),
+        skillId.trim(),
+        enabled
+      );
+    }
+  );
   ipcMain.handle("mcp:list-server-tools", (_event, configServerId: unknown) => {
     if (typeof configServerId !== "string" || !configServerId.trim()) {
       throw new Error("MCP server id is required");

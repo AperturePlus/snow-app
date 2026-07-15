@@ -41,8 +41,8 @@ export function CustomSelect({
 
   const handleSelect = useCallback(
     (val: string) => {
-      onChange(val);
       setIsOpen(false);
+      onChange(val);
     },
     [onChange]
   );

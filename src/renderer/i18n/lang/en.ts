@@ -519,6 +519,48 @@ export const en = {
   "settings.customHeadersNoHeaders": "No headers",
   "settings.mcpSettings": "MCP settings",
   "settings.mcpSettingsInfo": "Configure MCP servers and tools.",
+  "settings.skillsSettings": "Skills settings",
+  "settings.skillsSettingsInfo": "View effective project and global Skills.",
+  "settings.skillsKicker": "Snow CLI compatible",
+  "settings.skillsTitle": "Skills settings",
+  "settings.closeSkillsSettings": "Close Skills settings",
+  "settings.skillsAvailableCount": "Available Skills",
+  "settings.skillsProjectCount": "Project scope",
+  "settings.skillsGlobalCount": "Global scope",
+  "settings.skillsRefresh": "Refresh Skills",
+  "settings.skillsDiscoveryTitle": "Automatic discovery",
+  "settings.skillsProjectScopeInfo":
+    "Showing effective Skills for {{name}}. Project Skills override global Skills with the same id.",
+  "settings.skillsGlobalScopeInfo":
+    "No active project. Showing global Skills from the user profile.",
+  "settings.skillsScopeTabs": "Skills scope",
+  "settings.skillsTabGlobal": "Global",
+  "settings.skillsTabProject": "Project",
+  "settings.skillsGlobalListTitle": "Global Skills",
+  "settings.skillsProjectListTitle": "Project Skills",
+  "settings.skillsGlobalTabInfo":
+    "Skills from the user profile. IDs that also exist in the project are listed here only.",
+  "settings.skillsProjectTabInfo":
+    "Project-only Skills for {{name}}. IDs already present globally are excluded.",
+  "settings.skillsGlobalEmpty": "No global Skills found.",
+  "settings.skillsProjectEmpty": "No project-only Skills found.",
+  "settings.skillsLoading": "Loading Skills...",
+  "settings.skillsLoadError": "Failed to load Skills",
+  "settings.skillsEmpty":
+    "No Skills found in .snow/skills/ or .agents/skills/.",
+  "settings.skillsScopeProject": "Project",
+  "settings.skillsScopeGlobal": "Global",
+  "settings.skillsNoDescription": "No description provided.",
+  "settings.skillsEffectiveSource": "Effective source",
+  "settings.skillsAllowedTools": "Allowed tools",
+  "settings.skillsEnabledCount": "Enabled Skills",
+  "settings.skillsDisabledCount": "Disabled Skills",
+  "settings.skillsEnable": "Enable Skill",
+  "settings.skillsDisable": "Disable Skill",
+  "settings.skillsEnableSuccess": "Skill enabled.",
+  "settings.skillsDisableSuccess":
+    "Skill disabled and removed from skill-execute.",
+  "settings.skillsUpdateError": "Failed to update Skill",
   "settings.mcpLoadError": "Failed to load MCP servers",
   "settings.mcpImportSuccess": "Synced MCP servers from Snow CLI.",
   "settings.mcpImportError": "Failed to sync Snow CLI MCP settings",
@@ -535,6 +577,22 @@ export const en = {
   "settings.mcpKicker": "Snow CLI compatible",
   "settings.mcpTitle": "MCP settings",
   "settings.closeMcpSettings": "Close MCP settings",
+  "settings.mcpScopeTabs": "MCP scope",
+  "settings.mcpTabGlobal": "Global",
+  "settings.mcpTabProject": "Project",
+  "settings.mcpGlobalListTitle": "Global MCP servers",
+  "settings.mcpProjectListTitle": "Project MCP servers",
+  "settings.mcpGlobalTabInfo":
+    "Manage external MCP servers shared by all projects.",
+  "settings.mcpProjectTabInfo":
+    "Enable or disable built-in and global external MCP servers for {{name}}.",
+  "settings.mcpProjectNoServers":
+    "No MCP servers are available for this project.",
+  "settings.mcpProjectRefresh": "Refresh project MCP",
+  "settings.mcpProjectSystemServer": "Built-in system MCP server",
+  "settings.mcpProjectExternalServer": "Global external MCP server",
+  "settings.mcpGloballyDisabled": "Disabled in global scope",
+  "settings.mcpGlobalDisabledShort": "Global off",
   "settings.syncSnowCliMcp": "Sync Snow CLI MCP settings",
   "settings.mcpAddNew": "Add server",
   "settings.mcpManualTitle": "Manage MCP servers",
@@ -595,8 +653,23 @@ export const en = {
   "settings.sensitiveCommandKicker": "Snow CLI compatible",
   "settings.sensitiveCommandTitle": "Sensitive commands",
   "settings.closeSensitiveCommandSettings": "Close sensitive command settings",
+  "settings.sensitiveCommandScopeTabs": "Sensitive command scope",
+  "settings.sensitiveCommandTabGlobal": "Global",
+  "settings.sensitiveCommandTabProject": "Project",
+  "settings.sensitiveCommandGlobalListTitle": "Global sensitive command rules",
+  "settings.sensitiveCommandProjectListTitle": "Effective project rules",
+  "settings.sensitiveCommandGlobalTabInfo":
+    "Manage command approval rules shared by all projects.",
+  "settings.sensitiveCommandProjectTabInfo":
+    "Manage project rules for {{name}}. Inherited global rules can only be enabled or disabled here.",
+  "settings.sensitiveCommandProjectNoRules":
+    "No sensitive command rules are available for this project.",
+  "settings.sensitiveCommandInherited": "Inherited",
+  "settings.sensitiveCommandInheritedOverride": "Inherited override",
+  "settings.sensitiveCommandInheritedCount": "Inherited rules",
   "settings.syncSnowCliSensitiveCommands": "Sync Snow CLI sensitive commands",
   "settings.sensitiveCommandAddNew": "Add rule",
+  "settings.sensitiveCommandAddProjectRule": "Add project rule",
   "settings.sensitiveCommandManualTitle": "Manage command approval rules",
   "settings.sensitiveCommandManualInfo":
     "Rules are saved in the local app database. Presets are seeded from Snow CLI defaults and can be synced from settings.json.",
@@ -605,9 +678,6 @@ export const en = {
   "settings.sensitiveCommandDescription": "Description",
   "settings.sensitiveCommandDescriptionPlaceholder":
     "Explain why this command needs approval",
-  "settings.sensitiveCommandScope": "Scope",
-  "settings.sensitiveCommandScopeGlobal": "Global",
-  "settings.sensitiveCommandScopeProject": "Project",
   "settings.sensitiveCommandEnabled": "Enable rule",
   "settings.saveSensitiveCommand": "Save rule",
   "settings.sensitiveCommandListTitle": "Sensitive command rules",
@@ -735,7 +805,101 @@ export const en = {
   "chatCommand.mcpDescription":
     "Manage MCP services and tools for this project",
   "chatCommand.mcpNoProject": "Select a project before managing MCP services",
+  "chatCommand.sensitiveCommandsDescription":
+    "Manage sensitive command rules for this project",
+  "chatCommand.sensitiveCommandsNoProject":
+    "Select a project before managing sensitive commands",
+  "chatCommand.skillsDescription": "Manage Skills available to this project",
+  "chatCommand.skillsNoProject": "Select a project before managing Skills",
   "chatCommand.empty": "No matching commands",
+  "projectSensitiveCommands.title": "Project sensitive commands",
+  "projectSensitiveCommands.description":
+    "Sensitive command rules applied to {{project}}",
+  "projectSensitiveCommands.noProject":
+    "Select a project before opening project sensitive command management.",
+  "projectSensitiveCommands.loading": "Loading sensitive command rules...",
+  "projectSensitiveCommands.close":
+    "Close project sensitive command management",
+  "projectSensitiveCommands.refresh": "Refresh",
+  "projectSensitiveCommands.scopeNote":
+    "Global rules are inherited by default. Project overrides and custom rules apply only to this project.",
+  "projectSensitiveCommands.overrideCount": "{{count}} global overrides",
+  "projectSensitiveCommands.loadFailed":
+    "Could not load sensitive command rules",
+  "projectSensitiveCommands.inheritedRules": "Inherited global rules",
+  "projectSensitiveCommands.inheritedRulesDescription":
+    "Override a global rule for this project, or reset it to follow future global changes.",
+  "projectSensitiveCommands.customRules": "Project custom rules",
+  "projectSensitiveCommands.customRulesDescription":
+    "These rules apply only to the current project.",
+  "projectSensitiveCommands.inheritedTitle": "Inherited global rules",
+  "projectSensitiveCommands.inheritedDescription":
+    "The switch creates or clears an explicit override for this project.",
+  "projectSensitiveCommands.projectTitle": "Project custom rules",
+  "projectSensitiveCommands.projectDescription":
+    "These rules are stored only for the current project.",
+  "projectSensitiveCommands.inherited": "Global",
+  "projectSensitiveCommands.projectOnly": "Project only",
+  "projectSensitiveCommands.overridden": "Overridden",
+  "projectSensitiveCommands.add": "Add rule",
+  "projectSensitiveCommands.addRule": "Add project rule",
+  "projectSensitiveCommands.editRule": "Edit project rule",
+  "projectSensitiveCommands.emptyGroup": "No rules in this group",
+  "projectSensitiveCommands.patternRequired":
+    "A regular expression is required",
+  "projectSensitiveCommands.duplicatePattern":
+    "This regular expression already exists",
+  "projectSensitiveCommands.emptyInherited":
+    "No global sensitive command rules",
+  "projectSensitiveCommands.emptyCustom": "No custom rules for this project",
+  "projectSensitiveCommands.preset": "Preset",
+  "projectSensitiveCommands.globalEnabled": "Globally enabled",
+  "projectSensitiveCommands.globalDisabled": "Globally disabled",
+  "projectSensitiveCommands.followingGlobal": "Following global",
+  "projectSensitiveCommands.overrideEnabled": "Enabled for project",
+  "projectSensitiveCommands.overrideDisabled": "Disabled for project",
+  "projectSensitiveCommands.enableForProject": "Enable for project",
+  "projectSensitiveCommands.disableForProject": "Disable for project",
+  "projectSensitiveCommands.resetInheritance": "Follow global",
+  "projectSensitiveCommands.commandId": "Command ID",
+  "projectSensitiveCommands.commandIdPlaceholder":
+    "for example: remove-generated-files",
+  "projectSensitiveCommands.pattern": "Regular expression",
+  "projectSensitiveCommands.patternPlaceholder":
+    "for example: (^|\\s)rm\\s+-rf(\\s|$)",
+  "projectSensitiveCommands.descriptionLabel": "Description",
+  "projectSensitiveCommands.descriptionPlaceholder":
+    "Explain why confirmation is required",
+  "projectSensitiveCommands.enabled": "Enabled",
+  "projectSensitiveCommands.disabled": "Disabled",
+  "projectSensitiveCommands.createTitle": "Add project rule",
+  "projectSensitiveCommands.editTitle": "Edit project rule",
+  "projectSensitiveCommands.editorDescription":
+    "The rule is stored only for this project and does not modify global sensitive commands.",
+  "projectSensitiveCommands.save": "Save",
+  "projectSensitiveCommands.cancel": "Cancel",
+  "projectSensitiveCommands.edit": "Edit",
+  "projectSensitiveCommands.delete": "Delete",
+  "projectSensitiveCommands.deleteTitle": "Delete project sensitive command",
+  "projectSensitiveCommands.deleteConfirm":
+    'Delete project sensitive command rule "{{commandId}}"?',
+  "projectSkills.title": "Project Skills",
+  "projectSkills.description": "Skills available to {{project}}",
+  "projectSkills.noProject":
+    "Select a project before opening project Skills management.",
+  "projectSkills.loading": "Loading Skills...",
+  "projectSkills.close": "Close project Skills management",
+  "projectSkills.refresh": "Refresh",
+  "projectSkills.scopeNote":
+    "Changes apply only to this project and do not modify global Skill files.",
+  "projectSkills.skillCount": "{{count}} Skills available",
+  "projectSkills.empty": "No Skills are available to this project",
+  "projectSkills.enableForProject": "Enable for project",
+  "projectSkills.disableForProject": "Disable for project",
+  "projectSkills.location.global": "Global",
+  "projectSkills.location.project": "Project",
+  "projectSkills.source.snow": "Snow",
+  "projectSkills.source.agents": "Agents",
   "projectMcp.title": "Project MCP",
   "projectMcp.description": "MCP services available to {{project}}",
   "projectMcp.noProject":

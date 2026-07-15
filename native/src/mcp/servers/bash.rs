@@ -157,6 +157,7 @@ impl BashService {
     pub async fn execute_terminal_stream(
         &self,
         args: &Value,
+        project_id: Option<&str>,
         sensitive_authorization_token: Option<&str>,
         on_chunk: BashStreamCallback,
     ) -> napi::Result<Value> {
@@ -208,7 +209,7 @@ impl BashService {
         // token issued after explicit user confirmation. The token travels
         // outside the model-controlled tool arguments and is bound to this
         // exact command.
-        let sensitive_matches = check_sensitive_commands(&command).await;
+        let sensitive_matches = check_sensitive_commands(&command, project_id).await;
         if !sensitive_matches.is_empty()
             && !consume_sensitive_command_authorization(
                 &command,
@@ -550,10 +551,11 @@ fn emit_stream_chunk(
 /// Check if a command matches any user-configured sensitive command rules.
 /// Uses spawn_blocking to avoid blocking the async runtime with SQLite I/O.
 /// Returns a JSON array of matched rules (command_id, pattern, description).
-async fn check_sensitive_commands(command: &str) -> Vec<Value> {
+async fn check_sensitive_commands(command: &str, project_id: Option<&str>) -> Vec<Value> {
     let command_owned = command.to_string();
+    let project_id_owned = project_id.map(str::to_string);
     match tokio::task::spawn_blocking(move || {
-        crate::storage::check_sensitive_command_match(command_owned)
+        crate::storage::check_sensitive_command_match(command_owned, project_id_owned)
     })
     .await
     {

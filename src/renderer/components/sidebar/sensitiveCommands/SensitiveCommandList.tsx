@@ -1,18 +1,33 @@
 import { Pencil, Trash2 } from "lucide-react";
 import { useI18n } from "../../../i18n";
-import type { SensitiveCommandConfig } from "./types";
+
+export type SensitiveCommandListItem = {
+  commandId: string;
+  pattern: string;
+  description: string;
+  enabled: boolean;
+  isPreset: boolean;
+  source: string;
+  inherited: boolean;
+  overridden: boolean;
+  canManage: boolean;
+};
 
 type SensitiveCommandListProps = {
-  commands: SensitiveCommandConfig[];
+  commands: SensitiveCommandListItem[];
   isBusy: boolean;
-  onToggleEnabled: (command: SensitiveCommandConfig) => void;
-  onEdit: (command: SensitiveCommandConfig) => void;
-  onDelete: (command: SensitiveCommandConfig) => void;
+  listTitle: string;
+  emptyMessage: string;
+  onToggleEnabled: (command: SensitiveCommandListItem) => void;
+  onEdit: (command: SensitiveCommandListItem) => void;
+  onDelete: (command: SensitiveCommandListItem) => void;
 };
 
 export function SensitiveCommandList({
   commands,
   isBusy,
+  listTitle,
+  emptyMessage,
   onToggleEnabled,
   onEdit,
   onDelete,
@@ -22,28 +37,26 @@ export function SensitiveCommandList({
   return (
     <div className="api-settings-form-section">
       <div className="api-settings-form-section-header">
-        <strong className="api-settings-form-section-title">
-          {t("settings.sensitiveCommandListTitle", {
-            defaultValue: "Sensitive command rules",
-          })}
-        </strong>
+        <strong className="api-settings-form-section-title">{listTitle}</strong>
       </div>
 
       <div className="api-settings-table-wrap sensitive-command-table-wrap">
         {commands.length === 0 ? (
-          <div className="system-prompt-empty">
-            {t("settings.sensitiveCommandNoRules", {
-              defaultValue:
-                "No sensitive command rules yet. Import from Snow CLI or add one manually.",
-            })}
-          </div>
+          <div className="system-prompt-empty">{emptyMessage}</div>
         ) : (
           <table className="api-settings-table sensitive-command-table">
             <thead>
               <tr>
-                <th>{t("settings.sensitiveCommandPattern", { defaultValue: "Pattern" })}</th>
-                <th>{t("settings.sensitiveCommandScope", { defaultValue: "Scope" })}</th>
-                <th>{t("settings.sensitiveCommandSource", { defaultValue: "Source" })}</th>
+                <th>
+                  {t("settings.sensitiveCommandPattern", {
+                    defaultValue: "Pattern",
+                  })}
+                </th>
+                <th>
+                  {t("settings.sensitiveCommandSource", {
+                    defaultValue: "Source",
+                  })}
+                </th>
                 <th>{t("settings.status", { defaultValue: "Status" })}</th>
                 <th className="api-settings-table-actions-col">
                   {t("settings.actions", { defaultValue: "Actions" })}
@@ -62,9 +75,25 @@ export function SensitiveCommandList({
                 const activeStateLabel = command.enabled
                   ? t("settings.active", { defaultValue: "Enabled" })
                   : t("settings.inactive", { defaultValue: "Not enabled" });
+                const sourceLabel = command.inherited
+                  ? t(
+                      command.overridden
+                        ? "settings.sensitiveCommandInheritedOverride"
+                        : "settings.sensitiveCommandInherited",
+                      {
+                        defaultValue: command.overridden
+                          ? "Inherited override"
+                          : "Inherited",
+                      }
+                    )
+                  : command.isPreset
+                  ? t("settings.sensitiveCommandPreset", {
+                      defaultValue: "Preset",
+                    })
+                  : command.source;
 
                 return (
-                  <tr key={`${command.scope}:${command.commandId}`}>
+                  <tr key={command.commandId}>
                     <td className="cell-name">
                       <strong>{command.pattern}</strong>
                       <span className="profile-name-hint">
@@ -72,16 +101,7 @@ export function SensitiveCommandList({
                       </span>
                     </td>
                     <td>
-                      <span className="badge method">{command.scope}</span>
-                    </td>
-                    <td>
-                      <span className="badge method">
-                        {command.isPreset
-                          ? t("settings.sensitiveCommandPreset", {
-                              defaultValue: "Preset",
-                            })
-                          : command.source}
-                      </span>
+                      <span className="badge method">{sourceLabel}</span>
                     </td>
                     <td>
                       <button
@@ -98,28 +118,38 @@ export function SensitiveCommandList({
                     </td>
                     <td>
                       <div className="api-settings-table-actions">
-                        <button
-                          className="icon-btn ghost"
-                          onClick={() => onEdit(command)}
-                          type="button"
-                          aria-label={t("settings.edit", { defaultValue: "Edit" })}
-                          title={t("settings.edit", { defaultValue: "Edit" })}
-                          disabled={isBusy}
-                        >
-                          <Pencil size={14} strokeWidth={1.9} />
-                        </button>
-                        <button
-                          className="icon-btn ghost danger"
-                          onClick={() => onDelete(command)}
-                          type="button"
-                          aria-label={t("settings.delete", {
-                            defaultValue: "Delete",
-                          })}
-                          title={t("settings.delete", { defaultValue: "Delete" })}
-                          disabled={isBusy || command.isPreset}
-                        >
-                          <Trash2 size={14} strokeWidth={1.9} />
-                        </button>
+                        {command.canManage && (
+                          <>
+                            <button
+                              className="icon-btn ghost"
+                              onClick={() => onEdit(command)}
+                              type="button"
+                              aria-label={t("settings.edit", {
+                                defaultValue: "Edit",
+                              })}
+                              title={t("settings.edit", {
+                                defaultValue: "Edit",
+                              })}
+                              disabled={isBusy}
+                            >
+                              <Pencil size={14} strokeWidth={1.9} />
+                            </button>
+                            <button
+                              className="icon-btn ghost danger"
+                              onClick={() => onDelete(command)}
+                              type="button"
+                              aria-label={t("settings.delete", {
+                                defaultValue: "Delete",
+                              })}
+                              title={t("settings.delete", {
+                                defaultValue: "Delete",
+                              })}
+                              disabled={isBusy || command.isPreset}
+                            >
+                              <Trash2 size={14} strokeWidth={1.9} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

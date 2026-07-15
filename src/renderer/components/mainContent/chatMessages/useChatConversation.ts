@@ -781,7 +781,8 @@ export const useChatConversation = (
     (
       toolCall: ToolCallInfo,
       index: number,
-      conversationId: string
+      conversationId: string,
+      projectId?: string
     ): Promise<ToolAuthorizationDecision> => {
       if (toolCall.name === "mcp__user-interaction__askUserQuestion") {
         return Promise.resolve({ status: "approved" });
@@ -792,7 +793,7 @@ export const useChatConversation = (
         alwaysApprovedToolsRef.current.has(toolCall.name);
 
       // Sensitive command check: even in YOLO mode, bash commands that match
-      // user-configured sensitive command patterns must be confirmed.
+      // the current project's merged rules must be confirmed.
       const checkSensitiveBash = async (): Promise<
         ToolAuthorizationDecision | "needs-dialog"
       > => {
@@ -815,7 +816,10 @@ export const useChatConversation = (
         }
 
         try {
-          const matches = await window.snow.checkSensitiveCommandMatch(command);
+          const matches = await window.snow.checkSensitiveCommandMatch(
+            command,
+            projectId
+          );
           if (matches.length > 0) {
             // Sensitive command detected — force authorization dialog
             // even in YOLO mode.
@@ -880,7 +884,8 @@ export const useChatConversation = (
   const requestToolAuthorizations = useCallback(
     async (
       toolCalls: ToolCallInfo[],
-      conversationId: string
+      conversationId: string,
+      projectId?: string
     ): Promise<ToolAuthorizationDecision[]> => {
       // Read the persisted app setting once per tool batch so recent YOLO
       // changes take effect without querying SQLite for every tool.
@@ -893,7 +898,7 @@ export const useChatConversation = (
 
       return Promise.all(
         toolCalls.map((toolCall, index) =>
-          requestToolAuthorization(toolCall, index, conversationId)
+          requestToolAuthorization(toolCall, index, conversationId, projectId)
         )
       );
     },
@@ -1557,7 +1562,8 @@ export const useChatConversation = (
         // when a later response contains no tool calls, or when the user cancels.
         const authorizationDecisions = await requestToolAuthorizations(
           toolCalls,
-          effectiveKey
+          effectiveKey,
+          sessionDirId
         );
 
         const toolResults: string[] = [];

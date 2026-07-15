@@ -199,6 +199,30 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to delete sensitive command configs"
           )
         ),
+      listProjectSensitiveCommandConfigs: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list project sensitive command configs"
+          )
+        ),
+      setProjectSensitiveCommandEnabled: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to update project sensitive command state"
+          )
+        ),
+      upsertProjectSensitiveCommandConfig: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to write project sensitive command configs"
+          )
+        ),
+      deleteProjectSensitiveCommandConfig: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to delete project sensitive command configs"
+          )
+        ),
       checkSensitiveCommandMatch: () =>
         Promise.reject(
           new Error(
@@ -323,6 +347,22 @@ export const loadNativeBridge = (): NativeBridge => {
       listMcpTools: () =>
         Promise.reject(
           new Error("Rust native bridge is required to list MCP tools")
+        ),
+      listAvailableSkills: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to list Skills")
+        ),
+      setSkillEnabled: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to update Skills")
+        ),
+      listProjectSkills: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to list project Skills")
+        ),
+      setProjectSkillEnabled: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to update project Skills")
         ),
       listMcpServerTools: () =>
         Promise.reject(

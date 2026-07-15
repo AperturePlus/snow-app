@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use napi::bindgen_prelude::*;
@@ -29,6 +29,8 @@ const DEFAULT_YOLO_MODE_SETTING_VALUE: &str = "false";
 
 const PROJECT_MCP_SETTING_NAME: &str = "Project MCP scope";
 const PROJECT_MCP_SETTING_CODE_PREFIX: &str = "project_mcp_scope_";
+const PROJECT_SKILLS_SETTING_NAME: &str = "Project Skills scope";
+const PROJECT_SKILLS_SETTING_CODE_PREFIX: &str = "project_skills_scope_";
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -36,6 +38,13 @@ pub struct McpProjectScopeSettings {
     pub project_id: String,
     pub disabled_server_ids: BTreeSet<String>,
     pub disabled_tool_names: BTreeSet<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SkillsProjectScopeSettings {
+    pub project_id: String,
+    pub skill_overrides: BTreeMap<String, bool>,
 }
 
 impl McpProjectScopeSettings {
@@ -59,6 +68,32 @@ impl McpProjectScopeSettings {
         self.project_id = self.project_id.trim().to_string();
         self.disabled_server_ids = normalized_set(&self.disabled_server_ids);
         self.disabled_tool_names = normalized_set(&self.disabled_tool_names);
+    }
+}
+
+impl SkillsProjectScopeSettings {
+    pub fn effective_enabled(&self, skill_key: &str, default_enabled: bool) -> bool {
+        self.skill_overrides
+            .get(skill_key)
+            .copied()
+            .unwrap_or(default_enabled)
+    }
+
+    fn set_skill_enabled(&mut self, skill_key: &str, enabled: bool) {
+        self.skill_overrides.insert(skill_key.to_string(), enabled);
+    }
+
+    fn normalize(&mut self) {
+        self.project_id = self.project_id.trim().to_string();
+        self.skill_overrides = self
+            .skill_overrides
+            .iter()
+            .filter_map(|(skill_key, enabled)| {
+                let normalized_skill_key = skill_key.trim();
+                (!normalized_skill_key.is_empty())
+                    .then(|| (normalized_skill_key.to_string(), *enabled))
+            })
+            .collect();
     }
 }
 
@@ -201,9 +236,80 @@ fn write_mcp_project_scope_settings(
     )
 }
 
+pub fn get_skills_project_scope_settings(
+    database_path: &Path,
+    project_id: &str,
+) -> Result<SkillsProjectScopeSettings> {
+    let normalized_project_id = normalize_required_value(project_id, "Project id")?;
+    let setting_code = project_skills_setting_code(&normalized_project_id);
+    let Some(raw_value) = get_system_setting_value(database_path, &setting_code)? else {
+        return Ok(SkillsProjectScopeSettings {
+            project_id: normalized_project_id,
+            ..SkillsProjectScopeSettings::default()
+        });
+    };
+
+    let mut settings = serde_json::from_str::<SkillsProjectScopeSettings>(&raw_value).map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to parse project Skills scope settings: {error}"),
+        )
+    })?;
+    settings.normalize();
+    if settings.project_id.is_empty() {
+        settings.project_id = normalized_project_id.clone();
+    }
+    if settings.project_id != normalized_project_id {
+        return Err(Error::new(
+            Status::GenericFailure,
+            "Project Skills scope setting identity does not match the requested project".to_string(),
+        ));
+    }
+
+    Ok(settings)
+}
+
+pub fn set_skills_project_skill_enabled(
+    database_path: &Path,
+    project_id: &str,
+    skill_key: &str,
+    enabled: bool,
+) -> Result<()> {
+    let normalized_skill_key = normalize_required_value(skill_key, "Skill key")?;
+    let mut settings = get_skills_project_scope_settings(database_path, project_id)?;
+    settings.set_skill_enabled(&normalized_skill_key, enabled);
+    write_skills_project_scope_settings(database_path, &settings)
+}
+
+fn write_skills_project_scope_settings(
+    database_path: &Path,
+    settings: &SkillsProjectScopeSettings,
+) -> Result<()> {
+    let setting_code = project_skills_setting_code(&settings.project_id);
+    let setting_value = serde_json::to_string(settings).map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to serialize project Skills scope settings: {error}"),
+        )
+    })?;
+    set_system_setting(
+        database_path,
+        PROJECT_SKILLS_SETTING_NAME,
+        &setting_code,
+        &setting_value,
+    )
+}
+
 fn project_mcp_setting_code(project_id: &str) -> String {
     format!(
         "{PROJECT_MCP_SETTING_CODE_PREFIX}{}",
+        blake3::hash(project_id.as_bytes()).to_hex()
+    )
+}
+
+fn project_skills_setting_code(project_id: &str) -> String {
+    format!(
+        "{PROJECT_SKILLS_SETTING_CODE_PREFIX}{}",
         blake3::hash(project_id.as_bytes()).to_hex()
     )
 }

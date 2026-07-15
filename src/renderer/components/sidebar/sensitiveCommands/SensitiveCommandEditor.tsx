@@ -54,27 +54,6 @@ export function SensitiveCommandEditor({
             disabled={isBusy}
           />
         </label>
-        <label className="api-settings-field">
-          <span>
-            {t("settings.sensitiveCommandScope", { defaultValue: "Scope" })}
-          </span>
-          <select
-            value={draft.scope}
-            onChange={(event) => onDraftChange({ scope: event.target.value })}
-            disabled={isBusy || draft.isPreset}
-          >
-            <option value="global">
-              {t("settings.sensitiveCommandScopeGlobal", {
-                defaultValue: "Global",
-              })}
-            </option>
-            <option value="project">
-              {t("settings.sensitiveCommandScopeProject", {
-                defaultValue: "Project",
-              })}
-            </option>
-          </select>
-        </label>
         <label className="toggle-switch mcp-enabled-switch">
           <input
             type="checkbox"

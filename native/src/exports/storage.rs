@@ -4,10 +4,11 @@ use napi_derive::napi;
 use crate::storage::{
     ApiConfigInput, ApiConfigRecord, AppStorageInfo, ChatConversationPage,
     ChatConversationRecord, ChatMessagePage, ChatMessageRecord, CustomHeaderSchemeInput,
-    CustomHeaderSchemeRecord, McpServerConfigInput,
-    McpServerConfigRecord, SensitiveCommandConfigInput, SensitiveCommandConfigRecord,
-    SensitiveCommandMatchResult, SystemPromptItemInput, SystemPromptItemRecord,
-    WorkspaceDirectoryInput, WorkspaceDirectoryRecord,
+    CustomHeaderSchemeRecord, McpServerConfigInput, McpServerConfigRecord,
+    ProjectSensitiveCommandConfigInput, ProjectSensitiveCommandConfigRecord,
+    SensitiveCommandConfigInput, SensitiveCommandConfigRecord, SensitiveCommandMatchResult,
+    SystemPromptItemInput, SystemPromptItemRecord, WorkspaceDirectoryInput,
+    WorkspaceDirectoryRecord,
 };
 use crate::storage::services::fs_explorer::{DirectoryEntry, FileContentResult, FileSearchResult};
 
@@ -255,9 +256,57 @@ pub async fn upsert_sensitive_command_config(item: SensitiveCommandConfigInput) 
 }
 
 #[napi]
-pub async fn delete_sensitive_command_config(command_id: String, scope: String) -> napi::Result<()> {
+pub async fn delete_sensitive_command_config(command_id: String) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || {
-        crate::storage::delete_sensitive_command_config(command_id, scope)
+        crate::storage::delete_sensitive_command_config(command_id)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn list_project_sensitive_command_configs(
+    project_id: String,
+) -> napi::Result<Vec<ProjectSensitiveCommandConfigRecord>> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::list_project_sensitive_command_configs(project_id)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn set_project_sensitive_command_enabled(
+    project_id: String,
+    command_id: String,
+    enabled: bool,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::set_project_sensitive_command_enabled(project_id, command_id, enabled)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn upsert_project_sensitive_command_config(
+    project_id: String,
+    item: ProjectSensitiveCommandConfigInput,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::upsert_project_sensitive_command_config(project_id, item)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn delete_project_sensitive_command_config(
+    project_id: String,
+    command_id: String,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::delete_project_sensitive_command_config(project_id, command_id)
     })
     .await
     .map_err(map_spawn_error)?
@@ -266,9 +315,10 @@ pub async fn delete_sensitive_command_config(command_id: String, scope: String) 
 #[napi]
 pub async fn check_sensitive_command_match(
     command: String,
+    project_id: Option<String>,
 ) -> napi::Result<Vec<SensitiveCommandMatchResult>> {
     tokio::task::spawn_blocking(move || {
-        crate::storage::check_sensitive_command_match(command)
+        crate::storage::check_sensitive_command_match(command, project_id)
     })
     .await
     .map_err(map_spawn_error)?

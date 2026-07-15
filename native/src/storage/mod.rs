@@ -177,7 +177,6 @@ pub struct McpServerConfigRecord {
 #[napi(object)]
 pub struct SensitiveCommandConfigInput {
     pub command_id: String,
-    pub scope: String,
     pub pattern: String,
     pub description: String,
     pub enabled: bool,
@@ -190,7 +189,6 @@ pub struct SensitiveCommandConfigInput {
 pub struct SensitiveCommandConfigRecord {
     pub id: String,
     pub command_id: String,
-    pub scope: String,
     pub pattern: String,
     pub description: String,
     pub enabled: bool,
@@ -198,6 +196,28 @@ pub struct SensitiveCommandConfigRecord {
     pub sort_order: i32,
     pub source: String,
     pub updated_at: String,
+}
+
+#[napi(object)]
+pub struct ProjectSensitiveCommandConfigInput {
+    pub command_id: String,
+    pub pattern: String,
+    pub description: String,
+    pub enabled: bool,
+    pub sort_order: i32,
+}
+
+#[napi(object)]
+pub struct ProjectSensitiveCommandConfigRecord {
+    pub command_id: String,
+    pub pattern: String,
+    pub description: String,
+    pub enabled: bool,
+    pub inherited: bool,
+    pub global_enabled: bool,
+    pub is_preset: bool,
+    pub sort_order: i32,
+    pub source: String,
 }
 
 #[napi(object)]
@@ -414,36 +434,117 @@ pub fn upsert_sensitive_command_config(item: SensitiveCommandConfigInput) -> Res
     services::sensitive_command_configs::upsert_sensitive_command_config(&database_path, &item)
 }
 
-pub fn delete_sensitive_command_config(command_id: String, scope: String) -> Result<()> {
+pub fn delete_sensitive_command_config(command_id: String) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::sensitive_command_configs::delete_sensitive_command_config(
         &database_path,
         &command_id,
-        &scope,
     )
 }
 
-pub fn check_sensitive_command_match(command: String) -> Result<Vec<SensitiveCommandMatchResult>> {
+pub fn list_project_sensitive_command_configs(
+    project_id: String,
+) -> Result<Vec<ProjectSensitiveCommandConfigRecord>> {
     let database_path = ensure_database_file()?;
-    let configs = services::sensitive_command_configs::list_sensitive_command_configs(&database_path)?;
+    services::project_sensitive_command_configs::list_project_sensitive_command_configs(
+        &database_path,
+        &project_id,
+    )
+}
+
+pub fn set_project_sensitive_command_enabled(
+    project_id: String,
+    command_id: String,
+    enabled: bool,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::project_sensitive_command_configs::set_project_sensitive_command_enabled(
+        &database_path,
+        &project_id,
+        &command_id,
+        enabled,
+    )
+}
+
+pub fn upsert_project_sensitive_command_config(
+    project_id: String,
+    item: ProjectSensitiveCommandConfigInput,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::project_sensitive_command_configs::upsert_project_sensitive_command_config(
+        &database_path,
+        &project_id,
+        &item,
+    )
+}
+
+pub fn delete_project_sensitive_command_config(
+    project_id: String,
+    command_id: String,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::project_sensitive_command_configs::delete_project_sensitive_command_config(
+        &database_path,
+        &project_id,
+        &command_id,
+    )
+}
+
+pub fn check_sensitive_command_match(
+    command: String,
+    project_id: Option<String>,
+) -> Result<Vec<SensitiveCommandMatchResult>> {
+    let database_path = ensure_database_file()?;
+    let configs = if let Some(project_id) = project_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        services::project_sensitive_command_configs::list_project_sensitive_command_configs(
+            &database_path,
+            project_id,
+        )?
+        .into_iter()
+        .map(|config| {
+            (
+                config.command_id,
+                config.pattern,
+                config.description,
+                config.enabled,
+            )
+        })
+        .collect::<Vec<_>>()
+    } else {
+        services::sensitive_command_configs::list_sensitive_command_configs(&database_path)?
+            .into_iter()
+            .map(|config| {
+                (
+                    config.command_id,
+                    config.pattern,
+                    config.description,
+                    config.enabled,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
 
     let mut matches = Vec::new();
-    for config in configs {
-        if !config.enabled {
+    for (command_id, pattern, description, enabled) in configs {
+        if !enabled {
             continue;
         }
 
         // Sensitive command patterns are user-provided regular expressions.
         // Skip a malformed rule so one invalid configuration cannot disable
         // all remaining checks.
-        let Ok(regex) = Regex::new(&config.pattern) else {
+        let Ok(regex) = Regex::new(&pattern) else {
             continue;
         };
         if regex.is_match(&command) {
             matches.push(SensitiveCommandMatchResult {
-                command_id: config.command_id,
-                pattern: config.pattern,
-                description: config.description,
+                command_id,
+                pattern,
+                description,
             });
         }
     }

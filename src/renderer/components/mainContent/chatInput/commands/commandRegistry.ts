@@ -1,21 +1,29 @@
 import { createClearCommand } from "./ClearCommand";
 import { createCompactCommand } from "./CompactCommand";
 import { createMcpCommand } from "./McpCommand";
+import { createSensitiveCommandsCommand } from "./SensitiveCommandsCommand";
+import { createSkillsCommand } from "./SkillsCommand";
 import type { ChatCommand } from "./types";
 
 type ChatCommandLabels = {
   clearDescription: string;
   compactDescription: string;
   mcpDescription: string;
+  sensitiveCommandsDescription: string;
+  skillsDescription: string;
 };
 
 type CreateChatCommandsOptions = {
   onNewChat: () => void;
   onCompactConversation?: (model?: string) => void | Promise<void>;
   onOpenMcpPanel: () => void;
+  onOpenSensitiveCommandsPanel: () => void;
+  onOpenSkillsPanel: () => void;
   model?: string;
   compactDisabled: boolean;
   mcpDisabled: boolean;
+  sensitiveCommandsDisabled: boolean;
+  skillsDisabled: boolean;
   labels: ChatCommandLabels;
 };
 
@@ -23,14 +31,28 @@ export const createChatCommands = ({
   onNewChat,
   onCompactConversation,
   onOpenMcpPanel,
+  onOpenSensitiveCommandsPanel,
+  onOpenSkillsPanel,
   model,
   compactDisabled,
   mcpDisabled,
+  sensitiveCommandsDisabled,
+  skillsDisabled,
   labels,
 }: CreateChatCommandsOptions): ChatCommand[] => {
   const commands: ChatCommand[] = [
     createClearCommand(onNewChat, labels.clearDescription),
     createMcpCommand(onOpenMcpPanel, labels.mcpDescription, mcpDisabled),
+    createSensitiveCommandsCommand(
+      onOpenSensitiveCommandsPanel,
+      labels.sensitiveCommandsDescription,
+      sensitiveCommandsDisabled
+    ),
+    createSkillsCommand(
+      onOpenSkillsPanel,
+      labels.skillsDescription,
+      skillsDisabled
+    ),
   ];
 
   if (onCompactConversation) {

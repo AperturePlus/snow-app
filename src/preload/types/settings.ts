@@ -74,7 +74,6 @@ export type CustomHeaderSchemeRecord = CustomHeaderSchemeInput & {
 
 export type SensitiveCommandConfigInput = {
   commandId: string;
-  scope: string;
   pattern: string;
   description: string;
   enabled: boolean;
@@ -82,8 +81,23 @@ export type SensitiveCommandConfigInput = {
   sortOrder: number;
   source: string;
 };
-
 export type SensitiveCommandConfigRecord = SensitiveCommandConfigInput & {
   id: string;
   updatedAt: string;
 };
+
+export type ProjectSensitiveCommandConfigInput = {
+  commandId: string;
+  pattern: string;
+  description: string;
+  enabled: boolean;
+  sortOrder: number;
+};
+
+export type ProjectSensitiveCommandConfigRecord =
+  ProjectSensitiveCommandConfigInput & {
+    inherited: boolean;
+    globalEnabled: boolean;
+    isPreset: boolean;
+    source: string;
+  };

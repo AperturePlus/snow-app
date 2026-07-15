@@ -207,8 +207,7 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
 
          CREATE TABLE IF NOT EXISTS sensitive_command_configs (
            id TEXT PRIMARY KEY NOT NULL,
-           command_id TEXT NOT NULL,
-           scope TEXT NOT NULL DEFAULT 'global',
+           command_id TEXT NOT NULL UNIQUE,
            pattern TEXT NOT NULL,
            description TEXT NOT NULL DEFAULT '',
            enabled INTEGER NOT NULL DEFAULT 1,
@@ -216,11 +215,8 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            sort_order INTEGER NOT NULL DEFAULT 0,
            source TEXT NOT NULL DEFAULT 'manual',
            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-           updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-           UNIQUE(scope, command_id)
+           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
          );
-         CREATE INDEX IF NOT EXISTS idx_sensitive_command_configs_scope
-           ON sensitive_command_configs(scope);
          CREATE INDEX IF NOT EXISTS idx_sensitive_command_configs_enabled
            ON sensitive_command_configs(enabled);
          CREATE INDEX IF NOT EXISTS idx_sensitive_command_configs_source

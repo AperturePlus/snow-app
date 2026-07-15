@@ -8,6 +8,8 @@ import type {
   McpProjectServerStatus,
   McpProjectToolStatus,
   McpToolDefinition,
+  ProjectSkillDefinition,
+  SkillDefinition,
   UserQuestionRequest,
   UserQuestionResponse,
 } from "../types";
@@ -39,6 +41,27 @@ const normalizeBashStreamChunk = (value: unknown): BashStreamChunk | null => {
 export const systemApi = {
   listMcpTools: (): Promise<McpToolDefinition[]> =>
     ipcRenderer.invoke("mcp:list-tools"),
+  listAvailableSkills: (projectId?: string): Promise<SkillDefinition[]> =>
+    ipcRenderer.invoke("skills:list", projectId),
+  setSkillEnabled: (
+    projectId: string | undefined,
+    skillId: string,
+    enabled: boolean
+  ): Promise<void> =>
+    ipcRenderer.invoke("skills:set-enabled", projectId, skillId, enabled),
+  listProjectSkills: (projectId: string): Promise<ProjectSkillDefinition[]> =>
+    ipcRenderer.invoke("skills:list-project", projectId),
+  setProjectSkillEnabled: (
+    projectId: string,
+    skillId: string,
+    enabled: boolean
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "skills:set-project-enabled",
+      projectId,
+      skillId,
+      enabled
+    ),
   listMcpServerTools: (configServerId: string): Promise<McpToolDefinition[]> =>
     ipcRenderer.invoke("mcp:list-server-tools", configServerId),
   listMcpProjectServers: (

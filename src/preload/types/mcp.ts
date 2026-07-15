@@ -4,6 +4,22 @@ export type McpToolDefinition = {
   inputSchemaJson: string;
 };
 
+export type SkillDefinition = {
+  id: string;
+  name: string;
+  description: string;
+  location: "project" | "global";
+  source: "snow" | "agents";
+  path: string;
+  allowedTools?: string[];
+  enabled: boolean;
+};
+
+export type ProjectSkillDefinition = Omit<SkillDefinition, "enabled"> & {
+  defaultEnabled: boolean;
+  enabled: boolean;
+};
+
 export type McpProjectToolStatus = McpToolDefinition & {
   enabled: boolean;
 };

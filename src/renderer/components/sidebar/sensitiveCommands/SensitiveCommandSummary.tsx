@@ -1,23 +1,26 @@
 import { ShieldAlert } from "lucide-react";
 import { useI18n } from "../../../i18n";
-import type { SensitiveCommandConfig } from "./types";
 
 type SensitiveCommandSummaryProps = {
-  commands: SensitiveCommandConfig[];
+  totalCount: number;
+  enabledCount: number;
+  specialCount: number;
+  specialLabel: string;
 };
 
 export function SensitiveCommandSummary({
-  commands,
+  totalCount,
+  enabledCount,
+  specialCount,
+  specialLabel,
 }: SensitiveCommandSummaryProps): React.JSX.Element {
   const { t } = useI18n();
-  const enabledCount = commands.filter((command) => command.enabled).length;
-  const presetCount = commands.filter((command) => command.isPreset).length;
 
   return (
     <div className="api-settings-summary-grid">
       <div className="api-settings-summary-card">
         <ShieldAlert size={15} strokeWidth={1.8} />
-        <span>{commands.length}</span>
+        <span>{totalCount}</span>
         <small>
           {t("settings.sensitiveCommandCount", { defaultValue: "Rules" })}
         </small>
@@ -33,12 +36,8 @@ export function SensitiveCommandSummary({
       </div>
       <div className="api-settings-summary-card">
         <ShieldAlert size={15} strokeWidth={1.8} />
-        <span>{presetCount}</span>
-        <small>
-          {t("settings.sensitiveCommandPresetCount", {
-            defaultValue: "Preset rules",
-          })}
-        </small>
+        <span>{specialCount}</span>
+        <small>{specialLabel}</small>
       </div>
     </div>
   );

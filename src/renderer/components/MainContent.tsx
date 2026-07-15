@@ -4,6 +4,7 @@ import { CustomHeadersSettingsPanel } from "./sidebar/CustomHeadersSettingsPanel
 import { McpSettingsPanel } from "./sidebar/McpSettingsPanel";
 import { ProxyBrowserSettingsPanel } from "./sidebar/ProxyBrowserSettingsPanel";
 import { SensitiveCommandsPanel } from "./sidebar/SensitiveCommandsPanel";
+import { SkillsSettingsPanel } from "./sidebar/SkillsSettingsPanel";
 import { SystemPromptSettingsPanel } from "./sidebar/SystemPromptSettingsPanel";
 import { TerminalSettingsPanel } from "./sidebar/TerminalSettingsPanel";
 import { ChatContent } from "./mainContent/ChatContent";
@@ -34,9 +35,20 @@ export const MainContent = ({
       ) : activeView === "custom-headers-settings" ? (
         <CustomHeadersSettingsPanel onClose={() => onSelectView("chat")} />
       ) : activeView === "mcp-settings" ? (
-        <McpSettingsPanel onClose={() => onSelectView("chat")} />
+        <McpSettingsPanel
+          activeDirectory={activeDirectory}
+          onClose={() => onSelectView("chat")}
+        />
+      ) : activeView === "skills-settings" ? (
+        <SkillsSettingsPanel
+          activeDirectory={activeDirectory}
+          onClose={() => onSelectView("chat")}
+        />
       ) : activeView === "sensitive-command-settings" ? (
-        <SensitiveCommandsPanel onClose={() => onSelectView("chat")} />
+        <SensitiveCommandsPanel
+          activeDirectory={activeDirectory}
+          onClose={() => onSelectView("chat")}
+        />
       ) : activeView === "terminal-settings" ? (
         <TerminalSettingsPanel onClose={() => onSelectView("chat")} />
       ) : (

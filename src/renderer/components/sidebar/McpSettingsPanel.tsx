@@ -1,15 +1,31 @@
-import { Download, Loader2, Plus, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import {
+  Download,
+  Folder,
+  Globe2,
+  Loader2,
+  Plus,
+  RefreshCw,
+  X,
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type {
+  McpProjectServerStatus,
+  WorkspaceDirectoryRecord,
+} from "../../../preload";
 import { useI18n } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { Modal } from "../common/Modal";
 import { McpSettingsEditor } from "./mcpSettings/McpSettingsEditor";
-import { McpSettingsList } from "./mcpSettings/McpSettingsList";
+import {
+  McpSettingsList,
+  type McpSettingsListItem,
+} from "./mcpSettings/McpSettingsList";
 import { McpSettingsSummary } from "./mcpSettings/McpSettingsSummary";
 import {
   EMPTY_MCP_SERVER_DRAFT,
   createMcpPair,
   createMcpStringItem,
+  getMcpServerEndpoint,
   hasDuplicatePairKey,
   toDraft,
   toInput,
@@ -21,14 +37,22 @@ import type {
 } from "./mcpSettings/types";
 
 type McpSettingsPanelProps = {
+  activeDirectory?: WorkspaceDirectoryRecord | null;
   onClose?: () => void;
 };
 
+type McpScope = "global" | "project";
+
 export function McpSettingsPanel({
+  activeDirectory,
   onClose,
 }: McpSettingsPanelProps): React.JSX.Element {
   const { t } = useI18n();
+  const [activeScope, setActiveScope] = useState<McpScope>("global");
   const [servers, setServers] = useState<McpServerConfig[]>([]);
+  const [projectServers, setProjectServers] = useState<
+    McpProjectServerStatus[]
+  >([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [draft, setDraft] = useState<McpServerDraft | null>(null);
@@ -40,32 +64,64 @@ export function McpSettingsPanel({
   >(() => new Set());
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const loadGenerationRef = useRef(0);
 
   const isBusy = isLoading || isSaving;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<void> => {
+    const generation = loadGenerationRef.current + 1;
+    loadGenerationRef.current = generation;
     setIsLoading(true);
     setError("");
 
     try {
-      const items = await window.snow.listMcpServerConfigs();
-      setServers(items);
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : t("settings.mcpLoadError", {
-              defaultValue: "Failed to load MCP servers",
-            })
-      );
+      const [globalItems, projectItems] = await Promise.all([
+        window.snow.listMcpServerConfigs(),
+        activeDirectory
+          ? window.snow.listMcpProjectServers(activeDirectory.directoryId)
+          : Promise.resolve([]),
+      ]);
+      if (loadGenerationRef.current !== generation) {
+        return;
+      }
+
+      setServers(globalItems);
+      setProjectServers(projectItems);
+      setToolsByServerId((previous) => {
+        const next = { ...previous };
+        projectItems.forEach((server) => {
+          if (server.tools.length > 0) {
+            next[server.id] = server.tools;
+          }
+        });
+        return next;
+      });
+    } catch (loadError) {
+      if (loadGenerationRef.current === generation) {
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : t("settings.mcpLoadError", {
+                defaultValue: "Failed to load MCP servers",
+              })
+        );
+      }
     } finally {
-      setIsLoading(false);
+      if (loadGenerationRef.current === generation) {
+        setIsLoading(false);
+      }
     }
-  }, [t]);
+  }, [activeDirectory, t]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!activeDirectory && activeScope === "project") {
+      setActiveScope("global");
+    }
+  }, [activeDirectory, activeScope]);
 
   const handleImport = async () => {
     setIsLoading(true);
@@ -73,8 +129,8 @@ export function McpSettingsPanel({
     setStatus("");
 
     try {
-      const items = await window.snow.importSnowCliMcpConfig();
-      setServers(items);
+      await window.snow.importSnowCliMcpConfig();
+      await load();
       setDraft(null);
       setStatus(
         t("settings.mcpImportSuccess", {
@@ -377,6 +433,160 @@ export function McpSettingsPanel({
     }
   };
 
+  const globalListItems: McpSettingsListItem[] = servers.map((server) => ({
+    serverId: server.serverId,
+    name: server.name,
+    enabled: server.enabled,
+    globalEnabled: true,
+    detail: `${server.transportType} · ${getMcpServerEndpoint(server) || "-"}`,
+    canManage: true,
+  }));
+  const projectListItems: McpSettingsListItem[] = projectServers.map(
+    (server) => ({
+      serverId: server.id,
+      name: server.name,
+      enabled: server.enabled,
+      globalEnabled: server.globalEnabled,
+      detail:
+        server.source === "system"
+          ? t("settings.mcpProjectSystemServer", {
+              defaultValue: "Built-in system MCP server",
+            })
+          : t("settings.mcpProjectExternalServer", {
+              defaultValue: "Global external MCP server",
+            }),
+      canManage: false,
+    })
+  );
+  const isGlobalScope = activeScope === "global";
+  const activeServers = isGlobalScope ? globalListItems : projectListItems;
+  const enabledCount = activeServers.filter(
+    (server) => server.enabled && server.globalEnabled
+  ).length;
+  const listTitle = isGlobalScope
+    ? t("settings.mcpGlobalListTitle", { defaultValue: "Global MCP servers" })
+    : t("settings.mcpProjectListTitle", {
+        defaultValue: "Project MCP servers",
+      });
+  const emptyMessage = isGlobalScope
+    ? t("settings.mcpNoServers", {
+        defaultValue:
+          "No MCP servers yet. Sync from Snow CLI settings.json or add one manually.",
+      })
+    : t("settings.mcpProjectNoServers", {
+        defaultValue: "No MCP servers are available for this project.",
+      });
+
+  const handleProjectToggle = async (
+    server: McpSettingsListItem
+  ): Promise<void> => {
+    if (!activeDirectory || !server.globalEnabled) {
+      return;
+    }
+
+    setError("");
+    setStatus("");
+    try {
+      await window.snow.setMcpProjectServerEnabled(
+        activeDirectory.directoryId,
+        server.serverId,
+        !server.enabled
+      );
+      await load();
+    } catch (updateError) {
+      setError(
+        updateError instanceof Error
+          ? updateError.message
+          : t("settings.mcpSaveError", {
+              defaultValue: "Failed to update MCP server",
+            })
+      );
+    }
+  };
+
+  const handleProjectFetchTools = async (
+    server: McpSettingsListItem
+  ): Promise<void> => {
+    if (!activeDirectory) {
+      return;
+    }
+
+    setFetchingToolServerIds((previous) =>
+      new Set(previous).add(server.serverId)
+    );
+    setError("");
+    setStatus("");
+    try {
+      const tools = await window.snow.listMcpProjectServerTools(
+        activeDirectory.directoryId,
+        server.serverId
+      );
+      setToolsByServerId((previous) => ({
+        ...previous,
+        [server.serverId]: tools,
+      }));
+      setStatus(
+        t("settings.mcpFetchToolsSuccess", {
+          defaultValue: "Fetched {{count}} tool(s) from {{name}}.",
+          values: { count: tools.length, name: server.name },
+        })
+      );
+    } catch (fetchError) {
+      setError(
+        fetchError instanceof Error
+          ? fetchError.message
+          : t("settings.mcpFetchToolsError", {
+              defaultValue: "Failed to fetch MCP tools",
+            })
+      );
+    } finally {
+      setFetchingToolServerIds((previous) => {
+        const next = new Set(previous);
+        next.delete(server.serverId);
+        return next;
+      });
+    }
+  };
+
+  const findGlobalServer = (serverId: string): McpServerConfig | undefined =>
+    servers.find((server) => server.serverId === serverId);
+
+  const handleListToggle = (server: McpSettingsListItem): void => {
+    if (isGlobalScope) {
+      const globalServer = findGlobalServer(server.serverId);
+      if (globalServer) {
+        void toggleEnabled(globalServer);
+      }
+      return;
+    }
+    void handleProjectToggle(server);
+  };
+
+  const handleListFetchTools = (server: McpSettingsListItem): void => {
+    if (isGlobalScope) {
+      const globalServer = findGlobalServer(server.serverId);
+      if (globalServer) {
+        void handleFetchTools(globalServer);
+      }
+      return;
+    }
+    void handleProjectFetchTools(server);
+  };
+
+  const handleListEdit = (server: McpSettingsListItem): void => {
+    const globalServer = findGlobalServer(server.serverId);
+    if (globalServer) {
+      startEdit(globalServer);
+    }
+  };
+
+  const handleListDelete = (server: McpSettingsListItem): void => {
+    const globalServer = findGlobalServer(server.serverId);
+    if (globalServer) {
+      void handleDelete(globalServer);
+    }
+  };
+
   return (
     <div className="api-settings-page" role="region">
       <div className="api-settings-page-header">
@@ -405,35 +615,58 @@ export function McpSettingsPanel({
         )}
       </div>
 
-      <McpSettingsSummary servers={servers} />
+      <McpSettingsSummary
+        totalCount={activeServers.length}
+        enabledCount={enabledCount}
+      />
 
       <div className="api-settings-actions">
-        <button
-          className="api-settings-action-btn primary"
-          onClick={() => void handleImport()}
-          type="button"
-          disabled={isBusy}
-        >
-          {isLoading ? (
-            <Loader2 size={15} className="spin" />
-          ) : (
-            <Download size={15} />
-          )}
-          <span>
-            {t("settings.syncSnowCliMcp", {
-              defaultValue: "Sync Snow CLI MCP settings",
-            })}
-          </span>
-        </button>
-        <button
-          className="api-settings-action-btn secondary"
-          onClick={startAdd}
-          type="button"
-          disabled={isBusy}
-        >
-          <Plus size={15} />
-          <span>{t("settings.mcpAddNew", { defaultValue: "Add server" })}</span>
-        </button>
+        {isGlobalScope ? (
+          <>
+            <button
+              className="api-settings-action-btn primary"
+              onClick={() => void handleImport()}
+              type="button"
+              disabled={isBusy}
+            >
+              {isLoading ? (
+                <Loader2 size={15} className="spin" />
+              ) : (
+                <Download size={15} />
+              )}
+              <span>
+                {t("settings.syncSnowCliMcp", {
+                  defaultValue: "Sync Snow CLI MCP settings",
+                })}
+              </span>
+            </button>
+            <button
+              className="api-settings-action-btn secondary"
+              onClick={startAdd}
+              type="button"
+              disabled={isBusy}
+            >
+              <Plus size={15} />
+              <span>
+                {t("settings.mcpAddNew", { defaultValue: "Add server" })}
+              </span>
+            </button>
+          </>
+        ) : (
+          <button
+            className="api-settings-action-btn secondary"
+            onClick={() => void load()}
+            type="button"
+            disabled={isBusy || fetchingToolServerIds.size > 0}
+          >
+            <RefreshCw size={15} className={isLoading ? "spin" : ""} />
+            <span>
+              {t("settings.mcpProjectRefresh", {
+                defaultValue: "Refresh project MCP",
+              })}
+            </span>
+          </button>
+        )}
       </div>
 
       <AutoDismissNotice
@@ -445,31 +678,69 @@ export function McpSettingsPanel({
         }}
       />
 
+      <div
+        className="skills-settings-tabs"
+        role="tablist"
+        aria-label={t("settings.mcpScopeTabs", {
+          defaultValue: "MCP scope",
+        })}
+      >
+        <button
+          className={`skills-settings-tab ${isGlobalScope ? "active" : ""}`}
+          type="button"
+          role="tab"
+          aria-selected={isGlobalScope}
+          onClick={() => setActiveScope("global")}
+        >
+          <Globe2 size={14} strokeWidth={1.8} />
+          <span>{t("settings.mcpTabGlobal", { defaultValue: "Global" })}</span>
+          <small>{globalListItems.length}</small>
+        </button>
+        <button
+          className={`skills-settings-tab ${!isGlobalScope ? "active" : ""}`}
+          type="button"
+          role="tab"
+          aria-selected={!isGlobalScope}
+          onClick={() => setActiveScope("project")}
+          disabled={!activeDirectory}
+        >
+          <Folder size={14} strokeWidth={1.8} />
+          <span>
+            {t("settings.mcpTabProject", { defaultValue: "Project" })}
+          </span>
+          <small>{projectListItems.length}</small>
+        </button>
+      </div>
+
       <div className="api-settings-manual-form">
         <div className="api-settings-manual-header">
-          <strong>
-            {t("settings.mcpManualTitle", {
-              defaultValue: "Manage MCP servers",
-            })}
-          </strong>
+          <strong>{listTitle}</strong>
           <span>
-            {t("settings.mcpManualInfo", {
-              defaultValue:
-                "These servers are saved in the local app database and can be synced from Snow CLI settings.json files.",
-            })}
+            {isGlobalScope
+              ? t("settings.mcpGlobalTabInfo", {
+                  defaultValue:
+                    "Manage external MCP servers shared by all projects.",
+                })
+              : t("settings.mcpProjectTabInfo", {
+                  defaultValue:
+                    "Enable or disable built-in and global external MCP servers for {{name}}.",
+                  values: { name: activeDirectory?.name ?? "" },
+                })}
           </span>
         </div>
 
         <div className="api-settings-form-body">
           <McpSettingsList
-            servers={servers}
+            servers={activeServers}
             isBusy={isBusy}
+            listTitle={listTitle}
+            emptyMessage={emptyMessage}
             toolsByServerId={toolsByServerId}
             fetchingToolServerIds={fetchingToolServerIds}
-            onToggleEnabled={(server) => void toggleEnabled(server)}
-            onFetchTools={(server) => void handleFetchTools(server)}
-            onEdit={startEdit}
-            onDelete={(server) => void handleDelete(server)}
+            onToggleEnabled={handleListToggle}
+            onFetchTools={handleListFetchTools}
+            onEdit={handleListEdit}
+            onDelete={handleListDelete}
           />
         </div>
       </div>

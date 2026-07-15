@@ -6,7 +6,6 @@ import type {
 
 export const EMPTY_SENSITIVE_COMMAND_DRAFT: SensitiveCommandDraft = {
   commandId: "",
-  scope: "global",
   pattern: "",
   description: "",
   enabled: true,
@@ -19,7 +18,6 @@ export const toDraft = (
   command: SensitiveCommandConfig
 ): SensitiveCommandDraft => ({
   commandId: command.commandId,
-  scope: command.scope,
   pattern: command.pattern,
   description: command.description,
   enabled: command.enabled,
@@ -33,7 +31,6 @@ export const toInput = (
   fallbackSortOrder: number
 ): SensitiveCommandInput => ({
   commandId: draft.commandId,
-  scope: draft.scope,
   pattern: draft.pattern.trim(),
   description: draft.description.trim(),
   enabled: draft.enabled,
@@ -54,6 +51,6 @@ export const hasDuplicatePattern = (
   return commands.some(
     (command) =>
       command.pattern.trim() === normalizedPattern &&
-      (command.commandId !== draft.commandId || command.scope !== draft.scope)
+      command.commandId !== draft.commandId
   );
 };

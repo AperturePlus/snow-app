@@ -17,6 +17,7 @@ use crate::api::responses::{
 };
 use crate::mcp::servers::bash::{authorize_sensitive_command as authorize_command, BashStreamCallback};
 use crate::mcp::servers::browser::BrowserCommandCallback;
+use crate::mcp::servers::skills::{ProjectSkillDefinition, SkillDefinition, SkillsService};
 use crate::mcp::servers::user_interaction::UserQuestionCallback;
 use crate::mcp::tools::{
     call_mcp_tool as call_tool,
@@ -90,6 +91,44 @@ pub async fn generate_conversation_summary(conversation_id: String) -> napi::Res
 #[napi]
 pub async fn list_mcp_tools() -> napi::Result<Vec<McpToolDefinition>> {
     list_all_mcp_tools().await
+}
+
+#[napi]
+pub async fn list_available_skills(
+    project_id: Option<String>,
+) -> napi::Result<Vec<SkillDefinition>> {
+    SkillsService::new()
+        .list_available(project_id.as_deref())
+        .await
+}
+
+#[napi]
+pub async fn set_skill_enabled(
+    project_id: Option<String>,
+    skill_id: String,
+    enabled: bool,
+) -> napi::Result<()> {
+    SkillsService::new()
+        .set_enabled(project_id.as_deref(), &skill_id, enabled)
+        .await
+}
+
+#[napi]
+pub async fn list_project_skills(
+    project_id: String,
+) -> napi::Result<Vec<ProjectSkillDefinition>> {
+    SkillsService::new().list_project(&project_id).await
+}
+
+#[napi]
+pub async fn set_project_skill_enabled(
+    project_id: String,
+    skill_id: String,
+    enabled: bool,
+) -> napi::Result<()> {
+    SkillsService::new()
+        .set_project_enabled(&project_id, &skill_id, enabled)
+        .await
 }
 
 #[napi]

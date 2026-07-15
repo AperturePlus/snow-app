@@ -13,9 +13,17 @@ import {
   readSnowCliMcpConfig,
 } from "../../settings/mcpSettings";
 import {
+  normalizeProjectSensitiveCommandConfig,
   normalizeSensitiveCommandConfig,
   readSnowCliSensitiveCommandConfig,
 } from "../../settings/sensitiveCommandSettings";
+
+const requireProjectId = (value: unknown): string => {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error("Project id is required");
+  }
+  return value.trim();
+};
 
 export const registerConfigHandlers = (native: NativeBridge): void => {
   // ===== System Prompts =====
@@ -97,16 +105,12 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
   );
   ipcMain.handle(
     "sensitive-command-configs:delete",
-    async (_event, commandId: unknown, scope: unknown) => {
+    async (_event, commandId: unknown) => {
       if (typeof commandId !== "string" || !commandId.trim()) {
         throw new Error("Sensitive command ID is required");
       }
 
-      const normalizedScope = scope === "project" ? "project" : "global";
-      await native.deleteSensitiveCommandConfig(
-        commandId.trim(),
-        normalizedScope
-      );
+      await native.deleteSensitiveCommandConfig(commandId.trim());
       return native.listSensitiveCommandConfigs();
     }
   );
@@ -115,12 +119,69 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
   );
 
   ipcMain.handle(
+    "project-sensitive-command-configs:list",
+    (_event, projectId) => {
+      const normalizedProjectId = requireProjectId(projectId);
+      return native.listProjectSensitiveCommandConfigs(normalizedProjectId);
+    }
+  );
+  ipcMain.handle(
+    "project-sensitive-command-configs:set-enabled",
+    async (_event, projectId, commandId, enabled) => {
+      const normalizedProjectId = requireProjectId(projectId);
+      if (typeof commandId !== "string" || !commandId.trim()) {
+        throw new Error("Sensitive command ID is required");
+      }
+      if (typeof enabled !== "boolean") {
+        throw new Error("Sensitive command enabled state must be a boolean");
+      }
+
+      await native.setProjectSensitiveCommandEnabled(
+        normalizedProjectId,
+        commandId.trim(),
+        enabled
+      );
+      return native.listProjectSensitiveCommandConfigs(normalizedProjectId);
+    }
+  );
+  ipcMain.handle(
+    "project-sensitive-command-configs:upsert",
+    async (_event, projectId, item) => {
+      const normalizedProjectId = requireProjectId(projectId);
+      await native.upsertProjectSensitiveCommandConfig(
+        normalizedProjectId,
+        normalizeProjectSensitiveCommandConfig(item)
+      );
+      return native.listProjectSensitiveCommandConfigs(normalizedProjectId);
+    }
+  );
+  ipcMain.handle(
+    "project-sensitive-command-configs:delete",
+    async (_event, projectId, commandId) => {
+      const normalizedProjectId = requireProjectId(projectId);
+      if (typeof commandId !== "string" || !commandId.trim()) {
+        throw new Error("Sensitive command ID is required");
+      }
+
+      await native.deleteProjectSensitiveCommandConfig(
+        normalizedProjectId,
+        commandId.trim()
+      );
+      return native.listProjectSensitiveCommandConfigs(normalizedProjectId);
+    }
+  );
+
+  ipcMain.handle(
     "sensitive-command-configs:check-match",
-    async (_event, command: unknown) => {
+    async (_event, command: unknown, projectId: unknown) => {
       if (typeof command !== "string" || !command.trim()) {
         return [];
       }
-      return native.checkSensitiveCommandMatch(command);
+      const normalizedProjectId =
+        typeof projectId === "string" && projectId.trim()
+          ? projectId.trim()
+          : undefined;
+      return native.checkSensitiveCommandMatch(command, normalizedProjectId);
     }
   );
 };

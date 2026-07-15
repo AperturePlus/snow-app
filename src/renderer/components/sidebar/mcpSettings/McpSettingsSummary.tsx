@@ -1,22 +1,22 @@
 import { Network } from "lucide-react";
 import { useI18n } from "../../../i18n";
-import type { McpServerConfig } from "./types";
 
 type McpSettingsSummaryProps = {
-  servers: McpServerConfig[];
+  totalCount: number;
+  enabledCount: number;
 };
 
 export function McpSettingsSummary({
-  servers,
+  totalCount,
+  enabledCount,
 }: McpSettingsSummaryProps): React.JSX.Element {
   const { t } = useI18n();
-  const enabledCount = servers.filter((server) => server.enabled).length;
 
   return (
-    <div className="api-settings-summary-grid">
+    <div className="api-settings-summary-grid mcp-settings-summary-grid">
       <div className="api-settings-summary-card wide">
         <Network size={15} strokeWidth={1.8} />
-        <span>{servers.length}</span>
+        <span>{totalCount}</span>
         <small>
           {t("settings.mcpServerCount", { defaultValue: "Servers" })}
         </small>

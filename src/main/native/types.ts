@@ -154,7 +154,6 @@ export type McpServerConfigRecord = Omit<McpServerConfigInput, "timeoutMs"> & {
 
 export type SensitiveCommandConfigInput = {
   commandId: string;
-  scope: string;
   pattern: string;
   description: string;
   enabled: boolean;
@@ -167,6 +166,22 @@ export type SensitiveCommandConfigRecord = SensitiveCommandConfigInput & {
   id: string;
   updatedAt: string;
 };
+
+export type ProjectSensitiveCommandConfigInput = {
+  commandId: string;
+  pattern: string;
+  description: string;
+  enabled: boolean;
+  sortOrder: number;
+};
+
+export type ProjectSensitiveCommandConfigRecord =
+  ProjectSensitiveCommandConfigInput & {
+    inherited: boolean;
+    globalEnabled: boolean;
+    isPreset: boolean;
+    source: string;
+  };
 
 export type Model = {
   id: string;
@@ -271,6 +286,22 @@ export type McpToolDefinition = {
   name: string;
   description: string;
   inputSchemaJson: string;
+};
+
+export type SkillDefinition = {
+  id: string;
+  name: string;
+  description: string;
+  location: "project" | "global";
+  source: "snow" | "agents";
+  path: string;
+  allowedTools?: string[];
+  enabled: boolean;
+};
+
+export type ProjectSkillDefinition = Omit<SkillDefinition, "enabled"> & {
+  defaultEnabled: boolean;
+  enabled: boolean;
 };
 
 export type McpProjectToolStatus = McpToolDefinition & {
@@ -440,11 +471,27 @@ export type NativeBridge = {
   upsertSensitiveCommandConfig: (
     item: SensitiveCommandConfigInput
   ) => Promise<void>;
-  deleteSensitiveCommandConfig: (
+  deleteSensitiveCommandConfig: (commandId: string) => Promise<void>;
+  listProjectSensitiveCommandConfigs: (
+    projectId: string
+  ) => Promise<ProjectSensitiveCommandConfigRecord[]>;
+  setProjectSensitiveCommandEnabled: (
+    projectId: string,
     commandId: string,
-    scope: string
+    enabled: boolean
   ) => Promise<void>;
-  checkSensitiveCommandMatch: (command: string) => Promise<
+  upsertProjectSensitiveCommandConfig: (
+    projectId: string,
+    item: ProjectSensitiveCommandConfigInput
+  ) => Promise<void>;
+  deleteProjectSensitiveCommandConfig: (
+    projectId: string,
+    commandId: string
+  ) => Promise<void>;
+  checkSensitiveCommandMatch: (
+    command: string,
+    projectId?: string
+  ) => Promise<
     Array<{
       commandId: string;
       pattern: string;
@@ -492,6 +539,18 @@ export type NativeBridge = {
   ) => Promise<ResponsesApiResult>;
   abortResponseStream: (streamId: string) => boolean;
   listMcpTools: () => Promise<McpToolDefinition[]>;
+  listAvailableSkills: (projectId?: string) => Promise<SkillDefinition[]>;
+  setSkillEnabled: (
+    projectId: string | undefined,
+    skillId: string,
+    enabled: boolean
+  ) => Promise<void>;
+  listProjectSkills: (projectId: string) => Promise<ProjectSkillDefinition[]>;
+  setProjectSkillEnabled: (
+    projectId: string,
+    skillId: string,
+    enabled: boolean
+  ) => Promise<void>;
   listMcpServerTools: (configServerId: string) => Promise<McpToolDefinition[]>;
   listMcpProjectServers: (
     projectId: string

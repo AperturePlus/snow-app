@@ -12,6 +12,7 @@ use super::builtin::{
 use super::servers::bash::{BashService, BashStreamCallback};
 use super::servers::browser::{BrowserCommandCallback, BrowserService};
 use super::servers::grep::GrepService;
+use super::servers::skills::SkillsService;
 use super::servers::todo::TodoService;
 use super::servers::user_interaction::{UserInteractionService, UserQuestionCallback};
 use super::servers::websearch::WebSearchService;
@@ -282,6 +283,13 @@ pub async fn collect_all_mcp_tools(project_id: Option<&str>) -> Result<Vec<McpTo
         .into_iter()
         .filter(|tool| tool_is_enabled(tool, scope.as_ref()))
         .collect::<Vec<_>>();
+
+    if let Some(skill_tool) = SkillsService::new().tool(project_id).await? {
+        if tool_is_enabled(&skill_tool, scope.as_ref()) {
+            tools.push(skill_tool);
+        }
+    }
+
     match super::external::discover_tools(scope.as_ref()).await {
         Ok(external_tools) => tools.extend(external_tools),
         Err(error) => eprintln!("Failed to discover external MCP tools: {error}"),
@@ -342,9 +350,10 @@ async fn ensure_project_tool_enabled(
             format!("Invalid MCP tool name: {tool_name}"),
         ));
     };
-    let server_scope_id = if get_builtin_servers_with_tools()
-        .iter()
-        .any(|(builtin_server_id, _)| builtin_server_id == server_id)
+    let server_scope_id = if server_id == "skills"
+        || get_builtin_servers_with_tools()
+            .iter()
+            .any(|(builtin_server_id, _)| builtin_server_id == server_id)
     {
         builtin_scope_server_id(server_id)
     } else {
@@ -531,10 +540,12 @@ pub async fn call_mcp_tool(
         )
     })??;
 
+    let returns_plain_text = tool_full_name == "mcp__skills__skill-execute";
     let result = if tool_full_name == "mcp__bash__terminal-execute" {
         let terminal_result = BashService::new()
             .execute_terminal_stream(
                 &args,
+                project_id.as_deref(),
                 sensitive_authorization_token.as_deref(),
                 on_chunk,
             )
@@ -566,6 +577,10 @@ pub async fn call_mcp_tool(
         UserInteractionService::new()
             .execute_async(&args, &on_user_question)
             .await?
+    } else if tool_full_name == "mcp__skills__skill-execute" {
+        SkillsService::new()
+            .execute(&args, project_id.as_deref())
+            .await?
     } else if let Some(result) = super::external::call_tool(&tool_full_name, &args).await? {
         result
     } else {
@@ -578,6 +593,15 @@ pub async fn call_mcp_tool(
                 )
             })??
     };
+
+    if returns_plain_text {
+        return result.as_str().map(str::to_string).ok_or_else(|| {
+            Error::new(
+                Status::GenericFailure,
+                "Skill execution returned an invalid text result".to_string(),
+            )
+        });
+    }
 
     serde_json::to_string(&result).map_err(|error| {
         Error::new(
