@@ -26,8 +26,7 @@ use crate::storage::services::chat_conversations::{
 };
 use crate::storage::ApiConfigRecord;
 
-const ANTHROPIC_VERSION: &str = "2023-06-01";
-const DEFAULT_MAX_TOKENS: i32 = 8192;
+const DEFAULT_MAX_TOKENS: i32 = 32000;
 
 pub async fn create_anthropic_response_stream(
     request: ResponsesApiRequest,
@@ -841,10 +840,6 @@ fn build_header_map(api_key: &str, custom_headers: &HashMap<String, String>) -> 
         })?,
     );
     headers.insert(
-        HeaderName::from_static("anthropic-version"),
-        HeaderValue::from_static(ANTHROPIC_VERSION),
-    );
-    headers.insert(
         AUTHORIZATION,
         HeaderValue::from_str(&format!("Bearer {}", api_key)).map_err(|error| {
             Error::from_reason(format!("Invalid authorization header value: {}", error))
@@ -862,7 +857,6 @@ fn build_header_map(api_key: &str, custom_headers: &HashMap<String, String>) -> 
             || trimmed_key.eq_ignore_ascii_case("accept-encoding")
             || trimmed_key.eq_ignore_ascii_case("authorization")
             || trimmed_key.eq_ignore_ascii_case("x-api-key")
-            || trimmed_key.eq_ignore_ascii_case("anthropic-version")
         {
             continue;
         }

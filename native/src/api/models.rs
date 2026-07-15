@@ -228,7 +228,11 @@ fn fetch_openai_models(
 
     Ok(parse_openai_compatible_models(&data))
 }
-fn fetch_gemini_models(base_url: &str, api_key: &str) -> Result<Vec<Model>> {
+fn fetch_gemini_models(
+    base_url: &str,
+    api_key: &str,
+    custom_headers: &HashMap<String, String>,
+) -> Result<Vec<Model>> {
     if api_key.is_empty() {
         return Err(Error::from_reason("API key is required for Gemini API"));
     }
@@ -241,7 +245,7 @@ fn fetch_gemini_models(base_url: &str, api_key: &str) -> Result<Vec<Model>> {
     let data = with_retry_sync(|| {
         let response = client
             .get(&url)
-            .header("Content-Type", "application/json")
+            .headers(build_header_map(&build_headers("", custom_headers))?)
             .send()
             .map_err(|error| Error::from_reason(format!("Failed to fetch models: {}", error)))?;
 
@@ -315,6 +319,7 @@ pub struct ApiConfigForModels {
     pub base_url_mode: String,
     pub api_key: String,
     pub request_method: String,
+    pub custom_header_scheme_id: String,
 }
 
 pub fn fetch_available_models(
@@ -338,7 +343,7 @@ pub fn fetch_available_models(
             } else {
                 base_url.clone()
             };
-            fetch_gemini_models(&gemini_base_url, &config.api_key)?
+            fetch_gemini_models(&gemini_base_url, &config.api_key, custom_headers)?
         }
         "anthropic" => {
             let anthropic_base_url = if is_default_base_url {
@@ -373,6 +378,7 @@ pub fn fetch_available_models_for_active_config() -> Result<Vec<Model>> {
         base_url_mode: context.api_config.base_url_mode,
         api_key: context.api_config.api_key,
         request_method: context.api_config.request_method,
+        custom_header_scheme_id: context.api_config.custom_header_scheme_id,
     };
 
     fetch_available_models(&config, &context.custom_headers)

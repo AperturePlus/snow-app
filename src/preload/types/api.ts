@@ -49,6 +49,7 @@ export type ApiModelsConfig = {
   baseUrlMode: string;
   apiKey: string;
   requestMethod: string;
+  customHeaderSchemeId: string;
 };
 
 export type ResponsesApiMessage = {

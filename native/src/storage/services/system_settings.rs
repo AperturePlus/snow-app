@@ -23,6 +23,10 @@ const DEFAULT_CODEBASE_SETTING_NAME: &str = "Codebase settings";
 const DEFAULT_CODEBASE_SETTING_CODE: &str = "codebase_settings";
 const DEFAULT_CODEBASE_SETTING_VALUE: &str = "{\"profileName\":\"default\",\"enabled\":false,\"enableAgentReview\":true,\"enableReranking\":false,\"embeddingType\":\"jina\",\"embeddingModelName\":\"\",\"embeddingBaseUrl\":\"\",\"embeddingApiKey\":\"\",\"embeddingDimensions\":1536,\"batchMaxLines\":10,\"batchConcurrency\":3,\"chunkingMaxLinesPerChunk\":200,\"chunkingMinLinesPerChunk\":10,\"chunkingMinCharsPerChunk\":20,\"chunkingOverlapLines\":20,\"rerankingModelName\":\"\",\"rerankingBaseUrl\":\"\",\"rerankingApiKey\":\"\",\"rerankingContextLength\":4096,\"rerankingTopN\":5,\"configJson\":\"{}\",\"source\":\"manual\"}";
 
+const DEFAULT_YOLO_MODE_SETTING_NAME: &str = "YOLO mode";
+const DEFAULT_YOLO_MODE_SETTING_CODE: &str = "yolo_mode";
+const DEFAULT_YOLO_MODE_SETTING_VALUE: &str = "false";
+
 const PROJECT_MCP_SETTING_NAME: &str = "Project MCP scope";
 const PROJECT_MCP_SETTING_CODE_PREFIX: &str = "project_mcp_scope_";
 
@@ -97,6 +101,28 @@ pub fn set_system_setting(
             )
         })
         .map_err(|error| database::database_error(database_path, "write system setting", error))
+}
+
+pub fn get_yolo_mode(database_path: &Path) -> Result<bool> {
+    let Some(value) = get_system_setting_value(database_path, DEFAULT_YOLO_MODE_SETTING_CODE)? else {
+        return Ok(false);
+    };
+
+    value.parse::<bool>().map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to parse YOLO mode setting: {error}"),
+        )
+    })
+}
+
+pub fn set_yolo_mode(database_path: &Path, enabled: bool) -> Result<()> {
+    set_system_setting(
+        database_path,
+        DEFAULT_YOLO_MODE_SETTING_NAME,
+        DEFAULT_YOLO_MODE_SETTING_CODE,
+        if enabled { "true" } else { "false" },
+    )
 }
 
 pub fn get_mcp_project_scope_settings(
@@ -279,6 +305,12 @@ fn seed_default_settings_with_connection(connection: &Connection) -> rusqlite::R
         DEFAULT_CODEBASE_SETTING_NAME,
         DEFAULT_CODEBASE_SETTING_CODE,
         DEFAULT_CODEBASE_SETTING_VALUE,
+    )?;
+    insert_default_setting(
+        connection,
+        DEFAULT_YOLO_MODE_SETTING_NAME,
+        DEFAULT_YOLO_MODE_SETTING_CODE,
+        DEFAULT_YOLO_MODE_SETTING_VALUE,
     )?;
 
     Ok(())

@@ -44,21 +44,17 @@ pub async fn set_system_setting(
 }
 
 #[napi]
-pub async fn get_yolo_mode(workspace_path: Option<String>) -> napi::Result<bool> {
-    tokio::task::spawn_blocking(move || {
-        crate::storage::services::yolo_settings::get_yolo_mode(workspace_path)
-    })
-    .await
-    .map_err(map_spawn_error)?
+pub async fn get_yolo_mode() -> napi::Result<bool> {
+    tokio::task::spawn_blocking(crate::storage::get_yolo_mode)
+        .await
+        .map_err(map_spawn_error)?
 }
 
 #[napi]
-pub async fn set_yolo_mode(workspace_path: Option<String>, enabled: bool) -> napi::Result<()> {
-    tokio::task::spawn_blocking(move || {
-        crate::storage::services::yolo_settings::set_yolo_mode(workspace_path, enabled)
-    })
-    .await
-    .map_err(map_spawn_error)?
+pub async fn set_yolo_mode(enabled: bool) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::set_yolo_mode(enabled))
+        .await
+        .map_err(map_spawn_error)?
 }
 
 #[napi]

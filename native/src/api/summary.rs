@@ -474,10 +474,6 @@ fn build_anthropic_header_map(
             Error::from_reason(format!("Invalid API key header value: {}", error))
         })?,
     );
-    headers.insert(
-        HeaderName::from_static("anthropic-version"),
-        HeaderValue::from_static("2023-06-01"),
-    );
 
     for (key, value) in custom_headers {
         let trimmed_key = key.trim();
@@ -489,7 +485,6 @@ fn build_anthropic_header_map(
         if trimmed_key.eq_ignore_ascii_case("content-type")
             || trimmed_key.eq_ignore_ascii_case("accept-encoding")
             || trimmed_key.eq_ignore_ascii_case("x-api-key")
-            || trimmed_key.eq_ignore_ascii_case("anthropic-version")
         {
             continue;
         }

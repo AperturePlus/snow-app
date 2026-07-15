@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
-use crate::api::config::get_active_custom_headers;
+use crate::api::config::get_api_config_custom_headers;
 use crate::api::conversation::{
     create_response_stream as create_conversation_response_stream,
 };
@@ -51,7 +51,10 @@ pub async fn fetch_available_models_for_config(config: ApiConfigForModels) -> na
         let database_path = PathBuf::from(storage_info.database_path);
         let custom_header_schemes =
             crate::storage::services::custom_header_schemes::list_custom_header_schemes(&database_path)?;
-        let custom_headers = get_active_custom_headers(&custom_header_schemes);
+        let custom_headers = get_api_config_custom_headers(
+            &custom_header_schemes,
+            &config.custom_header_scheme_id,
+        );
 
         fetch_models_with_config(&config, &custom_headers)
     })

@@ -666,20 +666,20 @@ export const useChatConversation = (
 
   const refreshYoloMode = useCallback(async (): Promise<boolean> => {
     try {
-      const enabled = await window.snow.getYoloMode(directoryPath);
+      const enabled = await window.snow.getYoloMode();
       applyYoloMode(enabled);
       return enabled;
     } catch {
       applyYoloMode(false);
       return false;
     }
-  }, [applyYoloMode, directoryPath]);
+  }, [applyYoloMode]);
 
   useEffect(() => {
     let disposed = false;
 
     void window.snow
-      .getYoloMode(directoryPath)
+      .getYoloMode()
       .then((enabled) => {
         if (!disposed) {
           applyYoloMode(enabled);
@@ -717,13 +717,13 @@ export const useChatConversation = (
 
       setIsUpdatingYoloMode(true);
       try {
-        await window.snow.setYoloMode(directoryPath, enabled);
+        await window.snow.setYoloMode(enabled);
         applyYoloMode(enabled);
       } finally {
         setIsUpdatingYoloMode(false);
       }
     },
-    [applyYoloMode, directoryPath, isUpdatingYoloMode]
+    [applyYoloMode, isUpdatingYoloMode]
   );
 
   const settleToolAuthorization = useCallback(
@@ -882,10 +882,10 @@ export const useChatConversation = (
       toolCalls: ToolCallInfo[],
       conversationId: string
     ): Promise<ToolAuthorizationDecision[]> => {
-      // One disk read per tool batch so mid-loop YOLO toggles take effect
-      // immediately without re-reading the settings file for every tool.
+      // Read the persisted app setting once per tool batch so recent YOLO
+      // changes take effect without querying SQLite for every tool.
       try {
-        const enabled = await window.snow.getYoloMode(directoryPath);
+        const enabled = await window.snow.getYoloMode();
         applyYoloMode(enabled);
       } catch {
         // Keep the last known in-memory state if the read fails.
@@ -897,7 +897,7 @@ export const useChatConversation = (
         )
       );
     },
-    [applyYoloMode, directoryPath, requestToolAuthorization]
+    [applyYoloMode, requestToolAuthorization]
   );
 
   const approveToolAuthorizationAlways = useCallback(

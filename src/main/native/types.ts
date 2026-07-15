@@ -179,6 +179,7 @@ export type ApiModelsConfig = {
   baseUrlMode: string;
   apiKey: string;
   requestMethod: string;
+  customHeaderSchemeId: string;
 };
 
 export type ChatConversationRecord = {
@@ -400,11 +401,8 @@ export type NativeBridge = {
     settingCode: string,
     settingValue: string
   ) => Promise<void>;
-  getYoloMode: (workspacePath?: string) => Promise<boolean>;
-  setYoloMode: (
-    workspacePath: string | undefined,
-    enabled: boolean
-  ) => Promise<void>;
+  getYoloMode: () => Promise<boolean>;
+  setYoloMode: (enabled: boolean) => Promise<void>;
   listAlwaysApprovedTools: (workspacePath?: string) => Promise<string[]>;
   addAlwaysApprovedTool: (
     workspacePath: string | undefined,

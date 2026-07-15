@@ -50,7 +50,7 @@ export const PlusMenu = ({
     setIsOpen((prev) => {
       const next = !prev;
       if (next) {
-        // Re-check settings.json every open so external edits stay in sync.
+        // Re-read the persisted app setting whenever the menu opens.
         void onRefreshYoloMode?.();
       }
       return next;

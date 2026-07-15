@@ -44,15 +44,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       settingValue: string
     ) => native.setSystemSetting(settingName, settingCode, settingValue)
   );
-  ipcMain.handle(
-    "settings:get-yolo-mode",
-    async (_event, workspacePath: string | undefined) =>
-      native.getYoloMode(workspacePath)
-  );
-  ipcMain.handle(
-    "settings:set-yolo-mode",
-    async (_event, workspacePath: string | undefined, enabled: boolean) =>
-      native.setYoloMode(workspacePath, enabled)
+  ipcMain.handle("settings:get-yolo-mode", () => native.getYoloMode());
+  ipcMain.handle("settings:set-yolo-mode", (_event, enabled: boolean) =>
+    native.setYoloMode(enabled)
   );
   ipcMain.handle(
     "permissions:list-always-approved-tools",

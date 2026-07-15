@@ -6380,7 +6380,7 @@ input {
 }
 
 .plus-menu-yolo-switch input:disabled + .toggle-slider {
-  cursor: wait;
+  cursor: default;
 }
 
 .toolbar-btn {

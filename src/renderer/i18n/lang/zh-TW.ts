@@ -697,7 +697,8 @@ export const zhTW = {
   "sensitiveCommand.command": "命令",
   "sensitiveCommand.matchedRules": "匹配的規則",
   "sensitiveCommand.confirmExecution": "確認執行",
-  "chatInput.placeholder": "問我任何問題...",
+  "chatInput.placeholder":
+    "問我任何問題，輸入 / 開啟指令面板，輸入 @ 開啟檔案面板...",
   "chatCommand.title": "聊天指令",
   "chatCommand.clearDescription": "建立新對話",
   "chatCommand.compactDescription": "將目前對話壓縮為上下文交接文件",

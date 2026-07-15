@@ -287,6 +287,16 @@ pub fn set_system_setting(
     )
 }
 
+pub fn get_yolo_mode() -> Result<bool> {
+    let database_path = ensure_database_file()?;
+    services::yolo_settings::get_yolo_mode(&database_path)
+}
+
+pub fn set_yolo_mode(enabled: bool) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::yolo_settings::set_yolo_mode(&database_path, enabled)
+}
+
 pub fn list_api_configs() -> Result<Vec<ApiConfigRecord>> {
     let database_path = ensure_database_file()?;
     services::api_configs::list_api_configs(&database_path)

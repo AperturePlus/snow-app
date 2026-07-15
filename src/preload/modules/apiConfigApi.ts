@@ -57,13 +57,10 @@ export const apiConfigApi = {
       settingCode,
       settingValue
     ),
-  getYoloMode: (workspacePath?: string): Promise<boolean> =>
-    ipcRenderer.invoke("settings:get-yolo-mode", workspacePath),
-  setYoloMode: (
-    workspacePath: string | undefined,
-    enabled: boolean
-  ): Promise<void> =>
-    ipcRenderer.invoke("settings:set-yolo-mode", workspacePath, enabled),
+  getYoloMode: (): Promise<boolean> =>
+    ipcRenderer.invoke("settings:get-yolo-mode"),
+  setYoloMode: (enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke("settings:set-yolo-mode", enabled),
   listAlwaysApprovedTools: (workspacePath?: string): Promise<string[]> =>
     ipcRenderer.invoke("permissions:list-always-approved-tools", workspacePath),
   addAlwaysApprovedTool: (

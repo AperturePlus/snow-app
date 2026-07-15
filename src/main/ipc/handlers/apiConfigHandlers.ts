@@ -63,6 +63,10 @@ export const registerApiConfigHandlers = (native: NativeBridge): void => {
           typeof source.requestMethod === "string"
             ? source.requestMethod
             : "chat",
+        customHeaderSchemeId:
+          typeof source.customHeaderSchemeId === "string"
+            ? source.customHeaderSchemeId
+            : "",
       };
 
       return native.fetchAvailableModelsForConfig(normalizedConfig);

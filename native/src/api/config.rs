@@ -30,7 +30,10 @@ pub fn get_active_api_request_context() -> Result<ActiveApiRequestContext> {
 
     let custom_header_schemes =
         crate::storage::services::custom_header_schemes::list_custom_header_schemes(&database_path)?;
-    let custom_headers = get_active_custom_headers(&custom_header_schemes);
+    let custom_headers = get_api_config_custom_headers(
+        &custom_header_schemes,
+        &api_config.custom_header_scheme_id,
+    );
 
     Ok(ActiveApiRequestContext {
         database_path,
@@ -42,12 +45,35 @@ pub fn get_active_api_request_context() -> Result<ActiveApiRequestContext> {
 pub fn get_active_custom_headers(
     schemes: &[CustomHeaderSchemeRecord],
 ) -> HashMap<String, String> {
-    let active = schemes.iter().find(|scheme| scheme.is_active);
+    schemes
+        .iter()
+        .find(|scheme| scheme.is_active)
+        .map(parse_custom_headers)
+        .unwrap_or_default()
+}
 
-    let Some(scheme) = active else {
+pub fn get_api_config_custom_headers(
+    schemes: &[CustomHeaderSchemeRecord],
+    custom_header_scheme_id: &str,
+) -> HashMap<String, String> {
+    let scheme_id = custom_header_scheme_id.trim();
+
+    if scheme_id == "__DISABLED__" {
         return HashMap::new();
-    };
+    }
 
+    if scheme_id.is_empty() {
+        return get_active_custom_headers(schemes);
+    }
+
+    schemes
+        .iter()
+        .find(|scheme| scheme.scheme_id == scheme_id)
+        .map(parse_custom_headers)
+        .unwrap_or_default()
+}
+
+fn parse_custom_headers(scheme: &CustomHeaderSchemeRecord) -> HashMap<String, String> {
     let Ok(parsed) = serde_json::from_str::<Value>(&scheme.headers_json) else {
         return HashMap::new();
     };

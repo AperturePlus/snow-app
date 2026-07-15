@@ -697,7 +697,8 @@ export const zhCN = {
   "sensitiveCommand.command": "命令",
   "sensitiveCommand.matchedRules": "匹配的规则",
   "sensitiveCommand.confirmExecution": "确认执行",
-  "chatInput.placeholder": "问我任何问题...",
+  "chatInput.placeholder":
+    "问我任何问题，输入 / 打开指令面板，输入 @ 打开文件面板...",
   "chatCommand.title": "聊天指令",
   "chatCommand.clearDescription": "新建会话",
   "chatCommand.compactDescription": "将当前会话压缩为上下文交接文档",

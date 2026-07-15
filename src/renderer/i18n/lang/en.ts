@@ -726,7 +726,8 @@ export const en = {
   "sensitiveCommand.command": "Command",
   "sensitiveCommand.matchedRules": "Matched rules",
   "sensitiveCommand.confirmExecution": "Confirm execution",
-  "chatInput.placeholder": "Ask me anything...",
+  "chatInput.placeholder":
+    "Ask me anything. Type / for commands or @ for files...",
   "chatCommand.title": "Chat commands",
   "chatCommand.clearDescription": "Start a new chat",
   "chatCommand.compactDescription":

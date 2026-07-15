@@ -81,6 +81,7 @@ export function ApiSettingsFormFields({
         data.baseUrlMode.trim(),
         data.apiKey.trim(),
         data.requestMethod.trim(),
+        data.customHeaderSchemeId.trim(),
       ].join("\n");
 
       if (
@@ -100,6 +101,7 @@ export function ApiSettingsFormFields({
             baseUrlMode: data.baseUrlMode,
             apiKey: data.apiKey,
             requestMethod: data.requestMethod,
+            customHeaderSchemeId: data.customHeaderSchemeId,
           }
         );
         setModelOptions(availableModels);
@@ -121,6 +123,7 @@ export function ApiSettingsFormFields({
       data.apiKey,
       data.baseUrl,
       data.baseUrlMode,
+      data.customHeaderSchemeId,
       data.requestMethod,
       isLoadingModelOptions,
       loadedModelOptionsKey,
