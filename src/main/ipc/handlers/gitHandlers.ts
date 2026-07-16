@@ -1,5 +1,7 @@
 import { ipcMain } from "electron";
-import type { NativeBridge } from "../../native/types";
+import type { NativeBridge, ResponsesApiStreamChunk } from "../../native/types";
+
+const GIT_COMMIT_MSG_CHUNK_CHANNEL = "git:commit-msg:chunk";
 
 export const registerGitHandlers = (native: NativeBridge): void => {
   // ===== Git file watcher handlers =====
@@ -144,6 +146,34 @@ export const registerGitHandlers = (native: NativeBridge): void => {
         ? filePaths.filter((f): f is string => typeof f === "string")
         : [];
       return native.gitDiscardChanges(repoPath.trim(), paths);
+    }
+  );
+
+  // ===== AI commit message generation =====
+  ipcMain.handle(
+    "git:generate-commit-message",
+    async (event, repoPath: unknown, streamId: unknown) => {
+      if (typeof repoPath !== "string" || !repoPath.trim()) {
+        throw new Error("Repository path is required");
+      }
+      if (typeof streamId !== "string" || !streamId.trim()) {
+        throw new Error("Stream ID is required");
+      }
+
+      const normalizedStreamId = streamId.trim();
+
+      return await native.generateCommitMessage(
+        repoPath.trim(),
+        (chunk: ResponsesApiStreamChunk) => {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send(GIT_COMMIT_MSG_CHUNK_CHANNEL, {
+              streamId: normalizedStreamId,
+              chunk,
+            });
+          }
+        },
+        normalizedStreamId
+      );
     }
   );
 };

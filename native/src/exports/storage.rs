@@ -481,6 +481,13 @@ pub async fn update_sub_agent_session_status(
 }
 
 #[napi]
+pub async fn cancel_running_sub_agent_sessions() -> napi::Result<u32> {
+    tokio::task::spawn_blocking(crate::storage::cancel_running_sub_agent_sessions)
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn update_conversation_status(
     conversation_id: String,
     status: String,

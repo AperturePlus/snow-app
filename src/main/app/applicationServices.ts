@@ -25,7 +25,13 @@ export const initializeApplicationServices = async (
 ): Promise<AppStorageInfo> => {
   try {
     const storageInfo = await native.initializeAppStorage();
+    const cancelledSubAgentCount = await native.cancelRunningSubAgentSessions();
     await ensureDefaultWorkspaceDirectory(native);
+    if (cancelledSubAgentCount > 0) {
+      console.info(
+        `Cancelled ${cancelledSubAgentCount} interrupted sub-agent session(s)`
+      );
+    }
     console.info("Snow App storage initialized:", storageInfo.databasePath);
     markStorageReady();
     return storageInfo;

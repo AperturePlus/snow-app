@@ -7,7 +7,38 @@ import type {
   GitPushPullResult,
   GitStageResult,
   GitStatusResult,
+  ResponsesApiResult,
+  ResponsesApiStreamChunk,
 } from "../types";
+
+const GIT_COMMIT_MSG_CHUNK_CHANNEL = "git:commit-msg:chunk";
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const createCommitMsgStreamId = (): string =>
+  `commit-msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const normalizeStreamChunk = (
+  value: unknown
+): ResponsesApiStreamChunk | null => {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return {
+    contentDelta:
+      typeof value.contentDelta === "string" ? value.contentDelta : "",
+    thinkingDelta:
+      typeof value.thinkingDelta === "string" ? value.thinkingDelta : "",
+    content: typeof value.content === "string" ? value.content : "",
+    thinking: typeof value.thinking === "string" ? value.thinking : "",
+    retrying: typeof value.retrying === "boolean" ? value.retrying : false,
+    retryAttempt:
+      typeof value.retryAttempt === "number" ? value.retryAttempt : null,
+    retryError: typeof value.retryError === "string" ? value.retryError : null,
+  };
+};
 
 export const gitApi = {
   gitStatus: (repoPath: string): Promise<GitStatusResult> =>
@@ -62,4 +93,33 @@ export const gitApi = {
     filePaths: string[]
   ): Promise<GitStageResult> =>
     ipcRenderer.invoke("git:discard", repoPath, filePaths),
+  generateCommitMessage: (
+    repoPath: string,
+    onChunk?: (chunk: ResponsesApiStreamChunk) => void,
+    onStreamId?: (streamId: string) => void
+  ): Promise<ResponsesApiResult> => {
+    const streamId = createCommitMsgStreamId();
+    onStreamId?.(streamId);
+
+    const handleChunk = (_event: IpcRendererEvent, payload: unknown): void => {
+      if (!isRecord(payload) || payload.streamId !== streamId) {
+        return;
+      }
+
+      const chunk = normalizeStreamChunk(payload.chunk);
+      if (chunk) {
+        onChunk?.(chunk);
+      }
+    };
+
+    ipcRenderer.on(GIT_COMMIT_MSG_CHUNK_CHANNEL, handleChunk);
+
+    return ipcRenderer
+      .invoke("git:generate-commit-message", repoPath, streamId)
+      .finally(() => {
+        ipcRenderer.removeListener(GIT_COMMIT_MSG_CHUNK_CHANNEL, handleChunk);
+      });
+  },
+  abortCommitMessage: (streamId: string): Promise<boolean> =>
+    ipcRenderer.invoke("chat:abort-response-stream", streamId),
 };

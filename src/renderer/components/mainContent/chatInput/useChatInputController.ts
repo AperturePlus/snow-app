@@ -28,6 +28,7 @@ import {
   parseContentSegments,
 } from "./fileTagUtils";
 type UseChatInputControllerParams = {
+  conversationId?: string;
   onSend?: (message: string, options: { model?: string }) => void;
   isStreaming?: boolean;
   isAborting?: boolean;
@@ -48,6 +49,7 @@ const isComposingKeyboardEvent = (
 };
 
 export const useChatInputController = ({
+  conversationId,
   onSend,
   isStreaming = false,
   isAborting = false,
@@ -66,7 +68,7 @@ export const useChatInputController = ({
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isManualMode, setIsManualMode] = useState(false);
   const [manualValue, setManualValue] = useState("");
-  const [activeApiConfig, setActiveApiConfig] =
+  const [runtimeApiConfig, setRuntimeApiConfig] =
     useState<ApiConfigRecord | null>(null);
   const [isLoadingApiConfig, setIsLoadingApiConfig] = useState(true);
   const [thinkingValue, setThinkingValue] = useState(DEFAULT_THINKING_VALUE);
@@ -107,37 +109,71 @@ export const useChatInputController = ({
   useEffect(() => {
     let cancelled = false;
 
-    const loadActiveApiConfig = async () => {
+    const loadRuntimeApiConfig = async () => {
       setIsLoadingApiConfig(true);
       setThinkingError(null);
+      setModelError(null);
+      setModels([]);
 
       try {
-        const configs = await window.snow.listApiConfigs();
+        const [configs, conversation] = await Promise.all([
+          window.snow.listApiConfigs(),
+          conversationId
+            ? window.snow.getChatConversation(conversationId)
+            : Promise.resolve(null),
+        ]);
         if (cancelled) {
           return;
         }
 
-        const activeConfig =
-          configs.find((config) => config.isActive) ?? configs[0] ?? null;
-        setActiveApiConfig(activeConfig);
-        setSelectedModel(activeConfig?.advancedModel || "");
-        setThinkingValue(
-          activeConfig
-            ? getThinkingValueFromConfig(activeConfig)
-            : DEFAULT_THINKING_VALUE
-        );
+        let requestedProfile = "";
+        if (conversation?.conversationType === "sub_agent") {
+          const subAgentId = conversation.subAgentId.trim();
+          if (!subAgentId) {
+            throw new Error("Sub-agent configuration is not available");
+          }
+
+          const subAgentConfig = await window.snow.getSubAgentConfig(
+            subAgentId
+          );
+          if (cancelled) {
+            return;
+          }
+          if (!subAgentConfig) {
+            throw new Error(`Sub-agent configuration not found: ${subAgentId}`);
+          }
+          requestedProfile = subAgentConfig.configProfile.trim();
+        }
+
+        const runtimeConfig = requestedProfile
+          ? configs.find((config) => config.profileName === requestedProfile) ??
+            null
+          : configs.find((config) => config.isActive) ?? configs[0] ?? null;
+        if (!runtimeConfig) {
+          throw new Error(
+            requestedProfile
+              ? `Sub-agent API profile is not available: ${requestedProfile}`
+              : "No API configuration found"
+          );
+        }
+
+        setRuntimeApiConfig(runtimeConfig);
+        setSelectedModel(runtimeConfig.advancedModel || "");
+        setThinkingValue(getThinkingValueFromConfig(runtimeConfig));
       } catch (error) {
         if (cancelled) {
           return;
         }
 
-        setActiveApiConfig(null);
-        setThinkingValue(DEFAULT_THINKING_VALUE);
-        setThinkingError(
+        const message =
           error instanceof Error
             ? error.message
-            : "Failed to load API configuration"
-        );
+            : "Failed to load API configuration";
+        setRuntimeApiConfig(null);
+        setSelectedModel("");
+        setThinkingValue(DEFAULT_THINKING_VALUE);
+        setModelError(message);
+        setThinkingError(message);
       } finally {
         if (!cancelled) {
           setIsLoadingApiConfig(false);
@@ -145,12 +181,12 @@ export const useChatInputController = ({
       }
     };
 
-    void loadActiveApiConfig();
+    void loadRuntimeApiConfig();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [conversationId]);
 
   const loadModels = useCallback(
     async (force = false) => {
@@ -162,14 +198,26 @@ export const useChatInputController = ({
       setModelError(null);
 
       try {
-        const availableModels = await window.snow.fetchAvailableModels();
+        if (!runtimeApiConfig) {
+          throw new Error("API configuration is not available");
+        }
+
+        const availableModels = await window.snow.fetchAvailableModelsForConfig(
+          {
+            baseUrl: runtimeApiConfig.baseUrl,
+            baseUrlMode: runtimeApiConfig.baseUrlMode,
+            apiKey: runtimeApiConfig.apiKey,
+            requestMethod: runtimeApiConfig.requestMethod,
+            customHeaderSchemeId: runtimeApiConfig.customHeaderSchemeId,
+          }
+        );
         setModels(availableModels);
 
         if (availableModels.length > 0) {
           setSelectedModel(
             (currentModel) =>
               currentModel ||
-              activeApiConfig?.advancedModel ||
+              runtimeApiConfig.advancedModel ||
               availableModels[0].id
           );
         }
@@ -182,7 +230,7 @@ export const useChatInputController = ({
       }
     },
     [
-      activeApiConfig?.advancedModel,
+      runtimeApiConfig,
       isLoadingModels,
       labels.loadModelsError,
       modelError,
@@ -353,24 +401,24 @@ export const useChatInputController = ({
       setIsDropdownOpen(false);
       setIsManualMode(false);
 
-      if (!activeApiConfig) {
+      if (!runtimeApiConfig) {
         return;
       }
 
       try {
         const updatedConfigs = await window.snow.upsertApiConfig(
-          toModelUpdatePayload(activeApiConfig, modelId)
+          toModelUpdatePayload(runtimeApiConfig, modelId)
         );
-        const nextActiveConfig =
-          updatedConfigs.find((config) => config.isActive) ??
-          updatedConfigs[0] ??
-          null;
-        setActiveApiConfig(nextActiveConfig);
+        const nextRuntimeConfig =
+          updatedConfigs.find(
+            (config) => config.profileName === runtimeApiConfig.profileName
+          ) ?? null;
+        setRuntimeApiConfig(nextRuntimeConfig);
       } catch {
         // 保存失败时保留用户选择，不回退
       }
     },
-    [activeApiConfig]
+    [runtimeApiConfig]
   );
 
   const handleOpenManualMode = useCallback(() => {
@@ -386,23 +434,23 @@ export const useChatInputController = ({
     setIsManualMode(false);
     setIsDropdownOpen(false);
 
-    if (!activeApiConfig || !trimmed) {
+    if (!runtimeApiConfig || !trimmed) {
       return;
     }
 
     try {
       const updatedConfigs = await window.snow.upsertApiConfig(
-        toModelUpdatePayload(activeApiConfig, trimmed)
+        toModelUpdatePayload(runtimeApiConfig, trimmed)
       );
-      const nextActiveConfig =
-        updatedConfigs.find((config) => config.isActive) ??
-        updatedConfigs[0] ??
-        null;
-      setActiveApiConfig(nextActiveConfig);
+      const nextRuntimeConfig =
+        updatedConfigs.find(
+          (config) => config.profileName === runtimeApiConfig.profileName
+        ) ?? null;
+      setRuntimeApiConfig(nextRuntimeConfig);
     } catch {
       // 保存失败时保留用户选择，不回退
     }
-  }, [activeApiConfig, manualValue]);
+  }, [manualValue, runtimeApiConfig]);
 
   const handleManualKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -434,7 +482,7 @@ export const useChatInputController = ({
     });
   }, [loadModels]);
 
-  const requestMethod = normalizeRequestMethod(activeApiConfig?.requestMethod);
+  const requestMethod = normalizeRequestMethod(runtimeApiConfig?.requestMethod);
   const thinkingOptions = THINKING_OPTIONS_BY_METHOD[requestMethod];
   const activeThinkingOption = useMemo(() => {
     const matchingOption = thinkingOptions.find(
@@ -449,7 +497,7 @@ export const useChatInputController = ({
 
   const handleSelectThinking = useCallback(
     async (nextValue: string) => {
-      if (!activeApiConfig) {
+      if (!runtimeApiConfig) {
         return;
       }
 
@@ -460,20 +508,20 @@ export const useChatInputController = ({
 
       try {
         const updatedConfigs = await window.snow.upsertApiConfig(
-          toConfigUpdatePayload(activeApiConfig, nextValue)
+          toConfigUpdatePayload(runtimeApiConfig, nextValue)
         );
-        const nextActiveConfig =
-          updatedConfigs.find((config) => config.isActive) ??
-          updatedConfigs[0] ??
-          null;
-        setActiveApiConfig(nextActiveConfig);
+        const nextRuntimeConfig =
+          updatedConfigs.find(
+            (config) => config.profileName === runtimeApiConfig.profileName
+          ) ?? null;
+        setRuntimeApiConfig(nextRuntimeConfig);
         setThinkingValue(
-          nextActiveConfig
-            ? getThinkingValueFromConfig(nextActiveConfig)
+          nextRuntimeConfig
+            ? getThinkingValueFromConfig(nextRuntimeConfig)
             : nextValue
         );
       } catch (error) {
-        setThinkingValue(getThinkingValueFromConfig(activeApiConfig));
+        setThinkingValue(getThinkingValueFromConfig(runtimeApiConfig));
         setThinkingError(
           error instanceof Error
             ? error.message
@@ -483,7 +531,7 @@ export const useChatInputController = ({
         setIsSavingThinking(false);
       }
     },
-    [activeApiConfig, t]
+    [runtimeApiConfig, t]
   );
 
   useLayoutEffect(() => {
@@ -504,7 +552,7 @@ export const useChatInputController = ({
     isManualMode,
     manualValue,
     dropdownRef,
-    activeApiConfig,
+    runtimeApiConfig,
     requestMethod,
     thinkingOptions,
     thinkingValue,

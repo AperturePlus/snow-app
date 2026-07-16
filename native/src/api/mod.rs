@@ -1,6 +1,7 @@
 pub mod anthropic;
 pub mod cancel;
 pub mod chat;
+pub mod commit_message;
 pub mod config;
 pub mod conversation;
 pub mod gemini;

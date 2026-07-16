@@ -20,7 +20,8 @@ const requiredExports = [
   'reorderWorkspaceDirectories',
   'deleteWorkspaceDirectory',
   'listCheckpointDiffs',
-  'listChatMessagesPaginated'
+  'listChatMessagesPaginated',
+  'cancelRunningSubAgentSessions'
 ]
 
 const platformName = platformMap[`${process.platform}-${process.arch}`]

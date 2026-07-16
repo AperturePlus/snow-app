@@ -187,7 +187,7 @@ pub fn get_git_status(repo_path: &str) -> Result<GitStatusResult> {
         });
     }
 
-    let status_out = run_git(repo_path, &["status", "--porcelain=v1", "-b", "--find-renames"])?;
+    let status_out = run_git(repo_path, &["status", "--porcelain=v1", "-b", "--find-renames", "-uall"])?;
     let lines: Vec<&str> = status_out.lines().filter(|l| !l.is_empty()).collect();
 
     let mut current_branch = String::new();
@@ -578,7 +578,7 @@ pub fn discard_changes(repo_path: &str, file_paths: &[String]) -> Result<GitStag
 
     // Query the current status to classify each file path.
     let status_output =
-        match run_git(repo_path, &["status", "--porcelain", "-z"]) {
+        match run_git(repo_path, &["status", "--porcelain", "-z", "-uall"]) {
             Ok(s) => s,
             Err(e) => {
                 return Ok(GitStageResult {
@@ -646,6 +646,14 @@ pub fn discard_changes(repo_path: &str, file_paths: &[String]) -> Result<GitStag
         success: true,
         message: "Changes discarded successfully".to_string(),
     })
+}
+
+/// Returns the full staged diff (`git diff --cached`).
+///
+/// This is used by the AI commit-message generator to analyse what has been
+/// staged and produce a concise commit message.
+pub fn get_staged_diff(repo_path: &str) -> Result<String> {
+    run_git(repo_path, &["diff", "--cached"])
 }
 
 pub fn get_file_diff(repo_path: &str, file_path: &str, staged: bool) -> Result<GitDiffResult> {

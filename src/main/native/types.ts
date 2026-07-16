@@ -284,6 +284,8 @@ export type ResponsesApiRequest = {
   checkpointId?: string;
   contextCompaction?: boolean;
   subAgentToolsJson?: string;
+  subAgentConfigProfile?: string;
+  skipContext?: boolean;
 };
 
 export type TokenUsage = {
@@ -576,6 +578,7 @@ export type NativeBridge = {
     runStatus: string,
     errorMessage: string
   ) => Promise<void>;
+  cancelRunningSubAgentSessions: () => Promise<number>;
   updateConversationStatus: (
     conversationId: string,
     status: string
@@ -682,6 +685,11 @@ export type NativeBridge = {
     onChange: (repoPath: string) => void
   ) => void;
   stopGitWatch: (repoPath: string) => void;
+  generateCommitMessage: (
+    repoPath: string,
+    onChunk: (chunk: ResponsesApiStreamChunk) => void,
+    streamId: string
+  ) => Promise<ResponsesApiResult>;
   createCheckpoint: (workDir: string) => Promise<string>;
   restoreCheckpoint: (checkpointId: string, workDir: string) => Promise<void>;
   deleteCheckpoint: (checkpointId: string) => Promise<void>;

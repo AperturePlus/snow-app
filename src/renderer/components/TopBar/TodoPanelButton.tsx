@@ -8,12 +8,12 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "../../i18n";
 import { ConfirmDialog } from "../common/ConfirmDialog";
-import type { ChatConversationMessage } from "../mainContent/chatMessages/useChatConversation";
-import { useTodoPanel } from "../mainContent/chatMessages/useTodoPanel";
+import type { ChatConversationMessage } from "../mainContent/chatMessages/utils/conversationTypes";
+import { useTodoPanel } from "../mainContent/chatMessages/hooks/useTodoPanel";
 import type {
   TodoItem,
   TodoStatus,
-} from "../mainContent/chatMessages/useTodoPanel";
+} from "../mainContent/chatMessages/hooks/useTodoPanel";
 type TodoPanelButtonProps = {
   messages: ChatConversationMessage[];
   projectId?: string;

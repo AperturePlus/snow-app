@@ -7,6 +7,7 @@ export const ChatInput = ({
   placeholder,
   projectId,
   projectName,
+  conversationId,
   onSend,
   isStreaming = false,
   isAborting = false,
@@ -27,6 +28,7 @@ export const ChatInput = ({
 }: ChatInputProps): React.JSX.Element => {
   const { t } = useI18n();
   const controller = useChatInputController({
+    conversationId,
     onSend,
     isStreaming,
     isAborting,

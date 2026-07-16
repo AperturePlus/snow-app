@@ -8,6 +8,7 @@ export type ChatInputProps = {
   placeholder?: string;
   projectId?: string;
   projectName?: string;
+  conversationId?: string;
   onSend?: (message: string, options: ChatInputSendOptions) => void;
   isStreaming?: boolean;
   isAborting?: boolean;
@@ -47,7 +48,7 @@ export type ChatInputState = {
   isManualMode: boolean;
   manualValue: string;
   dropdownRef: RefObject<HTMLDivElement | null>;
-  activeApiConfig: ApiConfigRecord | null;
+  runtimeApiConfig: ApiConfigRecord | null;
   requestMethod: RequestMethod;
   thinkingOptions: ThinkingOption[];
   thinkingValue: string;

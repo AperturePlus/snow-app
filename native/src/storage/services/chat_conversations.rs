@@ -712,6 +712,27 @@ pub fn update_sub_agent_session_status(
         .map(|_| ())
 }
 
+pub fn cancel_running_sub_agent_sessions(database_path: &Path) -> Result<usize> {
+    Connection::open(database_path)
+        .and_then(|connection| {
+            connection.execute(
+                "UPDATE sub_agent_sessions
+                    SET run_status = 'cancelled',
+                        error_message = '',
+                        updated_at = datetime('now')
+                  WHERE run_status = 'running'",
+                [],
+            )
+        })
+        .map_err(|error| {
+            database::database_error(
+                database_path,
+                "cancel interrupted sub-agent sessions",
+                error,
+            )
+        })
+}
+
 pub fn update_conversation_status(
     database_path: &Path,
     conversation_id: &str,

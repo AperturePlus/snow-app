@@ -303,6 +303,12 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to update sub-agent session status"
           )
         ),
+      cancelRunningSubAgentSessions: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to cancel interrupted sub-agent sessions"
+          )
+        ),
       updateConversationStatus: () =>
         Promise.reject(
           new Error(
@@ -365,9 +371,15 @@ export const loadNativeBridge = (): NativeBridge => {
       gitStageFiles: () => {
         throw new Error("Rust native bridge is required for git stage");
       },
-      gitUnstageFiles: () => {
-        throw new Error("Rust native bridge is required for git unstage");
+      gitDiscardChanges: () => {
+        throw new Error("Rust native bridge is required for git discard");
       },
+      generateCommitMessage: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required for AI commit message generation"
+          )
+        ),
       gitStageAll: () => {
         throw new Error("Rust native bridge is required for git stage all");
       },
@@ -388,9 +400,6 @@ export const loadNativeBridge = (): NativeBridge => {
       },
       gitFileDiff: () => {
         throw new Error("Rust native bridge is required for git file diff");
-      },
-      gitDiscardChanges: () => {
-        throw new Error("Rust native bridge is required for git discard");
       },
       startGitWatch: () => {
         throw new Error("Rust native bridge is required for git watch");

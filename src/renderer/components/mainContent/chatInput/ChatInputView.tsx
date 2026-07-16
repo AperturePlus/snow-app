@@ -53,7 +53,7 @@ export const ChatInputView = ({
   isManualMode,
   manualValue,
   dropdownRef,
-  activeApiConfig,
+  runtimeApiConfig,
   requestMethod,
   thinkingOptions,
   thinkingValue,
@@ -919,7 +919,7 @@ export const ChatInputView = ({
                   aria-expanded={isThinkingDropdownOpen}
                   onClick={() => setIsThinkingDropdownOpen((open) => !open)}
                   disabled={
-                    !activeApiConfig || isLoadingApiConfig || isSavingThinking
+                    !runtimeApiConfig || isLoadingApiConfig || isSavingThinking
                   }
                   title={
                     thinkingError ??
@@ -1045,7 +1045,7 @@ export const ChatInputView = ({
               </div>
               <TokenUsageRing
                 tokenUsage={tokenUsage}
-                maxContextTokens={activeApiConfig?.maxContextTokens ?? null}
+                maxContextTokens={runtimeApiConfig?.maxContextTokens ?? null}
               />
               <div className="input-action-buttons">
                 {isStreaming || isAborting ? (

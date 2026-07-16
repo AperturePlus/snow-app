@@ -4,8 +4,8 @@ import { useAutoScrollPreference } from "../../hooks/useAutoScrollPreference";
 import { ChatInput } from "./ChatInput";
 import { EmptyGreeting } from "./EmptyGreeting";
 import { ChatMessageList, useChatConversationContext } from "./chatMessages";
-import { RollbackConfirmDialog } from "./chatMessages/RollbackConfirmDialog";
-import { CompactionStream } from "./chatMessages/CompactionStream";
+import { RollbackConfirmDialog } from "./chatMessages/dialogs/RollbackConfirmDialog";
+import { CompactionStream } from "./chatMessages/components/CompactionStream";
 import type { ChatInputSendOptions } from "./chatInput/types";
 
 type ChatContentProps = {
@@ -333,6 +333,7 @@ const ChatContentBody = ({
       <ChatInput
         projectId={activeDirectory?.directoryId}
         projectName={activeDirectory?.name}
+        conversationId={activeConversationId}
         onSend={handleSendWithScroll}
         isStreaming={isStreaming}
         isAborting={isAborting}

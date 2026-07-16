@@ -733,6 +733,18 @@ pub fn update_sub_agent_session_status(
     )
 }
 
+pub fn cancel_running_sub_agent_sessions() -> Result<u32> {
+    let database_path = ensure_database_file()?;
+    let cancelled_count =
+        services::chat_conversations::cancel_running_sub_agent_sessions(&database_path)?;
+    u32::try_from(cancelled_count).map_err(|_| {
+        Error::new(
+            Status::GenericFailure,
+            "Cancelled sub-agent session count exceeds u32 range".to_string(),
+        )
+    })
+}
+
 pub fn update_conversation_status(
     conversation_id: String,
     status: String,

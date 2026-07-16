@@ -10687,9 +10687,14 @@ textarea {
   padding: 8px 12px 10px;
 }
 
+.git-commit-input-wrapper {
+  position: relative;
+  display: flex;
+}
+
 .git-commit-input {
   width: 100%;
-  padding: 6px 8px;
+  padding: 6px 36px 6px 8px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-color);
   background: var(--bg-primary);
@@ -10718,21 +10723,46 @@ textarea {
   padding: 6px 14px;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
-  background: var(--text-primary);
-  color: var(--on-solid);
+  background: transparent;
+  color: var(--text-primary);
   font-size: 12.5px;
   font-weight: 500;
   transition: background 0.12s, border-color 0.12s, opacity 0.12s;
 }
 
 .git-commit-btn:hover:not(:disabled) {
-  border-color: transparent;
-  background: var(--text-primary);
+  border-color: var(--border-color);
+  background: var(--surface-island-strong);
 }
 
 .git-commit-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.git-commit-input-actions {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 4px;
+}
+
+.git-commit-input-actions .git-commit-btn {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+}
+
+.git-commit-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.git-commit-actions .git-commit-btn {
+  flex: 1;
 }
 
 /* Diff Viewer */

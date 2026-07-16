@@ -2,6 +2,8 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   GitCommitHorizontal,
+  Sparkles,
+  Square,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
@@ -29,6 +31,8 @@ export const GitControl = ({
   const { status, isLoading, error, refresh } = useGitStatus(repoPath);
   const [commitMessage, setCommitMessage] = useState("");
   const [actionInProgress, setActionInProgress] = useState(false);
+  const [isGeneratingCommitMsg, setIsGeneratingCommitMsg] = useState(false);
+  const commitMsgStreamIdRef = useRef<string | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [discardTarget, setDiscardTarget] = useState<GitFileStatus[]>([]);
   const lastClickedPathRef = useRef<string | null>(null);
@@ -308,6 +312,49 @@ export const GitControl = ({
     setDiscardTarget([]);
   }, []);
 
+  const handleGenerateCommitMessage = useCallback(() => {
+    if (!repoPath || isGeneratingCommitMsg) {
+      return;
+    }
+
+    setIsGeneratingCommitMsg(true);
+    setCommitMessage("");
+
+    window.snow
+      .generateCommitMessage(
+        repoPath,
+        (chunk) => {
+          if (chunk.contentDelta) {
+            setCommitMessage((prev) => prev + chunk.contentDelta);
+          }
+        },
+        (streamId) => {
+          commitMsgStreamIdRef.current = streamId;
+        }
+      )
+      .then((result) => {
+        if (result.status === "error") {
+          setCommitMessage("");
+        } else if (result.content) {
+          setCommitMessage(result.content);
+        }
+      })
+      .catch(() => {
+        // Error or cancelled — keep whatever was streamed so far
+      })
+      .finally(() => {
+        setIsGeneratingCommitMsg(false);
+        commitMsgStreamIdRef.current = null;
+      });
+  }, [repoPath, isGeneratingCommitMsg]);
+
+  const handleAbortCommitMessage = useCallback(() => {
+    const streamId = commitMsgStreamIdRef.current;
+    if (streamId) {
+      void window.snow.abortCommitMessage(streamId);
+    }
+  }, []);
+
   if (!repoPath) {
     return (
       <div className="git-control">
@@ -417,26 +464,52 @@ export const GitControl = ({
       />
 
       <div className="git-commit-section">
-        <textarea
-          className="git-commit-input"
-          placeholder={t("git.commitMessagePlaceholder")}
-          value={commitMessage}
-          onChange={(e) => setCommitMessage(e.target.value)}
-          rows={2}
-        />
-        <button
-          type="button"
-          className="git-commit-btn"
-          onClick={handleCommit}
-          disabled={
-            actionInProgress ||
-            !commitMessage.trim() ||
-            stagedFiles.length === 0
-          }
-        >
-          <GitCommitHorizontal size={14} strokeWidth={1.8} />
-          <span>{t("git.commit")}</span>
-        </button>
+        <div className="git-commit-input-wrapper">
+          <textarea
+            className="git-commit-input"
+            placeholder={t("git.commitMessagePlaceholder")}
+            value={commitMessage}
+            onChange={(e) => setCommitMessage(e.target.value)}
+            rows={2}
+          />
+          <div className="git-commit-input-actions">
+            <button
+              type="button"
+              className="git-commit-btn git-ai-commit-btn"
+              onClick={
+                isGeneratingCommitMsg
+                  ? handleAbortCommitMessage
+                  : handleGenerateCommitMessage
+              }
+              disabled={
+                !isGeneratingCommitMsg &&
+                (actionInProgress || stagedFiles.length === 0)
+              }
+            >
+              {isGeneratingCommitMsg ? (
+                <Square size={14} strokeWidth={1.8} />
+              ) : (
+                <Sparkles size={14} strokeWidth={1.8} />
+              )}
+            </button>
+          </div>
+        </div>
+        <div className="git-commit-actions">
+          <button
+            type="button"
+            className="git-commit-btn"
+            onClick={handleCommit}
+            disabled={
+              actionInProgress ||
+              isGeneratingCommitMsg ||
+              !commitMessage.trim() ||
+              stagedFiles.length === 0
+            }
+          >
+            <GitCommitHorizontal size={14} strokeWidth={1.8} />
+            <span>{t("git.commit")}</span>
+          </button>
+        </div>
       </div>
 
       <ConfirmDialog

@@ -1,5 +1,7 @@
 use napi_derive::napi;
 
+use crate::api::commit_message::generate_commit_message_stream;
+use crate::api::responses::{ResponsesApiResult, ResponsesApiStreamCallback};
 use crate::storage::services::git::{
     GitBranch, GitCheckoutResult, GitCommitResult, GitDiffResult, GitPushPullResult,
     GitStageResult, GitStatusResult,
@@ -83,8 +85,53 @@ pub fn start_git_watch(
 ) -> napi::Result<()> {
     crate::storage::services::git_watcher::start_git_watch(repo_path, on_change)
 }
-
 #[napi]
 pub fn stop_git_watch(repo_path: String) -> napi::Result<()> {
     crate::storage::services::git_watcher::stop_git_watch(repo_path)
 }
+
+/// Generate a commit message from the staged diff using the active API
+/// config's **basic model**. Dispatches to whichever provider (chat /
+/// responses / anthropic / gemini) the active config specifies.
+///
+/// - `repoPath`: git repository path (used to run `git diff --cached`)
+/// - `onChunk`: streaming callback receiving `ResponsesApiStreamChunk`
+/// - `streamId`: unique stream id for cancellation support
+///
+/// Returns the full `ResponsesApiResult` (`.content` holds the message).
+#[napi(
+    ts_args_type = "repoPath: string, onChunk: (chunk: ResponsesApiStreamChunk) => void, streamId: string",
+    ts_return_type = "Promise<ResponsesApiResult>"
+)]
+pub async fn generate_commit_message(
+    repo_path: String,
+    on_chunk: ResponsesApiStreamCallback,
+    stream_id: String,
+) -> napi::Result<ResponsesApiResult> {
+    // 1. Get staged diff (blocking git command in spawn_blocking)
+    let staged_diff = tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::get_staged_diff(&repo_path)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to get staged diff: {join_error}"))
+    })??;
+
+    if staged_diff.trim().is_empty() {
+        return Err(napi::Error::from_reason(
+            "No staged changes found. Please stage your changes first.",
+        ));
+    }
+
+    // 2. Register cancellation token
+    let cancel_token = crate::api::cancel::create_and_register(&stream_id);
+
+    // 3. Stream commit message generation
+    let result = generate_commit_message_stream(staged_diff, on_chunk, cancel_token).await;
+
+    // 4. Unregister stream
+    crate::api::cancel::unregister_stream(&stream_id);
+
+    result
+}
+

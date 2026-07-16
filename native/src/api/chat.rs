@@ -84,12 +84,14 @@ async fn create_chat_completion_response_async(
         max_context_tokens: api_config.max_context_tokens,
         directory_id: request.directory_id.as_deref(),
         context_compaction: request.context_compaction.unwrap_or(false),
+        skip_context: request.skip_context.unwrap_or(false),
     })?;
 
     let client = reqwest::Client::builder()
         .build()
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
-    let tools = if request.context_compaction.unwrap_or(false) {
+    let skip_context = request.skip_context.unwrap_or(false);
+    let tools = if request.context_compaction.unwrap_or(false) || skip_context {
         None
     } else {
         match resolve_sub_agent_tools(&request).await {
@@ -122,24 +124,26 @@ async fn create_chat_completion_response_async(
     let raw_response_json = serde_json::to_string(&streamed_response.raw_events)
         .unwrap_or_else(|_| "[]".to_string());
 
-    store_chat_exchange(
-        &database_path,
-        &StoreChatExchangeInput {
-            conversation_id: &prepared_request.conversation_id,
-            request_messages: &prepared_request.current_messages,
-            response_content: &streamed_response.content,
-            response_id: &streamed_response.id,
-            checkpoint_id: request.checkpoint_id.as_deref().unwrap_or(""),
-            model: &streamed_response.model,
-            status: &streamed_response.status,
-            raw_response_json: &raw_response_json,
-            token_usage: streamed_response.token_usage,
-            response_thinking: &streamed_response.thinking,
-            tool_calls_json: &streamed_response.tool_calls_json,
-            directory_id: request.directory_id.as_deref().unwrap_or(""),
-            context_compaction: request.context_compaction.unwrap_or(false),
-        },
-    )?;
+    if !skip_context {
+        store_chat_exchange(
+            &database_path,
+            &StoreChatExchangeInput {
+                conversation_id: &prepared_request.conversation_id,
+                request_messages: &prepared_request.current_messages,
+                response_content: &streamed_response.content,
+                response_id: &streamed_response.id,
+                checkpoint_id: request.checkpoint_id.as_deref().unwrap_or(""),
+                model: &streamed_response.model,
+                status: &streamed_response.status,
+                raw_response_json: &raw_response_json,
+                token_usage: streamed_response.token_usage,
+                response_thinking: &streamed_response.thinking,
+                tool_calls_json: &streamed_response.tool_calls_json,
+                directory_id: request.directory_id.as_deref().unwrap_or(""),
+                context_compaction: request.context_compaction.unwrap_or(false),
+            },
+        )?;
+    }
 
     Ok(ResponsesApiResult {
         id: streamed_response.id,
@@ -194,6 +198,7 @@ fn build_chat_completions_payload(
         ));
     }
 
+    let skip_image_parsing = request.skip_context.unwrap_or(false);
     let messages = messages
         .iter()
         .map(|message| {
@@ -202,21 +207,25 @@ fn build_chat_completions_payload(
                 return Ok(None);
             }
 
-            let parsed_content = parse_chat_message_content(content, database_path)?;
-            let content = if parsed_content.images.is_empty() {
-                Value::String(parsed_content.text)
+            let content = if skip_image_parsing {
+                Value::String(content.to_string())
             } else {
-                let mut parts = Vec::new();
-                if !parsed_content.text.is_empty() {
-                    parts.push(json!({ "type": "text", "text": parsed_content.text }));
+                let parsed_content = parse_chat_message_content(content, database_path)?;
+                if parsed_content.images.is_empty() {
+                    Value::String(parsed_content.text)
+                } else {
+                    let mut parts = Vec::new();
+                    if !parsed_content.text.is_empty() {
+                        parts.push(json!({ "type": "text", "text": parsed_content.text }));
+                    }
+                    parts.extend(parsed_content.images.iter().map(|image| {
+                        json!({
+                            "type": "image_url",
+                            "image_url": { "url": image.data_url },
+                        })
+                    }));
+                    Value::Array(parts)
                 }
-                parts.extend(parsed_content.images.iter().map(|image| {
-                    json!({
-                        "type": "image_url",
-                        "image_url": { "url": image.data_url },
-                    })
-                }));
-                Value::Array(parts)
             };
 
             Ok(Some(json!({

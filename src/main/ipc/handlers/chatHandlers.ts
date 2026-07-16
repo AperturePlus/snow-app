@@ -79,6 +79,12 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
       typeof source.subAgentToolsJson === "string"
         ? source.subAgentToolsJson
         : undefined,
+    subAgentConfigProfile:
+      typeof source.subAgentConfigProfile === "string"
+        ? source.subAgentConfigProfile
+        : undefined,
+    skipContext:
+      typeof source.skipContext === "boolean" ? source.skipContext : undefined,
   };
 };
 
