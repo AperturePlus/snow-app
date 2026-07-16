@@ -39,6 +39,9 @@ export const GitControl = ({
   const lastClickedSectionRef = useRef<"staged" | "unstaged" | null>(null);
   const prevStatusRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Set to true after a commit succeeds; the effect below resets scroll
+  // to top once the refreshed status has been applied to the DOM.
+  const commitPendingRef = useRef(false);
 
   // Propagate status changes upward via ref to avoid render-cycle side effects
   useEffect(() => {
@@ -51,6 +54,19 @@ export const GitControl = ({
       onStatusChange(status);
     }
   }, [status, onStatusChange]);
+
+  // After a commit, the staged file list shrinks which can leave a large
+  // empty gap if the user had scrolled down. When commitPendingRef is set,
+  // reset scroll to top once the refreshed status has rendered.
+  useEffect(() => {
+    if (!commitPendingRef.current) {
+      return;
+    }
+    commitPendingRef.current = false;
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({ top: 0 });
+    }
+  }, [status]);
 
   // Prune selectedPaths that are no longer present in the current status.
   // Keys are stored as "section:path" composite keys.
@@ -259,13 +275,8 @@ export const GitControl = ({
       .gitCommit(repoPath, commitMessage)
       .then(() => {
         setCommitMessage("");
+        commitPendingRef.current = true;
         refresh();
-        // Commit removes staged files from the list, which can leave a large
-        // empty gap if the user had scrolled down. Reset scroll to top so the
-        // refreshed content is immediately visible.
-        if (scrollRef.current) {
-          scrollRef.current.scrollTo({ top: 0 });
-        }
       })
       .finally(() => setActionInProgress(false));
   }, [repoPath, commitMessage, refresh]);
