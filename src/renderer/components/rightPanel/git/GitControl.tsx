@@ -38,6 +38,7 @@ export const GitControl = ({
   const lastClickedPathRef = useRef<string | null>(null);
   const lastClickedSectionRef = useRef<"staged" | "unstaged" | null>(null);
   const prevStatusRef = useRef<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // Propagate status changes upward via ref to avoid render-cycle side effects
   useEffect(() => {
@@ -259,6 +260,12 @@ export const GitControl = ({
       .then(() => {
         setCommitMessage("");
         refresh();
+        // Commit removes staged files from the list, which can leave a large
+        // empty gap if the user had scrolled down. Reset scroll to top so the
+        // refreshed content is immediately visible.
+        if (scrollRef.current) {
+          scrollRef.current.scrollTo({ top: 0 });
+        }
       })
       .finally(() => setActionInProgress(false));
   }, [repoPath, commitMessage, refresh]);
@@ -398,7 +405,7 @@ export const GitControl = ({
   );
 
   return (
-    <div className="git-control">
+    <div className="git-control" ref={scrollRef}>
       <div className="git-control-header">
         <BranchSelector
           repoPath={repoPath}
