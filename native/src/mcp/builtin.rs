@@ -9,6 +9,7 @@ use super::servers::bash::BashService;
 use super::servers::browser::BrowserService;
 use super::servers::filesystem::FilesystemService;
 use super::servers::grep::GrepService;
+use super::servers::sub_agents::SubAgentsService;
 use super::servers::todo::TodoService;
 use super::servers::user_interaction::UserInteractionService;
 use super::servers::websearch::WebSearchService;
@@ -28,6 +29,7 @@ fn builtin_services_in_order() -> Vec<Arc<dyn McpService>> {
         Arc::new(WebSearchService::new()),
         Arc::new(BrowserService::new()),
         Arc::new(UserInteractionService::new()),
+        Arc::new(SubAgentsService::new()),
     ]
 }
 

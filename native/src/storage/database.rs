@@ -22,8 +22,10 @@ const PRIMARY_KEY_TABLES: &[&str] = &[
     "custom_header_schemes",
     "workspace_directories",
     "mcp_server_configs",
+    "sub_agent_configs",
     "sensitive_command_configs",
     "chat_conversations",
+    "sub_agent_sessions",
     "chat_messages",
 ];
 
@@ -92,7 +94,7 @@ fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
     reset_legacy_integer_primary_key_tables(connection)?;
 
     connection.execute_batch(
-        "PRAGMA user_version = 14;
+        "PRAGMA user_version = 16;
 
          CREATE TABLE IF NOT EXISTS system_settings (
            id TEXT PRIMARY KEY NOT NULL,
@@ -205,6 +207,25 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
          CREATE INDEX IF NOT EXISTS idx_mcp_server_configs_source
            ON mcp_server_configs(source);
 
+         CREATE TABLE IF NOT EXISTS sub_agent_configs (
+           id TEXT PRIMARY KEY NOT NULL,
+           agent_id TEXT NOT NULL UNIQUE,
+           name TEXT NOT NULL,
+           description TEXT NOT NULL DEFAULT '',
+           system_prompt TEXT NOT NULL DEFAULT '',
+           tools_json TEXT NOT NULL DEFAULT '[]',
+           config_profile TEXT NOT NULL DEFAULT '',
+           builtin INTEGER NOT NULL DEFAULT 0,
+           sort_order INTEGER NOT NULL DEFAULT 0,
+           source TEXT NOT NULL DEFAULT 'manual',
+           created_at TEXT NOT NULL DEFAULT (datetime('now')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+         );
+         CREATE INDEX IF NOT EXISTS idx_sub_agent_configs_builtin
+           ON sub_agent_configs(builtin);
+         CREATE INDEX IF NOT EXISTS idx_sub_agent_configs_source
+           ON sub_agent_configs(source);
+
          CREATE TABLE IF NOT EXISTS sensitive_command_configs (
            id TEXT PRIMARY KEY NOT NULL,
            command_id TEXT NOT NULL UNIQUE,
@@ -246,6 +267,24 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            ON chat_conversations(updated_at DESC, id DESC);
          CREATE INDEX IF NOT EXISTS idx_chat_conversations_status
            ON chat_conversations(status);
+
+         CREATE TABLE IF NOT EXISTS sub_agent_sessions (
+           id TEXT PRIMARY KEY NOT NULL,
+           conversation_id TEXT NOT NULL UNIQUE,
+           parent_conversation_id TEXT NOT NULL,
+           agent_id TEXT NOT NULL,
+           agent_name TEXT NOT NULL DEFAULT '',
+           run_status TEXT NOT NULL DEFAULT 'running',
+           error_message TEXT NOT NULL DEFAULT '',
+           created_at TEXT NOT NULL DEFAULT (datetime('now')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+           FOREIGN KEY(conversation_id) REFERENCES chat_conversations(conversation_id) ON DELETE CASCADE,
+           FOREIGN KEY(parent_conversation_id) REFERENCES chat_conversations(conversation_id) ON DELETE CASCADE
+         );
+         CREATE INDEX IF NOT EXISTS idx_sub_agent_sessions_parent
+           ON sub_agent_sessions(parent_conversation_id, created_at ASC, id ASC);
+         CREATE INDEX IF NOT EXISTS idx_sub_agent_sessions_status
+           ON sub_agent_sessions(run_status);
 
          CREATE TABLE IF NOT EXISTS chat_messages (
            id TEXT PRIMARY KEY NOT NULL,

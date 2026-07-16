@@ -65,6 +65,7 @@ export type ResponsesApiRequest = {
   directoryId?: string | null;
   checkpointId?: string | null;
   contextCompaction?: boolean | null;
+  subAgentToolsJson?: string | null;
 };
 
 export type TokenUsage = {

@@ -249,7 +249,8 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       checkpointWorkDir: unknown,
       sensitiveAuthorizationToken: unknown,
       streamId: unknown,
-      interactionId: unknown
+      interactionId: unknown,
+      subAgentAllowedTools: unknown
     ) => {
       if (typeof toolFullName !== "string" || !toolFullName.trim()) {
         throw new Error("Tool full name is required");
@@ -294,6 +295,13 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
 
       const normalizedStreamId = streamId.trim();
       const normalizedInteractionId = interactionId.trim();
+      const normalizedSubAgentAllowedTools =
+        Array.isArray(subAgentAllowedTools) &&
+        subAgentAllowedTools.every(
+          (tool) => typeof tool === "string" && tool.trim()
+        )
+          ? (subAgentAllowedTools as string[])
+          : undefined;
       return native.callMcpTool(
         toolFullName.trim(),
         argsJson,
@@ -314,7 +322,8 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         (command: BrowserCommand) =>
           dispatchBrowserCommand(event.sender, command),
         (question: UserQuestionCommand) =>
-          dispatchUserQuestion(event.sender, question, normalizedInteractionId)
+          dispatchUserQuestion(event.sender, question, normalizedInteractionId),
+        normalizedSubAgentAllowedTools
       );
     }
   );

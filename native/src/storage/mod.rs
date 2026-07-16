@@ -1,4 +1,4 @@
-mod database;
+pub mod database;
 mod paths;
 pub mod services;
 
@@ -192,6 +192,34 @@ pub struct ProjectMcpServerConfigRecord {
 }
 
 #[napi(object)]
+pub struct SubAgentConfigInput {
+    pub agent_id: String,
+    pub name: String,
+    pub description: String,
+    pub system_prompt: String,
+    pub tools_json: String,
+    pub config_profile: String,
+    pub builtin: bool,
+    pub sort_order: i32,
+    pub source: String,
+}
+
+#[napi(object)]
+pub struct SubAgentConfigRecord {
+    pub id: String,
+    pub agent_id: String,
+    pub name: String,
+    pub description: String,
+    pub system_prompt: String,
+    pub tools_json: String,
+    pub config_profile: String,
+    pub builtin: bool,
+    pub sort_order: i32,
+    pub source: String,
+    pub updated_at: String,
+}
+
+#[napi(object)]
 pub struct SensitiveCommandConfigInput {
     pub command_id: String,
     pub pattern: String,
@@ -256,6 +284,12 @@ pub struct ChatConversationRecord {
     pub directory_id: String,
     pub forked_from_conversation_id: String,
     pub fork_message_count: i32,
+    pub conversation_type: String,
+    pub parent_conversation_id: String,
+    pub sub_agent_id: String,
+    pub sub_agent_name: String,
+    pub sub_agent_status: String,
+    pub sub_agent_error: String,
     pub created_at: String,
     pub updated_at: String,
     pub input_tokens: i64,
@@ -297,6 +331,7 @@ pub fn initialize_app_storage() -> Result<AppStorageInfo> {
     database::ensure_database(&database_path)?;
     services::system_settings::seed_default_settings(&database_path)?;
     services::api_configs::seed_default_api_config(&database_path)?;
+    services::sub_agent_configs::seed_default_sub_agent_configs(&database_path)?;
     services::sensitive_command_configs::seed_default_sensitive_command_configs(&database_path)?;
 
     Ok(AppStorageInfo {
@@ -474,6 +509,25 @@ pub fn delete_project_mcp_server_config(
         &server_id,
     )
 }
+pub fn list_sub_agent_configs() -> Result<Vec<SubAgentConfigRecord>> {
+    let database_path = ensure_database_file()?;
+    services::sub_agent_configs::list_sub_agent_configs(&database_path)
+}
+
+pub fn get_sub_agent_config(agent_id: String) -> Result<Option<SubAgentConfigRecord>> {
+    let database_path = ensure_database_file()?;
+    services::sub_agent_configs::get_sub_agent_config(&database_path, &agent_id)
+}
+
+pub fn upsert_sub_agent_config(item: SubAgentConfigInput) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::sub_agent_configs::upsert_sub_agent_config(&database_path, &item)
+}
+
+pub fn delete_sub_agent_config(agent_id: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::sub_agent_configs::delete_sub_agent_config(&database_path, &agent_id)
+}
 
 pub fn list_sensitive_command_configs() -> Result<Vec<SensitiveCommandConfigRecord>> {
     let database_path = ensure_database_file()?;
@@ -633,6 +687,52 @@ pub fn get_chat_conversation(
     services::chat_conversations::get_chat_conversation(&database_path, &conversation_id)
 }
 
+pub fn list_sub_agent_conversations(
+    parent_conversation_id: String,
+) -> Result<Vec<ChatConversationRecord>> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::list_sub_agent_conversations(
+        &database_path,
+        &parent_conversation_id,
+    )
+}
+
+pub fn create_sub_agent_session(
+    conversation_id: String,
+    parent_conversation_id: String,
+    agent_id: String,
+    agent_name: String,
+    directory_id: String,
+    model: String,
+    title: String,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::create_sub_agent_session(
+        &database_path,
+        &conversation_id,
+        &parent_conversation_id,
+        &agent_id,
+        &agent_name,
+        &directory_id,
+        &model,
+        &title,
+    )
+}
+
+pub fn update_sub_agent_session_status(
+    conversation_id: String,
+    run_status: String,
+    error_message: String,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::update_sub_agent_session_status(
+        &database_path,
+        &conversation_id,
+        &run_status,
+        &error_message,
+    )
+}
+
 pub fn update_conversation_status(
     conversation_id: String,
     status: String,
@@ -715,6 +815,7 @@ fn ensure_database_file() -> Result<PathBuf> {
     database::ensure_database(&database_path)?;
     services::system_settings::seed_default_settings(&database_path)?;
     services::api_configs::seed_default_api_config(&database_path)?;
+    services::sub_agent_configs::seed_default_sub_agent_configs(&database_path)?;
     services::sensitive_command_configs::seed_default_sensitive_command_configs(&database_path)?;
     Ok(database_path)
 }

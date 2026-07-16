@@ -188,4 +188,104 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
       await native.deleteConversation(conversationId.trim());
     }
   );
+  ipcMain.handle(
+    "chat-conversations:list-sub-agent",
+    (_event, parentConversationId: unknown) => {
+      if (
+        typeof parentConversationId !== "string" ||
+        !parentConversationId.trim()
+      ) {
+        throw new Error(
+          "Parent conversation ID is required to list sub-agent conversations"
+        );
+      }
+
+      return native.listSubAgentConversations(parentConversationId.trim());
+    }
+  );
+  ipcMain.handle(
+    "chat-conversations:create-sub-agent-session",
+    async (
+      _event,
+      conversationId: unknown,
+      parentConversationId: unknown,
+      agentId: unknown,
+      agentName: unknown,
+      directoryId: unknown,
+      model: unknown,
+      title: unknown
+    ) => {
+      if (typeof conversationId !== "string" || !conversationId.trim()) {
+        throw new Error(
+          "Conversation ID is required to create sub-agent session"
+        );
+      }
+      if (
+        typeof parentConversationId !== "string" ||
+        !parentConversationId.trim()
+      ) {
+        throw new Error(
+          "Parent conversation ID is required to create sub-agent session"
+        );
+      }
+      if (typeof agentId !== "string" || !agentId.trim()) {
+        throw new Error("Agent ID is required to create sub-agent session");
+      }
+      if (typeof agentName !== "string" || !agentName.trim()) {
+        throw new Error("Agent name is required to create sub-agent session");
+      }
+      if (typeof directoryId !== "string") {
+        throw new Error("Directory ID is required to create sub-agent session");
+      }
+      if (typeof model !== "string") {
+        throw new Error("Model is required to create sub-agent session");
+      }
+      if (typeof title !== "string" || !title.trim()) {
+        throw new Error("Title is required to create sub-agent session");
+      }
+
+      await native.createSubAgentSession(
+        conversationId.trim(),
+        parentConversationId.trim(),
+        agentId.trim(),
+        agentName.trim(),
+        directoryId.trim(),
+        model.trim(),
+        title.trim()
+      );
+    }
+  );
+  ipcMain.handle(
+    "chat-conversations:update-sub-agent-status",
+    async (
+      _event,
+      conversationId: unknown,
+      runStatus: unknown,
+      errorMessage: unknown
+    ) => {
+      if (typeof conversationId !== "string" || !conversationId.trim()) {
+        throw new Error(
+          "Conversation ID is required to update sub-agent session status"
+        );
+      }
+      if (typeof runStatus !== "string" || !runStatus.trim()) {
+        throw new Error(
+          "Run status is required to update sub-agent session status"
+        );
+      }
+
+      await native.updateSubAgentSessionStatus(
+        conversationId.trim(),
+        runStatus.trim(),
+        typeof errorMessage === "string" ? errorMessage : ""
+      );
+    }
+  );
+  ipcMain.handle("sub-agent-configs:get", async (_event, agentId: unknown) => {
+    if (typeof agentId !== "string" || !agentId.trim()) {
+      throw new Error("Agent ID is required to get sub-agent config");
+    }
+
+    return native.getSubAgentConfig(agentId.trim());
+  });
 };

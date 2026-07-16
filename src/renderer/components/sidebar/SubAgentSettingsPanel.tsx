@@ -1,0 +1,405 @@
+import { Loader2, Plus, RefreshCw, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ApiConfigRecord, SubAgentConfigRecord } from "../../../preload";
+import { AutoDismissNotice } from "../AutoDismissNotice";
+import { Modal } from "../common/Modal";
+import { useI18n } from "../../i18n";
+import { SubAgentEditor } from "./subAgent/SubAgentEditor";
+import { SubAgentList } from "./subAgent/SubAgentList";
+import { SubAgentSummary } from "./subAgent/SubAgentSummary";
+import {
+  createDraftFromItem,
+  EMPTY_SUB_AGENT_DRAFT,
+  toSubAgentInput,
+  usesAllTools,
+} from "./subAgent/subAgentUtils";
+import type {
+  SubAgentDraft,
+  SubAgentSettingsPanelProps,
+  SubAgentToolOption,
+} from "./subAgent/types";
+
+export function SubAgentSettingsPanel({
+  activeDirectory,
+  onClose,
+}: SubAgentSettingsPanelProps): React.JSX.Element {
+  const { t } = useI18n();
+  const [agents, setAgents] = useState<SubAgentConfigRecord[]>([]);
+  const [apiConfigs, setApiConfigs] = useState<ApiConfigRecord[]>([]);
+  const [draft, setDraft] = useState<SubAgentDraft | null>(null);
+  const [toolOptions, setToolOptions] = useState<SubAgentToolOption[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isToolCatalogLoading, setIsToolCatalogLoading] = useState(false);
+  const [toolCatalogError, setToolCatalogError] = useState("");
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+  const toolCatalogGenerationRef = useRef(0);
+  const projectId = activeDirectory?.directoryId;
+  const isBusy = isLoading || isSaving;
+
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    setError("");
+    try {
+      const [nextAgents, nextApiConfigs] = await Promise.all([
+        window.snow.listSubAgentConfigs(),
+        window.snow.listApiConfigs(),
+      ]);
+      setAgents(nextAgents);
+      setApiConfigs(nextApiConfigs);
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : t("settings.subAgentLoadError", {
+              defaultValue: "Failed to load sub-agent configurations",
+            })
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [t]);
+
+  const loadProjectTools = useCallback(async () => {
+    const generation = toolCatalogGenerationRef.current + 1;
+    toolCatalogGenerationRef.current = generation;
+    setToolOptions([]);
+    setToolCatalogError("");
+    if (!projectId) {
+      setIsToolCatalogLoading(false);
+      return;
+    }
+
+    setIsToolCatalogLoading(true);
+    try {
+      const servers = await window.snow.listMcpProjectServers(projectId);
+      const availableServers = servers.filter(
+        (server) => server.globalEnabled && server.enabled && !server.error
+      );
+      const toolsByServer = await Promise.all(
+        availableServers.map(async (server) => ({
+          server,
+          tools:
+            server.source === "system"
+              ? server.tools
+              : await window.snow.listMcpProjectServerTools(
+                  projectId,
+                  server.id
+                ),
+        }))
+      );
+      const uniqueTools = new Map<string, SubAgentToolOption>();
+      for (const { server, tools } of toolsByServer) {
+        for (const tool of tools) {
+          if (!tool.enabled || uniqueTools.has(tool.name)) {
+            continue;
+          }
+          uniqueTools.set(tool.name, {
+            name: tool.name,
+            description: tool.description,
+            serverId: server.id,
+            serverName: server.name,
+          });
+        }
+      }
+      if (toolCatalogGenerationRef.current === generation) {
+        setToolOptions(Array.from(uniqueTools.values()));
+      }
+    } catch (catalogError) {
+      if (toolCatalogGenerationRef.current === generation) {
+        setToolCatalogError(
+          catalogError instanceof Error
+            ? catalogError.message
+            : t("settings.subAgentToolsLoadError", {
+                defaultValue: "Failed to load project MCP tools",
+              })
+        );
+      }
+    } finally {
+      if (toolCatalogGenerationRef.current === generation) {
+        setIsToolCatalogLoading(false);
+      }
+    }
+  }, [projectId, t]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    void loadProjectTools();
+  }, [loadProjectTools]);
+
+  const startAdd = (): void => {
+    const maxSortOrder = agents.reduce(
+      (maximum, agent) => Math.max(maximum, agent.sortOrder),
+      -1
+    );
+    setDraft({
+      ...EMPTY_SUB_AGENT_DRAFT,
+      configProfile: "",
+      sortOrder: maxSortOrder + 1,
+    });
+    setError("");
+    setStatus("");
+  };
+
+  const startEdit = (agent: SubAgentConfigRecord): void => {
+    setDraft(createDraftFromItem(agent));
+    setError("");
+    setStatus("");
+  };
+
+  const cancelDraft = (): void => {
+    setDraft(null);
+    setError("");
+  };
+
+  const saveDraft = async (): Promise<void> => {
+    if (!draft) return;
+    if (!draft.name.trim()) {
+      setError(
+        t("settings.subAgentNameRequired", {
+          defaultValue: "Sub-agent name is required.",
+        })
+      );
+      return;
+    }
+    if (
+      draft.configProfile &&
+      !apiConfigs.some((config) => config.profileName === draft.configProfile)
+    ) {
+      setError(
+        t("settings.subAgentApiProfileUnavailable", {
+          defaultValue: "The selected API profile is no longer available.",
+        })
+      );
+      return;
+    }
+    const allToolsEnabled = usesAllTools(draft.toolNames);
+    if (!projectId && draft.toolNames.length > 0 && !allToolsEnabled) {
+      setError(
+        t("settings.subAgentToolsNoProject", {
+          defaultValue: "Select a project before choosing MCP tools.",
+        })
+      );
+      return;
+    }
+    if (isToolCatalogLoading && !allToolsEnabled) {
+      setError(
+        t("settings.subAgentToolsLoading", {
+          defaultValue: "Loading project MCP tools...",
+        })
+      );
+      return;
+    }
+    if (toolCatalogError && !allToolsEnabled) {
+      setError(toolCatalogError);
+      return;
+    }
+    const availableToolNames = new Set(toolOptions.map((tool) => tool.name));
+    if (
+      !allToolsEnabled &&
+      draft.toolNames.some((toolName) => !availableToolNames.has(toolName))
+    ) {
+      setError(
+        t("settings.subAgentToolsUnavailable", {
+          defaultValue:
+            "Some saved MCP tools are not enabled for the current project.",
+        })
+      );
+      return;
+    }
+
+    setIsSaving(true);
+    setError("");
+    setStatus("");
+    try {
+      const isExisting = Boolean(draft.agentId);
+      const nextAgents = await window.snow.upsertSubAgentConfig(
+        projectId,
+        toSubAgentInput(draft)
+      );
+      setAgents(nextAgents);
+      setDraft(null);
+      setStatus(
+        isExisting
+          ? t("settings.subAgentSaveSuccess", {
+              defaultValue: "Saved sub-agent configuration.",
+            })
+          : t("settings.subAgentAddSuccess", {
+              defaultValue: "Added sub-agent configuration.",
+            })
+      );
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : t("settings.subAgentSaveError", {
+              defaultValue: "Failed to save sub-agent configuration",
+            })
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteAgent = async (agent: SubAgentConfigRecord): Promise<void> => {
+    if (agent.builtin) return;
+    setIsLoading(true);
+    setError("");
+    setStatus("");
+    try {
+      setAgents(await window.snow.deleteSubAgentConfig(agent.agentId));
+      setStatus(
+        t("settings.subAgentDeleteSuccess", {
+          defaultValue: "Deleted sub-agent configuration.",
+        })
+      );
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : t("settings.subAgentDeleteError", {
+              defaultValue: "Failed to delete sub-agent configuration",
+            })
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="api-settings-page" role="region">
+      <div className="api-settings-page-header">
+        <div className="api-settings-title-group">
+          <span className="api-settings-kicker">
+            {t("settings.subAgentKicker", { defaultValue: "Rust persisted" })}
+          </span>
+          <strong>
+            {t("settings.subAgentTitle", {
+              defaultValue: "Sub-agent settings",
+            })}
+          </strong>
+        </div>
+        {onClose && (
+          <button
+            className="icon-btn ghost"
+            onClick={onClose}
+            type="button"
+            aria-label={t("settings.closeSubAgentSettings", {
+              defaultValue: "Close sub-agent settings",
+            })}
+            title={t("settings.closeSubAgentSettings", {
+              defaultValue: "Close sub-agent settings",
+            })}
+          >
+            <X size={15} strokeWidth={1.8} />
+          </button>
+        )}
+      </div>
+
+      <SubAgentSummary
+        agents={agents}
+        availableToolCount={toolOptions.length}
+      />
+
+      <div className="api-settings-actions">
+        <button
+          className="api-settings-action-btn primary"
+          onClick={startAdd}
+          type="button"
+          disabled={isBusy}
+        >
+          <Plus size={15} />
+          <span>
+            {t("settings.subAgentAddNew", { defaultValue: "Add sub-agent" })}
+          </span>
+        </button>
+        <button
+          className="api-settings-action-btn secondary"
+          onClick={() => void load()}
+          type="button"
+          disabled={isBusy}
+        >
+          {isLoading ? (
+            <Loader2 size={15} className="spin" />
+          ) : (
+            <RefreshCw size={15} />
+          )}
+          <span>{t("settings.refresh", { defaultValue: "Refresh" })}</span>
+        </button>
+      </div>
+
+      <AutoDismissNotice
+        message={error || status}
+        tone={error ? "error" : "success"}
+        onDismiss={() => {
+          setError("");
+          setStatus("");
+        }}
+      />
+
+      <div className="api-settings-manual-form">
+        <div className="api-settings-manual-header">
+          <strong>
+            {t("settings.subAgentManageTitle", {
+              defaultValue: "Manage sub-agents",
+            })}
+          </strong>
+          <span>
+            {t("settings.subAgentManageInfo", {
+              defaultValue:
+                "Sub-agent configurations are stored in the local database.",
+            })}
+          </span>
+        </div>
+        <div className="api-settings-form-body">
+          <SubAgentList
+            agents={agents}
+            isBusy={isBusy}
+            onEdit={startEdit}
+            onDelete={(agent) => void deleteAgent(agent)}
+          />
+        </div>
+      </div>
+
+      <Modal
+        open={Boolean(draft)}
+        title={t("settings.subAgentEditorTitle", {
+          defaultValue: "Sub-agent editor",
+        })}
+        description={
+          draft?.name ||
+          t("settings.subAgentAddNew", { defaultValue: "Add sub-agent" })
+        }
+        closeLabel={t("settings.cancel", { defaultValue: "Cancel" })}
+        onClose={cancelDraft}
+        closeDisabled={isBusy}
+        size="large"
+        className="sub-agent-editor-modal"
+      >
+        {draft && (
+          <SubAgentEditor
+            apiConfigs={apiConfigs}
+            draft={draft}
+            isBusy={isBusy}
+            isSaving={isSaving}
+            isToolCatalogLoading={isToolCatalogLoading}
+            projectId={projectId}
+            toolCatalogError={toolCatalogError}
+            toolOptions={toolOptions}
+            onDraftChange={(patch) =>
+              setDraft((previous) =>
+                previous ? { ...previous, ...patch } : previous
+              )
+            }
+            onCancel={cancelDraft}
+            onSave={() => void saveDraft()}
+          />
+        )}
+      </Modal>
+    </div>
+  );
+}

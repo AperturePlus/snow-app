@@ -8,7 +8,8 @@ use crate::storage::{
     ProjectMcpServerConfigRecord, ProjectSensitiveCommandConfigInput,
     ProjectSensitiveCommandConfigRecord,
     SensitiveCommandConfigInput, SensitiveCommandConfigRecord, SensitiveCommandMatchResult,
-    SystemPromptItemInput, SystemPromptItemRecord, WorkspaceDirectoryInput,
+    SubAgentConfigInput, SubAgentConfigRecord, SystemPromptItemInput, SystemPromptItemRecord,
+    WorkspaceDirectoryInput,
     WorkspaceDirectoryRecord,
 };
 use crate::storage::services::fs_explorer::{DirectoryEntry, FileContentResult, FileSearchResult};
@@ -278,6 +279,36 @@ pub async fn delete_project_mcp_server_config(
 }
 
 #[napi]
+pub async fn list_sub_agent_configs() -> napi::Result<Vec<SubAgentConfigRecord>> {
+    tokio::task::spawn_blocking(crate::storage::list_sub_agent_configs)
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn get_sub_agent_config(
+    agent_id: String,
+) -> napi::Result<Option<SubAgentConfigRecord>> {
+    tokio::task::spawn_blocking(move || crate::storage::get_sub_agent_config(agent_id))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn upsert_sub_agent_config(item: SubAgentConfigInput) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::upsert_sub_agent_config(item))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn delete_sub_agent_config(agent_id: String) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::delete_sub_agent_config(agent_id))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn list_sensitive_command_configs() -> napi::Result<Vec<SensitiveCommandConfigRecord>> {
     tokio::task::spawn_blocking(crate::storage::list_sensitive_command_configs)
         .await
@@ -394,6 +425,59 @@ pub async fn get_chat_conversation(
     tokio::task::spawn_blocking(move || crate::storage::get_chat_conversation(conversation_id))
         .await
         .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn list_sub_agent_conversations(
+    parent_conversation_id: String,
+) -> napi::Result<Vec<ChatConversationRecord>> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::list_sub_agent_conversations(parent_conversation_id)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn create_sub_agent_session(
+    conversation_id: String,
+    parent_conversation_id: String,
+    agent_id: String,
+    agent_name: String,
+    directory_id: String,
+    model: String,
+    title: String,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::create_sub_agent_session(
+            conversation_id,
+            parent_conversation_id,
+            agent_id,
+            agent_name,
+            directory_id,
+            model,
+            title,
+        )
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn update_sub_agent_session_status(
+    conversation_id: String,
+    run_status: String,
+    error_message: String,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::update_sub_agent_session_status(
+            conversation_id,
+            run_status,
+            error_message,
+        )
+    })
+    .await
+    .map_err(map_spawn_error)?
 }
 
 #[napi]

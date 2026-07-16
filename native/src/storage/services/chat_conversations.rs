@@ -2,7 +2,7 @@ use std::path::Path;
 
 use chrono::Utc;
 use napi::bindgen_prelude::*;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 
 use super::super::database;
 use super::super::{
@@ -382,34 +382,25 @@ pub fn list_chat_conversations(
                         input_tokens,
                         output_tokens,
                         cache_creation_input_tokens,
-                        cache_read_input_tokens
-                   FROM chat_conversations
+                        cache_read_input_tokens,
+                        'main',
+                        '',
+                        '',
+                        '',
+                        '',
+                        ''
+                   FROM chat_conversations AS conversation
                   WHERE directory_id = ?1
                     AND status = 'active'
+                    AND NOT EXISTS (
+                      SELECT 1
+                        FROM sub_agent_sessions AS sub_agent
+                       WHERE sub_agent.conversation_id = conversation.conversation_id
+                    )
                   ORDER BY updated_at DESC, id DESC",
             )?;
 
-            let rows = statement.query_map(params![directory_id], |row| {
-                Ok(ChatConversationRecord {
-                    conversation_id: row.get(0)?,
-                    title: row.get(1)?,
-                    summary: row.get(2)?,
-                    last_message_preview: row.get(3)?,
-                    message_count: row.get(4)?,
-                    model: row.get(5)?,
-                    status: row.get(6)?,
-                    directory_id: row.get(7)?,
-                    forked_from_conversation_id: row.get(8)?,
-                    fork_message_count: row.get(9)?,
-                    created_at: row.get(10)?,
-                    updated_at: row.get(11)?,
-                    input_tokens: row.get(12)?,
-                    output_tokens: row.get(13)?,
-                    cache_creation_input_tokens: row.get(14)?,
-                    cache_read_input_tokens: row.get(15)?,
-                })
-            })?;
-
+            let rows = statement.query_map(params![directory_id], map_chat_conversation_row)?;
             rows.collect()
         })
         .map_err(|error| database::database_error(database_path, "list chat conversations", error))
@@ -425,9 +416,14 @@ pub fn list_chat_conversations_paginated(
         .and_then(|connection| {
             let total: i32 = connection.query_row(
                 "SELECT COUNT(*)
-                   FROM chat_conversations
+                   FROM chat_conversations AS conversation
                   WHERE directory_id = ?1
-                    AND status = 'active'",
+                    AND status = 'active'
+                    AND NOT EXISTS (
+                      SELECT 1
+                        FROM sub_agent_sessions AS sub_agent
+                       WHERE sub_agent.conversation_id = conversation.conversation_id
+                    )",
                 params![directory_id],
                 |row| row.get(0),
             )?;
@@ -451,38 +447,29 @@ pub fn list_chat_conversations_paginated(
                         input_tokens,
                         output_tokens,
                         cache_creation_input_tokens,
-                        cache_read_input_tokens
-                   FROM chat_conversations
+                        cache_read_input_tokens,
+                        'main',
+                        '',
+                        '',
+                        '',
+                        '',
+                        ''
+                   FROM chat_conversations AS conversation
                   WHERE directory_id = ?1
                     AND status = 'active'
+                    AND NOT EXISTS (
+                      SELECT 1
+                        FROM sub_agent_sessions AS sub_agent
+                       WHERE sub_agent.conversation_id = conversation.conversation_id
+                    )
                   ORDER BY updated_at DESC, id DESC
                   LIMIT ?2 OFFSET ?3",
             )?;
 
             let rows = statement.query_map(
                 params![directory_id, safe_limit, safe_offset],
-                |row| {
-                    Ok(ChatConversationRecord {
-                        conversation_id: row.get(0)?,
-                        title: row.get(1)?,
-                        summary: row.get(2)?,
-                        last_message_preview: row.get(3)?,
-                        message_count: row.get(4)?,
-                        model: row.get(5)?,
-                        status: row.get(6)?,
-                        directory_id: row.get(7)?,
-                        forked_from_conversation_id: row.get(8)?,
-                        fork_message_count: row.get(9)?,
-                        created_at: row.get(10)?,
-                        updated_at: row.get(11)?,
-                        input_tokens: row.get(12)?,
-                        output_tokens: row.get(13)?,
-                        cache_creation_input_tokens: row.get(14)?,
-                        cache_read_input_tokens: row.get(15)?,
-                    })
-                },
+                map_chat_conversation_row,
             )?;
-
             let items: Vec<ChatConversationRecord> = rows.collect::<rusqlite::Result<Vec<_>>>()?;
 
             Ok(ChatConversationPage { items, total })
@@ -514,34 +501,25 @@ pub fn list_pinned_conversations(
                         input_tokens,
                         output_tokens,
                         cache_creation_input_tokens,
-                        cache_read_input_tokens
-                   FROM chat_conversations
+                        cache_read_input_tokens,
+                        'main',
+                        '',
+                        '',
+                        '',
+                        '',
+                        ''
+                   FROM chat_conversations AS conversation
                   WHERE directory_id = ?1
                     AND status = 'pin'
+                    AND NOT EXISTS (
+                      SELECT 1
+                        FROM sub_agent_sessions AS sub_agent
+                       WHERE sub_agent.conversation_id = conversation.conversation_id
+                    )
                   ORDER BY updated_at DESC, id DESC",
             )?;
 
-            let rows = statement.query_map(params![directory_id], |row| {
-                Ok(ChatConversationRecord {
-                    conversation_id: row.get(0)?,
-                    title: row.get(1)?,
-                    summary: row.get(2)?,
-                    last_message_preview: row.get(3)?,
-                    message_count: row.get(4)?,
-                    model: row.get(5)?,
-                    status: row.get(6)?,
-                    directory_id: row.get(7)?,
-                    forked_from_conversation_id: row.get(8)?,
-                    fork_message_count: row.get(9)?,
-                    created_at: row.get(10)?,
-                    updated_at: row.get(11)?,
-                    input_tokens: row.get(12)?,
-                    output_tokens: row.get(13)?,
-                    cache_creation_input_tokens: row.get(14)?,
-                    cache_read_input_tokens: row.get(15)?,
-                })
-            })?;
-
+            let rows = statement.query_map(params![directory_id], map_chat_conversation_row)?;
             rows.collect()
         })
         .map_err(|error| database::database_error(database_path, "list pinned conversations", error))
@@ -555,50 +533,183 @@ pub fn get_chat_conversation(
         .and_then(|connection| {
             connection
                 .query_row(
-                    "SELECT conversation_id,
-                            title,
-                            summary,
-                            last_message_preview,
-                            message_count,
-                            model,
-                            status,
-                            directory_id,
-                            forked_from_conversation_id,
-                            fork_message_count,
-                            created_at,
-                            updated_at,
-                            input_tokens,
-                            output_tokens,
-                            cache_creation_input_tokens,
-                            cache_read_input_tokens
-                       FROM chat_conversations
-                      WHERE conversation_id = ?1
+                    "SELECT conversation.conversation_id,
+                            conversation.title,
+                            conversation.summary,
+                            conversation.last_message_preview,
+                            conversation.message_count,
+                            conversation.model,
+                            conversation.status,
+                            conversation.directory_id,
+                            conversation.forked_from_conversation_id,
+                            conversation.fork_message_count,
+                            conversation.created_at,
+                            conversation.updated_at,
+                            conversation.input_tokens,
+                            conversation.output_tokens,
+                            conversation.cache_creation_input_tokens,
+                            conversation.cache_read_input_tokens,
+                            CASE WHEN sub_agent.conversation_id IS NULL THEN 'main' ELSE 'sub_agent' END,
+                            COALESCE(sub_agent.parent_conversation_id, ''),
+                            COALESCE(sub_agent.agent_id, ''),
+                            COALESCE(sub_agent.agent_name, ''),
+                            COALESCE(sub_agent.run_status, ''),
+                            COALESCE(sub_agent.error_message, '')
+                       FROM chat_conversations AS conversation
+                       LEFT JOIN sub_agent_sessions AS sub_agent
+                         ON sub_agent.conversation_id = conversation.conversation_id
+                      WHERE conversation.conversation_id = ?1
                       LIMIT 1",
                     params![conversation_id],
-                    |row| {
-                        Ok(ChatConversationRecord {
-                            conversation_id: row.get(0)?,
-                            title: row.get(1)?,
-                            summary: row.get(2)?,
-                            last_message_preview: row.get(3)?,
-                            message_count: row.get(4)?,
-                            model: row.get(5)?,
-                            status: row.get(6)?,
-                            directory_id: row.get(7)?,
-                            forked_from_conversation_id: row.get(8)?,
-                            fork_message_count: row.get(9)?,
-                            created_at: row.get(10)?,
-                            updated_at: row.get(11)?,
-                            input_tokens: row.get(12)?,
-                            output_tokens: row.get(13)?,
-                            cache_creation_input_tokens: row.get(14)?,
-                            cache_read_input_tokens: row.get(15)?,
-                        })
-                    },
+                    map_chat_conversation_row,
                 )
                 .optional()
         })
         .map_err(|error| database::database_error(database_path, "get chat conversation", error))
+}
+
+pub fn list_sub_agent_conversations(
+    database_path: &Path,
+    parent_conversation_id: &str,
+) -> Result<Vec<ChatConversationRecord>> {
+    Connection::open(database_path)
+        .and_then(|connection| {
+            let mut statement = connection.prepare(
+                "SELECT conversation.conversation_id,
+                        conversation.title,
+                        conversation.summary,
+                        conversation.last_message_preview,
+                        conversation.message_count,
+                        conversation.model,
+                        conversation.status,
+                        conversation.directory_id,
+                        conversation.forked_from_conversation_id,
+                        conversation.fork_message_count,
+                        conversation.created_at,
+                        conversation.updated_at,
+                        conversation.input_tokens,
+                        conversation.output_tokens,
+                        conversation.cache_creation_input_tokens,
+                        conversation.cache_read_input_tokens,
+                        'sub_agent',
+                        sub_agent.parent_conversation_id,
+                        sub_agent.agent_id,
+                        sub_agent.agent_name,
+                        sub_agent.run_status,
+                        sub_agent.error_message
+                   FROM sub_agent_sessions AS sub_agent
+                   JOIN chat_conversations AS conversation
+                     ON conversation.conversation_id = sub_agent.conversation_id
+                  WHERE sub_agent.parent_conversation_id = ?1
+                  ORDER BY sub_agent.created_at ASC, sub_agent.id ASC",
+            )?;
+
+            let rows = statement.query_map(
+                params![parent_conversation_id],
+                map_chat_conversation_row,
+            )?;
+            rows.collect()
+        })
+        .map_err(|error| {
+            database::database_error(database_path, "list sub-agent conversations", error)
+        })
+}
+
+pub fn create_sub_agent_session(
+    database_path: &Path,
+    conversation_id: &str,
+    parent_conversation_id: &str,
+    agent_id: &str,
+    agent_name: &str,
+    directory_id: &str,
+    model: &str,
+    title: &str,
+) -> Result<()> {
+    Connection::open(database_path)
+        .and_then(|mut connection| {
+            let transaction = connection.transaction()?;
+            transaction.execute(
+                "INSERT INTO chat_conversations (
+                   id,
+                   conversation_id,
+                   title,
+                   summary,
+                   last_message_preview,
+                   message_count,
+                   model,
+                   last_response_id,
+                   status,
+                   directory_id,
+                   forked_from_conversation_id,
+                   fork_message_count,
+                   created_at,
+                   updated_at
+                 ) VALUES (
+                   ?1, ?2, ?3, ?3, '', 0, ?4, '', 'active', ?5, '', 0, datetime('now'), datetime('now')
+                 )",
+                params![
+                    database::create_snowflake_id(),
+                    conversation_id,
+                    title.trim(),
+                    model.trim(),
+                    directory_id.trim(),
+                ],
+            )?;
+            transaction.execute(
+                "INSERT INTO sub_agent_sessions (
+                   id,
+                   conversation_id,
+                   parent_conversation_id,
+                   agent_id,
+                   agent_name,
+                   run_status,
+                   error_message,
+                   created_at,
+                   updated_at
+                 ) VALUES (
+                   ?1, ?2, ?3, ?4, ?5, 'running', '', datetime('now'), datetime('now')
+                 )",
+                params![
+                    database::create_snowflake_id(),
+                    conversation_id,
+                    parent_conversation_id.trim(),
+                    agent_id.trim(),
+                    agent_name.trim(),
+                ],
+            )?;
+            transaction.commit()
+        })
+        .map_err(|error| database::database_error(database_path, "create sub-agent session", error))
+}
+
+pub fn update_sub_agent_session_status(
+    database_path: &Path,
+    conversation_id: &str,
+    run_status: &str,
+    error_message: &str,
+) -> Result<()> {
+    let normalized_status = match run_status.trim() {
+        "completed" => "completed",
+        "failed" => "failed",
+        "cancelled" => "cancelled",
+        _ => "running",
+    };
+
+    Connection::open(database_path)
+        .and_then(|connection| {
+            connection.execute(
+                "UPDATE sub_agent_sessions
+                    SET run_status = ?2,
+                        error_message = ?3,
+                        updated_at = datetime('now')
+                  WHERE conversation_id = ?1",
+                params![conversation_id, normalized_status, error_message.trim()],
+            )
+        })
+        .map_err(|error| {
+            database::database_error(database_path, "update sub-agent session status", error)
+        })
+        .map(|_| ())
 }
 
 pub fn update_conversation_status(
@@ -663,28 +774,54 @@ pub fn delete_conversation(
     let transaction = connection
         .transaction()
         .map_err(|error| database::database_error(database_path, "delete conversation", error))?;
+    let mut conversation_ids = vec![conversation_id.to_string()];
+    let child_ids = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT conversation_id
+                   FROM sub_agent_sessions
+                  WHERE parent_conversation_id = ?1",
+            )
+            .map_err(|error| database::database_error(database_path, "list sub-agent sessions", error))?;
+        let rows = statement
+            .query_map(params![conversation_id], |row| row.get::<_, String>(0))
+            .map_err(|error| database::database_error(database_path, "list sub-agent sessions", error))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|error| database::database_error(database_path, "list sub-agent sessions", error))?
+    };
+    conversation_ids.extend(child_ids);
+
+    for target_id in &conversation_ids {
+        transaction
+            .execute(
+                "DELETE FROM chat_messages WHERE conversation_id = ?1",
+                params![target_id],
+            )
+            .map_err(|error| database::database_error(database_path, "delete chat messages", error))?;
+        transaction
+            .execute(
+                "DELETE FROM todo_items WHERE session_id = ?1",
+                params![target_id],
+            )
+            .map_err(|error| database::database_error(database_path, "delete todo items", error))?;
+    }
 
     transaction
         .execute(
-            "DELETE FROM chat_messages WHERE conversation_id = ?1",
+            "DELETE FROM sub_agent_sessions
+              WHERE parent_conversation_id = ?1 OR conversation_id = ?1",
             params![conversation_id],
         )
-        .map_err(|error| database::database_error(database_path, "delete chat messages", error))?;
+        .map_err(|error| database::database_error(database_path, "delete sub-agent sessions", error))?;
 
-    // Delete all TODO items associated with this conversation session.
-    transaction
-        .execute(
-            "DELETE FROM todo_items WHERE session_id = ?1",
-            params![conversation_id],
-        )
-        .map_err(|error| database::database_error(database_path, "delete todo items", error))?;
-
-    transaction
-        .execute(
-            "DELETE FROM chat_conversations WHERE conversation_id = ?1",
-            params![conversation_id],
-        )
-        .map_err(|error| database::database_error(database_path, "delete conversation", error))?;
+    for target_id in conversation_ids.iter().rev() {
+        transaction
+            .execute(
+                "DELETE FROM chat_conversations WHERE conversation_id = ?1",
+                params![target_id],
+            )
+            .map_err(|error| database::database_error(database_path, "delete conversation", error))?;
+    }
 
     transaction
         .commit()
@@ -1185,6 +1322,33 @@ fn normalize_role(role: &str) -> &str {
         "tool" => "tool",
         _ => "user",
     }
+}
+
+fn map_chat_conversation_row(row: &Row<'_>) -> rusqlite::Result<ChatConversationRecord> {
+    Ok(ChatConversationRecord {
+        conversation_id: row.get(0)?,
+        title: row.get(1)?,
+        summary: row.get(2)?,
+        last_message_preview: row.get(3)?,
+        message_count: row.get(4)?,
+        model: row.get(5)?,
+        status: row.get(6)?,
+        directory_id: row.get(7)?,
+        forked_from_conversation_id: row.get(8)?,
+        fork_message_count: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
+        input_tokens: row.get(12)?,
+        output_tokens: row.get(13)?,
+        cache_creation_input_tokens: row.get(14)?,
+        cache_read_input_tokens: row.get(15)?,
+        conversation_type: row.get(16)?,
+        parent_conversation_id: row.get(17)?,
+        sub_agent_id: row.get(18)?,
+        sub_agent_name: row.get(19)?,
+        sub_agent_status: row.get(20)?,
+        sub_agent_error: row.get(21)?,
+    })
 }
 
 fn create_title(messages: &[ChatContextMessage]) -> String {

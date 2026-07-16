@@ -10,7 +10,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::api::config::{normalize_base_url, resolve_sdk_api_base_url};
 use crate::api::conversation::{
-    parse_chat_message_content, prepare_context_request, ConversationContextRequest,
+    parse_chat_message_content, prepare_context_request, resolve_sub_agent_tools,
+    ConversationContextRequest,
 };
 use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback, ResponsesApiStreamChunk,
@@ -91,7 +92,7 @@ async fn create_chat_completion_response_async(
     let tools = if request.context_compaction.unwrap_or(false) {
         None
     } else {
-        match crate::mcp::tools::collect_all_mcp_tools(request.directory_id.as_deref()).await {
+        match resolve_sub_agent_tools(&request).await {
             Ok(tools) => Some(crate::mcp::tools::tools_as_openai_chat_json(&tools)),
             Err(error) => {
                 eprintln!("Failed to prepare MCP tools for OpenAI Chat: {error}");

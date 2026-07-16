@@ -160,6 +160,23 @@ export type ProjectMcpServerConfigRecord = Omit<
   updatedAt: string;
 };
 
+export type SubAgentConfigInput = {
+  agentId: string;
+  name: string;
+  description: string;
+  systemPrompt: string;
+  toolsJson: string;
+  configProfile: string;
+  builtin: boolean;
+  sortOrder: number;
+  source: string;
+};
+
+export type SubAgentConfigRecord = SubAgentConfigInput & {
+  id: string;
+  updatedAt: string;
+};
+
 export type SensitiveCommandConfigInput = {
   commandId: string;
   pattern: string;
@@ -216,6 +233,12 @@ export type ChatConversationRecord = {
   directoryId: string;
   forkedFromConversationId: string;
   forkMessageCount: number;
+  conversationType: string;
+  parentConversationId: string;
+  subAgentId: string;
+  subAgentName: string;
+  subAgentStatus: string;
+  subAgentError: string;
   createdAt: string;
   updatedAt: string;
   inputTokens: number;
@@ -260,6 +283,7 @@ export type ResponsesApiRequest = {
   directoryId?: string;
   checkpointId?: string;
   contextCompaction?: boolean;
+  subAgentToolsJson?: string;
 };
 
 export type TokenUsage = {
@@ -486,6 +510,10 @@ export type NativeBridge = {
     projectId: string,
     serverId: string
   ) => Promise<void>;
+  listSubAgentConfigs: () => Promise<SubAgentConfigRecord[]>;
+  getSubAgentConfig: (agentId: string) => Promise<SubAgentConfigRecord | null>;
+  upsertSubAgentConfig: (item: SubAgentConfigInput) => Promise<void>;
+  deleteSubAgentConfig: (agentId: string) => Promise<void>;
   listSensitiveCommandConfigs: () => Promise<SensitiveCommandConfigRecord[]>;
   upsertSensitiveCommandConfig: (
     item: SensitiveCommandConfigInput
@@ -531,6 +559,23 @@ export type NativeBridge = {
   getChatConversation: (
     conversationId: string
   ) => Promise<ChatConversationRecord | null>;
+  listSubAgentConversations: (
+    parentConversationId: string
+  ) => Promise<ChatConversationRecord[]>;
+  createSubAgentSession: (
+    conversationId: string,
+    parentConversationId: string,
+    agentId: string,
+    agentName: string,
+    directoryId: string,
+    model: string,
+    title: string
+  ) => Promise<void>;
+  updateSubAgentSessionStatus: (
+    conversationId: string,
+    runStatus: string,
+    errorMessage: string
+  ) => Promise<void>;
   updateConversationStatus: (
     conversationId: string,
     status: string
@@ -598,7 +643,8 @@ export type NativeBridge = {
     sensitiveAuthorizationToken: string | undefined,
     onChunk: (chunk: BashStreamChunk) => void,
     onBrowserCommand: (command: BrowserCommand) => Promise<string>,
-    onUserQuestion: (question: UserQuestionCommand) => Promise<string>
+    onUserQuestion: (question: UserQuestionCommand) => Promise<string>,
+    subAgentAllowedTools: string[] | undefined
   ) => Promise<string>;
   engineInfo: () => string;
   sum: (a: number, b: number) => number;

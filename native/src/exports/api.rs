@@ -177,7 +177,7 @@ pub async fn authorize_sensitive_command(command: String, token: String) -> napi
 }
 
 #[napi(
-    ts_args_type = "toolFullName: string, argsJson: string, projectId: string | undefined, checkpointIds: string[] | undefined, checkpointWorkDir: string | undefined, sensitiveAuthorizationToken: string | undefined, onChunk: (chunk: BashStreamChunk) => void, onBrowserCommand: (command: BrowserCommand) => Promise<string>, onUserQuestion: (question: UserQuestionCommand) => Promise<string>",
+    ts_args_type = "toolFullName: string, argsJson: string, projectId: string | undefined, checkpointIds: string[] | undefined, checkpointWorkDir: string | undefined, sensitiveAuthorizationToken: string | undefined, onChunk: (chunk: BashStreamChunk) => void, onBrowserCommand: (command: BrowserCommand) => Promise<string>, onUserQuestion: (question: UserQuestionCommand) => Promise<string>, subAgentAllowedTools: string[] | undefined",
     ts_return_type = "Promise<string>"
 )]
 pub async fn call_mcp_tool(
@@ -190,6 +190,7 @@ pub async fn call_mcp_tool(
     on_chunk: BashStreamCallback,
     on_browser_command: BrowserCommandCallback,
     on_user_question: UserQuestionCallback,
+    sub_agent_allowed_tools: Option<Vec<String>>,
 ) -> napi::Result<String> {
     call_tool(
         tool_full_name,
@@ -201,6 +202,7 @@ pub async fn call_mcp_tool(
         on_chunk,
         on_browser_command,
         on_user_question,
+        sub_agent_allowed_tools,
     )
     .await
 }

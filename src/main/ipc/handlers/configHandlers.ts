@@ -18,12 +18,63 @@ import {
   normalizeSensitiveCommandConfig,
   readSnowCliSensitiveCommandConfig,
 } from "../../settings/sensitiveCommandSettings";
+import { normalizeSubAgentConfig } from "../../settings/subAgentSettings";
 
 const requireProjectId = (value: unknown): string => {
   if (typeof value !== "string" || !value.trim()) {
     throw new Error("Project id is required");
   }
   return value.trim();
+};
+
+const validateSubAgentTools = async (
+  native: NativeBridge,
+  projectId: string | undefined,
+  toolsJson: string
+): Promise<void> => {
+  const parsed: unknown = JSON.parse(toolsJson);
+  const toolNames = Array.isArray(parsed)
+    ? parsed.filter((tool): tool is string => typeof tool === "string")
+    : [];
+
+  if (
+    toolNames.length === 0 ||
+    (toolNames.length === 1 && toolNames[0] === "*")
+  ) {
+    return;
+  }
+
+  if (!projectId) {
+    throw new Error(
+      "Project id is required when sub-agent MCP tools are selected"
+    );
+  }
+
+  const servers = await native.listMcpProjectServers(projectId);
+  const availableServers = servers.filter(
+    (server) => server.globalEnabled && server.enabled && !server.error
+  );
+  const toolsByServer = await Promise.all(
+    availableServers.map(async (server) =>
+      server.source === "system"
+        ? server.tools
+        : native.listMcpProjectServerTools(projectId, server.id)
+    )
+  );
+  const availableToolNames = new Set(
+    toolsByServer.flatMap((tools) =>
+      tools.filter((tool) => tool.enabled).map((tool) => tool.name)
+    )
+  );
+  const unavailableTool = toolNames.find(
+    (toolName) => !availableToolNames.has(toolName)
+  );
+
+  if (unavailableTool) {
+    throw new Error(
+      `Selected sub-agent MCP tool is not enabled for the current project: ${unavailableTool}`
+    );
+  }
 };
 
 export const registerConfigHandlers = (native: NativeBridge): void => {
@@ -117,6 +168,56 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
         serverId.trim()
       );
       return native.listProjectMcpServerConfigs(normalizedProjectId);
+    }
+  );
+
+  // ===== Sub-agent Configs =====
+  ipcMain.handle("sub-agent-configs:list", () => native.listSubAgentConfigs());
+  ipcMain.handle(
+    "sub-agent-configs:upsert",
+    async (_event, projectId: unknown, item: unknown) => {
+      const normalizedProjectId =
+        typeof projectId === "string" && projectId.trim()
+          ? projectId.trim()
+          : undefined;
+      const normalized = normalizeSubAgentConfig(item);
+      const apiConfigs = await native.listApiConfigs();
+      if (
+        normalized.configProfile &&
+        !apiConfigs.some(
+          (config) => config.profileName === normalized.configProfile
+        )
+      ) {
+        throw new Error("Selected sub-agent API profile does not exist");
+      }
+      await validateSubAgentTools(
+        native,
+        normalizedProjectId,
+        normalized.toolsJson
+      );
+      await native.upsertSubAgentConfig(normalized);
+      return native.listSubAgentConfigs();
+    }
+  );
+  ipcMain.handle(
+    "sub-agent-configs:delete",
+    async (_event, agentId: unknown) => {
+      if (typeof agentId !== "string" || !agentId.trim()) {
+        throw new Error("Sub-agent ID is required");
+      }
+
+      const normalizedAgentId = agentId.trim();
+      const existing = await native.listSubAgentConfigs();
+      if (
+        existing.some(
+          (item) => item.agentId === normalizedAgentId && item.builtin
+        )
+      ) {
+        throw new Error("Built-in sub-agents cannot be deleted");
+      }
+
+      await native.deleteSubAgentConfig(normalizedAgentId);
+      return native.listSubAgentConfigs();
     }
   );
 

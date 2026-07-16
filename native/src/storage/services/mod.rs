@@ -9,6 +9,7 @@ pub mod mcp_server_configs;
 pub mod project_mcp_server_configs;
 pub mod project_sensitive_command_configs;
 pub mod sensitive_command_configs;
+pub mod sub_agent_configs;
 pub mod system_prompts;
 pub mod system_settings;
 pub mod permissions;

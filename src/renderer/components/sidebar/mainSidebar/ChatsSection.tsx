@@ -17,6 +17,8 @@ type ChatsSectionProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
 };
 
+type SubAgentMap = Record<string, ChatConversationRecord[]>;
+
 export function ChatsSection({
   isSwitchingDirectory,
   activeDirectory,
@@ -25,6 +27,7 @@ export function ChatsSection({
   const {
     conversationVersion,
     upsertedConversation,
+    subAgentSessionEvent,
     refreshConversations,
     handleSelectConversation,
     handleNewChat,
@@ -40,6 +43,7 @@ export function ChatsSection({
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [subAgentMap, setSubAgentMap] = useState<SubAgentMap>({});
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const directoryId = activeDirectory?.directoryId ?? "";
@@ -237,6 +241,102 @@ export function ChatsSection({
 
   const timeGroups = groupConversationsByTime(conversations);
 
+  useEffect(() => {
+    if (conversations.length === 0) {
+      setSubAgentMap({});
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadSubAgents = async (): Promise<void> => {
+      const entries = await Promise.all(
+        conversations.map(async (conv) => {
+          try {
+            const subAgents = await window.snow.listSubAgentConversations(
+              conv.conversationId
+            );
+            return [conv.conversationId, subAgents] as const;
+          } catch {
+            return [conv.conversationId, []] as const;
+          }
+        })
+      );
+
+      if (!cancelled) {
+        const map: SubAgentMap = {};
+        for (const [id, subs] of entries) {
+          if (subs.length > 0) {
+            map[id] = subs;
+          }
+        }
+        setSubAgentMap(map);
+      }
+    };
+
+    void loadSubAgents();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversations]);
+
+  useEffect(() => {
+    if (!subAgentSessionEvent) {
+      return;
+    }
+
+    const { parentConversationId, conversationId, agentName, status } =
+      subAgentSessionEvent;
+
+    setSubAgentMap((prev) => {
+      const existing = prev[parentConversationId] ?? [];
+      const existingIndex = existing.findIndex(
+        (item) => item.conversationId === conversationId
+      );
+
+      const subAgentRecord: ChatConversationRecord = {
+        conversationId,
+        title: agentName,
+        summary: "",
+        lastMessagePreview: "",
+        messageCount: 0,
+        model: "",
+        status: "active",
+        directoryId: "",
+        forkedFromConversationId: "",
+        forkMessageCount: 0,
+        conversationType: "sub_agent",
+        parentConversationId,
+        subAgentId: subAgentSessionEvent.agentId,
+        subAgentName: agentName,
+        subAgentStatus: status,
+        subAgentError: "",
+        createdAt: new Date(subAgentSessionEvent.timestamp).toISOString(),
+        updatedAt: new Date(subAgentSessionEvent.timestamp).toISOString(),
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+      };
+
+      if (existingIndex >= 0) {
+        const updated = [...existing];
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          subAgentStatus: status,
+          subAgentName: agentName,
+        };
+        return { ...prev, [parentConversationId]: updated };
+      }
+
+      return {
+        ...prev,
+        [parentConversationId]: [...existing, subAgentRecord],
+      };
+    });
+  }, [subAgentSessionEvent]);
+
   const getGroupLabel = (key: TimeGroupKey): string => {
     switch (key) {
       case "today":
@@ -303,6 +403,10 @@ export function ChatsSection({
                     isCompleted={completedConversationIds.has(
                       conversation.conversationId
                     )}
+                    subAgentConversations={
+                      subAgentMap[conversation.conversationId] ?? []
+                    }
+                    activeSubAgentConversationId={activeConversationId}
                     onPin={() => void handlePin(conversation)}
                     onRename={(newTitle) =>
                       handleRename(conversation, newTitle)
@@ -320,6 +424,14 @@ export function ChatsSection({
                           cacheReadInputTokens:
                             conversation.cacheReadInputTokens,
                         },
+                        conversation.directoryId
+                      )
+                    }
+                    onSelectSubAgent={(subConvId) =>
+                      void handleSelectConversation(
+                        subConvId,
+                        undefined,
+                        undefined,
                         conversation.directoryId
                       )
                     }

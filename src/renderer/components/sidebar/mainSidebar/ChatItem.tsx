@@ -1,4 +1,12 @@
-import { GitFork, Loader2, MessageSquareMore } from "lucide-react";
+import {
+  ChevronRight,
+  GitFork,
+  Loader2,
+  MessageSquareMore,
+  AlertCircle,
+  CheckCircle2,
+  Bot,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useI18n } from "../../../i18n";
@@ -11,10 +19,13 @@ type ChatItemProps = {
   isActive?: boolean;
   isStreaming?: boolean;
   isCompleted?: boolean;
+  subAgentConversations?: ChatConversationRecord[];
+  activeSubAgentConversationId?: string;
   onPin: () => void;
   onRename: (newTitle: string) => Promise<void>;
   onDelete: () => void;
   onSelect?: () => void;
+  onSelectSubAgent?: (conversationId: string) => void;
 };
 
 export function ChatItem({
@@ -22,15 +33,19 @@ export function ChatItem({
   isActive = false,
   isStreaming = false,
   isCompleted = false,
+  subAgentConversations = [],
+  activeSubAgentConversationId,
   onPin,
   onRename,
   onDelete,
   onSelect,
+  onSelectSubAgent,
 }: ChatItemProps): React.JSX.Element {
   const { t } = useI18n();
   const [isEditing, setIsEditing] = useState(false);
   const [editingValue, setEditingValue] = useState("");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const editInputRef = useRef<HTMLInputElement>(null);
   const isSubmittingRef = useRef(false);
   const cancelledRef = useRef(false);
@@ -41,6 +56,17 @@ export function ChatItem({
       editInputRef.current.select();
     }
   }, [isEditing]);
+
+  const hasSubAgents = subAgentConversations.length > 0;
+  const hasActiveSubAgent = subAgentConversations.some(
+    (sub) => sub.conversationId === activeSubAgentConversationId
+  );
+
+  useEffect(() => {
+    if (hasActiveSubAgent) {
+      setIsExpanded(true);
+    }
+  }, [hasActiveSubAgent]);
 
   const handleRenameStart = (): void => {
     setEditingValue(conversation.summary || conversation.title || "");
@@ -118,6 +144,28 @@ export function ChatItem({
     onSelect?.();
   };
 
+  const handleToggleExpand = (event: React.MouseEvent): void => {
+    event.stopPropagation();
+    setIsExpanded((prev) => !prev);
+  };
+
+  const renderSubAgentIcon = (status: string): React.ReactNode => {
+    if (status === "running") {
+      return <Loader2 size={11} className="spin" />;
+    }
+    if (status === "failed") {
+      return <AlertCircle size={11} className="sub-agent-failed" />;
+    }
+    if (status === "completed") {
+      return <CheckCircle2 size={11} className="sub-agent-completed" />;
+    }
+    return <Bot size={11} />;
+  };
+
+  const runningSubAgentCount = subAgentConversations.filter(
+    (sub) => sub.subAgentStatus === "running"
+  ).length;
+
   return (
     <div
       className={`chat-item${isMenuOpen ? " menu-open" : ""}${
@@ -141,7 +189,7 @@ export function ChatItem({
       <span
         className={`chat-item-icon${isStreaming ? " streaming" : ""}${
           isCompleted && !isStreaming ? " completed" : ""
-        }${isForked ? " forked" : ""}`}
+        }${isForked ? " forked" : ""}${hasSubAgents ? " has-sub-agents" : ""}`}
       >
         {isStreaming ? (
           <Loader2 size={11} className="spin" />
@@ -169,7 +217,25 @@ export function ChatItem({
         ) : (
           <>
             <div className="chat-item-title-row">
+              {hasSubAgents && (
+                <span
+                  className="chat-item-expand-toggle"
+                  onClick={handleToggleExpand}
+                  role="button"
+                  tabIndex={-1}
+                >
+                  <ChevronRight
+                    size={12}
+                    className={isExpanded ? "expanded" : ""}
+                  />
+                </span>
+              )}
               <span className="chat-item-title">{displayName}</span>
+              {hasSubAgents && runningSubAgentCount > 0 && (
+                <span className="chat-item-sub-agent-count">
+                  {runningSubAgentCount}
+                </span>
+              )}
               <span className="chat-item-time">{timeLabel}</span>
             </div>
             {conversation.lastMessagePreview ? (
@@ -194,6 +260,42 @@ export function ChatItem({
             onOpenChange={setIsMenuOpen}
           />
         </span>
+      )}
+      {hasSubAgents && isExpanded && (
+        <div className="chat-item-sub-agents">
+          {subAgentConversations.map((subAgent) => (
+            <div
+              key={subAgent.conversationId}
+              className={`chat-sub-agent-item${
+                subAgent.conversationId === activeSubAgentConversationId
+                  ? " active"
+                  : ""
+              }`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onSelectSubAgent?.(subAgent.conversationId);
+              }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onSelectSubAgent?.(subAgent.conversationId);
+                }
+              }}
+            >
+              <span className="chat-sub-agent-icon">
+                {renderSubAgentIcon(subAgent.subAgentStatus)}
+              </span>
+              <span className="chat-sub-agent-name">
+                {subAgent.subAgentName ||
+                  subAgent.title ||
+                  t("sidebar.subAgent", { defaultValue: "Sub-agent" })}
+              </span>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

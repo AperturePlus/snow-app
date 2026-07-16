@@ -156,6 +156,7 @@ export function SettingsSidebarContent({
       activeMainView === "custom-headers-settings" ||
       activeMainView === "mcp-settings" ||
       activeMainView === "skills-settings" ||
+      activeMainView === "sub-agent-settings" ||
       activeMainView === "sensitive-command-settings" ||
       activeMainView === "terminal-settings"
     ) {
@@ -200,6 +201,8 @@ export function SettingsSidebarContent({
                   ? "mcp-settings"
                   : item.id === "skills"
                   ? "skills-settings"
+                  : item.id === "subagent"
+                  ? "sub-agent-settings"
                   : item.id === "sensitive-commands"
                   ? "sensitive-command-settings"
                   : item.id === "terminal"

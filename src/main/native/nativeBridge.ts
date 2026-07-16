@@ -199,6 +199,24 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to delete project MCP server configs"
           )
         ),
+      listSubAgentConfigs: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to list sub-agent configs")
+        ),
+      getSubAgentConfig: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to get sub-agent config")
+        ),
+      upsertSubAgentConfig: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write sub-agent configs")
+        ),
+      deleteSubAgentConfig: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to delete sub-agent configs"
+          )
+        ),
       listSensitiveCommandConfigs: () =>
         Promise.reject(
           new Error(
@@ -266,6 +284,24 @@ export const loadNativeBridge = (): NativeBridge => {
       getChatConversation: () =>
         Promise.reject(
           new Error("Rust native bridge is required to get chat conversation")
+        ),
+      listSubAgentConversations: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list sub-agent conversations"
+          )
+        ),
+      createSubAgentSession: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to create sub-agent session"
+          )
+        ),
+      updateSubAgentSessionStatus: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to update sub-agent session status"
+          )
         ),
       updateConversationStatus: () =>
         Promise.reject(

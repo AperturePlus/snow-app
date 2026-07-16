@@ -72,6 +72,23 @@ export type CustomHeaderSchemeRecord = CustomHeaderSchemeInput & {
   updatedAt: string;
 };
 
+export type SubAgentConfigInput = {
+  agentId: string;
+  name: string;
+  description: string;
+  systemPrompt: string;
+  toolsJson: string;
+  configProfile: string;
+  builtin: boolean;
+  sortOrder: number;
+  source: string;
+};
+
+export type SubAgentConfigRecord = SubAgentConfigInput & {
+  id: string;
+  updatedAt: string;
+};
+
 export type SensitiveCommandConfigInput = {
   commandId: string;
   pattern: string;

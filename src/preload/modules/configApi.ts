@@ -9,6 +9,8 @@ import type {
   ProjectSensitiveCommandConfigRecord,
   SensitiveCommandConfigInput,
   SensitiveCommandConfigRecord,
+  SubAgentConfigInput,
+  SubAgentConfigRecord,
   SystemPromptItemInput,
   SystemPromptItemRecord,
 } from "../types";
@@ -62,6 +64,17 @@ export const configApi = {
       projectId,
       serverId
     ),
+  listSubAgentConfigs: (): Promise<SubAgentConfigRecord[]> =>
+    ipcRenderer.invoke("sub-agent-configs:list"),
+  getSubAgentConfig: (agentId: string): Promise<SubAgentConfigRecord | null> =>
+    ipcRenderer.invoke("sub-agent-configs:get", agentId),
+  upsertSubAgentConfig: (
+    projectId: string | undefined,
+    item: SubAgentConfigInput
+  ): Promise<SubAgentConfigRecord[]> =>
+    ipcRenderer.invoke("sub-agent-configs:upsert", projectId, item),
+  deleteSubAgentConfig: (agentId: string): Promise<SubAgentConfigRecord[]> =>
+    ipcRenderer.invoke("sub-agent-configs:delete", agentId),
   listSensitiveCommandConfigs: (): Promise<SensitiveCommandConfigRecord[]> =>
     ipcRenderer.invoke("sensitive-command-configs:list"),
   upsertSensitiveCommandConfig: (

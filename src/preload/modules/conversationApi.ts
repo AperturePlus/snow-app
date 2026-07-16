@@ -82,6 +82,43 @@ export const conversationApi = {
     ),
   generateConversationSummary: (conversationId: string): Promise<string> =>
     ipcRenderer.invoke("chat-conversations:generate-summary", conversationId),
+  listSubAgentConversations: (
+    parentConversationId: string
+  ): Promise<ChatConversationRecord[]> =>
+    ipcRenderer.invoke(
+      "chat-conversations:list-sub-agent",
+      parentConversationId
+    ),
+  createSubAgentSession: (
+    conversationId: string,
+    parentConversationId: string,
+    agentId: string,
+    agentName: string,
+    directoryId: string,
+    model: string,
+    title: string
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "chat-conversations:create-sub-agent-session",
+      conversationId,
+      parentConversationId,
+      agentId,
+      agentName,
+      directoryId,
+      model,
+      title
+    ),
+  updateSubAgentSessionStatus: (
+    conversationId: string,
+    runStatus: string,
+    errorMessage: string
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      "chat-conversations:update-sub-agent-status",
+      conversationId,
+      runStatus,
+      errorMessage
+    ),
   listTodosForRollback: (
     sessionId: string,
     responseId: string

@@ -75,6 +75,10 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
       typeof source.contextCompaction === "boolean"
         ? source.contextCompaction
         : undefined,
+    subAgentToolsJson:
+      typeof source.subAgentToolsJson === "string"
+        ? source.subAgentToolsJson
+        : undefined,
   };
 };
 

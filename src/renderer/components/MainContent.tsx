@@ -5,6 +5,7 @@ import { McpSettingsPanel } from "./sidebar/McpSettingsPanel";
 import { ProxyBrowserSettingsPanel } from "./sidebar/ProxyBrowserSettingsPanel";
 import { SensitiveCommandsPanel } from "./sidebar/SensitiveCommandsPanel";
 import { SkillsSettingsPanel } from "./sidebar/SkillsSettingsPanel";
+import { SubAgentSettingsPanel } from "./sidebar/SubAgentSettingsPanel";
 import { SystemPromptSettingsPanel } from "./sidebar/SystemPromptSettingsPanel";
 import { TerminalSettingsPanel } from "./sidebar/TerminalSettingsPanel";
 import { ChatContent } from "./mainContent/ChatContent";
@@ -41,6 +42,11 @@ export const MainContent = ({
         />
       ) : activeView === "skills-settings" ? (
         <SkillsSettingsPanel
+          activeDirectory={activeDirectory}
+          onClose={() => onSelectView("chat")}
+        />
+      ) : activeView === "sub-agent-settings" ? (
+        <SubAgentSettingsPanel
           activeDirectory={activeDirectory}
           onClose={() => onSelectView("chat")}
         />

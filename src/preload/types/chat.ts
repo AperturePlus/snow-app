@@ -9,6 +9,12 @@ export type ChatConversationRecord = {
   directoryId: string;
   forkedFromConversationId: string;
   forkMessageCount: number;
+  conversationType: string;
+  parentConversationId: string;
+  subAgentId: string;
+  subAgentName: string;
+  subAgentStatus: string;
+  subAgentError: string;
   createdAt: string;
   updatedAt: string;
   inputTokens: number;

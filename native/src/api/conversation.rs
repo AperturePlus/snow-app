@@ -9,11 +9,13 @@ use napi::bindgen_prelude::*;
 use crate::api::anthropic::create_anthropic_response_stream;
 use crate::api::chat::create_chat_completion_response_stream;
 use crate::api::config::get_active_api_request_context;
+use crate::api::config::get_api_request_context_for_profile;
 use crate::api::gemini::create_gemini_response_stream;
 use crate::api::responses::{
     create_response_stream_with_context, ResponsesApiRequest,
     ResponsesApiResult, ResponsesApiStreamCallback,
 };
+use crate::mcp::tools::{collect_all_mcp_tools, collect_allowed_mcp_tools, McpTool};
 use crate::prompt::system_prompt::build_system_prompt;
 use crate::storage::services::chat_conversations::{
     load_context_messages, resolve_conversation_id, store_failed_chat_exchange,
@@ -55,7 +57,25 @@ pub async fn create_response_stream(
     on_chunk: ResponsesApiStreamCallback,
     stream_id: String,
 ) -> Result<ResponsesApiResult> {
-    let context = get_active_api_request_context()?;
+    let sub_agent_tools_json = request.sub_agent_tools_json.clone();
+    let is_sub_agent = sub_agent_tools_json
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_some();
+
+    let context = if is_sub_agent {
+        let storage_info = crate::storage::initialize_app_storage()?;
+        let database_path = std::path::PathBuf::from(storage_info.database_path);
+        let configs = crate::storage::services::api_configs::list_api_configs(&database_path)?;
+        let active_profile = configs
+            .iter()
+            .find(|config| config.is_active)
+            .map(|config| config.profile_name.clone());
+        get_api_request_context_for_profile(active_profile.as_deref())?
+    } else {
+        get_active_api_request_context()?
+    };
     let failure_messages = request
         .messages
         .iter()
@@ -463,5 +483,25 @@ fn extension_to_media_type(path: &Path) -> String {
         Some("bmp") => "image/bmp".to_string(),
         Some("svg") => "image/svg+xml".to_string(),
         _ => "application/octet-stream".to_string(),
+    }
+}
+
+/// Resolve the MCP tool set for a request. When `sub_agent_tools_json` is
+/// present and non-empty, the tools are filtered by the configured whitelist
+/// via `collect_allowed_mcp_tools`. Otherwise all project-scoped tools are
+/// collected via `collect_all_mcp_tools` (the normal main-conversation path).
+pub async fn resolve_sub_agent_tools(
+    request: &ResponsesApiRequest,
+) -> Result<Vec<McpTool>> {
+    match request.sub_agent_tools_json.as_deref() {
+        Some(tools_json) if !tools_json.trim().is_empty() => {
+            collect_allowed_mcp_tools(
+                request.directory_id.as_deref(),
+                tools_json,
+                true,
+            )
+            .await
+        }
+        _ => collect_all_mcp_tools(request.directory_id.as_deref()).await,
     }
 }

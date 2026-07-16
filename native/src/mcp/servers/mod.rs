@@ -3,6 +3,7 @@ pub mod browser;
 pub mod filesystem;
 pub mod grep;
 pub mod skills;
+pub mod sub_agents;
 pub mod todo;
 pub mod user_interaction;
 pub mod websearch;

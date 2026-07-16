@@ -58,9 +58,17 @@ export type ChatConversationMessage = {
   checkpointId?: string;
   isContextCompaction?: boolean;
 };
-
 type UpsertedConversation = {
   record: ChatConversationRecord;
+  timestamp: number;
+};
+
+type SubAgentSessionEvent = {
+  parentConversationId: string;
+  conversationId: string;
+  agentId: string;
+  agentName: string;
+  status: "running" | "completed" | "failed" | "cancelled";
   timestamp: number;
 };
 
@@ -132,6 +140,7 @@ type UseChatConversationResult = {
   summary: string;
   conversationVersion: number;
   upsertedConversation: UpsertedConversation | null;
+  subAgentSessionEvent: SubAgentSessionEvent | null;
   activeConversationId: string | undefined;
   conversationDirectoryId: string | undefined;
   tokenUsage: TokenUsage | null;
@@ -548,6 +557,8 @@ export const useChatConversation = (
   const [conversationVersion, setConversationVersion] = useState(0);
   const [upsertedConversation, setUpsertedConversation] =
     useState<UpsertedConversation | null>(null);
+  const [subAgentSessionEvent, setSubAgentSessionEvent] =
+    useState<SubAgentSessionEvent | null>(null);
   const [streamingConversationIds, setStreamingConversationIds] = useState<
     Set<string>
   >(new Set());
@@ -1268,6 +1279,12 @@ export const useChatConversation = (
             directoryId: sessionDirId ?? "",
             forkedFromConversationId: "",
             forkMessageCount: 0,
+            conversationType: "main",
+            parentConversationId: "",
+            subAgentId: "",
+            subAgentName: "",
+            subAgentStatus: "",
+            subAgentError: "",
             createdAt: nowIso,
             updatedAt: nowIso,
             inputTokens: 0,
@@ -1280,6 +1297,556 @@ export const useChatConversation = (
       }
 
       let finalSessionKey = sessionKey;
+
+      const executeSubAgentActivation = async (
+        argsJson: string,
+        parentConversationId: string,
+        dirId: string
+      ): Promise<string> => {
+        const parsedArgs = JSON.parse(argsJson) as Record<string, unknown>;
+        const agentId =
+          typeof parsedArgs.agentId === "string" ? parsedArgs.agentId : "";
+        const prompt =
+          typeof parsedArgs.prompt === "string" ? parsedArgs.prompt : "";
+
+        if (!agentId || !prompt) {
+          return JSON.stringify({
+            success: false,
+            error: "agentId and prompt are required",
+          });
+        }
+        let subConversationId: string | undefined;
+        let subAgentName: string | undefined;
+        let config: Awaited<ReturnType<typeof window.snow.getSubAgentConfig>> =
+          null;
+
+        try {
+          config = await window.snow.getSubAgentConfig(agentId);
+          if (!config) {
+            return JSON.stringify({
+              success: false,
+              error: `Sub-agent configuration not found: ${agentId}`,
+            });
+          }
+
+          subConversationId = `sub-${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2, 10)}`;
+          const title =
+            prompt.length > 80 ? `${prompt.slice(0, 80)}...` : prompt;
+
+          await window.snow.createSubAgentSession(
+            subConversationId,
+            parentConversationId,
+            agentId,
+            config.name,
+            dirId,
+            options.model ?? "",
+            title
+          );
+
+          await window.snow.updateSubAgentSessionStatus(
+            subConversationId,
+            "running",
+            ""
+          );
+
+          setSubAgentSessionEvent({
+            parentConversationId,
+            conversationId: subConversationId,
+            agentId,
+            agentName: config.name,
+            status: "running",
+            timestamp: Date.now(),
+          });
+
+          const allowedTools = JSON.parse(config.toolsJson) as string[];
+          const subAgentToolsJson = config.toolsJson;
+          subAgentName = config.name;
+
+          const subConvId = subConversationId!;
+          ensureSession(subConvId, dirId);
+          const subSessionRef = sessionsRefData.current.get(subConvId);
+          if (subSessionRef) {
+            subSessionRef.isSending = true;
+            subSessionRef.isAbortRequested = false;
+          }
+          updateSessionField(subConvId, "isStreaming", true);
+          addStreamingId(subConvId);
+
+          const subUserMessage: ChatConversationMessage = {
+            id: createMessageId("user"),
+            role: "user",
+            content: prompt,
+            timestamp: formatMessageTime(),
+            status: "sent",
+          };
+
+          updateSessionMessages(subConvId, (currentMessages) => [
+            ...currentMessages,
+            subUserMessage,
+          ]);
+
+          const subAgentRunLoop = async (
+            subMessages: {
+              role: "user" | "assistant" | "system" | "developer" | "tool";
+              content: string;
+            }[]
+          ): Promise<string> => {
+            if (sessionsRefData.current.get(subConvId)?.isAbortRequested) {
+              return "Sub-agent interrupted by user";
+            }
+
+            const subAssistantMessageId = createMessageId("assistant");
+            const subAssistantMessage: ChatConversationMessage = {
+              id: subAssistantMessageId,
+              role: "assistant",
+              content: "",
+              timestamp: formatMessageTime(),
+              status: "sending",
+            };
+
+            updateSessionMessages(subConvId, (currentMessages) => [
+              ...currentMessages,
+              subAssistantMessage,
+            ]);
+
+            const subResponse = await window.snow.createResponseStream(
+              {
+                messages: subMessages,
+                model: options.model,
+                conversationId: subConvId,
+                directoryId: dirId,
+                subAgentToolsJson: subAgentToolsJson,
+              },
+              (chunk) => {
+                if (sessionsRefData.current.get(subConvId)?.isAbortRequested) {
+                  return;
+                }
+                updateSessionMessages(subConvId, (currentMessages) =>
+                  currentMessages.map((currentMessage) => {
+                    if (currentMessage.id !== subAssistantMessageId) {
+                      return currentMessage;
+                    }
+
+                    if (chunk.retrying) {
+                      return {
+                        ...currentMessage,
+                        isRetrying: true,
+                        retryAttempt: chunk.retryAttempt ?? undefined,
+                        retryError: chunk.retryError ?? undefined,
+                        status: "sending",
+                      };
+                    }
+
+                    const existingContent = currentMessage.content;
+                    const nextContent =
+                      chunk.content ||
+                      `${existingContent}${chunk.contentDelta}`;
+                    const nextThinking =
+                      chunk.thinking ||
+                      `${currentMessage.thinking ?? ""}${chunk.thinkingDelta}`;
+
+                    return {
+                      ...currentMessage,
+                      content: nextContent,
+                      thinking: nextThinking || undefined,
+                      timestamp: formatMessageTime(),
+                      status: "sending",
+                      isRetrying: false,
+                    };
+                  })
+                );
+              },
+              (streamId: string) => {
+                const ref = sessionsRefData.current.get(subConvId);
+                if (ref) {
+                  ref.streamId = streamId;
+                  if (ref.isAbortRequested) {
+                    void window.snow.abortResponseStream(streamId);
+                  }
+                }
+              }
+            );
+
+            const subRef = sessionsRefData.current.get(subConvId);
+            if (subRef) {
+              subRef.streamId = null;
+            }
+
+            if (sessionsRefData.current.get(subConvId)?.isAbortRequested) {
+              updateSessionMessages(subConvId, (currentMessages) =>
+                currentMessages.map((currentMessage) =>
+                  currentMessage.id === subAssistantMessageId
+                    ? {
+                        ...currentMessage,
+                        status: "sent" as const,
+                        content:
+                          currentMessage.content ||
+                          "Sub-agent interrupted by user",
+                        isRetrying: false,
+                      }
+                    : currentMessage
+                )
+              );
+              return "Sub-agent interrupted by user";
+            }
+
+            if (subResponse.tokenUsage) {
+              updateSessionField(
+                subConvId,
+                "tokenUsage",
+                subResponse.tokenUsage
+              );
+            }
+
+            const subToolCalls = parseToolCalls(subResponse.toolCallsJson);
+
+            if (subToolCalls.length === 0) {
+              updateSessionMessages(subConvId, (currentMessages) =>
+                currentMessages.map((currentMessage) =>
+                  currentMessage.id === subAssistantMessageId
+                    ? {
+                        ...currentMessage,
+                        content:
+                          subResponse.content ||
+                          currentMessage.content ||
+                          "Sub-agent completed with no output.",
+                        status: "sent" as const,
+                        responseId: subResponse.id || undefined,
+                        model: subResponse.model || undefined,
+                        isRetrying: false,
+                      }
+                    : currentMessage
+                )
+              );
+
+              return (
+                subResponse.content || "Sub-agent completed with no output."
+              );
+            }
+
+            updateSessionMessages(subConvId, (currentMessages) =>
+              currentMessages.map((currentMessage) =>
+                currentMessage.id === subAssistantMessageId
+                  ? {
+                      ...currentMessage,
+                      content: subResponse.content || "",
+                      thinking: subResponse.thinking || undefined,
+                      toolCalls: subToolCalls.map((tc) => ({
+                        ...tc,
+                        status: "pending" as const,
+                      })),
+                      status: "sent" as const,
+                      responseId: subResponse.id || undefined,
+                      model: subResponse.model || undefined,
+                      isRetrying: false,
+                    }
+                  : currentMessage
+              )
+            );
+
+            const subAuthorizationDecisions = await requestToolAuthorizations(
+              subToolCalls,
+              subConvId,
+              dirId
+            );
+
+            const subToolResults: string[] = [];
+            for (
+              let subToolIndex = 0;
+              subToolIndex < subToolCalls.length;
+              subToolIndex++
+            ) {
+              const subToolCall = subToolCalls[subToolIndex];
+              const subAuthorizationDecision =
+                subAuthorizationDecisions[subToolIndex];
+
+              if (sessionsRefData.current.get(subConvId)?.isAbortRequested) {
+                return "Sub-agent interrupted by user";
+              }
+
+              if (subAuthorizationDecision.status === "rejected") {
+                const subRejectResult = JSON.stringify({
+                  success: false,
+                  error: "TOOL_EXECUTION_DENIED_BY_USER",
+                  reason:
+                    subAuthorizationDecision.reason ||
+                    "User declined tool execution",
+                });
+                subToolResults.push(
+                  `[Tool: ${subToolCall.name}]\n${formatMcpToolResultForModel(
+                    subRejectResult
+                  )}`
+                );
+
+                updateSessionMessages(subConvId, (currentMessages) =>
+                  currentMessages.map((currentMessage) => {
+                    if (currentMessage.id !== subAssistantMessageId) {
+                      return currentMessage;
+                    }
+                    return {
+                      ...currentMessage,
+                      toolCalls: updateFirstMatchingToolCall(
+                        currentMessage.toolCalls,
+                        subToolCall,
+                        ["pending"],
+                        (currentToolCall) => ({
+                          ...currentToolCall,
+                          status: "completed" as const,
+                          result: subRejectResult,
+                        })
+                      ),
+                    };
+                  })
+                );
+                continue;
+              }
+
+              let subSensitiveAuthorizationToken: string | undefined;
+              if (
+                subToolCall.name === "mcp__bash__terminal-execute" &&
+                subAuthorizationDecision.status === "approved" &&
+                subAuthorizationDecision.sensitiveCommandConfirmed === true
+              ) {
+                try {
+                  const subParsedArgs = JSON.parse(
+                    subToolCall.arguments || "{}"
+                  ) as Record<string, unknown>;
+                  if (typeof subParsedArgs.command !== "string") {
+                    throw new Error("Sensitive command argument is missing");
+                  }
+                  subSensitiveAuthorizationToken =
+                    await window.snow.issueSensitiveCommandAuthorization(
+                      subParsedArgs.command
+                    );
+                } catch {
+                  // If authorization fails, let the tool fail naturally.
+                }
+              }
+
+              updateSessionMessages(subConvId, (currentMessages) =>
+                currentMessages.map((currentMessage) => {
+                  if (currentMessage.id !== subAssistantMessageId) {
+                    return currentMessage;
+                  }
+                  return {
+                    ...currentMessage,
+                    toolCalls: updateFirstMatchingToolCall(
+                      currentMessage.toolCalls,
+                      subToolCall,
+                      ["pending"],
+                      (currentToolCall) => ({
+                        ...currentToolCall,
+                        status: "running" as const,
+                      })
+                    ),
+                  };
+                })
+              );
+
+              let subResult: string;
+              try {
+                subResult = await window.snow.callMcpTool(
+                  subToolCall.name,
+                  subToolCall.arguments,
+                  dirId,
+                  [],
+                  undefined,
+                  subSensitiveAuthorizationToken,
+                  (chunk) => {
+                    if (!chunk.data) {
+                      return;
+                    }
+                    updateSessionMessages(subConvId, (currentMessages) =>
+                      currentMessages.map((currentMessage) => {
+                        if (currentMessage.id !== subAssistantMessageId) {
+                          return currentMessage;
+                        }
+                        return {
+                          ...currentMessage,
+                          toolCalls: updateFirstMatchingToolCall(
+                            currentMessage.toolCalls,
+                            subToolCall,
+                            ["pending", "running"],
+                            (currentToolCall) => ({
+                              ...currentToolCall,
+                              streamingStdout:
+                                chunk.stream === "stdout"
+                                  ? `${currentToolCall.streamingStdout ?? ""}${
+                                      chunk.data
+                                    }`
+                                  : currentToolCall.streamingStdout,
+                              streamingStderr:
+                                chunk.stream === "stderr"
+                                  ? `${currentToolCall.streamingStderr ?? ""}${
+                                      chunk.data
+                                    }`
+                                  : currentToolCall.streamingStderr,
+                            })
+                          ),
+                        };
+                      })
+                    );
+                  },
+                  subToolCall.interactionId,
+                  allowedTools
+                );
+              } catch (err) {
+                subResult = JSON.stringify({ error: getErrorMessage(err) });
+              }
+
+              updateSessionMessages(subConvId, (currentMessages) =>
+                currentMessages.map((currentMessage) => {
+                  if (currentMessage.id !== subAssistantMessageId) {
+                    return currentMessage;
+                  }
+                  return {
+                    ...currentMessage,
+                    toolCalls: updateFirstMatchingToolCall(
+                      currentMessage.toolCalls,
+                      subToolCall,
+                      ["pending", "running"],
+                      (currentToolCall) => ({
+                        ...currentToolCall,
+                        status: "completed" as const,
+                        result: subResult,
+                      })
+                    ),
+                  };
+                })
+              );
+
+              const subIdentifier = subToolCall.callId
+                ? `${subToolCall.name}#${subToolCall.callId}`
+                : subToolCall.name;
+              subToolResults.push(
+                `[Tool: ${subIdentifier}]\n${formatMcpToolResultForModel(
+                  subResult
+                )}`
+              );
+            }
+
+            const subToolResultMessage: ChatConversationMessage = {
+              id: createMessageId("tool"),
+              role: "tool",
+              content: subToolResults.join("\n\n"),
+              timestamp: formatMessageTime(),
+              status: "sent",
+              toolName: subToolCalls.map((tc) => tc.name).join(", "),
+            };
+
+            updateSessionMessages(subConvId, (currentMessages) => [
+              ...currentMessages,
+              subToolResultMessage,
+            ]);
+
+            // Flush pending user messages before the next AI request so
+            // they are sent in the next iteration as soon as tools finish.
+            const subPendingForTools =
+              pendingQueueRef.current.get(subConvId) ?? [];
+            const subNextMessages: {
+              role: "user" | "assistant" | "system" | "developer" | "tool";
+              content: string;
+            }[] = [{ role: "tool", content: subToolResults.join("\n\n") }];
+            if (subPendingForTools.length > 0) {
+              pendingQueueRef.current.delete(subConvId);
+              const subPendingText = subPendingForTools
+                .map((item) => item.text)
+                .join("\n\n");
+              setActivePendingMessages([]);
+              const subPendingUserMsg: ChatConversationMessage = {
+                id: createMessageId("user"),
+                role: "user",
+                content: subPendingText,
+                timestamp: formatMessageTime(),
+                status: "sent",
+              };
+              updateSessionMessages(subConvId, (currentMessages) => [
+                ...currentMessages,
+                subPendingUserMsg,
+              ]);
+              subNextMessages.push({ role: "user", content: subPendingText });
+            }
+
+            return subAgentRunLoop(subNextMessages);
+          };
+
+          const summary = await subAgentRunLoop([
+            { role: "user", content: prompt },
+          ]);
+
+          const subFinalRef = sessionsRefData.current.get(subConvId);
+          if (subFinalRef) {
+            subFinalRef.isSending = false;
+          }
+          updateSessionField(subConvId, "isStreaming", false);
+          updateSessionField(subConvId, "isAborting", false);
+          removeStreamingId(subConvId);
+
+          const subPendingQueue = pendingQueueRef.current.get(subConvId) ?? [];
+          if (!subFinalRef?.isAbortRequested && subPendingQueue.length > 0) {
+            pendingQueueRef.current.delete(subConvId);
+            const combined = subPendingQueue
+              .map((item) => item.text)
+              .join("\n\n");
+            const lastOptions =
+              subPendingQueue[subPendingQueue.length - 1]?.options ?? {};
+            setActivePendingMessages([]);
+            handleSendMessageRef.current(combined, lastOptions);
+          }
+
+          await window.snow.updateSubAgentSessionStatus(
+            subConvId,
+            "completed",
+            ""
+          );
+
+          setSubAgentSessionEvent({
+            parentConversationId,
+            conversationId: subConversationId,
+            agentId,
+            agentName: subAgentName,
+            status: "completed",
+            timestamp: Date.now(),
+          });
+
+          return JSON.stringify({
+            success: true,
+            conversationId: subConversationId,
+            agentName: subAgentName,
+            summary,
+          });
+        } catch (err) {
+          if (subConversationId) {
+            const subCatchRef = sessionsRefData.current.get(subConversationId);
+            if (subCatchRef) {
+              subCatchRef.isSending = false;
+            }
+            updateSessionField(subConversationId, "isStreaming", false);
+            updateSessionField(subConversationId, "isAborting", false);
+            removeStreamingId(subConversationId);
+
+            await window.snow
+              .updateSubAgentSessionStatus(subConversationId, "failed", "")
+              .catch(() => {});
+
+            setSubAgentSessionEvent({
+              parentConversationId,
+              conversationId: subConversationId,
+              agentId,
+              agentName: subAgentName ?? agentId,
+              status: "failed",
+              timestamp: Date.now(),
+            });
+          }
+
+          return JSON.stringify({
+            success: false,
+            error: getErrorMessage(err),
+          });
+        }
+      };
 
       const runAgentLoop = async (
         currentAssistantMessageId: string,
@@ -1725,52 +2292,65 @@ export const useChatConversation = (
                 }
 
                 try {
-                  result = await window.snow.callMcpTool(
-                    toolCall.name,
-                    toolArgs,
-                    sessionDirId,
-                    checkpointIds,
-                    checkpointIds.length > 0 ? directoryPath : undefined,
-                    sensitiveAuthorizationToken,
-                    (chunk) => {
-                      if (!chunk.data) {
-                        return;
-                      }
+                  if (
+                    toolCall.name === "mcp__sub-agents__activate" &&
+                    effectiveKey !== PENDING_SESSION_KEY
+                  ) {
+                    result = await executeSubAgentActivation(
+                      toolArgs,
+                      effectiveKey!,
+                      sessionDirId ?? directoryId ?? ""
+                    );
+                  } else {
+                    result = await window.snow.callMcpTool(
+                      toolCall.name,
+                      toolArgs,
+                      sessionDirId,
+                      checkpointIds,
+                      checkpointIds.length > 0 ? directoryPath : undefined,
+                      sensitiveAuthorizationToken,
+                      (chunk) => {
+                        if (!chunk.data) {
+                          return;
+                        }
 
-                      updateSessionMessages(effectiveKey, (currentMessages) =>
-                        currentMessages.map((currentMessage) => {
-                          if (currentMessage.id !== currentAssistantMessageId) {
-                            return currentMessage;
-                          }
+                        updateSessionMessages(effectiveKey, (currentMessages) =>
+                          currentMessages.map((currentMessage) => {
+                            if (
+                              currentMessage.id !== currentAssistantMessageId
+                            ) {
+                              return currentMessage;
+                            }
 
-                          return {
-                            ...currentMessage,
-                            toolCalls: updateFirstMatchingToolCall(
-                              currentMessage.toolCalls,
-                              toolCall,
-                              ["pending", "running"],
-                              (currentToolCall) => ({
-                                ...currentToolCall,
-                                streamingStdout:
-                                  chunk.stream === "stdout"
-                                    ? `${
-                                        currentToolCall.streamingStdout ?? ""
-                                      }${chunk.data}`
-                                    : currentToolCall.streamingStdout,
-                                streamingStderr:
-                                  chunk.stream === "stderr"
-                                    ? `${
-                                        currentToolCall.streamingStderr ?? ""
-                                      }${chunk.data}`
-                                    : currentToolCall.streamingStderr,
-                              })
-                            ),
-                          };
-                        })
-                      );
-                    },
-                    toolCall.interactionId
-                  );
+                            return {
+                              ...currentMessage,
+                              toolCalls: updateFirstMatchingToolCall(
+                                currentMessage.toolCalls,
+                                toolCall,
+                                ["pending", "running"],
+                                (currentToolCall) => ({
+                                  ...currentToolCall,
+                                  streamingStdout:
+                                    chunk.stream === "stdout"
+                                      ? `${
+                                          currentToolCall.streamingStdout ?? ""
+                                        }${chunk.data}`
+                                      : currentToolCall.streamingStdout,
+                                  streamingStderr:
+                                    chunk.stream === "stderr"
+                                      ? `${
+                                          currentToolCall.streamingStderr ?? ""
+                                        }${chunk.data}`
+                                      : currentToolCall.streamingStderr,
+                                })
+                              ),
+                            };
+                          })
+                        );
+                      },
+                      toolCall.interactionId
+                    );
+                  }
                 } finally {
                   if (isUserQuestionTool) {
                     userQuestionTargetRef.current.delete(
@@ -2745,6 +3325,7 @@ export const useChatConversation = (
     summary: activeSession?.summary ?? "",
     conversationVersion,
     upsertedConversation,
+    subAgentSessionEvent,
     activeConversationId,
     conversationDirectoryId: activeSession?.directoryId,
     tokenUsage: activeSession?.tokenUsage ?? null,

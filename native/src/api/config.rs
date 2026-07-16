@@ -18,15 +18,33 @@ pub struct ActiveApiRequestContext {
 }
 
 pub fn get_active_api_request_context() -> Result<ActiveApiRequestContext> {
+    get_api_request_context_for_profile(None)
+}
+
+pub fn get_api_request_context_for_profile(
+    profile_name: Option<&str>,
+) -> Result<ActiveApiRequestContext> {
     let storage_info = initialize_app_storage()?;
     let database_path = PathBuf::from(storage_info.database_path);
-
     let mut configs = crate::storage::services::api_configs::list_api_configs(&database_path)?;
-    let active_index = configs.iter().position(|config| config.is_active).unwrap_or(0);
     if configs.is_empty() {
         return Err(Error::from_reason("No API configuration found"));
     }
-    let api_config = configs.remove(active_index);
+
+    let requested_profile = profile_name.map(str::trim).filter(|value| !value.is_empty());
+    let selected_index = if let Some(requested_profile) = requested_profile {
+        configs
+            .iter()
+            .position(|config| config.profile_name == requested_profile)
+            .ok_or_else(|| {
+                Error::from_reason(format!(
+                    "Sub-agent API profile is not available: {requested_profile}"
+                ))
+            })?
+    } else {
+        configs.iter().position(|config| config.is_active).unwrap_or(0)
+    };
+    let api_config = configs.remove(selected_index);
 
     let custom_header_schemes =
         crate::storage::services::custom_header_schemes::list_custom_header_schemes(&database_path)?;

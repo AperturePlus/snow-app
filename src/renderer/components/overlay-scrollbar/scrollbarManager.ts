@@ -129,6 +129,9 @@ export class ScrollbarManager {
     // OverlayScrollbars restructures the host DOM, which breaks
     // contentEditable input handling — skip those elements entirely.
     if (host.isContentEditable) return false;
+    // OverlayScrollbars intercepts wheel events on textareas, preventing
+    // native scroll. Textareas have their own scrollbar; skip them.
+    if (host instanceof HTMLTextAreaElement) return false;
 
     const style = getComputedStyle(host);
     return (
@@ -149,24 +152,21 @@ export class ScrollbarManager {
   private attach(host: HTMLElement): void {
     host.setAttribute(INITIALIZE_ATTR, "");
 
-    const instance =
-      host instanceof HTMLTextAreaElement
-        ? OverlayScrollbars(host, SCROLLBAR_OPTIONS)
-        : OverlayScrollbars(
-            {
-              target: host,
-              elements: {
-                viewport: host,
-                padding: false,
-                content: false,
-              },
-              cancel: {
-                nativeScrollbarsOverlaid: false,
-                body: true,
-              },
-            },
-            SCROLLBAR_OPTIONS
-          );
+    const instance = OverlayScrollbars(
+      {
+        target: host,
+        elements: {
+          viewport: host,
+          padding: false,
+          content: false,
+        },
+        cancel: {
+          nativeScrollbarsOverlaid: false,
+          body: true,
+        },
+      },
+      SCROLLBAR_OPTIONS
+    );
 
     this.instances.set(host, instance);
     this.ro?.observe(host);

@@ -317,6 +317,59 @@ pub async fn collect_all_mcp_tools(project_id: Option<&str>) -> Result<Vec<McpTo
     Ok(tools)
 }
 
+pub async fn collect_allowed_mcp_tools(
+    project_id: Option<&str>,
+    tools_json: &str,
+    allow_wildcard: bool,
+) -> Result<Vec<McpTool>> {
+    let configured_names = serde_json::from_str::<Vec<String>>(tools_json).map_err(|error| {
+        Error::new(
+            Status::InvalidArg,
+            format!("Sub-agent tools configuration must be a JSON string array: {error}"),
+        )
+    })?;
+    let configured_names = configured_names
+        .into_iter()
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .collect::<std::collections::HashSet<_>>();
+    let wildcard_enabled = configured_names.contains("*");
+    if wildcard_enabled && !allow_wildcard {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Only built-in sub-agents may enable the wildcard tool configuration".to_string(),
+        ));
+    }
+
+    let all_tools = collect_all_mcp_tools(project_id).await?;
+    if wildcard_enabled {
+        return Ok(all_tools);
+    }
+
+    let available_names = all_tools
+        .iter()
+        .map(McpTool::full_name)
+        .collect::<std::collections::HashSet<_>>();
+    let unavailable_names = configured_names
+        .difference(&available_names)
+        .cloned()
+        .collect::<Vec<_>>();
+    if !unavailable_names.is_empty() {
+        return Err(Error::new(
+            Status::GenericFailure,
+            format!(
+                "Sub-agent configured tools are unavailable or disabled for the current project: {}",
+                unavailable_names.join(", ")
+            ),
+        ));
+    }
+
+    Ok(all_tools
+        .into_iter()
+        .filter(|tool| configured_names.contains(&tool.full_name()))
+        .collect())
+}
+
 fn tool_is_enabled(tool: &McpTool, scope: Option<&McpProjectScopeSettings>) -> bool {
     let Some(scope) = scope else {
         return true;
@@ -537,8 +590,24 @@ pub async fn call_mcp_tool(
     on_chunk: BashStreamCallback,
     on_browser_command: BrowserCommandCallback,
     on_user_question: UserQuestionCallback,
+    sub_agent_allowed_tools: Option<Vec<String>>,
 ) -> napi::Result<String> {
     ensure_project_tool_enabled(project_id.as_deref(), &tool_full_name).await?;
+
+    if let Some(ref allowed_tools) = sub_agent_allowed_tools {
+        let wildcard_enabled = allowed_tools.iter().any(|name| name == "*");
+        if !wildcard_enabled
+            && !allowed_tools.iter().any(|name| name == &tool_full_name)
+        {
+            return Err(Error::new(
+                Status::GenericFailure,
+                format!(
+                    "Sub-agent tool is not in the allowed whitelist: {tool_full_name}"
+                ),
+            ));
+        }
+    }
+
     let args = parse_tool_args(&tool_full_name, &args_json)?;
 
     let checkpoint_ids_after = checkpoint_ids.clone();

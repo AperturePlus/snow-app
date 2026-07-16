@@ -101,6 +101,7 @@ const ChatContentBody = ({
       !container ||
       !activeConversationId ||
       !isInitialHistoryLoaded ||
+      isLoadingInitialHistory ||
       messages.length === 0 ||
       positionedConversationIdsRef.current.has(activeConversationId)
     ) {
@@ -109,7 +110,12 @@ const ChatContentBody = ({
 
     container.scrollTop = container.scrollHeight;
     positionedConversationIdsRef.current.add(activeConversationId);
-  }, [activeConversationId, isInitialHistoryLoaded, messages.length]);
+  }, [
+    activeConversationId,
+    isInitialHistoryLoaded,
+    isLoadingInitialHistory,
+    messages.length,
+  ]);
 
   // When tool authorization prompts appear, force-scroll the chat area to
   // the bottom so users do not miss the confirmation while reading earlier

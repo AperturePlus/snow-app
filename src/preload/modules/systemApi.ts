@@ -185,7 +185,8 @@ export const systemApi = {
     checkpointWorkDir?: string,
     sensitiveAuthorizationToken?: string,
     onChunk?: (chunk: BashStreamChunk) => void,
-    interactionId?: string
+    interactionId?: string,
+    subAgentAllowedTools?: string[]
   ): Promise<string> => {
     const streamId = createMcpToolStreamId();
     const handleChunk = (_event: IpcRendererEvent, payload: unknown): void => {
@@ -211,7 +212,8 @@ export const systemApi = {
         checkpointWorkDir,
         sensitiveAuthorizationToken,
         streamId,
-        interactionId ?? streamId
+        interactionId ?? streamId,
+        subAgentAllowedTools
       )
       .finally(() => {
         ipcRenderer.removeListener(MCP_TOOL_CHUNK_CHANNEL, handleChunk);
