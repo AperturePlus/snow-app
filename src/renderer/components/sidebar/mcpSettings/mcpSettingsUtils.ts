@@ -1,7 +1,7 @@
 import type { McpServerConfigInput } from "../../../../preload";
 import type {
   McpKeyValuePair,
-  McpServerConfig,
+  McpServerConfigLike,
   McpServerDraft,
   McpStringItem,
 } from "./types";
@@ -98,7 +98,7 @@ export const hasDuplicatePairKey = (pairs: McpKeyValuePair[]): boolean => {
   return keys.some((key, index) => keys.indexOf(key) !== index);
 };
 
-export const toDraft = (server: McpServerConfig): McpServerDraft => ({
+export const toDraft = (server: McpServerConfigLike): McpServerDraft => ({
   serverId: server.serverId,
   name: server.name,
   transportType: server.transportType,
@@ -113,11 +113,13 @@ export const toDraft = (server: McpServerConfig): McpServerDraft => ({
   source: server.source,
 });
 
-export const toInput = (
+const toScopedInput = (
   draft: McpServerDraft,
-  fallbackSortOrder: number
+  fallbackSortOrder: number,
+  serverId: string,
+  source: string
 ): McpServerConfigInput => ({
-  serverId: draft.serverId || `global:${draft.name.trim()}`,
+  serverId,
   name: draft.name.trim(),
   transportType: draft.transportType,
   url: draft.url.trim(),
@@ -127,9 +129,26 @@ export const toInput = (
   headersJson: pairsToJson(draft.headers),
   enabled: draft.enabled,
   ...(draft.timeoutMs.trim() ? { timeoutMs: Number(draft.timeoutMs) } : {}),
-  sortOrder: draft.sortOrder || fallbackSortOrder,
-  source: draft.source || "manual",
+  sortOrder: draft.serverId ? draft.sortOrder : fallbackSortOrder,
+  source,
 });
 
-export const getMcpServerEndpoint = (server: McpServerConfig): string =>
+export const toInput = (
+  draft: McpServerDraft,
+  fallbackSortOrder: number
+): McpServerConfigInput =>
+  toScopedInput(
+    draft,
+    fallbackSortOrder,
+    draft.serverId || `global:${draft.name.trim()}`,
+    draft.source || "manual"
+  );
+
+export const toProjectInput = (
+  draft: McpServerDraft,
+  fallbackSortOrder: number
+): McpServerConfigInput =>
+  toScopedInput(draft, fallbackSortOrder, draft.serverId, "project");
+
+export const getMcpServerEndpoint = (server: McpServerConfigLike): string =>
   server.transportType === "http" ? server.url : server.command;

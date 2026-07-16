@@ -6,6 +6,7 @@ pub mod fs_explorer;
 pub mod git;
 pub mod git_watcher;
 pub mod mcp_server_configs;
+pub mod project_mcp_server_configs;
 pub mod project_sensitive_command_configs;
 pub mod sensitive_command_configs;
 pub mod system_prompts;

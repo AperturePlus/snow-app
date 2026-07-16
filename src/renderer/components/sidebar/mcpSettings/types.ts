@@ -1,9 +1,12 @@
 import type {
   McpServerConfigRecord,
   McpToolDefinition,
+  ProjectMcpServerConfigRecord,
 } from "../../../../preload";
 
 export type McpServerConfig = McpServerConfigRecord;
+export type ProjectMcpServerConfig = ProjectMcpServerConfigRecord;
+export type McpServerConfigLike = Omit<McpServerConfig, "id">;
 export type McpServerTool = McpToolDefinition;
 
 export type McpKeyValuePair = {

@@ -29,11 +29,14 @@ import {
   hasDuplicatePairKey,
   toDraft,
   toInput,
+  toProjectInput,
 } from "./mcpSettings/mcpSettingsUtils";
 import type {
   McpServerConfig,
+  McpServerConfigLike,
   McpServerDraft,
   McpServerTool,
+  ProjectMcpServerConfig,
 } from "./mcpSettings/types";
 
 type McpSettingsPanelProps = {
@@ -52,6 +55,9 @@ export function McpSettingsPanel({
   const [servers, setServers] = useState<McpServerConfig[]>([]);
   const [projectServers, setProjectServers] = useState<
     McpProjectServerStatus[]
+  >([]);
+  const [projectServerConfigs, setProjectServerConfigs] = useState<
+    ProjectMcpServerConfig[]
   >([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -75,18 +81,26 @@ export function McpSettingsPanel({
     setError("");
 
     try {
-      const [globalItems, projectItems] = await Promise.all([
-        window.snow.listMcpServerConfigs(),
-        activeDirectory
-          ? window.snow.listMcpProjectServers(activeDirectory.directoryId)
-          : Promise.resolve([]),
-      ]);
+      const [globalItems, projectItems, projectConfigItems] = await Promise.all(
+        [
+          window.snow.listMcpServerConfigs(),
+          activeDirectory
+            ? window.snow.listMcpProjectServers(activeDirectory.directoryId)
+            : Promise.resolve([]),
+          activeDirectory
+            ? window.snow.listProjectMcpServerConfigs(
+                activeDirectory.directoryId
+              )
+            : Promise.resolve([]),
+        ]
+      );
       if (loadGenerationRef.current !== generation) {
         return;
       }
 
       setServers(globalItems);
       setProjectServers(projectItems);
+      setProjectServerConfigs(projectConfigItems);
       setToolsByServerId((previous) => {
         const next = { ...previous };
         projectItems.forEach((server) => {
@@ -123,6 +137,16 @@ export function McpSettingsPanel({
     }
   }, [activeDirectory, activeScope]);
 
+  useEffect(() => {
+    setDraft(null);
+    setProjectServers([]);
+    setProjectServerConfigs([]);
+    setToolsByServerId({});
+    setFetchingToolServerIds(new Set());
+    setStatus("");
+    setError("");
+  }, [activeDirectory?.directoryId]);
+
   const handleImport = async () => {
     setIsLoading(true);
     setError("");
@@ -151,19 +175,22 @@ export function McpSettingsPanel({
   };
 
   const startAdd = () => {
-    const maxSortOrder = servers.reduce(
+    const scopedServers =
+      activeScope === "global" ? servers : projectServerConfigs;
+    const maxSortOrder = scopedServers.reduce(
       (max, server) => Math.max(max, server.sortOrder),
       -1
     );
     setDraft({
       ...EMPTY_MCP_SERVER_DRAFT,
       sortOrder: maxSortOrder + 1,
+      source: activeScope === "global" ? "manual" : "project",
     });
     setError("");
     setStatus("");
   };
 
-  const startEdit = (server: McpServerConfig) => {
+  const startEdit = (server: McpServerConfigLike) => {
     setDraft(toDraft(server));
     setError("");
     setStatus("");
@@ -299,20 +326,54 @@ export function McpSettingsPanel({
       return;
     }
 
+    const operationScope = activeScope;
+    const operationProjectId = activeDirectory?.directoryId;
+    const generation = loadGenerationRef.current;
+    if (operationScope === "project" && !operationProjectId) {
+      setError(
+        t("settings.mcpProjectRequired", {
+          defaultValue: "Select a project before saving a project MCP server.",
+        })
+      );
+      return;
+    }
+
     setIsSaving(true);
     setError("");
     setStatus("");
 
     try {
-      const maxSortOrder = servers.reduce(
-        (max, server) => Math.max(max, server.sortOrder),
-        -1
-      );
-      const items = await window.snow.upsertMcpServerConfig(
-        toInput(draft, maxSortOrder + 1)
-      );
+      if (operationScope === "global") {
+        const maxSortOrder = servers.reduce(
+          (max, server) => Math.max(max, server.sortOrder),
+          -1
+        );
+        const items = await window.snow.upsertMcpServerConfig(
+          toInput(draft, maxSortOrder + 1)
+        );
+        setServers(items);
+      } else if (operationProjectId) {
+        const maxSortOrder = projectServerConfigs.reduce(
+          (max, server) => Math.max(max, server.sortOrder),
+          -1
+        );
+        const items = await window.snow.upsertProjectMcpServerConfig(
+          operationProjectId,
+          toProjectInput(draft, maxSortOrder + 1)
+        );
+        if (loadGenerationRef.current !== generation) {
+          return;
+        }
+        setProjectServerConfigs(items);
+        const nextProjectServers = await window.snow.listMcpProjectServers(
+          operationProjectId
+        );
+        if (loadGenerationRef.current !== generation) {
+          return;
+        }
+        setProjectServers(nextProjectServers);
+      }
 
-      setServers(items);
       setDraft(null);
       setStatus(
         draft.serverId
@@ -324,15 +385,25 @@ export function McpSettingsPanel({
             })
       );
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : t("settings.mcpSaveError", {
-              defaultValue: "Failed to save MCP server",
-            })
-      );
+      if (
+        operationScope === "global" ||
+        loadGenerationRef.current === generation
+      ) {
+        setError(
+          e instanceof Error
+            ? e.message
+            : t("settings.mcpSaveError", {
+                defaultValue: "Failed to save MCP server",
+              })
+        );
+      }
     } finally {
-      setIsSaving(false);
+      if (
+        operationScope === "global" ||
+        loadGenerationRef.current === generation
+      ) {
+        setIsSaving(false);
+      }
     }
   };
 
@@ -442,21 +513,37 @@ export function McpSettingsPanel({
     canManage: true,
   }));
   const projectListItems: McpSettingsListItem[] = projectServers.map(
-    (server) => ({
-      serverId: server.id,
-      name: server.name,
-      enabled: server.enabled,
-      globalEnabled: server.globalEnabled,
-      detail:
-        server.source === "system"
-          ? t("settings.mcpProjectSystemServer", {
-              defaultValue: "Built-in system MCP server",
-            })
-          : t("settings.mcpProjectExternalServer", {
-              defaultValue: "Global external MCP server",
-            }),
-      canManage: false,
-    })
+    (server) => {
+      const configServerId = server.id.replace(/^external:/, "");
+      const projectConfig = projectServerConfigs.find(
+        (item) => item.serverId === configServerId
+      );
+      return {
+        serverId: server.id,
+        name: server.name,
+        enabled: server.enabled,
+        globalEnabled: server.globalEnabled,
+        detail:
+          server.source === "system"
+            ? t("settings.mcpProjectSystemServer", {
+                defaultValue: "Built-in system MCP server",
+              })
+            : server.source === "project"
+            ? `${t("settings.mcpProjectOwnedServer", {
+                defaultValue: "Project MCP server",
+              })} · ${
+                projectConfig
+                  ? `${projectConfig.transportType} · ${
+                      getMcpServerEndpoint(projectConfig) || "-"
+                    }`
+                  : "-"
+              }`
+            : t("settings.mcpProjectExternalServer", {
+                defaultValue: "Global external MCP server",
+              }),
+        canManage: server.source === "project",
+      };
+    }
   );
   const isGlobalScope = activeScope === "global";
   const activeServers = isGlobalScope ? globalListItems : projectListItems;
@@ -480,27 +567,71 @@ export function McpSettingsPanel({
   const handleProjectToggle = async (
     server: McpSettingsListItem
   ): Promise<void> => {
-    if (!activeDirectory || !server.globalEnabled) {
+    if (!activeDirectory || !server.globalEnabled || isBusy) {
       return;
     }
 
+    const operationProjectId = activeDirectory.directoryId;
+    const generation = loadGenerationRef.current;
+    const configServerId = server.serverId.replace(/^external:/, "");
+    const projectConfig = projectServerConfigs.find(
+      (item) => item.serverId === configServerId
+    );
+    setIsSaving(true);
     setError("");
     setStatus("");
     try {
-      await window.snow.setMcpProjectServerEnabled(
-        activeDirectory.directoryId,
-        server.serverId,
-        !server.enabled
-      );
-      await load();
+      if (projectConfig) {
+        await window.snow.upsertProjectMcpServerConfig(operationProjectId, {
+          serverId: projectConfig.serverId,
+          name: projectConfig.name,
+          transportType: projectConfig.transportType,
+          url: projectConfig.url,
+          command: projectConfig.command,
+          argsJson: projectConfig.argsJson,
+          envJson: projectConfig.envJson,
+          headersJson: projectConfig.headersJson,
+          enabled: !projectConfig.enabled,
+          ...(projectConfig.timeoutMs
+            ? { timeoutMs: projectConfig.timeoutMs }
+            : {}),
+          sortOrder: projectConfig.sortOrder,
+          source: "project",
+        });
+      } else {
+        await window.snow.setMcpProjectServerEnabled(
+          operationProjectId,
+          server.serverId,
+          !server.enabled
+        );
+      }
+      if (loadGenerationRef.current !== generation) {
+        return;
+      }
+
+      const [nextProjectServers, nextProjectConfigs] = await Promise.all([
+        window.snow.listMcpProjectServers(operationProjectId),
+        window.snow.listProjectMcpServerConfigs(operationProjectId),
+      ]);
+      if (loadGenerationRef.current !== generation) {
+        return;
+      }
+      setProjectServers(nextProjectServers);
+      setProjectServerConfigs(nextProjectConfigs);
     } catch (updateError) {
-      setError(
-        updateError instanceof Error
-          ? updateError.message
-          : t("settings.mcpSaveError", {
-              defaultValue: "Failed to update MCP server",
-            })
-      );
+      if (loadGenerationRef.current === generation) {
+        setError(
+          updateError instanceof Error
+            ? updateError.message
+            : t("settings.mcpSaveError", {
+                defaultValue: "Failed to update MCP server",
+              })
+        );
+      }
+    } finally {
+      if (loadGenerationRef.current === generation) {
+        setIsSaving(false);
+      }
     }
   };
 
@@ -511,6 +642,8 @@ export function McpSettingsPanel({
       return;
     }
 
+    const operationProjectId = activeDirectory.directoryId;
+    const generation = loadGenerationRef.current;
     setFetchingToolServerIds((previous) =>
       new Set(previous).add(server.serverId)
     );
@@ -518,9 +651,12 @@ export function McpSettingsPanel({
     setStatus("");
     try {
       const tools = await window.snow.listMcpProjectServerTools(
-        activeDirectory.directoryId,
+        operationProjectId,
         server.serverId
       );
+      if (loadGenerationRef.current !== generation) {
+        return;
+      }
       setToolsByServerId((previous) => ({
         ...previous,
         [server.serverId]: tools,
@@ -532,24 +668,88 @@ export function McpSettingsPanel({
         })
       );
     } catch (fetchError) {
-      setError(
-        fetchError instanceof Error
-          ? fetchError.message
-          : t("settings.mcpFetchToolsError", {
-              defaultValue: "Failed to fetch MCP tools",
-            })
-      );
+      if (loadGenerationRef.current === generation) {
+        setError(
+          fetchError instanceof Error
+            ? fetchError.message
+            : t("settings.mcpFetchToolsError", {
+                defaultValue: "Failed to fetch MCP tools",
+              })
+        );
+      }
     } finally {
-      setFetchingToolServerIds((previous) => {
-        const next = new Set(previous);
-        next.delete(server.serverId);
-        return next;
-      });
+      if (loadGenerationRef.current === generation) {
+        setFetchingToolServerIds((previous) => {
+          const next = new Set(previous);
+          next.delete(server.serverId);
+          return next;
+        });
+      }
     }
   };
 
   const findGlobalServer = (serverId: string): McpServerConfig | undefined =>
     servers.find((server) => server.serverId === serverId);
+  const findProjectServer = (
+    scopeServerId: string
+  ): ProjectMcpServerConfig | undefined => {
+    const serverId = scopeServerId.replace(/^external:/, "");
+    return projectServerConfigs.find((server) => server.serverId === serverId);
+  };
+
+  const handleProjectDelete = async (
+    server: ProjectMcpServerConfig
+  ): Promise<void> => {
+    if (!activeDirectory) {
+      return;
+    }
+    const operationProjectId = activeDirectory.directoryId;
+    const generation = loadGenerationRef.current;
+    setIsSaving(true);
+    setError("");
+    setStatus("");
+    try {
+      const items = await window.snow.deleteProjectMcpServerConfig(
+        operationProjectId,
+        server.serverId
+      );
+      if (loadGenerationRef.current !== generation) {
+        return;
+      }
+      setProjectServerConfigs(items);
+      setToolsByServerId((previous) => {
+        const next = { ...previous };
+        delete next[`external:${server.serverId}`];
+        return next;
+      });
+      const nextProjectServers = await window.snow.listMcpProjectServers(
+        operationProjectId
+      );
+      if (loadGenerationRef.current !== generation) {
+        return;
+      }
+      setProjectServers(nextProjectServers);
+      setStatus(
+        t("settings.mcpDeleteSuccess", {
+          defaultValue: "Deleted MCP server.",
+        })
+      );
+    } catch (deleteError) {
+      if (loadGenerationRef.current === generation) {
+        setError(
+          deleteError instanceof Error
+            ? deleteError.message
+            : t("settings.mcpDeleteError", {
+                defaultValue: "Failed to delete MCP server",
+              })
+        );
+      }
+    } finally {
+      if (loadGenerationRef.current === generation) {
+        setIsSaving(false);
+      }
+    }
+  };
 
   const handleListToggle = (server: McpSettingsListItem): void => {
     if (isGlobalScope) {
@@ -574,16 +774,30 @@ export function McpSettingsPanel({
   };
 
   const handleListEdit = (server: McpSettingsListItem): void => {
-    const globalServer = findGlobalServer(server.serverId);
-    if (globalServer) {
-      startEdit(globalServer);
+    if (isGlobalScope) {
+      const globalServer = findGlobalServer(server.serverId);
+      if (globalServer) {
+        startEdit(globalServer);
+      }
+      return;
+    }
+    const projectServer = findProjectServer(server.serverId);
+    if (projectServer) {
+      startEdit(projectServer);
     }
   };
 
   const handleListDelete = (server: McpSettingsListItem): void => {
-    const globalServer = findGlobalServer(server.serverId);
-    if (globalServer) {
-      void handleDelete(globalServer);
+    if (isGlobalScope) {
+      const globalServer = findGlobalServer(server.serverId);
+      if (globalServer) {
+        void handleDelete(globalServer);
+      }
+      return;
+    }
+    const projectServer = findProjectServer(server.serverId);
+    if (projectServer) {
+      void handleProjectDelete(projectServer);
     }
   };
 
@@ -653,19 +867,34 @@ export function McpSettingsPanel({
             </button>
           </>
         ) : (
-          <button
-            className="api-settings-action-btn secondary"
-            onClick={() => void load()}
-            type="button"
-            disabled={isBusy || fetchingToolServerIds.size > 0}
-          >
-            <RefreshCw size={15} className={isLoading ? "spin" : ""} />
-            <span>
-              {t("settings.mcpProjectRefresh", {
-                defaultValue: "Refresh project MCP",
-              })}
-            </span>
-          </button>
+          <>
+            <button
+              className="api-settings-action-btn secondary"
+              onClick={() => void load()}
+              type="button"
+              disabled={isBusy || fetchingToolServerIds.size > 0}
+            >
+              <RefreshCw size={15} className={isLoading ? "spin" : ""} />
+              <span>
+                {t("settings.mcpProjectRefresh", {
+                  defaultValue: "Refresh project MCP",
+                })}
+              </span>
+            </button>
+            <button
+              className="api-settings-action-btn secondary"
+              onClick={startAdd}
+              type="button"
+              disabled={isBusy || !activeDirectory}
+            >
+              <Plus size={15} />
+              <span>
+                {t("settings.mcpAddProjectServer", {
+                  defaultValue: "Add project server",
+                })}
+              </span>
+            </button>
+          </>
         )}
       </div>
 
@@ -723,7 +952,7 @@ export function McpSettingsPanel({
                 })
               : t("settings.mcpProjectTabInfo", {
                   defaultValue:
-                    "Enable or disable built-in and global external MCP servers for {{name}}.",
+                    "Manage project MCP servers for {{name}} and control inherited system or global servers.",
                   values: { name: activeDirectory?.name ?? "" },
                 })}
           </span>
@@ -764,17 +993,36 @@ export function McpSettingsPanel({
             draft={draft}
             isBusy={isBusy}
             isSaving={isSaving}
-            tools={draft.serverId ? toolsByServerId[draft.serverId] : undefined}
+            tools={
+              draft.serverId
+                ? toolsByServerId[
+                    isGlobalScope
+                      ? draft.serverId
+                      : `external:${draft.serverId}`
+                  ]
+                : undefined
+            }
             isFetchingTools={
               Boolean(draft.serverId) &&
-              fetchingToolServerIds.has(draft.serverId)
+              fetchingToolServerIds.has(
+                isGlobalScope ? draft.serverId : `external:${draft.serverId}`
+              )
             }
             onFetchTools={() => {
-              const server = servers.find(
-                (item) => item.serverId === draft.serverId
+              if (isGlobalScope) {
+                const server = servers.find(
+                  (item) => item.serverId === draft.serverId
+                );
+                if (server) {
+                  void handleFetchTools(server);
+                }
+                return;
+              }
+              const server = projectListItems.find(
+                (item) => item.serverId === `external:${draft.serverId}`
               );
               if (server) {
-                void handleFetchTools(server);
+                void handleProjectFetchTools(server);
               }
             }}
             onDraftChange={patchDraft}

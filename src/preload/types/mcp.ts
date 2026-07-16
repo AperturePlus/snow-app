@@ -27,7 +27,7 @@ export type McpProjectToolStatus = McpToolDefinition & {
 export type McpProjectServerStatus = {
   id: string;
   name: string;
-  source: "system" | "external";
+  source: "system" | "external" | "project";
   globalEnabled: boolean;
   enabled: boolean;
   tools: McpProjectToolStatus[];
@@ -81,6 +81,14 @@ export type McpServerConfigInput = {
 
 export type McpServerConfigRecord = Omit<McpServerConfigInput, "timeoutMs"> & {
   id: string;
+  timeoutMs: number | null;
+  updatedAt: string;
+};
+
+export type ProjectMcpServerConfigRecord = Omit<
+  McpServerConfigInput,
+  "timeoutMs"
+> & {
   timeoutMs: number | null;
   updatedAt: string;
 };

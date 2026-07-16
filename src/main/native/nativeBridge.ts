@@ -181,6 +181,24 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to delete MCP server configs"
           )
         ),
+      listProjectMcpServerConfigs: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list project MCP server configs"
+          )
+        ),
+      upsertProjectMcpServerConfig: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to write project MCP server configs"
+          )
+        ),
+      deleteProjectMcpServerConfig: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to delete project MCP server configs"
+          )
+        ),
       listSensitiveCommandConfigs: () =>
         Promise.reject(
           new Error(

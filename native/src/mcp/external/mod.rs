@@ -29,7 +29,14 @@ const BUILTIN_SERVER_NAMES: &[&str] = &[
 pub struct ExternalMcpProjectServer {
     pub config_server_id: String,
     pub name: String,
+    pub source: String,
     pub global_enabled: bool,
+    pub enabled: bool,
+}
+
+pub struct ExternalMcpProjectToolServer {
+    pub scope_server_id: String,
+    pub project_owned: bool,
 }
 
 pub fn project_scope_server_id(config_server_id: &str) -> String {
@@ -37,9 +44,10 @@ pub fn project_scope_server_id(config_server_id: &str) -> String {
 }
 
 pub async fn discover_tools(
+    project_id: Option<&str>,
     scope: Option<&McpProjectScopeSettings>,
 ) -> Result<Vec<McpTool>> {
-    let configs = load_configs().await?;
+    let configs = load_configs(project_id).await?;
     let server_names = public_server_names(&configs);
     let disabled_server_ids = scope
         .map(|settings| settings.disabled_server_ids.clone())
@@ -52,7 +60,9 @@ pub async fn discover_tools(
             .into_iter()
             .filter(|config| {
                 config.enabled
-                    && !disabled_server_ids.contains(&project_scope_server_id(&config.server_id))
+                    && (config.source == "project"
+                        || !disabled_server_ids
+                            .contains(&project_scope_server_id(&config.server_id)))
             })
             .map(|config| {
                 let server_name = server_names
@@ -87,20 +97,34 @@ pub async fn discover_tools(
     Ok(tools)
 }
 
-pub async fn discover_project_servers() -> Result<Vec<ExternalMcpProjectServer>> {
-    let configs = load_configs().await?;
+pub async fn discover_project_servers(
+    project_id: &str,
+) -> Result<Vec<ExternalMcpProjectServer>> {
+    let configs = load_configs(Some(project_id)).await?;
     Ok(configs
         .into_iter()
-        .map(|config| ExternalMcpProjectServer {
-            config_server_id: config.server_id,
-            name: config.name,
-            global_enabled: config.enabled,
+        .map(|config| {
+            let is_project_server = config.source == "project";
+            ExternalMcpProjectServer {
+                config_server_id: config.server_id,
+                name: config.name,
+                source: if is_project_server {
+                    "project".to_string()
+                } else {
+                    "external".to_string()
+                },
+                global_enabled: is_project_server || config.enabled,
+                enabled: config.enabled,
+            }
         })
         .collect())
 }
 
-pub async fn discover_server_tools(config_server_id: &str) -> Result<Vec<McpTool>> {
-    let configs = load_configs().await?;
+pub async fn discover_server_tools(
+    project_id: Option<&str>,
+    config_server_id: &str,
+) -> Result<Vec<McpTool>> {
+    let configs = load_configs(project_id).await?;
     let server_names = public_server_names(&configs);
     let config = configs
         .into_iter()
@@ -118,11 +142,14 @@ pub async fn discover_server_tools(config_server_id: &str) -> Result<Vec<McpTool
     discover_config_tools(config, server_name).await
 }
 
-pub async fn resolve_project_scope_server_id(tool_full_name: &str) -> Result<Option<String>> {
+pub async fn resolve_project_scope_server(
+    project_id: Option<&str>,
+    tool_full_name: &str,
+) -> Result<Option<ExternalMcpProjectToolServer>> {
     let Some((server_name, public_tool_name)) = parse_external_tool_name(tool_full_name) else {
         return Ok(None);
     };
-    let configs = load_configs().await?;
+    let configs = load_configs(project_id).await?;
     let server_names = public_server_names(&configs);
     let Some(config) = configs.into_iter().find(|config| {
         server_names.get(&config.server_id).map(String::as_str) == Some(server_name)
@@ -135,7 +162,10 @@ pub async fn resolve_project_scope_server_id(tool_full_name: &str) -> Result<Opt
         )));
     }
 
-    let project_server_id = project_scope_server_id(&config.server_id);
+    let project_server = ExternalMcpProjectToolServer {
+        scope_server_id: project_scope_server_id(&config.server_id),
+        project_owned: config.source == "project",
+    };
     let mut client = ExternalMcpClient::connect(&config).await?;
     let tools_result = client.list_all_tools().await;
     client.close().await;
@@ -150,15 +180,19 @@ pub async fn resolve_project_scope_server_id(tool_full_name: &str) -> Result<Opt
         )));
     }
 
-    Ok(Some(project_server_id))
+    Ok(Some(project_server))
 }
 
-pub async fn call_tool(tool_full_name: &str, arguments: &Value) -> Result<Option<Value>> {
+pub async fn call_tool(
+    project_id: Option<&str>,
+    tool_full_name: &str,
+    arguments: &Value,
+) -> Result<Option<Value>> {
     let Some((server_name, public_tool_name)) = parse_external_tool_name(tool_full_name) else {
         return Ok(None);
     };
 
-    let configs = load_configs().await?;
+    let configs = load_configs(project_id).await?;
     let server_names = public_server_names(&configs);
     let Some(config) = configs.into_iter().find(|config| {
         server_names.get(&config.server_id).map(String::as_str) == Some(server_name)
@@ -236,11 +270,17 @@ fn to_public_tool(
     }
 }
 
-async fn load_configs() -> Result<Vec<McpServerConfigRecord>> {
-    tokio::task::spawn_blocking(|| {
+async fn load_configs(
+    project_id: Option<&str>,
+) -> Result<Vec<McpServerConfigRecord>> {
+    let project_id = project_id.map(str::to_string);
+    tokio::task::spawn_blocking(move || {
         let storage_info = crate::storage::initialize_app_storage()?;
         let database_path = std::path::PathBuf::from(storage_info.database_path);
-        crate::storage::services::mcp_server_configs::list_mcp_server_configs(&database_path)
+        crate::storage::services::project_mcp_server_configs::list_effective_mcp_server_configs(
+            &database_path,
+            project_id.as_deref(),
+        )
     })
     .await
     .map_err(|error| {

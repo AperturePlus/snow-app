@@ -10,6 +10,7 @@ import {
 } from "../../settings/customHeadersSettings";
 import {
   normalizeMcpServerConfig,
+  normalizeProjectMcpServerConfig,
   readSnowCliMcpConfig,
 } from "../../settings/mcpSettings";
 import {
@@ -88,6 +89,35 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
   );
   ipcMain.handle("mcp-server-configs:import-snow-cli", () =>
     readSnowCliMcpConfig(native)
+  );
+  ipcMain.handle("project-mcp-server-configs:list", (_event, projectId) => {
+    const normalizedProjectId = requireProjectId(projectId);
+    return native.listProjectMcpServerConfigs(normalizedProjectId);
+  });
+  ipcMain.handle(
+    "project-mcp-server-configs:upsert",
+    async (_event, projectId, item) => {
+      const normalizedProjectId = requireProjectId(projectId);
+      await native.upsertProjectMcpServerConfig(
+        normalizedProjectId,
+        normalizeProjectMcpServerConfig(item)
+      );
+      return native.listProjectMcpServerConfigs(normalizedProjectId);
+    }
+  );
+  ipcMain.handle(
+    "project-mcp-server-configs:delete",
+    async (_event, projectId, serverId) => {
+      const normalizedProjectId = requireProjectId(projectId);
+      if (typeof serverId !== "string" || !serverId.trim()) {
+        throw new Error("MCP server ID is required");
+      }
+      await native.deleteProjectMcpServerConfig(
+        normalizedProjectId,
+        serverId.trim()
+      );
+      return native.listProjectMcpServerConfigs(normalizedProjectId);
+    }
   );
 
   // ===== Sensitive Command Configs =====

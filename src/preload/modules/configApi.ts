@@ -4,6 +4,7 @@ import type {
   CustomHeaderSchemeRecord,
   McpServerConfigInput,
   McpServerConfigRecord,
+  ProjectMcpServerConfigRecord,
   ProjectSensitiveCommandConfigInput,
   ProjectSensitiveCommandConfigRecord,
   SensitiveCommandConfigInput,
@@ -43,6 +44,24 @@ export const configApi = {
     ipcRenderer.invoke("mcp-server-configs:delete", serverId),
   importSnowCliMcpConfig: (): Promise<McpServerConfigRecord[]> =>
     ipcRenderer.invoke("mcp-server-configs:import-snow-cli"),
+  listProjectMcpServerConfigs: (
+    projectId: string
+  ): Promise<ProjectMcpServerConfigRecord[]> =>
+    ipcRenderer.invoke("project-mcp-server-configs:list", projectId),
+  upsertProjectMcpServerConfig: (
+    projectId: string,
+    item: McpServerConfigInput
+  ): Promise<ProjectMcpServerConfigRecord[]> =>
+    ipcRenderer.invoke("project-mcp-server-configs:upsert", projectId, item),
+  deleteProjectMcpServerConfig: (
+    projectId: string,
+    serverId: string
+  ): Promise<ProjectMcpServerConfigRecord[]> =>
+    ipcRenderer.invoke(
+      "project-mcp-server-configs:delete",
+      projectId,
+      serverId
+    ),
   listSensitiveCommandConfigs: (): Promise<SensitiveCommandConfigRecord[]> =>
     ipcRenderer.invoke("sensitive-command-configs:list"),
   upsertSensitiveCommandConfig: (

@@ -68,7 +68,7 @@ pub async fn list_mcp_tools() -> napi::Result<Vec<McpToolDefinition>> {
 pub async fn list_mcp_server_tools(
     config_server_id: String,
 ) -> napi::Result<Vec<McpToolDefinition>> {
-    let tools = super::external::discover_server_tools(&config_server_id).await?;
+    let tools = super::external::discover_server_tools(None, &config_server_id).await?;
     Ok(to_tool_definitions(&tools))
 }
 
@@ -99,14 +99,16 @@ pub async fn list_mcp_project_servers(
         })
         .collect::<Vec<_>>();
 
-    for external_server in super::external::discover_project_servers().await? {
+    for external_server in super::external::discover_project_servers(&project_id).await? {
         let scope_server_id =
             super::external::project_scope_server_id(&external_server.config_server_id);
-        let enabled = external_server.global_enabled && scope.is_server_enabled(&scope_server_id);
+        let project_owned = external_server.source == "project";
+        let enabled = external_server.enabled
+            && (project_owned || scope.is_server_enabled(&scope_server_id));
         servers.push(McpProjectServerStatus {
             id: scope_server_id,
             name: external_server.name,
-            source: "external".to_string(),
+            source: external_server.source,
             global_enabled: external_server.global_enabled,
             enabled,
             tools: Vec::new(),
@@ -150,7 +152,7 @@ pub async fn list_mcp_project_server_tools(
             format!("Unknown MCP project server: {server_id}"),
         )
     })?;
-    let tools = super::external::discover_server_tools(external_server_id).await?;
+    let tools = super::external::discover_server_tools(Some(&project_id), external_server_id).await?;
     Ok(to_project_tool_statuses(&tools, &scope))
 }
 
@@ -166,7 +168,7 @@ pub async fn set_mcp_project_server_enabled(
             .iter()
             .any(|(known_server_id, _)| known_server_id == builtin_server_id)
     } else if let Some(external_server_id) = server_id.strip_prefix("external:") {
-        super::external::discover_project_servers()
+        super::external::discover_project_servers(&project_id)
             .await?
             .iter()
             .any(|server| server.config_server_id == external_server_id)
@@ -178,6 +180,24 @@ pub async fn set_mcp_project_server_enabled(
             Status::InvalidArg,
             format!("Unknown MCP project server: {server_id}"),
         ));
+    }
+
+    if let Some(external_server_id) = server_id.strip_prefix("external:") {
+        let project_servers = super::external::discover_project_servers(&project_id).await?;
+        if project_servers.iter().any(|server| {
+            server.config_server_id == external_server_id && server.source == "project"
+        }) {
+            let external_server_id = external_server_id.to_string();
+            return with_database_path(move |database_path| {
+                crate::storage::services::project_mcp_server_configs::set_project_mcp_server_enabled(
+                    &database_path,
+                    &project_id,
+                    &external_server_id,
+                    enabled,
+                )
+            })
+            .await;
+        }
     }
 
     with_database_path(move |database_path| {
@@ -207,7 +227,7 @@ pub async fn set_mcp_project_tool_enabled(
                 .iter()
                 .any(|tool| tool.full_name() == tool_name)
         } else {
-            super::external::resolve_project_scope_server_id(&tool_name)
+            super::external::resolve_project_scope_server(Some(&project_id), &tool_name)
                 .await?
                 .is_some()
         }
@@ -290,7 +310,7 @@ pub async fn collect_all_mcp_tools(project_id: Option<&str>) -> Result<Vec<McpTo
         }
     }
 
-    match super::external::discover_tools(scope.as_ref()).await {
+    match super::external::discover_tools(project_id, scope.as_ref()).await {
         Ok(external_tools) => tools.extend(external_tools),
         Err(error) => eprintln!("Failed to discover external MCP tools: {error}"),
     }
@@ -350,24 +370,25 @@ async fn ensure_project_tool_enabled(
             format!("Invalid MCP tool name: {tool_name}"),
         ));
     };
-    let server_scope_id = if server_id == "skills"
+    let (server_scope_id, project_owned) = if server_id == "skills"
         || get_builtin_servers_with_tools()
             .iter()
             .any(|(builtin_server_id, _)| builtin_server_id == server_id)
     {
-        builtin_scope_server_id(server_id)
+        (builtin_scope_server_id(server_id), false)
     } else {
-        super::external::resolve_project_scope_server_id(tool_name)
+        let resolved_server = super::external::resolve_project_scope_server(project_id, tool_name)
             .await?
             .ok_or_else(|| {
                 Error::new(
                     Status::GenericFailure,
                     format!("MCP tool is no longer available: {tool_name}"),
                 )
-            })?
+            })?;
+        (resolved_server.scope_server_id, resolved_server.project_owned)
     };
 
-    if !scope.is_server_enabled(&server_scope_id) {
+    if !project_owned && !scope.is_server_enabled(&server_scope_id) {
         return Err(Error::new(
             Status::GenericFailure,
             format!("MCP server is disabled for the current project: {server_scope_id}"),
@@ -581,7 +602,9 @@ pub async fn call_mcp_tool(
         SkillsService::new()
             .execute(&args, project_id.as_deref())
             .await?
-    } else if let Some(result) = super::external::call_tool(&tool_full_name, &args).await? {
+    } else if let Some(result) =
+        super::external::call_tool(project_id.as_deref(), &tool_full_name, &args).await?
+    {
         result
     } else {
         tokio::task::spawn_blocking(move || execute_builtin_tool(&tool_full_name, &args))

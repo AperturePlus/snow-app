@@ -152,6 +152,14 @@ export type McpServerConfigRecord = Omit<McpServerConfigInput, "timeoutMs"> & {
   updatedAt: string;
 };
 
+export type ProjectMcpServerConfigRecord = Omit<
+  McpServerConfigInput,
+  "timeoutMs"
+> & {
+  timeoutMs: number | null;
+  updatedAt: string;
+};
+
 export type SensitiveCommandConfigInput = {
   commandId: string;
   pattern: string;
@@ -311,7 +319,7 @@ export type McpProjectToolStatus = McpToolDefinition & {
 export type McpProjectServerStatus = {
   id: string;
   name: string;
-  source: "system" | "external";
+  source: "system" | "external" | "project";
   globalEnabled: boolean;
   enabled: boolean;
   tools: McpProjectToolStatus[];
@@ -467,6 +475,17 @@ export type NativeBridge = {
   listMcpServerConfigs: () => Promise<McpServerConfigRecord[]>;
   upsertMcpServerConfig: (item: McpServerConfigInput) => Promise<void>;
   deleteMcpServerConfig: (serverId: string) => Promise<void>;
+  listProjectMcpServerConfigs: (
+    projectId: string
+  ) => Promise<ProjectMcpServerConfigRecord[]>;
+  upsertProjectMcpServerConfig: (
+    projectId: string,
+    item: McpServerConfigInput
+  ) => Promise<void>;
+  deleteProjectMcpServerConfig: (
+    projectId: string,
+    serverId: string
+  ) => Promise<void>;
   listSensitiveCommandConfigs: () => Promise<SensitiveCommandConfigRecord[]>;
   upsertSensitiveCommandConfig: (
     item: SensitiveCommandConfigInput

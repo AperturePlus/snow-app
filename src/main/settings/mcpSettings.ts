@@ -258,3 +258,15 @@ export const normalizeMcpServerConfig = (
     source: toText(source.source).trim() || MCP_SOURCE_MANUAL,
   };
 };
+
+export const normalizeProjectMcpServerConfig = (
+  value: unknown
+): McpServerConfigInput => {
+  const normalized = normalizeMcpServerConfig(value);
+  const source = isRecord(value) ? value : {};
+  return {
+    ...normalized,
+    serverId: toText(source.serverId).trim(),
+    source: "project",
+  };
+};

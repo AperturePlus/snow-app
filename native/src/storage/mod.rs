@@ -175,6 +175,23 @@ pub struct McpServerConfigRecord {
 }
 
 #[napi(object)]
+pub struct ProjectMcpServerConfigRecord {
+    pub server_id: String,
+    pub name: String,
+    pub transport_type: String,
+    pub url: String,
+    pub command: String,
+    pub args_json: String,
+    pub env_json: String,
+    pub headers_json: String,
+    pub enabled: bool,
+    pub timeout_ms: Option<i32>,
+    pub sort_order: i32,
+    pub source: String,
+    pub updated_at: String,
+}
+
+#[napi(object)]
 pub struct SensitiveCommandConfigInput {
     pub command_id: String,
     pub pattern: String,
@@ -422,6 +439,40 @@ pub fn upsert_mcp_server_config(item: McpServerConfigInput) -> Result<()> {
 pub fn delete_mcp_server_config(server_id: String) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::mcp_server_configs::delete_mcp_server_config(&database_path, &server_id)
+}
+
+pub fn list_project_mcp_server_configs(
+    project_id: String,
+) -> Result<Vec<ProjectMcpServerConfigRecord>> {
+    let database_path = ensure_database_file()?;
+    services::project_mcp_server_configs::list_project_mcp_server_configs(
+        &database_path,
+        &project_id,
+    )
+}
+
+pub fn upsert_project_mcp_server_config(
+    project_id: String,
+    item: McpServerConfigInput,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::project_mcp_server_configs::upsert_project_mcp_server_config(
+        &database_path,
+        &project_id,
+        &item,
+    )
+}
+
+pub fn delete_project_mcp_server_config(
+    project_id: String,
+    server_id: String,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::project_mcp_server_configs::delete_project_mcp_server_config(
+        &database_path,
+        &project_id,
+        &server_id,
+    )
 }
 
 pub fn list_sensitive_command_configs() -> Result<Vec<SensitiveCommandConfigRecord>> {

@@ -585,11 +585,15 @@ export const en = {
   "settings.mcpGlobalTabInfo":
     "Manage external MCP servers shared by all projects.",
   "settings.mcpProjectTabInfo":
-    "Enable or disable built-in and global external MCP servers for {{name}}.",
+    "Manage project MCP servers for {{name}} and control inherited system or global servers.",
   "settings.mcpProjectNoServers":
     "No MCP servers are available for this project.",
+  "settings.mcpProjectRequired":
+    "Select a project before saving a project MCP server.",
   "settings.mcpProjectRefresh": "Refresh project MCP",
+  "settings.mcpAddProjectServer": "Add project server",
   "settings.mcpProjectSystemServer": "Built-in system MCP server",
+  "settings.mcpProjectOwnedServer": "Project MCP server",
   "settings.mcpProjectExternalServer": "Global external MCP server",
   "settings.mcpGloballyDisabled": "Disabled in global scope",
   "settings.mcpGlobalDisabledShort": "Global off",
