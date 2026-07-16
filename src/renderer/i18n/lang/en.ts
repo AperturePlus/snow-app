@@ -654,6 +654,9 @@ export const en = {
   "settings.sensitiveCommandDeleteSuccess": "Deleted sensitive command rule.",
   "settings.sensitiveCommandDeleteError":
     "Failed to delete sensitive command rule",
+  "settings.sensitiveCommandDeleteTitle": "Delete sensitive command rule",
+  "settings.sensitiveCommandDeleteConfirm":
+    'Delete sensitive command rule "{{pattern}}"? This action cannot be undone.',
   "settings.sensitiveCommandKicker": "Snow CLI compatible",
   "settings.sensitiveCommandTitle": "Sensitive commands",
   "settings.closeSensitiveCommandSettings": "Close sensitive command settings",

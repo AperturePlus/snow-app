@@ -629,6 +629,9 @@ export const zhTW = {
   "settings.sensitiveCommandPresetDeleteBlocked": "預置規則不能刪除。",
   "settings.sensitiveCommandDeleteSuccess": "已刪除敏感命令規則。",
   "settings.sensitiveCommandDeleteError": "刪除敏感命令規則失敗",
+  "settings.sensitiveCommandDeleteTitle": "刪除敏感命令規則",
+  "settings.sensitiveCommandDeleteConfirm":
+    "確定刪除敏感命令規則「{{pattern}}」嗎？此操作無法復原。",
   "settings.sensitiveCommandKicker": "相容 Snow CLI",
   "settings.sensitiveCommandTitle": "敏感命令",
   "settings.closeSensitiveCommandSettings": "關閉敏感命令設定",

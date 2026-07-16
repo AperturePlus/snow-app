@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkspaceDirectoryRecord } from "../../../preload";
 import { useI18n } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
+import { ConfirmDialog } from "../common/ConfirmDialog";
 import { Modal } from "../common/Modal";
 import { SensitiveCommandEditor } from "./sensitiveCommands/SensitiveCommandEditor";
 import {
@@ -43,6 +44,8 @@ export function SensitiveCommandsPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [draft, setDraft] = useState<SensitiveCommandDraft | null>(null);
+  const [commandPendingDeletion, setCommandPendingDeletion] =
+    useState<SensitiveCommandListItem | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const loadGenerationRef = useRef(0);
@@ -55,6 +58,7 @@ export function SensitiveCommandsPanel({
     setIsLoading(true);
     setIsSaving(false);
     setDraft(null);
+    setCommandPendingDeletion(null);
     setProjectCommands([]);
     setError("");
 
@@ -144,7 +148,7 @@ export function SensitiveCommandsPanel({
   };
 
   const startEdit = (command: SensitiveCommandListItem): void => {
-    if (!command.canManage) {
+    if (!command.canEdit) {
       return;
     }
 
@@ -358,21 +362,12 @@ export function SensitiveCommandsPanel({
   const handleDelete = async (
     command: SensitiveCommandListItem
   ): Promise<void> => {
-    if (isBusy || !command.canManage) {
+    if (isBusy || !command.canDelete) {
       return;
     }
 
     setError("");
     setStatus("");
-
-    if (command.isPreset) {
-      setError(
-        t("settings.sensitiveCommandPresetDeleteBlocked", {
-          defaultValue: "Preset rules cannot be deleted.",
-        })
-      );
-      return;
-    }
 
     const operationScope = activeScope;
     const operationProjectId = activeDirectory?.directoryId;
@@ -429,6 +424,16 @@ export function SensitiveCommandsPanel({
     }
   };
 
+  const confirmDelete = (): void => {
+    if (!commandPendingDeletion || isBusy) {
+      return;
+    }
+
+    const command = commandPendingDeletion;
+    setCommandPendingDeletion(null);
+    void handleDelete(command);
+  };
+
   const isGlobalScope = activeScope === "global";
   const globalListItems: SensitiveCommandListItem[] = commands.map(
     (command) => ({
@@ -440,7 +445,8 @@ export function SensitiveCommandsPanel({
       source: command.source,
       inherited: false,
       overridden: false,
-      canManage: true,
+      canEdit: true,
+      canDelete: !command.isPreset,
     })
   );
   const projectListItems: SensitiveCommandListItem[] = projectCommands.map(
@@ -454,7 +460,8 @@ export function SensitiveCommandsPanel({
       inherited: command.inherited,
       overridden:
         command.inherited && command.enabled !== command.globalEnabled,
-      canManage: !command.inherited,
+      canEdit: !command.inherited,
+      canDelete: !command.inherited,
     })
   );
   const activeCommands = isGlobalScope ? globalListItems : projectListItems;
@@ -647,7 +654,7 @@ export function SensitiveCommandsPanel({
             emptyMessage={emptyMessage}
             onToggleEnabled={(command) => void toggleEnabled(command)}
             onEdit={startEdit}
-            onDelete={(command) => void handleDelete(command)}
+            onDelete={setCommandPendingDeletion}
           />
         </div>
       </div>
@@ -678,6 +685,21 @@ export function SensitiveCommandsPanel({
           />
         )}
       </Modal>
+      <ConfirmDialog
+        open={commandPendingDeletion !== null}
+        title={t("settings.sensitiveCommandDeleteTitle", {
+          defaultValue: "Delete sensitive command rule",
+        })}
+        message={t("settings.sensitiveCommandDeleteConfirm", {
+          defaultValue: 'Delete sensitive command rule "{{pattern}}"?',
+          values: { pattern: commandPendingDeletion?.pattern ?? "" },
+        })}
+        confirmLabel={t("settings.delete", { defaultValue: "Delete" })}
+        cancelLabel={t("settings.cancel", { defaultValue: "Cancel" })}
+        onConfirm={confirmDelete}
+        onCancel={() => setCommandPendingDeletion(null)}
+        variant="danger"
+      />
     </div>
   );
 }

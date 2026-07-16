@@ -10,7 +10,8 @@ export type SensitiveCommandListItem = {
   source: string;
   inherited: boolean;
   overridden: boolean;
-  canManage: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
 };
 
 type SensitiveCommandListProps = {
@@ -72,9 +73,6 @@ export function SensitiveCommandList({
                   : t("settings.sensitiveCommandEnable", {
                       defaultValue: "Enable",
                     });
-                const activeStateLabel = command.enabled
-                  ? t("settings.active", { defaultValue: "Enabled" })
-                  : t("settings.inactive", { defaultValue: "Not enabled" });
                 const sourceLabel = command.inherited
                   ? t(
                       command.overridden
@@ -104,51 +102,53 @@ export function SensitiveCommandList({
                       <span className="badge method">{sourceLabel}</span>
                     </td>
                     <td>
-                      <button
-                        className={`badge clickable ${
-                          command.enabled ? "active" : "inactive"
-                        }`}
-                        type="button"
-                        onClick={() => onToggleEnabled(command)}
-                        disabled={isBusy}
+                      <label
+                        className="project-sensitive-command-switch"
+                        aria-label={activeLabel}
                         title={activeLabel}
                       >
-                        {activeStateLabel}
-                      </button>
+                        <input
+                          type="checkbox"
+                          checked={command.enabled}
+                          onChange={() => onToggleEnabled(command)}
+                          disabled={isBusy}
+                        />
+                        <span aria-hidden="true" />
+                      </label>
                     </td>
                     <td>
                       <div className="api-settings-table-actions">
-                        {command.canManage && (
-                          <>
-                            <button
-                              className="icon-btn ghost"
-                              onClick={() => onEdit(command)}
-                              type="button"
-                              aria-label={t("settings.edit", {
-                                defaultValue: "Edit",
-                              })}
-                              title={t("settings.edit", {
-                                defaultValue: "Edit",
-                              })}
-                              disabled={isBusy}
-                            >
-                              <Pencil size={14} strokeWidth={1.9} />
-                            </button>
-                            <button
-                              className="icon-btn ghost danger"
-                              onClick={() => onDelete(command)}
-                              type="button"
-                              aria-label={t("settings.delete", {
-                                defaultValue: "Delete",
-                              })}
-                              title={t("settings.delete", {
-                                defaultValue: "Delete",
-                              })}
-                              disabled={isBusy || command.isPreset}
-                            >
-                              <Trash2 size={14} strokeWidth={1.9} />
-                            </button>
-                          </>
+                        {command.canEdit && (
+                          <button
+                            className="icon-btn ghost"
+                            onClick={() => onEdit(command)}
+                            type="button"
+                            aria-label={t("settings.edit", {
+                              defaultValue: "Edit",
+                            })}
+                            title={t("settings.edit", {
+                              defaultValue: "Edit",
+                            })}
+                            disabled={isBusy}
+                          >
+                            <Pencil size={14} strokeWidth={1.9} />
+                          </button>
+                        )}
+                        {command.canDelete && (
+                          <button
+                            className="icon-btn ghost danger"
+                            onClick={() => onDelete(command)}
+                            type="button"
+                            aria-label={t("settings.delete", {
+                              defaultValue: "Delete",
+                            })}
+                            title={t("settings.delete", {
+                              defaultValue: "Delete",
+                            })}
+                            disabled={isBusy}
+                          >
+                            <Trash2 size={14} strokeWidth={1.9} />
+                          </button>
                         )}
                       </div>
                     </td>

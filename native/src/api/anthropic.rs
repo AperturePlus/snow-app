@@ -26,7 +26,7 @@ use crate::storage::services::chat_conversations::{
 };
 use crate::storage::ApiConfigRecord;
 
-const DEFAULT_MAX_TOKENS: i32 = 32000;
+const DEFAULT_MAX_TOKENS: i32 = 64000;
 
 pub async fn create_anthropic_response_stream(
     request: ResponsesApiRequest,
