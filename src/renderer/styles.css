@@ -3838,6 +3838,61 @@ input {
   gap: 16px;
 }
 
+.chat-input-region {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.chat-scroll-to-bottom {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  left: 50%;
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 50%;
+  background: var(--surface-island-strong);
+  color: var(--text-primary);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  transform: translate(-50%, calc(-100% - 6px));
+  transition: background-color 0.16s ease, border-color 0.16s ease,
+    box-shadow 0.16s ease;
+  animation: chat-scroll-to-bottom-in 0.16s ease-out;
+  -webkit-app-region: no-drag;
+}
+
+.chat-scroll-to-bottom:hover {
+  border-color: var(--border-color);
+  background: var(--bg-hover);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16), 0 3px 8px rgba(0, 0, 0, 0.1);
+}
+
+.chat-scroll-to-bottom:focus-visible {
+  outline: 2px solid var(--text-tertiary);
+  outline-offset: 2px;
+}
+
+.chat-scroll-to-bottom svg {
+  display: block;
+}
+
+@keyframes chat-scroll-to-bottom-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-100% + 2px));
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, calc(-100% - 6px));
+  }
+}
+
 /* Empty state: chat-area shrinks to content, centered as a group with input */
 .chat-content.is-empty {
   justify-content: center;
@@ -5057,12 +5112,6 @@ input {
   transform: rotate(90deg);
 }
 
-.thinking-block-spinner {
-  flex-shrink: 0;
-  margin-left: 2px;
-  color: currentColor;
-}
-
 /* Content wrapper */
 .thinking-block-content-wrapper {
   position: relative;
@@ -6203,6 +6252,258 @@ input {
   .tool-call-bash-stream-cursor {
     animation: none;
   }
+}
+
+/* Grep Tool Call */
+.tool-call-grep-body {
+  gap: 10px;
+}
+
+.tool-call-grep-match-count {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+}
+
+.tool-call-grep-has-matches {
+  color: var(--accent-blue-text);
+  background: var(--accent-blue-bg);
+}
+
+.tool-call-grep-no-matches {
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+}
+
+.tool-call-grep-params {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-call-grep-param-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.tool-call-grep-param-item svg {
+  display: block;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.tool-call-grep-param-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.tool-call-grep-param-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  user-select: text;
+}
+
+/* code 变体（pattern / fileGlob）需要覆盖 .ai-message code 的通用样式 */
+.tool-call-grep code.tool-call-grep-param-value {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: normal;
+  word-break: break-all;
+}
+
+.tool-call-grep-param-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.tool-call-grep-param-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+}
+
+.tool-call-grep-backend {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.tool-call-grep-backend svg {
+  display: block;
+  flex-shrink: 0;
+  color: var(--accent-green-text);
+}
+
+.tool-call-grep-truncated {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  font-size: 10.5px;
+}
+
+.tool-call-grep-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.tool-call-grep-file-group {
+  /* flex item 默认 flex-shrink:1 且 overflow:hidden 会把自动最小高度归零，
+     导致在 max-height 容器内被压缩裁剪，必须禁止收缩改为整体滚动 */
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+}
+
+.tool-call-grep-file-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-tertiary);
+}
+
+.tool-call-grep-file-header svg {
+  display: block;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.tool-call-grep-file-name {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.tool-call-grep-file-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  user-select: text;
+}
+
+.tool-call-grep-file-count {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-active);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+}
+
+.tool-call-grep-match-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+}
+
+.tool-call-grep-match-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.tool-call-grep-match-line:hover {
+  background: var(--bg-hover);
+}
+
+.tool-call-grep-line-num {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+  user-select: none;
+}
+
+/* 覆盖 .ai-message code 通用样式，使匹配内容纯净显示 */
+.tool-call-grep .tool-call-grep-line-content {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+}
+
+.tool-call-grep-no-results,
+.tool-call-grep-pending {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+}
+
+.tool-call-grep-no-results svg,
+.tool-call-grep-pending svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.tool-call-grep-pending-running {
+  color: var(--accent-blue-text);
+  background: var(--accent-blue-bg);
 }
 
 /* Sub-Agent Tool Call */
@@ -10891,10 +11192,10 @@ input {
   min-height: 36px;
   max-height: 80px;
 }
-
 .git-commit-input:focus {
   outline: none;
-  border-color: var(--accent-blue);
+  border-color: var(--text-tertiary);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .git-commit-input::placeholder {
@@ -10953,13 +11254,14 @@ input {
 
 .git-ai-commit-btn {
   background: transparent;
-  color: var(--text-primary);
+  color: var(--text-tertiary);
   border-color: transparent;
 }
 
 .git-ai-commit-btn:hover:not(:disabled) {
-  background: var(--surface-island-strong);
-  border-color: var(--border-color);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border-color: var(--border-light);
 }
 
 /* Diff Viewer */

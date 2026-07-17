@@ -38,6 +38,36 @@ const normalizeBashStreamChunk = (value: unknown): BashStreamChunk | null => {
   return { stream: value.stream, data: value.data };
 };
 
+const mcpToolChunkCallbacks = new Map<
+  string,
+  (chunk: BashStreamChunk) => void
+>();
+let mcpToolChunkListenerRegistered = false;
+
+const ensureMcpToolChunkListener = (): void => {
+  if (mcpToolChunkListenerRegistered) {
+    return;
+  }
+  mcpToolChunkListenerRegistered = true;
+  ipcRenderer.on(MCP_TOOL_CHUNK_CHANNEL, (_event, payload: unknown) => {
+    if (!isRecord(payload)) {
+      return;
+    }
+    const streamId = payload.streamId;
+    if (typeof streamId !== "string") {
+      return;
+    }
+    const callback = mcpToolChunkCallbacks.get(streamId);
+    if (!callback) {
+      return;
+    }
+    const chunk = normalizeBashStreamChunk(payload.chunk);
+    if (chunk) {
+      callback(chunk);
+    }
+  });
+};
+
 export const systemApi = {
   listMcpTools: (): Promise<McpToolDefinition[]> =>
     ipcRenderer.invoke("mcp:list-tools"),
@@ -189,18 +219,11 @@ export const systemApi = {
     subAgentAllowedTools?: string[]
   ): Promise<string> => {
     const streamId = createMcpToolStreamId();
-    const handleChunk = (_event: IpcRendererEvent, payload: unknown): void => {
-      if (!isRecord(payload) || payload.streamId !== streamId) {
-        return;
-      }
+    ensureMcpToolChunkListener();
 
-      const chunk = normalizeBashStreamChunk(payload.chunk);
-      if (chunk) {
-        onChunk?.(chunk);
-      }
-    };
-
-    ipcRenderer.on(MCP_TOOL_CHUNK_CHANNEL, handleChunk);
+    if (onChunk) {
+      mcpToolChunkCallbacks.set(streamId, onChunk);
+    }
 
     return ipcRenderer
       .invoke(
@@ -216,7 +239,7 @@ export const systemApi = {
         subAgentAllowedTools
       )
       .finally(() => {
-        ipcRenderer.removeListener(MCP_TOOL_CHUNK_CHANNEL, handleChunk);
+        mcpToolChunkCallbacks.delete(streamId);
       });
   },
   createCheckpoint: (workDir: string): Promise<string> =>

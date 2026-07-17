@@ -304,30 +304,47 @@ impl TodoService {
 
     fn execute_add(&self, args: &Value) -> napi::Result<Value> {
         let session_id = require_session_id(args)?;
-        let content = args
-            .get("content")
-            .and_then(|v| {
-                if let Some(s) = v.as_str() {
-                    return Some(s.to_string());
+
+        // Parse content into a list of strings. Three cases are handled:
+        // 1. A JSON array value: ["a", "b"] -> multiple independent TODOs
+        // 2. A string that is itself a JSON array: "[\"a\",\"b\"]" -> multiple independent TODOs
+        // 3. A plain string: "do something" -> single TODO
+        let content_raw = args.get("content").ok_or_else(|| {
+            Error::new(
+                Status::InvalidArg,
+                "content is required for action=add".to_string(),
+            )
+        })?;
+
+        let contents: Vec<String> = if let Some(arr) = content_raw.as_array() {
+            // Case 1: actual JSON array — each element becomes its own TODO.
+            arr.iter()
+                .filter_map(|item| item.as_str().map(|s| s.to_string()))
+                .collect()
+        } else if let Some(s) = content_raw.as_str() {
+            // Case 2 & 3: string value — check if it is a JSON array string.
+            let trimmed = s.trim();
+            if trimmed.starts_with('[') && trimmed.ends_with(']') {
+                match serde_json::from_str::<Vec<String>>(trimmed) {
+                    Ok(parsed) if !parsed.is_empty() => parsed,
+                    _ => vec![s.to_string()],
                 }
-                // content can also be a JSON string array
-                if let Some(arr) = v.as_array() {
-                    let strings: Vec<String> = arr
-                        .iter()
-                        .filter_map(|item| item.as_str().map(|s| s.to_string()))
-                        .collect();
-                    if !strings.is_empty() {
-                        return Some(strings.join("\n"));
-                    }
-                }
-                None
-            })
-            .ok_or_else(|| {
-                Error::new(
-                    Status::InvalidArg,
-                    "content is required for action=add".to_string(),
-                )
-            })?;
+            } else {
+                vec![s.to_string()]
+            }
+        } else {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "content must be a string or array of strings".to_string(),
+            ));
+        };
+
+        if contents.is_empty() {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "content must not be empty".to_string(),
+            ));
+        }
 
         let parent_id = args
             .get("parentId")
@@ -363,15 +380,18 @@ impl TodoService {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
-        let id = create_id("todo");
-        Self::add_todo(
-            &conn,
-            &session_id,
-            &id,
-            &content,
-            validated_parent.as_deref(),
-            response_id,
-        )?;
+        // Create one TODO item per content string, each with its own id.
+        for content in &contents {
+            let id = create_id("todo");
+            Self::add_todo(
+                &conn,
+                &session_id,
+                &id,
+                content,
+                validated_parent.as_deref(),
+                response_id,
+            )?;
+        }
 
         let items = Self::get_todos_for_session(&conn, &session_id)?;
         Ok(json!({
@@ -494,7 +514,7 @@ impl McpService for TodoService {
         vec![McpTool {
             server_id: SERVER_ID.to_string(),
             name: "todo-manage".to_string(),
-            description: "Unified session TODO list for AI work planning: use required field \"action\" — one of get | add | update | delete. The \"sessionId\" and \"status\" fields are required for ALL actions (status is only used by update, ignored by others).\n\nACTIONS:\n- get: Current list with IDs, status, hierarchy. Use before add/update when you need existing IDs.\n- add: Create item(s). Use \"content\" (string or string[]). Optional \"parentId\" for subtasks (valid parent id from get).\n- update: Required \"todoId\" (string or string[]). Use \"status\" (pending|inProgress|completed) and/or \"content\" (refined wording). Batch ids share the same updates.\n- delete: Required \"todoId\" (string or string[]). Deleting a parent cascades to children.\n\nBEST PRACTICES:\n- Mark \"completed\" only after the step is verified; update as you work.\n- Update each item immediately after it is done; do NOT finish all work first and batch-update at the end.\n- Delete obsolete or redundant items to keep the list focused.\n\nEXAMPLES:\n- {action:\"get\", sessionId:\"...\", status:\"pending\"}\n- {action:\"add\", sessionId:\"...\", status:\"pending\", content:[\"Step 1\",\"Step 2\"]}\n- {action:\"update\", sessionId:\"...\", status:\"completed\", todoId:\"...\"}\n- {action:\"delete\", sessionId:\"...\", status:\"pending\", todoId:\"...\"}".to_string(),
+            description: "Unified session TODO list for AI work planning: use required field \"action\" — one of get | add | update | delete. The \"sessionId\" and \"status\" fields are required for ALL actions (status is only used by update, ignored by others).\n\nACTIONS:\n- get: Current list with IDs, status, hierarchy. Use before add/update when you need existing IDs.\n- add: Create item(s). Use \"content\" (string or string[]). When content is an array, EACH element becomes a SEPARATE independent TODO item (they are NOT joined into one). Optional \"parentId\" for subtasks (valid parent id from get).\n- update: Required \"todoId\" (string or string[]). Use \"status\" (pending|inProgress|completed) and/or \"content\" (refined wording). Batch ids share the same updates.\n- delete: Required \"todoId\" (string or string[]). Deleting a parent cascades to children.\n\nIMPORTANT:\n- When you pass content as a JSON array like [\"task A\", \"task B\"], two separate TODO items are created — NOT one item with combined text.\n- Each array element must be a self-contained task description.\n\nBEST PRACTICES:\n- Mark \"completed\" only after the step is verified; update as you work.\n- Update each item immediately after it is done; do NOT finish all work first and batch-update at the end.\n- Delete obsolete or redundant items to keep the list focused.\n\nEXAMPLES:\n- {action:\"get\", sessionId:\"...\", status:\"pending\"}\n- {action:\"add\", sessionId:\"...\", status:\"pending\", content:[\"Step 1\",\"Step 2\"]}  // creates 2 separate TODOs\n- {action:\"update\", sessionId:\"...\", status:\"completed\", todoId:\"...\"}\n- {action:\"delete\", sessionId:\"...\", status:\"pending\", todoId:\"...\"}".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {

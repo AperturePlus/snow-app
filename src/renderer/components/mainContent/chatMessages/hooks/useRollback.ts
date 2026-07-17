@@ -230,6 +230,7 @@ export const useRollback = (ctx: ConversationContextValue) => {
       });
       ctx.setActiveId(undefined);
     } else if (convId && responseId) {
+      ctx.updateSessionField(key, "tokenUsage", null);
       void window.snow.truncateConversation(convId, responseId).catch(() => {
         // Best effort — database persistence must not block the UI refresh.
       });
@@ -242,6 +243,7 @@ export const useRollback = (ctx: ConversationContextValue) => {
   }, [
     ctx.rollbackPreview,
     ctx.directoryPath,
+    ctx.updateSessionField,
     ctx.updateSessionMessages,
     ctx.setConversationVersion,
     ctx.setActiveId,

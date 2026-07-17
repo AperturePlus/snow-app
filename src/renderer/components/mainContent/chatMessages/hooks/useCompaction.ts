@@ -58,13 +58,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
           throw new Error("Context handoff is empty");
         }
 
-        if (response.tokenUsage) {
-          ctx.updateSessionField(
-            conversationId,
-            "tokenUsage",
-            response.tokenUsage
-          );
-        }
+        ctx.updateSessionField(conversationId, "tokenUsage", null);
 
         const compactionMessage: ChatConversationMessage = {
           id: response.id || createMessageId("user"),

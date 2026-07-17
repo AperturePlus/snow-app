@@ -334,7 +334,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               return "Sub-agent interrupted by user";
             }
 
-            if (subResponse.tokenUsage) {
+            if (subResponse.tokenUsage && subResponse.status !== "error") {
               ctx.updateSessionField(
                 subConvId,
                 "tokenUsage",
@@ -807,7 +807,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           }
         }
 
-        if (response.tokenUsage) {
+        if (response.tokenUsage && response.status !== "error") {
           ctx.updateSessionField(
             effectiveKey,
             "tokenUsage",
@@ -826,6 +826,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         // picks up from the summary and continues working.
         if (
           response.tokenUsage &&
+          response.status !== "error" &&
           effectiveKey !== PENDING_SESSION_KEY &&
           !ctx.sessionsRefData.current.get(effectiveKey)?.hasAutoCompacted
         ) {

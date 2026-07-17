@@ -1,8 +1,7 @@
-import { ChevronDown, ChevronRight, ChevronUp, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronUp } from "lucide-react";
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -31,17 +30,51 @@ export const ThinkingBlock = ({
   const [isOverflow, setIsOverflow] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  // The inner element whose size changes as the async-rendered markdown HTML
+  // arrives. ResizeObserver on this element replaces the previous per-chunk
+  // useLayoutEffect([content]) that forced a synchronous layout read on every
+  // streamed token — a major source of jank for long thinking blocks.
+  const bodyRef = useRef<HTMLDivElement>(null);
   // Tracks whether auto-scroll should be active (user hasn't scrolled away)
   const autoScrollRef = useRef(true);
 
-  // Auto-scroll to bottom during streaming
-  useEffect(() => {
+  // Check if content overflows the fixed height, and if auto-scroll is active,
+  // keep the thinking view pinned to the newest content. Both concerns are
+  // driven by the same trigger — a change in rendered content size — so they
+  // are handled together inside the ResizeObserver callback to avoid
+  // duplicated layout reads.
+  const handleContentSizeChange = useCallback(() => {
     const el = scrollRef.current;
-    if (!el || !isStreaming) return;
+    if (!el) return;
+    setIsOverflow(el.scrollHeight > THINKING_FIXED_HEIGHT);
     if (autoScrollRef.current) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [content, isStreaming]);
+  }, []);
+
+  // Observe the rendered markdown body for size changes. This fires:
+  //   - When the worker returns new HTML and React commits it to the DOM
+  //   - When the container width changes (panel resize, expand/collapse toggle)
+  // Because markdown rendering is now async (worker + rAF throttle), the old
+  // approach of reading scrollHeight in a useLayoutEffect([content]) would
+  // measure stale DOM (the worker round-trip hasn't landed yet) and force a
+  // layout thrash on every chunk. ResizeObserver is passive and fires only
+  // when the browser has actually laid out new content.
+  useEffect(() => {
+    const body = bodyRef.current;
+    const scroll = scrollRef.current;
+    if (!body || !scroll) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      handleContentSizeChange();
+    });
+    // Observe the body (content growth) and the scroll container (width
+    // changes from panel resize / expand toggle that affect wrapping).
+    resizeObserver.observe(body);
+    resizeObserver.observe(scroll);
+
+    return () => resizeObserver.disconnect();
+  }, [handleContentSizeChange]);
 
   // Reset auto-scroll when streaming starts
   useEffect(() => {
@@ -50,23 +83,18 @@ export const ThinkingBlock = ({
     }
   }, [isStreaming]);
 
-  // Check if content overflows the fixed height
-  const checkOverflow = useCallback(() => {
+  // Keep auto-scroll pinned while streaming. Content changes no longer drive
+  // scrolling directly (the ResizeObserver handles that), but we still need
+  // to reactivate auto-scroll on resume when the user hasn't scrolled away
+  // and isStreaming flips true.
+  useEffect(() => {
+    if (!isStreaming) return;
     const el = scrollRef.current;
     if (!el) return;
-    setIsOverflow(el.scrollHeight > THINKING_FIXED_HEIGHT);
-  }, []);
-
-  useLayoutEffect(() => {
-    checkOverflow();
-  }, [content, checkOverflow]);
-
-  // Re-check on resize
-  useEffect(() => {
-    const handleResize = () => checkOverflow();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [checkOverflow]);
+    if (autoScrollRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [isStreaming]);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -108,13 +136,6 @@ export const ThinkingBlock = ({
           aria-hidden="true"
         />
         <span>{t("chat.thinkingProcess")}</span>
-        {isStreaming ? (
-          <Loader2
-            size={12}
-            className="thinking-block-spinner spin"
-            aria-hidden="true"
-          />
-        ) : null}
       </div>
 
       {!isCollapsed ? (
@@ -126,7 +147,9 @@ export const ThinkingBlock = ({
             ref={scrollRef}
             onScroll={handleScroll}
           >
-            <MarkdownBlock className="thinking-block-body" content={content} />
+            <div ref={bodyRef}>
+              <MarkdownBlock className="thinking-block-body" content={content} />
+            </div>
           </div>
 
           {isOverflow && !isExpanded ? (

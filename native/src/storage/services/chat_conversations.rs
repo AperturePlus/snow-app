@@ -106,6 +106,13 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
             let transaction = connection.transaction()?;
             let title = create_title(input.request_messages);
             let preview = create_snippet(input.response_content, 180);
+            let context_usage = if input.context_compaction {
+                Some(ChatTokenUsage::default())
+            } else if input.status == "error" {
+                None
+            } else {
+                Some(input.token_usage)
+            };
 
             transaction.execute(
                 "INSERT INTO chat_conversations (
@@ -191,6 +198,8 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                 )?;
             }
 
+            // The conversation row stores the latest context-window snapshot.
+            // Per-request usage accounting belongs in a dedicated history table.
             transaction.execute(
                 "UPDATE chat_conversations
                     SET title = CASE WHEN title = '' THEN ?2 ELSE title END,
@@ -208,10 +217,10 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                         END,
                         status = 'active',
                         directory_id = CASE WHEN directory_id = '' THEN ?10 ELSE directory_id END,
-                        input_tokens = input_tokens + ?6,
-                        output_tokens = output_tokens + ?7,
-                        cache_creation_input_tokens = cache_creation_input_tokens + ?8,
-                        cache_read_input_tokens = cache_read_input_tokens + ?9,
+                        input_tokens = COALESCE(?6, input_tokens),
+                        output_tokens = COALESCE(?7, output_tokens),
+                        cache_creation_input_tokens = COALESCE(?8, cache_creation_input_tokens),
+                        cache_read_input_tokens = COALESCE(?9, cache_read_input_tokens),
                         updated_at = datetime('now')
                   WHERE conversation_id = ?1",
                 params![
@@ -220,10 +229,14 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                     preview,
                     input.model,
                     input.response_id,
-                    input.token_usage.input_tokens,
-                    input.token_usage.output_tokens,
-                    input.token_usage.cache_creation_input_tokens,
-                    input.token_usage.cache_read_input_tokens,
+                    context_usage.as_ref().map(|usage| usage.input_tokens),
+                    context_usage.as_ref().map(|usage| usage.output_tokens),
+                    context_usage
+                        .as_ref()
+                        .map(|usage| usage.cache_creation_input_tokens),
+                    context_usage
+                        .as_ref()
+                        .map(|usage| usage.cache_read_input_tokens),
                     input.directory_id,
                 ],
             )?;
@@ -1234,6 +1247,10 @@ pub fn truncate_conversation_from_response(
                         ORDER BY id DESC LIMIT 1),
                       ''
                     ),
+                    input_tokens = 0,
+                    output_tokens = 0,
+                    cache_creation_input_tokens = 0,
+                    cache_read_input_tokens = 0,
                     updated_at = datetime('now')
               WHERE conversation_id = ?1",
             params![conversation_id],
@@ -1407,4 +1424,95 @@ fn create_chat_id(prefix: &str) -> String {
         .timestamp_nanos_opt()
         .unwrap_or_else(|| Utc::now().timestamp_micros() * 1_000);
     format!("{prefix}-{timestamp}-{}", std::process::id())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn conversation_usage_tracks_latest_context_snapshot() {
+        let database_path = std::env::temp_dir().join(format!(
+            "snow-app-context-usage-{}-{}.db",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        database::ensure_database(&database_path).expect("initialize test database");
+
+        let messages = vec![ChatContextMessage {
+            role: "user".to_string(),
+            content: "test request".to_string(),
+        }];
+        let store = |response_id: &str, token_usage: ChatTokenUsage, context_compaction: bool| {
+            store_chat_exchange(
+                &database_path,
+                &StoreChatExchangeInput {
+                    conversation_id: "test-conversation",
+                    request_messages: &messages,
+                    response_content: "test response",
+                    response_id,
+                    checkpoint_id: "",
+                    model: "test-model",
+                    status: "completed",
+                    raw_response_json: "{}",
+                    token_usage,
+                    response_thinking: "",
+                    tool_calls_json: "[]",
+                    directory_id: "test-directory",
+                    context_compaction,
+                },
+            )
+            .expect("store chat exchange");
+        };
+
+        store(
+            "response-1",
+            ChatTokenUsage {
+                input_tokens: 100,
+                output_tokens: 20,
+                cache_creation_input_tokens: 10,
+                cache_read_input_tokens: 40,
+            },
+            false,
+        );
+        store(
+            "response-2",
+            ChatTokenUsage {
+                input_tokens: 180,
+                output_tokens: 35,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 90,
+            },
+            false,
+        );
+
+        let conversation = get_chat_conversation(&database_path, "test-conversation")
+            .expect("read conversation")
+            .expect("conversation exists");
+        assert_eq!(conversation.input_tokens, 180);
+        assert_eq!(conversation.output_tokens, 35);
+        assert_eq!(conversation.cache_creation_input_tokens, 0);
+        assert_eq!(conversation.cache_read_input_tokens, 90);
+
+        store(
+            "compaction-response",
+            ChatTokenUsage {
+                input_tokens: 500,
+                output_tokens: 80,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 200,
+            },
+            true,
+        );
+
+        let compacted = get_chat_conversation(&database_path, "test-conversation")
+            .expect("read compacted conversation")
+            .expect("compacted conversation exists");
+        assert_eq!(compacted.input_tokens, 0);
+        assert_eq!(compacted.output_tokens, 0);
+        assert_eq!(compacted.cache_creation_input_tokens, 0);
+        assert_eq!(compacted.cache_read_input_tokens, 0);
+
+        std::fs::remove_file(database_path).expect("remove test database");
+    }
 }

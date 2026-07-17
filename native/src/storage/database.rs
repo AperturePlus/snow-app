@@ -94,9 +94,7 @@ fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
     reset_legacy_integer_primary_key_tables(connection)?;
 
     connection.execute_batch(
-        "PRAGMA user_version = 16;
-
-         CREATE TABLE IF NOT EXISTS system_settings (
+        "CREATE TABLE IF NOT EXISTS system_settings (
            id TEXT PRIMARY KEY NOT NULL,
            setting_name TEXT NOT NULL,
            setting_code TEXT NOT NULL UNIQUE,
@@ -321,6 +319,8 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            ON todo_items(session_id);
     ",
     )?;
+
+    connection.pragma_update(None, "user_version", 17)?;
 
     Ok(())
 }

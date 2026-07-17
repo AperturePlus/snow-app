@@ -1,3 +1,4 @@
+import { ArrowDown } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -7,6 +8,7 @@ import {
 } from "react";
 import type { WorkspaceDirectoryRecord } from "../../../preload";
 import { useAutoScrollPreference } from "../../hooks/useAutoScrollPreference";
+import { useI18n } from "../../i18n";
 import { ChatInput } from "./ChatInput";
 import { EmptyGreeting } from "./EmptyGreeting";
 import { ChatMessageList, useChatConversationContext } from "./chatMessages";
@@ -18,10 +20,6 @@ type ChatContentProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
 };
 
-type ChatContentBodyProps = ChatContentProps & {
-  onRollbackConfirmed: () => void;
-};
-
 type PendingScrollRestore = {
   conversationId: string;
   requestId: number;
@@ -30,11 +28,11 @@ type PendingScrollRestore = {
 };
 
 const LOAD_OLDER_SCROLL_THRESHOLD = 96;
+const SHOW_SCROLL_TO_BOTTOM_THRESHOLD = 160;
 
 const ChatContentBody = ({
   activeDirectory,
-  onRollbackConfirmed,
-}: ChatContentBodyProps): React.JSX.Element => {
+}: ChatContentProps): React.JSX.Element => {
   const {
     messages,
     activeConversationId,
@@ -65,7 +63,9 @@ const ChatContentBody = ({
     refreshYoloMode,
     pendingToolAuthorizations,
   } = useChatConversationContext();
+  const { t } = useI18n();
   const { autoScrollEnabled, setAutoScrollEnabled } = useAutoScrollPreference();
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const hasMessages = messages.length > 0;
   const hasHistoryContent = hasMessages || isLoadingInitialHistory;
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -77,6 +77,8 @@ const ChatContentBody = ({
   const isLoadingOlderWithScrollRef = useRef(false);
   const scrolledAuthorizationSignatureRef = useRef("");
   const shouldStickToBottomRef = useRef(true);
+  const isInitialBottomPositioningRef = useRef(false);
+  const isUserScrollIntentRef = useRef(false);
   const previousIsCompactingRef = useRef(isCompacting);
   const scrollRafIdRef = useRef(0);
   activeConversationIdRef.current = activeConversationId;
@@ -92,6 +94,9 @@ const ChatContentBody = ({
     isLoadingOlderWithScrollRef.current = false;
     scrolledAuthorizationSignatureRef.current = "";
     shouldStickToBottomRef.current = true;
+    isInitialBottomPositioningRef.current = false;
+    isUserScrollIntentRef.current = false;
+    setShowScrollToBottom(false);
     if (activeConversationId) {
       positionedConversationIdsRef.current.delete(activeConversationId);
     }
@@ -117,10 +122,9 @@ const ChatContentBody = ({
 
     // content-visibility: auto on .chat-message-group causes scrollHeight to
     // be based on contain-intrinsic-size estimates (80px per message) until
-    // the browser lazily renders off-screen messages. A single synchronous
-    // scrollTop assignment lands on an estimated — not actual — bottom.
-    // Schedule successive rAF passes so that as real content renders and
-    // scrollHeight grows, we keep re-anchoring to the true bottom.
+    // the browser lazily renders off-screen messages. These immediate passes
+    // handle the first paints; the ResizeObserver below keeps following later
+    // height changes from Markdown workers, tool views, and image decoding.
     let rafId1 = 0;
     let rafId2 = 0;
     let rafId3 = 0;
@@ -129,6 +133,10 @@ const ChatContentBody = ({
       container.scrollTop = container.scrollHeight;
     };
 
+    isInitialBottomPositioningRef.current = true;
+    isUserScrollIntentRef.current = false;
+    shouldStickToBottomRef.current = true;
+    setShowScrollToBottom(false);
     scrollToBottom();
     rafId1 = requestAnimationFrame(() => {
       scrollToBottom();
@@ -151,6 +159,89 @@ const ChatContentBody = ({
     isLoadingInitialHistory,
     messages.length,
   ]);
+
+  useLayoutEffect(() => {
+    const container = scrollRef.current;
+    if (!container || !activeConversationId) {
+      return;
+    }
+
+    let resizeRafId = 0;
+    let lastScrollHeight = container.scrollHeight;
+    const observedChildren = new Set<Element>();
+
+    const keepAtBottomAfterResize = (): void => {
+      resizeRafId = 0;
+      if (
+        scrollRef.current !== container ||
+        activeConversationIdRef.current !== activeConversationId
+      ) {
+        return;
+      }
+
+      const nextScrollHeight = container.scrollHeight;
+      const didContentHeightChange = nextScrollHeight !== lastScrollHeight;
+      lastScrollHeight = nextScrollHeight;
+
+      if (
+        !didContentHeightChange ||
+        !shouldStickToBottomRef.current ||
+        isLoadingOlderWithScrollRef.current ||
+        pendingScrollRestoreRef.current !== null
+      ) {
+        return;
+      }
+
+      container.scrollTop = nextScrollHeight;
+      if (
+        isInitialBottomPositioningRef.current &&
+        !isUserScrollIntentRef.current
+      ) {
+        setShowScrollToBottom(false);
+      }
+    };
+
+    const scheduleResizeCheck = (): void => {
+      if (resizeRafId === 0) {
+        resizeRafId = requestAnimationFrame(keepAtBottomAfterResize);
+      }
+    };
+
+    const resizeObserver = new ResizeObserver(scheduleResizeCheck);
+    const observeCurrentChildren = (): void => {
+      for (const child of observedChildren) {
+        if (!container.contains(child)) {
+          resizeObserver.unobserve(child);
+          observedChildren.delete(child);
+        }
+      }
+
+      for (const child of Array.from(container.children)) {
+        if (!observedChildren.has(child)) {
+          observedChildren.add(child);
+          resizeObserver.observe(child);
+        }
+      }
+    };
+
+    observeCurrentChildren();
+
+    const mutationObserver = new MutationObserver(() => {
+      observeCurrentChildren();
+      scheduleResizeCheck();
+    });
+    mutationObserver.observe(container, { childList: true });
+    container.addEventListener("load", scheduleResizeCheck, true);
+
+    return (): void => {
+      if (resizeRafId !== 0) {
+        cancelAnimationFrame(resizeRafId);
+      }
+      container.removeEventListener("load", scheduleResizeCheck, true);
+      mutationObserver.disconnect();
+      resizeObserver.disconnect();
+    };
+  }, [activeConversationId]);
 
   // When tool authorization prompts appear, force-scroll the chat area to
   // the bottom so users do not miss the confirmation while reading earlier
@@ -268,6 +359,38 @@ const ChatContentBody = ({
     }
   }, [loadOlderMessages]);
 
+  const markUserScrollIntent = useCallback((): void => {
+    isUserScrollIntentRef.current = true;
+    isInitialBottomPositioningRef.current = false;
+  }, []);
+
+  const handleChatPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>): void => {
+      const bounds = event.currentTarget.getBoundingClientRect();
+      if (event.clientX >= bounds.right - 16) {
+        markUserScrollIntent();
+      }
+    },
+    [markUserScrollIntent]
+  );
+
+  const handleChatKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>): void => {
+      if (
+        event.key === "ArrowUp" ||
+        event.key === "ArrowDown" ||
+        event.key === "PageUp" ||
+        event.key === "PageDown" ||
+        event.key === "Home" ||
+        event.key === "End" ||
+        event.key === " "
+      ) {
+        markUserScrollIntent();
+      }
+    },
+    [markUserScrollIntent]
+  );
+
   const handleChatScroll = useCallback((): void => {
     // Throttle scroll handling with requestAnimationFrame to avoid
     // excessive layout reads during fast scrolling through many
@@ -285,7 +408,19 @@ const ChatContentBody = ({
 
       const distanceFromBottom =
         container.scrollHeight - container.scrollTop - container.clientHeight;
+      const isFollowingInitialContent =
+        isInitialBottomPositioningRef.current && !isUserScrollIntentRef.current;
+
+      if (isFollowingInitialContent) {
+        shouldStickToBottomRef.current = true;
+        setShowScrollToBottom(false);
+        return;
+      }
+
       shouldStickToBottomRef.current = distanceFromBottom < 48;
+      setShowScrollToBottom(
+        hasMessages && distanceFromBottom > SHOW_SCROLL_TO_BOTTOM_THRESHOLD
+      );
 
       if (
         container.scrollTop > LOAD_OLDER_SCROLL_THRESHOLD ||
@@ -298,12 +433,35 @@ const ChatContentBody = ({
 
       void handleLoadOlderWithScroll();
     });
-  }, [handleLoadOlderWithScroll, hasMoreMessages, isLoadingOlderMessages]);
+  }, [
+    handleLoadOlderWithScroll,
+    hasMessages,
+    hasMoreMessages,
+    isLoadingOlderMessages,
+  ]);
+
+  const handleScrollToBottom = useCallback((): void => {
+    const container = scrollRef.current;
+    if (!container) {
+      return;
+    }
+
+    shouldStickToBottomRef.current = true;
+    isInitialBottomPositioningRef.current = false;
+    isUserScrollIntentRef.current = false;
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: "smooth",
+    });
+  }, []);
 
   const handleSendWithScroll = useCallback(
     (message: string, options: ChatInputSendOptions) => {
       handleSendMessage(message, options);
       shouldStickToBottomRef.current = true;
+      isInitialBottomPositioningRef.current = false;
+      isUserScrollIntentRef.current = false;
+      setShowScrollToBottom(false);
       requestAnimationFrame(() => {
         if (scrollRef.current) {
           scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -315,8 +473,7 @@ const ChatContentBody = ({
 
   const handleConfirmRollback = useCallback((): void => {
     confirmRollback();
-    onRollbackConfirmed();
-  }, [confirmRollback, onRollbackConfirmed]);
+  }, [confirmRollback]);
 
   // Cancel any pending scroll-throttle animation frame on unmount.
   useEffect(() => {
@@ -340,7 +497,12 @@ const ChatContentBody = ({
           isLoadingInitialHistory ? "is-loading-history" : ""
         }`}
         ref={scrollRef}
+        onWheel={markUserScrollIntent}
+        onTouchStart={markUserScrollIntent}
+        onPointerDown={handleChatPointerDown}
+        onKeyDown={handleChatKeyDown}
         onScroll={handleChatScroll}
+        tabIndex={0}
         aria-busy={isLoadingInitialHistory || isLoadingOlderMessages}
       >
         {isLoadingInitialHistory ? (
@@ -385,28 +547,41 @@ const ChatContentBody = ({
         )}
       </div>
 
-      <ChatInput
-        projectId={activeDirectory?.directoryId}
-        projectName={activeDirectory?.name}
-        conversationId={activeConversationId}
-        onSend={handleSendWithScroll}
-        isStreaming={isStreaming}
-        isAborting={isAborting}
-        onAbort={handleAbort}
-        tokenUsage={tokenUsage}
-        draftToRestore={draftToRestore}
-        onDraftRestored={clearDraftToRestore}
-        pendingMessages={pendingMessages}
-        onWithdrawPendingMessage={withdrawPendingMessage}
-        onCompactConversation={compactConversation}
-        yoloMode={yoloMode}
-        isUpdatingYoloMode={isUpdatingYoloMode}
-        onYoloModeChange={setYoloMode}
-        onRefreshYoloMode={refreshYoloMode}
-        autoScrollEnabled={autoScrollEnabled}
-        onAutoScrollChange={setAutoScrollEnabled}
-        isCompacting={isCompacting}
-      />
+      <div className="chat-input-region">
+        {showScrollToBottom && hasMessages ? (
+          <button
+            className="chat-scroll-to-bottom"
+            type="button"
+            onClick={handleScrollToBottom}
+            aria-label={t("chat.scrollToBottom")}
+            title={t("chat.scrollToBottom")}
+          >
+            <ArrowDown size={20} strokeWidth={2} aria-hidden="true" />
+          </button>
+        ) : null}
+        <ChatInput
+          projectId={activeDirectory?.directoryId}
+          projectName={activeDirectory?.name}
+          conversationId={activeConversationId}
+          onSend={handleSendWithScroll}
+          isStreaming={isStreaming}
+          isAborting={isAborting}
+          onAbort={handleAbort}
+          tokenUsage={tokenUsage}
+          draftToRestore={draftToRestore}
+          onDraftRestored={clearDraftToRestore}
+          pendingMessages={pendingMessages}
+          onWithdrawPendingMessage={withdrawPendingMessage}
+          onCompactConversation={compactConversation}
+          yoloMode={yoloMode}
+          isUpdatingYoloMode={isUpdatingYoloMode}
+          onYoloModeChange={setYoloMode}
+          onRefreshYoloMode={refreshYoloMode}
+          autoScrollEnabled={autoScrollEnabled}
+          onAutoScrollChange={setAutoScrollEnabled}
+          isCompacting={isCompacting}
+        />
+      </div>
 
       {rollbackPreview ? (
         <RollbackConfirmDialog
@@ -426,17 +601,5 @@ const ChatContentBody = ({
 export const ChatContent = ({
   activeDirectory,
 }: ChatContentProps): React.JSX.Element => {
-  const [renderVersion, setRenderVersion] = useState(0);
-
-  const handleRollbackConfirmed = useCallback((): void => {
-    setRenderVersion((currentVersion) => currentVersion + 1);
-  }, []);
-
-  return (
-    <ChatContentBody
-      key={renderVersion}
-      activeDirectory={activeDirectory}
-      onRollbackConfirmed={handleRollbackConfirmed}
-    />
-  );
+  return <ChatContentBody activeDirectory={activeDirectory} />;
 };

@@ -1,57 +1,205 @@
-import hljs from "highlight.js";
-import MarkdownIt from "markdown-it";
-import { memo, useCallback, useMemo } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import MarkdownWorker from "./markdownWorker?worker";
+import type {
+  MarkdownRenderRequest,
+  MarkdownRenderResponse,
+} from "./markdownWorker";
 
 /**
- * Escape HTML special characters in a string so that when highlight.js
- * returns autoHighlight for an unknown language the result is safe to inject.
+ * Singleton Web Worker that performs markdown-it + highlight.js rendering off
+ * the main thread. Shared by every MarkdownBlock instance so that cache state
+ * (worker-side LRU) is preserved across the whole conversation.
+ *
+ * The worker is lazily created on first use to avoid paying the spawn cost for
+ * conversations that never render markdown (e.g. an empty chat).
  */
-const escapeHtml = (str: string): string =>
-  str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+let workerSingleton: Worker | null = null;
 
-const markdown = new MarkdownIt({
-  breaks: true,
-  html: false,
-  linkify: true,
-  highlight(str: string, lang: string): string {
-    const language = lang?.trim();
-    let highlighted: string;
+/**
+ * Lazily create the shared markdown worker and attach a single global
+ * `onmessage` listener that routes responses back to the pending request map.
+ * A single listener is preferable to per-request `{ once: true }` listeners,
+ * which would accumulate between dispatch and response when many frames are
+ * in flight during a burst of streaming chunks.
+ */
+const getMarkdownWorker = (): Worker => {
+  if (!workerSingleton) {
+    const worker = new MarkdownWorker();
+    worker.addEventListener(
+      "message",
+      handleWorkerMessage as EventListener
+    );
+    workerSingleton = worker;
+  }
+  return workerSingleton;
+};
 
-    if (language && hljs.getLanguage(language)) {
-      try {
-        highlighted = hljs.highlight(str, {
-          language,
-          ignoreIllegals: true,
-        }).value;
-      } catch {
-        highlighted = escapeHtml(str);
-      }
-    } else {
-      highlighted = escapeHtml(str);
+/**
+ * Monotonic request id used to correlate worker responses with the latest
+ * content dispatched from a hook instance. A single shared counter is fine:
+ * ids only need to be unique within the worker round-trip window, and using a
+ * shared counter avoids per-instance state in the dispatch loop.
+ */
+let sharedRequestId = 0;
+const nextRequestId = (): number => ++sharedRequestId;
+
+/**
+ * Pending request registry. Keyed by request id so the global worker
+ * `onmessage` handler can route the response back to the originating hook.
+ * Entries are self-removing on resolve to avoid leaks.
+ */
+type PendingEntry = {
+  resolve: (html: string) => void;
+};
+const pendingRequests = new Map<number, PendingEntry>();
+
+const handleWorkerMessage = (event: MessageEvent<MarkdownRenderResponse>): void => {
+  const { id, html } = event.data;
+  const entry = pendingRequests.get(id);
+  if (entry) {
+    pendingRequests.delete(id);
+    entry.resolve(html);
+  }
+};
+
+const dispatchRender = (content: string): Promise<string> => {
+  const worker = getMarkdownWorker();
+  const id = nextRequestId();
+  return new Promise<string>((resolve) => {
+    pendingRequests.set(id, { resolve });
+    const request: MarkdownRenderRequest = { id, content };
+    worker.postMessage(request);
+  });
+};
+
+/**
+ * Module-level LRU cache for rendered HTML. The worker already keeps its own
+ * cache, but this mirror lets the React layer satisfy cache hits without any
+ * postMessage round-trip at all — critical for the fast-path where a memoized
+ * MarkdownBlock re-renders with identical content (e.g. a finalized message
+ * that re-enters the viewport under content-visibility).
+ *
+ * Capped at the same size as the worker cache for parity.
+ */
+const CACHE_MAX_ENTRIES = 64;
+const htmlCache = new Map<string, string>();
+
+const cacheGet = (key: string): string | undefined => {
+  const value = htmlCache.get(key);
+  if (value !== undefined) {
+    htmlCache.delete(key);
+    htmlCache.set(key, value);
+  }
+  return value;
+};
+
+const cacheSet = (key: string, value: string): void => {
+  if (htmlCache.size >= CACHE_MAX_ENTRIES) {
+    const oldestKey = htmlCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      htmlCache.delete(oldestKey);
+    }
+  }
+  htmlCache.set(key, value);
+};
+
+/**
+ * Fetch rendered HTML for `content`, using the main-thread cache first and
+ * falling back to the worker. Resolved values are written back into the cache
+ * so subsequent identical content is free.
+ */
+const renderMarkdown = async (content: string): Promise<string> => {
+  const cached = cacheGet(content);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const html = await dispatchRender(content);
+  cacheSet(content, html);
+  return html;
+};
+
+/**
+ * Render streaming markdown with frame-aligned throttling.
+ *
+ * During the AI loop, `content` mutates on every streamed chunk (potentially
+ * dozens of times per second). Re-rendering on every chunk janks the main
+ * thread. Instead we coalesce updates to at most one render per animation
+ * frame: the latest content is always used, and intermediate chunks are
+ * dropped. This keeps the visible output responsive without queueing a
+ * backlog of stale renders.
+ *
+ * The hook also tracks the latest in-flight request id so that out-of-order
+ * worker responses (a slow render for chunk N completing after the fast cached
+ * render for chunk N+1) never overwrite newer HTML.
+ */
+const useMarkdownRender = (content: string): string => {
+  const [html, setHtml] = useState<string>(() => {
+    // Warm the state synchronously from the cache when possible so that the
+    // first paint after mount is not blank while the worker warms up.
+    return htmlCache.get(content) ?? "";
+  });
+
+  // Holds the latest content so the rAF callback always reads the newest
+  // value without re-subscribing on every change.
+  const contentRef = useRef(content);
+  contentRef.current = content;
+
+  // Tracks the request id of the most recent dispatch so that a late worker
+  // response for a previous chunk cannot clobber a fresher one.
+  const latestRequestIdRef = useRef(0);
+  // Non-null while a frame is scheduled; used to dedupe rAF requests.
+  const scheduledFrameRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    // Fast path: synchronous cache hit — no frame scheduling needed.
+    const cached = htmlCache.get(content);
+    if (cached !== undefined) {
+      latestRequestIdRef.current = 0;
+      setHtml(cached);
+      return;
     }
 
-    const label = language || "code";
+    if (scheduledFrameRef.current !== null) {
+      return;
+    }
 
-    return (
-      `<div class="code-block-wrapper">` +
-      `<div class="code-block-header">` +
-      `<button class="code-block-lang" type="button">` +
-      `<svg class="code-block-chevron" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>` +
-      `<span>${label}</span>` +
-      `</button>` +
-      `<button class="code-block-copy" type="button" data-code="${encodeURIComponent(
-        str
-      )}">` +
-      `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>` +
-      `</button>` +
-      `</div>` +
-      `<pre><code class="hljs language-${
-        language || ""
-      }">${highlighted}</code></pre>` +
-      `</div>`
-    );
-  },
-});
+    scheduledFrameRef.current = requestAnimationFrame(() => {
+      scheduledFrameRef.current = null;
+      const currentContent = contentRef.current;
+      const requestId = nextRequestId();
+      latestRequestIdRef.current = requestId;
+      void renderMarkdown(currentContent).then((rendered) => {
+        // Drop stale results: if a newer request superseded this one while
+        // the worker was busy, keep the newer one authoritative.
+        if (latestRequestIdRef.current !== requestId) {
+          return;
+        }
+        setHtml(rendered);
+      });
+    });
+
+    return () => {
+      if (scheduledFrameRef.current !== null) {
+        cancelAnimationFrame(scheduledFrameRef.current);
+        scheduledFrameRef.current = null;
+      }
+    };
+  }, [content]);
+
+  // Cancel any pending rAF on unmount. The shared worker itself is left
+  // alive (singleton) so other MarkdownBlock instances keep their warm cache;
+  // it is cheap to keep around and avoids re-spawn churn when switching chats.
+  useEffect(() => {
+    return () => {
+      if (scheduledFrameRef.current !== null) {
+        cancelAnimationFrame(scheduledFrameRef.current);
+        scheduledFrameRef.current = null;
+      }
+    };
+  }, []);
+
+  return html;
+};
 
 export const MarkdownBlock = memo(
   ({
@@ -61,7 +209,7 @@ export const MarkdownBlock = memo(
     className: string;
     content: string;
   }): React.JSX.Element => {
-    const html = useMemo(() => markdown.render(content), [content]);
+    const html = useMarkdownRender(content);
 
     const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
       const target = e.target as HTMLElement;

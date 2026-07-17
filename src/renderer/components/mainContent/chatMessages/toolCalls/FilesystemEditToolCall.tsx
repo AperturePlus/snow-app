@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { ChevronRight } from "lucide-react";
+import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../hooks/useChatConversation";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
 import { ToolNameBadge } from "./shared/ToolNameBadge";
@@ -88,6 +89,7 @@ const parseResult = (result: string | undefined): ParsedEditResult => {
 export const FilesystemEditToolCall = ({
   toolCall,
 }: FilesystemEditToolCallProps): React.JSX.Element => {
+  const { t } = useI18n();
   const parsedArgs = useMemo(
     () => parseArgs(toolCall.arguments),
     [toolCall.arguments]
@@ -110,6 +112,7 @@ export const FilesystemEditToolCall = ({
 
   const hasError = parsedResult.type === "error";
   const effectiveStatus = hasError ? "error" : toolCall.status;
+  const statusLabel = t(`toolCall.filesystem.status.${effectiveStatus}`);
 
   const stats = useMemo(() => {
     if (diffLines.length === 0) return null;
@@ -145,7 +148,7 @@ export const FilesystemEditToolCall = ({
         <span
           className={`tool-call-status tool-call-status-${effectiveStatus}`}
         >
-          {effectiveStatus}
+          {statusLabel}
         </span>
       </summary>
       <div className="tool-call-body">

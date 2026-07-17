@@ -8,6 +8,7 @@ import {
   Hash,
   Files,
 } from "lucide-react";
+import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../hooks/useChatConversation";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
 import { ToolNameBadge } from "./shared/ToolNameBadge";
@@ -348,6 +349,7 @@ type FilesystemReadToolCallProps = {
 export const FilesystemReadToolCall = ({
   toolCall,
 }: FilesystemReadToolCallProps): React.JSX.Element => {
+  const { t } = useI18n();
   const parsedArgs = useMemo(
     () => parseArgs(toolCall.arguments),
     [toolCall.arguments]
@@ -373,6 +375,7 @@ export const FilesystemReadToolCall = ({
 
   const hasError = parsedResult.type === "error";
   const effectiveStatus = hasError ? "error" : toolCall.status;
+  const statusLabel = t(`toolCall.filesystem.status.${effectiveStatus}`);
 
   const StatusIcon =
     effectiveStatus === "completed"
@@ -420,7 +423,7 @@ export const FilesystemReadToolCall = ({
         <span
           className={`tool-call-status tool-call-status-${effectiveStatus}`}
         >
-          {effectiveStatus}
+          {statusLabel}
         </span>
       </summary>
       <div className="tool-call-body">
