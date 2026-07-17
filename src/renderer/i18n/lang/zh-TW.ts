@@ -534,6 +534,7 @@ export const zhTW = {
   "settings.skillsProjectCount": "專案層級",
   "settings.skillsGlobalCount": "全域層級",
   "settings.skillsRefresh": "重新整理 Skills",
+  "settings.skillsRefreshing": "重新整理中...",
   "settings.skillsDiscoveryTitle": "自動搜尋",
   "settings.skillsProjectScopeInfo":
     "正在顯示 {{name}} 的有效 Skills。同 ID 的專案層級 Skill 會覆蓋全域層級 Skill。",

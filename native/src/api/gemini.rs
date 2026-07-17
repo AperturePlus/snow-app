@@ -106,6 +106,16 @@ async fn create_gemini_response_async(
         .build()
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
     let skip_context = request.skip_context.unwrap_or(false);
+    let mut prepared_messages = prepared_request.messages;
+    crate::api::vision::textify_images_in_messages(
+        &mut prepared_messages,
+        &database_path,
+        &api_config,
+        &custom_headers,
+        skip_context,
+    )
+    .await?;
+
     let tools = if request.context_compaction.unwrap_or(false) || skip_context {
         None
     } else {
@@ -118,7 +128,7 @@ async fn create_gemini_response_async(
         }
     };
     let payload = build_gemini_payload(
-        &prepared_request.messages,
+        &prepared_messages,
         &database_path,
         &request,
         &api_config,

@@ -864,6 +864,21 @@ input {
   gap: 1px;
 }
 
+/* Chats section: scrollable list with stable scrollbar gutter */
+.sidebar-section.chats-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-section.chats-section .section-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
 .list-item {
   display: flex;
   align-items: center;
@@ -1160,16 +1175,14 @@ input {
 }
 
 .chat-item-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
+  position: fixed;
   min-width: 140px;
   padding: 4px;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg, 8px);
   background: var(--bg-secondary);
   box-shadow: var(--island-shadow, 0 4px 16px rgba(0, 0, 0, 0.12));
-  z-index: 200;
+  z-index: 9999;
 }
 
 .chat-item-menu-item {

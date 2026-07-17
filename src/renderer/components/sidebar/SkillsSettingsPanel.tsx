@@ -210,14 +210,21 @@ export function SkillsSettingsPanel({
           onClick={() => void loadSkills()}
           type="button"
           disabled={isLoading || Boolean(updatingSkillId)}
+          aria-label={t("settings.skillsRefresh", {
+            defaultValue: "Refresh Skills",
+          })}
+          title={t("settings.skillsRefresh", {
+            defaultValue: "Refresh Skills",
+          })}
         >
-          {isLoading ? (
-            <Loader2 size={15} className="spin" />
-          ) : (
-            <RefreshCw size={15} />
-          )}
+          <RefreshCw size={15} className={isLoading ? "spin" : ""} />
           <span>
-            {t("settings.skillsRefresh", { defaultValue: "Refresh Skills" })}
+            {t(
+              isLoading
+                ? "settings.skillsRefreshing"
+                : "settings.skillsRefresh",
+              { defaultValue: isLoading ? "Refreshing..." : "Refresh Skills" }
+            )}
           </span>
         </button>
       </div>

@@ -169,6 +169,16 @@ async fn create_response_async(
 
     let client = build_openai_client(&base_url, api_key, &effective_headers)?;
     let skip_context = request.skip_context.unwrap_or(false);
+    let mut prepared_messages = prepared_request.messages;
+    crate::api::vision::textify_images_in_messages(
+        &mut prepared_messages,
+        &database_path,
+        &api_config,
+        &effective_headers,
+        skip_context,
+    )
+    .await?;
+
     let tools = if request.context_compaction.unwrap_or(false) || skip_context {
         None
     } else {
@@ -181,7 +191,7 @@ async fn create_response_async(
         }
     };
     let payload = build_responses_payload(
-        &prepared_request.messages,
+        &prepared_messages,
         &database_path,
         &request,
         &api_config,

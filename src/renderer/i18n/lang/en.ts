@@ -550,6 +550,7 @@ export const en = {
   "settings.skillsProjectCount": "Project scope",
   "settings.skillsGlobalCount": "Global scope",
   "settings.skillsRefresh": "Refresh Skills",
+  "settings.skillsRefreshing": "Refreshing...",
   "settings.skillsDiscoveryTitle": "Automatic discovery",
   "settings.skillsProjectScopeInfo":
     "Showing effective Skills for {{name}}. Project Skills override global Skills with the same id.",

@@ -535,6 +535,7 @@ export const zhCN = {
   "settings.skillsProjectCount": "项目级",
   "settings.skillsGlobalCount": "全局级",
   "settings.skillsRefresh": "刷新 Skills",
+  "settings.skillsRefreshing": "刷新中...",
   "settings.skillsDiscoveryTitle": "自动检索",
   "settings.skillsProjectScopeInfo":
     "正在显示 {{name}} 的有效 Skills。同 ID 的项目级 Skill 会覆盖全局级 Skill。",

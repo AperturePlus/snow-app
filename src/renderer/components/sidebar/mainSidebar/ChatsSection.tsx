@@ -45,6 +45,7 @@ export function ChatsSection({
   const [error, setError] = useState<string | null>(null);
   const [subAgentMap, setSubAgentMap] = useState<SubAgentMap>({});
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const sectionListRef = useRef<HTMLDivElement | null>(null);
 
   const directoryId = activeDirectory?.directoryId ?? "";
   const hasMore = conversations.length < total;
@@ -187,7 +188,7 @@ export function ChatsSection({
         }
       },
       {
-        root: null,
+        root: sectionListRef.current,
         rootMargin: "0px 0px 64px",
         threshold: 0.1,
       }
@@ -258,7 +259,10 @@ export function ChatsSection({
             );
             return [conv.conversationId, subAgents] as const;
           } catch {
-            return [conv.conversationId, []] as const;
+            return [
+              conv.conversationId,
+              [] as ChatConversationRecord[],
+            ] as const;
           }
         })
       );
@@ -357,13 +361,13 @@ export function ChatsSection({
   };
 
   return (
-    <div className="sidebar-section">
+    <div className="sidebar-section chats-section">
       <div className="section-header">
         <span className="section-title">
           {t("sidebar.chats", { defaultValue: "Chats" })}
         </span>
       </div>
-      <div className="section-list">
+      <div className="section-list" ref={sectionListRef}>
         {showLoading ? (
           <span className="empty-text loading">
             <Loader2 className="spin" size={13} />

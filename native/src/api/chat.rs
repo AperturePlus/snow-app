@@ -87,10 +87,20 @@ async fn create_chat_completion_response_async(
         skip_context: request.skip_context.unwrap_or(false),
     })?;
 
+    let skip_context = request.skip_context.unwrap_or(false);
+    let mut prepared_messages = prepared_request.messages;
+    crate::api::vision::textify_images_in_messages(
+        &mut prepared_messages,
+        &database_path,
+        &api_config,
+        &custom_headers,
+        skip_context,
+    )
+    .await?;
+
     let client = reqwest::Client::builder()
         .build()
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
-    let skip_context = request.skip_context.unwrap_or(false);
     let tools = if request.context_compaction.unwrap_or(false) || skip_context {
         None
     } else {
@@ -103,7 +113,7 @@ async fn create_chat_completion_response_async(
         }
     };
     let payload = build_chat_completions_payload(
-        &prepared_request.messages,
+        &prepared_messages,
         &database_path,
         &request,
         &api_config,
