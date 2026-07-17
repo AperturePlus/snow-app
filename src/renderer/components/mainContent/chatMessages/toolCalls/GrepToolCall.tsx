@@ -151,7 +151,7 @@ export const GrepToolCall = ({
   );
 
   const isRunning = toolCall.status === "running";
-  const [isOpen, setIsOpen] = useState(isRunning);
+  const [isOpen, setIsOpen] = useState(false);
 
   const pattern = parsedArgs?.pattern ?? "search";
   const searchPath = parsedArgs?.path ?? ".";

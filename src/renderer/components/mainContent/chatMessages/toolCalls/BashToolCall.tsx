@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   AlertCircle,
   ChevronRight,
@@ -187,13 +187,7 @@ export const BashToolCall = ({
   const hasVisibleOutput = Boolean(displayStdout || displayStderr);
   const stdoutLineCount = getOutputLineCount(displayStdout);
   const stderrLineCount = getOutputLineCount(displayStderr);
-  const [isOpen, setIsOpen] = useState(isRunning);
-
-  useEffect(() => {
-    if (isRunning) {
-      setIsOpen(true);
-    }
-  }, [isRunning]);
+  const [isOpen, setIsOpen] = useState(false);
 
   return (
     <details

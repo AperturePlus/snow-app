@@ -14,7 +14,6 @@ import { ChatConversationProvider } from "./components/mainContent/chatMessages"
 import type { MainContentView } from "./components/mainContent/types";
 import { SshConnectWizard } from "./components/sidebar/mainSidebar/SshConnectWizard";
 import type { WorkspaceDirectoryRecord } from "../preload";
-import { useOverlayScrollbars } from "./components/overlay-scrollbar/useOverlayScrollbars";
 
 const SIDEBAR_MIN_WIDTH = 180;
 const SIDEBAR_MAX_WIDTH = 420;
@@ -37,7 +36,6 @@ const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max);
 
 export const App = (): React.JSX.Element => {
-  useOverlayScrollbars();
   const rightPanelRef = useRef<RightPanelRef>(null);
   const [activeMainView, setActiveMainView] = useState<MainContentView>("chat");
   const [activeDirectory, setActiveDirectory] =

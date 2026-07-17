@@ -47,6 +47,7 @@
     "Helvetica Neue", Arial, sans-serif;
   --font-mono: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
     "Courier New", monospace;
+  --backdrop-blur-lg: blur(18px) saturate(1.16);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -87,10 +88,39 @@
     --on-solid: #0a0a0a;
   }
 }
-
 /* ===== Reset & Base ===== */
 * {
   box-sizing: border-box;
+}
+
+/* ===== Native Scrollbar =====
+   Global scrollbar styling using the app color variables.
+   Applies to all scrollable elements via ::-webkit-scrollbar. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--scrollbar-thumb-active);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
 html,
@@ -161,6 +191,18 @@ input {
 .app-shell.is-resizing .main-content,
 .app-shell.is-resizing .panel-resizer {
   transition: none;
+}
+
+/* During panel resize, hint the browser to optimise the chat area
+   which contains the heaviest DOM (many Markdown blocks). This
+   prevents janky reflows while dragging the splitter. */
+.app-shell.is-resizing .chat-area {
+  will-change: contents;
+  /* Disable content-visibility toggling during resize to avoid
+     scrollbar jitter from height recalculations. */
+}
+.app-shell.is-resizing .chat-message-group {
+  content-visibility: visible;
 }
 
 .panel-resizer {
@@ -693,7 +735,7 @@ input {
   border-radius: var(--radius-xl);
   background: var(--surface-island-muted);
   box-shadow: var(--island-shadow);
-  backdrop-filter: blur(18px) saturate(1.16);
+  backdrop-filter: var(--backdrop-blur-lg);
   overflow: hidden;
   transition: width 0.18s ease, min-width 0.18s ease, opacity 0.12s ease;
 }
@@ -2551,7 +2593,8 @@ input {
   color: var(--text-link, #3b82f6);
 }
 
-.custom-select-empty {
+.custom-select-empty,
+.model-dropdown-empty {
   padding: 10px 8px;
   color: var(--text-muted);
   font-size: 12px;
@@ -3684,7 +3727,7 @@ input {
   border-radius: var(--radius-xl);
   background: var(--surface-island-strong);
   box-shadow: var(--island-shadow);
-  backdrop-filter: blur(18px) saturate(1.16);
+  backdrop-filter: var(--backdrop-blur-lg);
   overflow: hidden;
   opacity: 1;
   transition: flex-grow 0.2s ease, opacity 0.2s ease;
@@ -3935,12 +3978,23 @@ input {
   margin: 0 auto;
   flex-direction: column;
   gap: 24px;
+  /* Contain layout/paint so that resizing panels doesn't reflow the
+     entire document — only this subtree is affected. */
+  contain: layout paint;
 }
 
 .chat-message-group {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* Skip rendering work for off-screen messages. This is the single
+     most effective optimisation for long conversations with many
+     Markdown blocks: the browser can skip layout/paint for messages
+     that are scrolled out of view. */
+  content-visibility: auto;
+  /* Provide a minimum height estimate so the scrollbar doesn't jump
+     erratically when content-visibility toggles sections in/out. */
+  contain-intrinsic-size: auto 80px;
 }
 
 .chat-message-group.is-sending .ai-message {
@@ -4794,7 +4848,7 @@ input {
 .ai-message pre {
   overflow-x: auto;
   margin: 0 0 14px;
-  padding: 0;
+  padding: 5;
   /* border: 1px solid var(--border-light); */
   /* border-radius: var(--radius-md); */
   /* background: var(--bg-tertiary); */
@@ -4807,142 +4861,142 @@ input {
   line-height: 1.6;
 }
 
-/* ===== highlight.js theme — Light ===== */
-.ai-message .hljs {
+/* ===== highlight.js theme — Light (AI Message + File Viewer) ===== */
+:is(.ai-message, .file-viewer-code) .hljs {
   color: var(--text-primary);
   background: transparent;
 }
-.ai-message .hljs-comment,
-.ai-message .hljs-quote {
+:is(.ai-message, .file-viewer-code) .hljs-comment,
+:is(.ai-message, .file-viewer-code) .hljs-quote {
   color: #6b7280;
   font-style: italic;
 }
-.ai-message .hljs-keyword,
-.ai-message .hljs-selector-tag,
-.ai-message .hljs-literal,
-.ai-message .hljs-section,
-.ai-message .hljs-link {
+:is(.ai-message, .file-viewer-code) .hljs-keyword,
+:is(.ai-message, .file-viewer-code) .hljs-selector-tag,
+:is(.ai-message, .file-viewer-code) .hljs-literal,
+:is(.ai-message, .file-viewer-code) .hljs-section,
+:is(.ai-message, .file-viewer-code) .hljs-link {
   color: #8250df;
 }
-.ai-message .hljs-function .hljs-keyword {
+:is(.ai-message, .file-viewer-code) .hljs-function .hljs-keyword {
   color: #8250df;
 }
-.ai-message .hljs-subst {
+:is(.ai-message, .file-viewer-code) .hljs-subst {
   color: var(--text-primary);
 }
-.ai-message .hljs-string,
-.ai-message .hljs-attr,
-.ai-message .hljs-meta-string {
+:is(.ai-message, .file-viewer-code) .hljs-string,
+:is(.ai-message, .file-viewer-code) .hljs-attr,
+:is(.ai-message, .file-viewer-code) .hljs-meta-string {
   color: #0a3069;
 }
-.ai-message .hljs-number,
-.ai-message .hljs-symbol,
-.ai-message .hljs-bullet,
-.ai-message .hljs-addition {
+:is(.ai-message, .file-viewer-code) .hljs-number,
+:is(.ai-message, .file-viewer-code) .hljs-symbol,
+:is(.ai-message, .file-viewer-code) .hljs-bullet,
+:is(.ai-message, .file-viewer-code) .hljs-addition {
   color: #0550ae;
 }
-.ai-message .hljs-title,
-.ai-message .hljs-title.function_,
-.ai-message .hljs-name {
+:is(.ai-message, .file-viewer-code) .hljs-title,
+:is(.ai-message, .file-viewer-code) .hljs-title.function_,
+:is(.ai-message, .file-viewer-code) .hljs-name {
   color: #6639ba;
 }
-.ai-message .hljs-attribute,
-.ai-message .hljs-variable,
-.ai-message .hljs-template-variable {
+:is(.ai-message, .file-viewer-code) .hljs-attribute,
+:is(.ai-message, .file-viewer-code) .hljs-variable,
+:is(.ai-message, .file-viewer-code) .hljs-template-variable {
   color: #953800;
 }
-.ai-message .hljs-built_in,
-.ai-message .hljs-type,
-.ai-message .hljs-class .hljs-title {
+:is(.ai-message, .file-viewer-code) .hljs-built_in,
+:is(.ai-message, .file-viewer-code) .hljs-type,
+:is(.ai-message, .file-viewer-code) .hljs-class .hljs-title {
   color: #953800;
 }
-.ai-message .hljs-tag {
+:is(.ai-message, .file-viewer-code) .hljs-tag {
   color: #116329;
 }
-.ai-message .hljs-selector-class,
-.ai-message .hljs-selector-id {
+:is(.ai-message, .file-viewer-code) .hljs-selector-class,
+:is(.ai-message, .file-viewer-code) .hljs-selector-id {
   color: #953800;
 }
-.ai-message .hljs-deletion {
+:is(.ai-message, .file-viewer-code) .hljs-deletion {
   color: #82071e;
 }
-.ai-message .hljs-regexp {
+:is(.ai-message, .file-viewer-code) .hljs-regexp {
   color: #0a3069;
 }
-.ai-message .hljs-params {
+:is(.ai-message, .file-viewer-code) .hljs-params {
   color: var(--text-primary);
 }
-.ai-message .hljs-meta {
+:is(.ai-message, .file-viewer-code) .hljs-meta {
   color: #6b7280;
 }
 
-/* ===== highlight.js theme — Dark ===== */
+/* ===== highlight.js theme — Dark (AI Message + File Viewer) ===== */
 @media (prefers-color-scheme: dark) {
-  .ai-message .hljs {
+  :is(.ai-message, .file-viewer-code) .hljs {
     color: var(--text-primary);
     background: transparent;
   }
-  .ai-message .hljs-comment,
-  .ai-message .hljs-quote {
+  :is(.ai-message, .file-viewer-code) .hljs-comment,
+  :is(.ai-message, .file-viewer-code) .hljs-quote {
     color: #8b949e;
     font-style: italic;
   }
-  .ai-message .hljs-keyword,
-  .ai-message .hljs-selector-tag,
-  .ai-message .hljs-literal,
-  .ai-message .hljs-section,
-  .ai-message .hljs-link {
+  :is(.ai-message, .file-viewer-code) .hljs-keyword,
+  :is(.ai-message, .file-viewer-code) .hljs-selector-tag,
+  :is(.ai-message, .file-viewer-code) .hljs-literal,
+  :is(.ai-message, .file-viewer-code) .hljs-section,
+  :is(.ai-message, .file-viewer-code) .hljs-link {
     color: #bc8cff;
   }
-  .ai-message .hljs-function .hljs-keyword {
+  :is(.ai-message, .file-viewer-code) .hljs-function .hljs-keyword {
     color: #bc8cff;
   }
-  .ai-message .hljs-subst {
+  :is(.ai-message, .file-viewer-code) .hljs-subst {
     color: var(--text-primary);
   }
-  .ai-message .hljs-string,
-  .ai-message .hljs-attr,
-  .ai-message .hljs-meta-string {
+  :is(.ai-message, .file-viewer-code) .hljs-string,
+  :is(.ai-message, .file-viewer-code) .hljs-attr,
+  :is(.ai-message, .file-viewer-code) .hljs-meta-string {
     color: #a5d6ff;
   }
-  .ai-message .hljs-number,
-  .ai-message .hljs-symbol,
-  .ai-message .hljs-bullet,
-  .ai-message .hljs-addition {
+  :is(.ai-message, .file-viewer-code) .hljs-number,
+  :is(.ai-message, .file-viewer-code) .hljs-symbol,
+  :is(.ai-message, .file-viewer-code) .hljs-bullet,
+  :is(.ai-message, .file-viewer-code) .hljs-addition {
     color: #79c0ff;
   }
-  .ai-message .hljs-title,
-  .ai-message .hljs-title.function_,
-  .ai-message .hljs-name {
+  :is(.ai-message, .file-viewer-code) .hljs-title,
+  :is(.ai-message, .file-viewer-code) .hljs-title.function_,
+  :is(.ai-message, .file-viewer-code) .hljs-name {
     color: #d2a8ff;
   }
-  .ai-message .hljs-attribute,
-  .ai-message .hljs-variable,
-  .ai-message .hljs-template-variable {
+  :is(.ai-message, .file-viewer-code) .hljs-attribute,
+  :is(.ai-message, .file-viewer-code) .hljs-variable,
+  :is(.ai-message, .file-viewer-code) .hljs-template-variable {
     color: #ffa657;
   }
-  .ai-message .hljs-built_in,
-  .ai-message .hljs-type,
-  .ai-message .hljs-class .hljs-title {
+  :is(.ai-message, .file-viewer-code) .hljs-built_in,
+  :is(.ai-message, .file-viewer-code) .hljs-type,
+  :is(.ai-message, .file-viewer-code) .hljs-class .hljs-title {
     color: #ffa657;
   }
-  .ai-message .hljs-tag {
+  :is(.ai-message, .file-viewer-code) .hljs-tag {
     color: #7ee787;
   }
-  .ai-message .hljs-selector-class,
-  .ai-message .hljs-selector-id {
+  :is(.ai-message, .file-viewer-code) .hljs-selector-class,
+  :is(.ai-message, .file-viewer-code) .hljs-selector-id {
     color: #ffa657;
   }
-  .ai-message .hljs-deletion {
+  :is(.ai-message, .file-viewer-code) .hljs-deletion {
     color: #ffa198;
   }
-  .ai-message .hljs-regexp {
+  :is(.ai-message, .file-viewer-code) .hljs-regexp {
     color: #a5d6ff;
   }
-  .ai-message .hljs-params {
+  :is(.ai-message, .file-viewer-code) .hljs-params {
     color: var(--text-primary);
   }
-  .ai-message .hljs-meta {
+  :is(.ai-message, .file-viewer-code) .hljs-meta {
     color: #8b949e;
   }
 }
@@ -6151,6 +6205,231 @@ input {
   }
 }
 
+/* Sub-Agent Tool Call */
+.tool-call-sub-agent-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.tool-call-sub-agent-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tool-call-sub-agent-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tool-call-sub-agent-identity-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-active);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.tool-call-sub-agent-agent-id {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+}
+
+.tool-call-sub-agent-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-call-sub-agent-prompt-label {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.tool-call-sub-agent-prompt-value {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.tool-call-sub-agent-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-call-sub-agent-activity-label {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.tool-call-sub-agent-activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tool-call-sub-agent-activity-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  min-width: 0;
+}
+
+.tool-call-sub-agent-activity-item svg {
+  flex-shrink: 0;
+}
+
+.tool-call-sub-agent-activity-name {
+  color: var(--text-secondary);
+  font-weight: 500;
+  flex-shrink: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 10.5px;
+}
+
+.tool-call-sub-agent-activity-summary {
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-call-sub-agent-activity-status {
+  font-size: 10px;
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+}
+
+.tool-call-sub-agent-activity-status-running {
+  color: var(--color-primary, #4c9aff);
+  background: color-mix(
+    in srgb,
+    var(--color-primary, #4c9aff) 12%,
+    transparent
+  );
+}
+
+.tool-call-sub-agent-activity-status-completed {
+  color: var(--color-success, #22c55e);
+  background: color-mix(
+    in srgb,
+    var(--color-success, #22c55e) 12%,
+    transparent
+  );
+}
+
+.tool-call-sub-agent-activity-status-error {
+  color: var(--color-error, #ef4444);
+  background: color-mix(in srgb, var(--color-error, #ef4444) 12%, transparent);
+}
+
+.tool-call-sub-agent-activity-status-pending {
+  color: var(--text-muted);
+  background: var(--bg-active);
+}
+
+.tool-call-sub-agent-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-call-sub-agent-summary-label {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.tool-call-sub-agent-summary-value {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tool-call-sub-agent-pending {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.tool-call-sub-agent-pending-running {
+  color: var(--text-secondary);
+}
+
+.tool-call-sub-agent-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-active);
+  border: 1px solid var(--border-color);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  align-self: flex-start;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.tool-call-sub-agent-jump:hover {
+  background: var(--bg-hover, var(--bg-tertiary));
+  border-color: var(--color-primary, #4c9aff);
+  color: var(--color-primary, #4c9aff);
+}
+
+.tool-call-sub-agent-jump:focus-visible {
+  outline: 2px solid var(--color-primary, #4c9aff);
+  outline-offset: 1px;
+}
+
+.tool-call-sub-agent-jump.active {
+  background: var(--bg-active);
+  border-color: var(--color-primary, #4c9aff);
+  color: var(--color-primary, #4c9aff);
+}
+
 /* File Changes Card */
 .file-changes-card {
   border: 1px solid var(--border-color);
@@ -6468,58 +6747,6 @@ input {
   outline: 2px dashed var(--accent-color, #3b82f6);
   outline-offset: -2px;
   border-radius: var(--radius-md);
-}
-
-/* Native scrollbar styling for contentEditable input — OverlayScrollbars
-   is skipped for contentEditable elements (breaks input), so we style
-   the native scrollbar to match the os-theme-snow overlay theme. */
-.input-field-editable::-webkit-scrollbar {
-  width: 10px;
-}
-.input-field-editable::-webkit-scrollbar-track {
-  background: transparent;
-}
-.input-field-editable::-webkit-scrollbar-thumb {
-  background-color: var(--scrollbar-thumb);
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-.input-field-editable::-webkit-scrollbar-thumb:hover {
-  background-color: var(--scrollbar-thumb-hover);
-}
-.input-field-editable::-webkit-scrollbar-thumb:active {
-  background-color: var(--scrollbar-thumb-active);
-}
-.input-field-editable {
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar-thumb) transparent;
-}
-
-/* Native scrollbar styling for textarea — OverlayScrollbars is skipped for
-   textareas (intercepts wheel events), so we style the native scrollbar to
-   match the os-theme-snow overlay theme. */
-textarea::-webkit-scrollbar {
-  width: 10px;
-}
-textarea::-webkit-scrollbar-track {
-  background: transparent;
-}
-textarea::-webkit-scrollbar-thumb {
-  background-color: var(--scrollbar-thumb);
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-textarea::-webkit-scrollbar-thumb:hover {
-  background-color: var(--scrollbar-thumb-hover);
-}
-textarea::-webkit-scrollbar-thumb:active {
-  background-color: var(--scrollbar-thumb-active);
-}
-textarea {
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
 /* ===== File Chip (input + message) ===== */
@@ -7443,12 +7670,7 @@ textarea {
   max-height: 220px;
 }
 
-.model-dropdown-empty {
-  padding: 10px 8px;
-  color: var(--text-muted);
-  font-size: 12px;
-  text-align: center;
-}
+/* .model-dropdown-empty shares styles with .custom-select-empty (see above) */
 
 .model-dropdown-item {
   display: flex;
@@ -7653,7 +7875,7 @@ textarea {
   border-radius: var(--radius-xl);
   background: var(--surface-island);
   box-shadow: var(--island-shadow);
-  backdrop-filter: blur(18px) saturate(1.16);
+  backdrop-filter: var(--backdrop-blur-lg);
   overflow: hidden;
   opacity: 1;
   transition: width 0.18s ease, min-width 0.18s ease, flex-grow 0.2s ease,
@@ -9277,7 +9499,8 @@ textarea {
   opacity: 0.45;
 }
 
-.project-sensitive-command-switch {
+/* Shared switch styles for .project-sensitive-command-switch and .project-mcp-switch */
+:is(.project-sensitive-command-switch, .project-mcp-switch) {
   position: relative;
   display: inline-flex;
   width: 32px;
@@ -9286,7 +9509,7 @@ textarea {
   cursor: pointer;
 }
 
-.project-sensitive-command-switch input {
+:is(.project-sensitive-command-switch, .project-mcp-switch) input {
   position: absolute;
   inset: 0;
   z-index: 1;
@@ -9297,7 +9520,7 @@ textarea {
   opacity: 0;
 }
 
-.project-sensitive-command-switch > span {
+:is(.project-sensitive-command-switch, .project-mcp-switch) > span {
   position: relative;
   width: 32px;
   height: 18px;
@@ -9307,7 +9530,7 @@ textarea {
   transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
 }
 
-.project-sensitive-command-switch > span::after {
+:is(.project-sensitive-command-switch, .project-mcp-switch) > span::after {
   position: absolute;
   top: 1px;
   left: 1px;
@@ -9319,21 +9542,45 @@ textarea {
   transition: transform 0.15s ease, background 0.15s ease;
 }
 
-.project-sensitive-command-switch input:checked + span {
+:is(.project-sensitive-command-switch, .project-mcp-switch)
+  input:checked
+  + span {
   border-color: var(--text-primary);
   background: var(--text-primary);
 }
 
-.project-sensitive-command-switch input:checked + span::after {
+:is(.project-sensitive-command-switch, .project-mcp-switch)
+  input:checked
+  + span::after {
   transform: translateX(14px);
   background: var(--on-solid);
 }
 
+:is(.project-sensitive-command-switch, .project-mcp-switch)
+  input:disabled
+  + span {
+  opacity: 0.45;
+}
+
+/* Switch-specific disabled cursor */
 .project-sensitive-command-switch input:disabled {
+  cursor: pointer;
+}
+
+.project-mcp-switch input:disabled {
   cursor: not-allowed;
 }
 
-.project-sensitive-command-switch input:disabled + span {
+/* Focus-visible for both switches (also defined in shared rule at line ~9095) */
+:is(.project-sensitive-command-switch, .project-mcp-switch)
+  input:focus-visible
+  + span {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+/* MCP-specific: unavailable state */
+.project-mcp-switch.is-unavailable > span {
   opacity: 0.45;
 }
 
@@ -9695,70 +9942,9 @@ textarea {
   font-weight: 500;
 }
 
-.project-mcp-switch {
-  position: relative;
-  display: inline-flex;
-  width: 32px;
-  height: 18px;
-  flex-shrink: 0;
-  cursor: pointer;
-}
-
-.project-mcp-switch input {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  cursor: inherit;
-  opacity: 0;
-}
-
-.project-mcp-switch > span {
-  position: relative;
-  width: 32px;
-  height: 18px;
-  border: 1px solid var(--border-color);
-  border-radius: 999px;
-  background: var(--bg-tertiary);
-  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
-}
-
-.project-mcp-switch > span::after {
-  position: absolute;
-  top: 1px;
-  left: 1px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--text-tertiary);
-  content: "";
-  transition: transform 0.15s ease, background 0.15s ease;
-}
-
-.project-mcp-switch input:checked + span {
-  border-color: var(--text-primary);
-  background: var(--text-primary);
-}
-
-.project-mcp-switch input:checked + span::after {
-  transform: translateX(14px);
-  background: var(--on-solid);
-}
-
-.project-mcp-switch input:focus-visible + span {
-  outline: 2px solid var(--accent-blue);
-  outline-offset: 2px;
-}
-
-.project-mcp-switch input:disabled {
-  cursor: not-allowed;
-}
-
-.project-mcp-switch.is-unavailable > span {
-  opacity: 0.45;
-}
+/* .project-mcp-switch shared styles are defined above via :is() selector
+   with .project-sensitive-command-switch. Only MCP-specific overrides
+   (input:disabled cursor and .is-unavailable) are defined there. */
 
 .project-mcp-global-note {
   padding: 7px 12px 8px 43px;
@@ -11984,142 +12170,8 @@ textarea {
   white-space: pre;
 }
 
-.file-viewer-code .hljs {
-  color: var(--text-primary);
-  background: transparent;
-}
-
-/* ===== File Viewer highlight.js theme — Light ===== */
-.file-viewer-code .hljs-comment,
-.file-viewer-code .hljs-quote {
-  color: #6b7280;
-  font-style: italic;
-}
-.file-viewer-code .hljs-keyword,
-.file-viewer-code .hljs-selector-tag,
-.file-viewer-code .hljs-literal,
-.file-viewer-code .hljs-section,
-.file-viewer-code .hljs-link {
-  color: #8250df;
-}
-.file-viewer-code .hljs-function .hljs-keyword {
-  color: #8250df;
-}
-.file-viewer-code .hljs-subst {
-  color: var(--text-primary);
-}
-.file-viewer-code .hljs-string,
-.file-viewer-code .hljs-attr,
-.file-viewer-code .hljs-meta-string {
-  color: #0a3069;
-}
-.file-viewer-code .hljs-number,
-.file-viewer-code .hljs-symbol,
-.file-viewer-code .hljs-bullet,
-.file-viewer-code .hljs-addition {
-  color: #0550ae;
-}
-.file-viewer-code .hljs-title,
-.file-viewer-code .hljs-title.function_,
-.file-viewer-code .hljs-name {
-  color: #6639ba;
-}
-.file-viewer-code .hljs-attribute,
-.file-viewer-code .hljs-variable,
-.file-viewer-code .hljs-template-variable {
-  color: #953800;
-}
-.file-viewer-code .hljs-built_in,
-.file-viewer-code .hljs-type,
-.file-viewer-code .hljs-class .hljs-title {
-  color: #953800;
-}
-.file-viewer-code .hljs-tag {
-  color: #116329;
-}
-.file-viewer-code .hljs-selector-class,
-.file-viewer-code .hljs-selector-id {
-  color: #953800;
-}
-.file-viewer-code .hljs-deletion {
-  color: #82071e;
-}
-.file-viewer-code .hljs-regexp {
-  color: #0a3069;
-}
-.file-viewer-code .hljs-params {
-  color: var(--text-primary);
-}
-.file-viewer-code .hljs-meta {
-  color: #6b7280;
-}
-
-/* ===== File Viewer highlight.js theme — Dark ===== */
-@media (prefers-color-scheme: dark) {
-  .file-viewer-code .hljs-comment,
-  .file-viewer-code .hljs-quote {
-    color: #8b949e;
-    font-style: italic;
-  }
-  .file-viewer-code .hljs-keyword,
-  .file-viewer-code .hljs-selector-tag,
-  .file-viewer-code .hljs-literal,
-  .file-viewer-code .hljs-section,
-  .file-viewer-code .hljs-link {
-    color: #bc8cff;
-  }
-  .file-viewer-code .hljs-function .hljs-keyword {
-    color: #bc8cff;
-  }
-  .file-viewer-code .hljs-subst {
-    color: var(--text-primary);
-  }
-  .file-viewer-code .hljs-string,
-  .file-viewer-code .hljs-attr,
-  .file-viewer-code .hljs-meta-string {
-    color: #a5d6ff;
-  }
-  .file-viewer-code .hljs-number,
-  .file-viewer-code .hljs-symbol,
-  .file-viewer-code .hljs-bullet,
-  .file-viewer-code .hljs-addition {
-    color: #79c0ff;
-  }
-  .file-viewer-code .hljs-title,
-  .file-viewer-code .hljs-title.function_,
-  .file-viewer-code .hljs-name {
-    color: #d2a8ff;
-  }
-  .file-viewer-code .hljs-attribute,
-  .file-viewer-code .hljs-variable,
-  .file-viewer-code .hljs-template-variable {
-    color: #ffa657;
-  }
-  .file-viewer-code .hljs-built_in,
-  .file-viewer-code .hljs-type,
-  .file-viewer-code .hljs-class .hljs-title {
-    color: #ffa657;
-  }
-  .file-viewer-code .hljs-tag {
-    color: #7ee787;
-  }
-  .file-viewer-code .hljs-selector-class,
-  .file-viewer-code .hljs-selector-id {
-    color: #ffa657;
-  }
-  .file-viewer-code .hljs-deletion {
-    color: #ffa198;
-  }
-  .file-viewer-code .hljs-regexp {
-    color: #a5d6ff;
-  }
-  .file-viewer-code .hljs-params {
-    color: var(--text-primary);
-  }
-  .file-viewer-code .hljs-meta {
-    color: #8b949e;
-  }
-}
+/* File Viewer highlight.js theme is shared with .ai-message via :is() selector
+   — see "highlight.js theme" section above. */
 
 .file-viewer-image-container {
   flex: 1;

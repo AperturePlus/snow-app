@@ -1,4 +1,10 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type { WorkspaceDirectoryRecord } from "../../../preload";
 import { useAutoScrollPreference } from "../../hooks/useAutoScrollPreference";
 import { ChatInput } from "./ChatInput";
@@ -72,6 +78,7 @@ const ChatContentBody = ({
   const scrolledAuthorizationSignatureRef = useRef("");
   const shouldStickToBottomRef = useRef(true);
   const previousIsCompactingRef = useRef(isCompacting);
+  const scrollRafIdRef = useRef(0);
   activeConversationIdRef.current = activeConversationId;
 
   useLayoutEffect(() => {
@@ -108,8 +115,36 @@ const ChatContentBody = ({
       return;
     }
 
-    container.scrollTop = container.scrollHeight;
+    // content-visibility: auto on .chat-message-group causes scrollHeight to
+    // be based on contain-intrinsic-size estimates (80px per message) until
+    // the browser lazily renders off-screen messages. A single synchronous
+    // scrollTop assignment lands on an estimated — not actual — bottom.
+    // Schedule successive rAF passes so that as real content renders and
+    // scrollHeight grows, we keep re-anchoring to the true bottom.
+    let rafId1 = 0;
+    let rafId2 = 0;
+    let rafId3 = 0;
+
+    const scrollToBottom = (): void => {
+      container.scrollTop = container.scrollHeight;
+    };
+
+    scrollToBottom();
+    rafId1 = requestAnimationFrame(() => {
+      scrollToBottom();
+      rafId2 = requestAnimationFrame(() => {
+        scrollToBottom();
+        rafId3 = requestAnimationFrame(scrollToBottom);
+      });
+    });
+
     positionedConversationIdsRef.current.add(activeConversationId);
+
+    return (): void => {
+      cancelAnimationFrame(rafId1);
+      cancelAnimationFrame(rafId2);
+      cancelAnimationFrame(rafId3);
+    };
   }, [
     activeConversationId,
     isInitialHistoryLoaded,
@@ -234,25 +269,35 @@ const ChatContentBody = ({
   }, [loadOlderMessages]);
 
   const handleChatScroll = useCallback((): void => {
-    const container = scrollRef.current;
-    if (!container) {
+    // Throttle scroll handling with requestAnimationFrame to avoid
+    // excessive layout reads during fast scrolling through many
+    // Markdown-rendered messages.
+    if (scrollRafIdRef.current !== 0) {
       return;
     }
 
-    const distanceFromBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight;
-    shouldStickToBottomRef.current = distanceFromBottom < 48;
+    scrollRafIdRef.current = requestAnimationFrame(() => {
+      scrollRafIdRef.current = 0;
+      const container = scrollRef.current;
+      if (!container) {
+        return;
+      }
 
-    if (
-      container.scrollTop > LOAD_OLDER_SCROLL_THRESHOLD ||
-      !hasMoreMessages ||
-      isLoadingOlderMessages ||
-      isLoadingOlderWithScrollRef.current
-    ) {
-      return;
-    }
+      const distanceFromBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+      shouldStickToBottomRef.current = distanceFromBottom < 48;
 
-    void handleLoadOlderWithScroll();
+      if (
+        container.scrollTop > LOAD_OLDER_SCROLL_THRESHOLD ||
+        !hasMoreMessages ||
+        isLoadingOlderMessages ||
+        isLoadingOlderWithScrollRef.current
+      ) {
+        return;
+      }
+
+      void handleLoadOlderWithScroll();
+    });
   }, [handleLoadOlderWithScroll, hasMoreMessages, isLoadingOlderMessages]);
 
   const handleSendWithScroll = useCallback(
@@ -272,6 +317,16 @@ const ChatContentBody = ({
     confirmRollback();
     onRollbackConfirmed();
   }, [confirmRollback, onRollbackConfirmed]);
+
+  // Cancel any pending scroll-throttle animation frame on unmount.
+  useEffect(() => {
+    return () => {
+      if (scrollRafIdRef.current !== 0) {
+        cancelAnimationFrame(scrollRafIdRef.current);
+        scrollRafIdRef.current = 0;
+      }
+    };
+  }, []);
 
   return (
     <div

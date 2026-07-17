@@ -10,6 +10,7 @@ import {
   ListTree,
   ListChecks,
   MessageCircleQuestion,
+  Bot,
   Hammer,
   type LucideIcon,
 } from "lucide-react";
@@ -25,6 +26,7 @@ export type ToolCategory =
   | "outline"
   | "todo"
   | "interaction"
+  | "agent"
   | "generic";
 
 const TOOL_ICON_MAP: Record<ToolCategory, LucideIcon> = {
@@ -38,6 +40,7 @@ const TOOL_ICON_MAP: Record<ToolCategory, LucideIcon> = {
   outline: ListTree,
   todo: ListChecks,
   interaction: MessageCircleQuestion,
+  agent: Bot,
   generic: Wrench,
 };
 
@@ -55,6 +58,9 @@ const TOOL_ICON_MAP: Record<ToolCategory, LucideIcon> = {
  */
 export const getToolCategory = (toolName: string): ToolCategory => {
   const lower = toolName.toLowerCase();
+  if (lower.includes("sub-agent") || lower.includes("subagent") || lower.includes("activate")) {
+    return "agent";
+  }
   if (lower.includes("read")) return "read";
   if (lower.includes("edit") || lower.includes("replace")) return "edit";
   if (lower.includes("create") || lower.includes("write")) return "create";

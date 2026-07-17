@@ -40,7 +40,9 @@ export function CustomSelect({
   const displayLabel = selectedOption?.label ?? value;
 
   const handleSelect = useCallback(
-    (val: string) => {
+    (event: React.MouseEvent<HTMLButtonElement>, val: string) => {
+      event.preventDefault();
+      event.stopPropagation();
       setIsOpen(false);
       onChange(val);
     },
@@ -67,7 +69,7 @@ export function CustomSelect({
               key={opt.value}
               type="button"
               className="custom-select-item"
-              onClick={() => handleSelect(opt.value)}
+              onClick={(event) => handleSelect(event, opt.value)}
             >
               <span>{opt.label}</span>
               {opt.value === value && (

@@ -274,6 +274,7 @@ export const useChatConversation = (
     conversationVersion,
     upsertedConversation,
     subAgentSessionEvent,
+    sessions,
     activeConversationId,
     conversationDirectoryId: activeSession?.directoryId,
     tokenUsage: activeSession?.tokenUsage ?? null,

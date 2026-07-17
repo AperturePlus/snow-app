@@ -241,6 +241,10 @@ export type UseChatConversationResult = {
   conversationVersion: number;
   upsertedConversation: UpsertedConversation | null;
   subAgentSessionEvent: SubAgentSessionEvent | null;
+  /** All conversation sessions, keyed by conversation id. Used by tool-call
+   *  UIs (e.g. sub-agent activation) to inspect the live state of other
+   *  sessions such as streaming sub-agent conversations. */
+  sessions: Record<string, ConversationSessionState>;
   activeConversationId: string | undefined;
   conversationDirectoryId: string | undefined;
   tokenUsage: TokenUsage | null;

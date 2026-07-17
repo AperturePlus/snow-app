@@ -116,14 +116,6 @@ export const ProjectSensitiveCommandsPanel = ({
     () => commands.filter((command) => !command.inherited),
     [commands]
   );
-  const inheritedOverrideCount = useMemo(
-    () =>
-      inheritedCommands.filter(
-        (command) => command.enabled !== command.globalEnabled
-      ).length,
-    [inheritedCommands]
-  );
-
   const startAdd = (): void => {
     const maxSortOrder = projectCommands.reduce(
       (max, command) => Math.max(max, command.sortOrder),
@@ -320,8 +312,6 @@ export const ProjectSensitiveCommandsPanel = ({
       ) : (
         <div className="project-sensitive-command-list">
           {groupCommands.map((command) => {
-            const overridden =
-              command.inherited && command.enabled !== command.globalEnabled;
             return (
               <article
                 className={`project-sensitive-command-row${
@@ -338,11 +328,6 @@ export const ProjectSensitiveCommandsPanel = ({
                         ? t("projectSensitiveCommands.inherited")
                         : t("projectSensitiveCommands.projectOnly")}
                     </span>
-                    {overridden ? (
-                      <span className="project-sensitive-command-override">
-                        {t("projectSensitiveCommands.overridden")}
-                      </span>
-                    ) : null}
                   </div>
                   <span>{command.description || "-"}</span>
                 </div>
@@ -374,18 +359,14 @@ export const ProjectSensitiveCommandsPanel = ({
                   <label
                     className="project-sensitive-command-switch"
                     title={
-                      command.inherited && overridden
-                        ? t("projectSensitiveCommands.resetInheritance")
-                        : command.enabled
+                      command.enabled
                         ? t("projectSensitiveCommands.disableForProject")
                         : t("projectSensitiveCommands.enableForProject")
                     }
                   >
                     <input
                       aria-label={
-                        command.inherited && overridden
-                          ? t("projectSensitiveCommands.resetInheritance")
-                          : command.enabled
+                        command.enabled
                           ? t("projectSensitiveCommands.disableForProject")
                           : t("projectSensitiveCommands.enableForProject")
                       }
@@ -400,24 +381,6 @@ export const ProjectSensitiveCommandsPanel = ({
                     />
                     <span aria-hidden="true" />
                   </label>
-                  {command.inherited && overridden ? (
-                    <button
-                      aria-label={t(
-                        "projectSensitiveCommands.resetInheritance"
-                      )}
-                      className="project-sensitive-command-reset"
-                      disabled={
-                        isSaving || pendingCommandIds.has(command.commandId)
-                      }
-                      onClick={() =>
-                        void toggleCommand(command, command.globalEnabled)
-                      }
-                      title={t("projectSensitiveCommands.resetInheritance")}
-                      type="button"
-                    >
-                      <RefreshCw size={13} />
-                    </button>
-                  ) : null}
                 </div>
               </article>
             );
@@ -469,11 +432,6 @@ export const ProjectSensitiveCommandsPanel = ({
             <div className="project-sensitive-command-toolbar">
               <div>
                 <span>{t("projectSensitiveCommands.scopeNote")}</span>
-                <small>
-                  {t("projectSensitiveCommands.overrideCount", {
-                    values: { count: inheritedOverrideCount },
-                  })}
-                </small>
               </div>
               <div>
                 <button

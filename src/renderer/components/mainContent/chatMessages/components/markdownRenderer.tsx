@@ -1,6 +1,6 @@
 import hljs from "highlight.js";
 import MarkdownIt from "markdown-it";
-import { useCallback, useMemo } from "react";
+import { memo, useCallback, useMemo } from "react";
 
 /**
  * Escape HTML special characters in a string so that when highlight.js
@@ -53,47 +53,51 @@ const markdown = new MarkdownIt({
   },
 });
 
-export const MarkdownBlock = ({
-  className,
-  content,
-}: {
-  className: string;
-  content: string;
-}): React.JSX.Element => {
-  const html = useMemo(() => markdown.render(content), [content]);
+export const MarkdownBlock = memo(
+  ({
+    className,
+    content,
+  }: {
+    className: string;
+    content: string;
+  }): React.JSX.Element => {
+    const html = useMemo(() => markdown.render(content), [content]);
 
-  const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLElement;
+    const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+      const target = e.target as HTMLElement;
 
-    // Handle collapse / expand toggle
-    const langBtn = target.closest(".code-block-lang") as HTMLElement | null;
-    if (langBtn) {
-      const wrapper = langBtn.closest(".code-block-wrapper");
-      if (wrapper) {
-        wrapper.classList.toggle("collapsed");
+      // Handle collapse / expand toggle
+      const langBtn = target.closest(".code-block-lang") as HTMLElement | null;
+      if (langBtn) {
+        const wrapper = langBtn.closest(".code-block-wrapper");
+        if (wrapper) {
+          wrapper.classList.toggle("collapsed");
+        }
+        return;
       }
-      return;
-    }
 
-    // Handle copy button
-    const copyBtn = target.closest(".code-block-copy") as HTMLElement | null;
-    if (!copyBtn) return;
+      // Handle copy button
+      const copyBtn = target.closest(".code-block-copy") as HTMLElement | null;
+      if (!copyBtn) return;
 
-    const raw = copyBtn.dataset.code;
-    if (!raw) return;
+      const raw = copyBtn.dataset.code;
+      if (!raw) return;
 
-    const code = decodeURIComponent(raw);
-    navigator.clipboard.writeText(code).then(() => {
-      copyBtn.classList.add("copied");
-      window.setTimeout(() => copyBtn.classList.remove("copied"), 2000);
-    });
-  }, []);
+      const code = decodeURIComponent(raw);
+      navigator.clipboard.writeText(code).then(() => {
+        copyBtn.classList.add("copied");
+        window.setTimeout(() => copyBtn.classList.remove("copied"), 2000);
+      });
+    }, []);
 
-  return (
-    <div
-      className={className}
-      dangerouslySetInnerHTML={{ __html: html }}
-      onClick={handleClick}
-    />
-  );
-};
+    return (
+      <div
+        className={className}
+        dangerouslySetInnerHTML={{ __html: html }}
+        onClick={handleClick}
+      />
+    );
+  }
+);
+
+MarkdownBlock.displayName = "MarkdownBlock";
