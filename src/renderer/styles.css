@@ -3832,6 +3832,7 @@ input {
   flex-shrink: 1;
   flex-basis: auto;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   padding: 16px 20px;
   display: flex;
   flex-direction: column;
@@ -9058,6 +9059,7 @@ input {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .git-control-header {
