@@ -154,6 +154,46 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
     [ctx.setStreamingConversationIds]
   );
 
+  /**
+   * 通知系统：通过主进程 Electron Notification API 触发跨平台系统通知。
+   * 主进程会自动检测窗口是否聚焦 — 用户正在看应用时不弹通知。
+   * 通知点击后会聚焦主窗口。
+   *
+   * 三种触发场景：
+   * 1. AI 流程结束 — 用户切走后 AI 完成了任务
+   * 2. 敏感命令拦截 — bash 命令匹配敏感规则，需要用户确认
+   * 3. 用户交互工具确认 — askUserQuestion 需要用户回答
+   */
+  const notifyAiComplete = useCallback((conversationTitle?: string): void => {
+    const title = conversationTitle
+      ? conversationTitle.length > 30
+        ? `${conversationTitle.slice(0, 30)}...`
+        : conversationTitle
+      : "";
+    void window.snow.showNotification({
+      title: "AI 任务已完成",
+      body: title ? `会话「${title}」已结束` : "当前会话已结束，请返回查看",
+    });
+  }, []);
+
+  const notifySensitiveCommandIntercepted = useCallback(
+    (toolName: string): void => {
+      void window.snow.showNotification({
+        title: "敏感命令需要确认",
+        body: `工具 ${toolName} 触发了敏感命令拦截，请返回确认`,
+      });
+    },
+    []
+  );
+
+  const notifyUserInteractionRequired = useCallback((reason: string): void => {
+    const body = reason.length > 60 ? `${reason.slice(0, 60)}...` : reason;
+    void window.snow.showNotification({
+      title: "需要您的输入",
+      body,
+    });
+  }, []);
+
   return {
     setActiveId,
     ensureSession,
@@ -162,5 +202,8 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
     migrateSession,
     addStreamingId,
     removeStreamingId,
+    notifyAiComplete,
+    notifySensitiveCommandIntercepted,
+    notifyUserInteractionRequired,
   };
 };

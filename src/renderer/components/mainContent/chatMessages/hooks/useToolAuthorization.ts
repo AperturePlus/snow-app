@@ -206,6 +206,9 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
               sensitiveCommandMatches: matches,
             };
 
+            // 通知系统：敏感命令被拦截，需要用户确认
+            ctx.notifySensitiveCommandIntercepted(toolCall.name);
+
             return new Promise<ToolAuthorizationDecision>((resolve) => {
               ctx.pendingToolAuthorizationRef.current.set(authorizationId, {
                 toolCall: pendingToolCall,
@@ -256,6 +259,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       ctx.alwaysApprovedToolsRef,
       ctx.pendingToolAuthorizationRef,
       ctx.setPendingToolAuthorizations,
+      ctx.notifySensitiveCommandIntercepted,
     ]
   );
 

@@ -49,6 +49,9 @@ export const useUserQuestion = (ctx: ConversationContextValue) => {
           })
         );
 
+        // 通知系统：用户交互工具需要用户回答时触发系统通知
+        ctx.notifyUserInteractionRequired(request.question);
+
         return new Promise<string>((resolve, reject) => {
           ctx.pendingUserQuestionRef.current.set(request.questionId, {
             interactionId: request.interactionId,
@@ -71,6 +74,7 @@ export const useUserQuestion = (ctx: ConversationContextValue) => {
     ctx.updateSessionMessages,
     ctx.pendingUserQuestionRef,
     ctx.userQuestionTargetRef,
+    ctx.notifyUserInteractionRequired,
   ]);
 
   const settleUserQuestion = useCallback(

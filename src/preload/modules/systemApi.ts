@@ -262,6 +262,11 @@ export const systemApi = {
     ipcRenderer.invoke("debug:write-log", level, entry),
   sum: (a: number, b: number): Promise<number> =>
     ipcRenderer.invoke("native:sum", a, b),
+  showNotification: (options: {
+    title: string;
+    body: string;
+    silent?: boolean;
+  }): Promise<void> => ipcRenderer.invoke("notification:show", options),
 };
 
 export const ptyApi = {
@@ -315,6 +320,8 @@ export const windowApi = {
   toggleMaximizeWindow: (): Promise<void> =>
     ipcRenderer.invoke("window:maximize-toggle"),
   closeWindow: (): Promise<void> => ipcRenderer.invoke("window:close"),
+  confirmCloseWindow: (): Promise<void> =>
+    ipcRenderer.invoke("window:confirm-close"),
   isWindowMaximized: (): Promise<boolean> =>
     ipcRenderer.invoke("window:is-maximized"),
   startWindowDrag: (): Promise<void> => ipcRenderer.invoke("window:start-drag"),
@@ -336,6 +343,17 @@ export const windowApi = {
 
     return () => {
       ipcRenderer.removeListener("window:maximize-state-changed", handler);
+    };
+  },
+  onCloseRequested: (callback: () => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent): void => {
+      callback();
+    };
+
+    ipcRenderer.on("window:close-requested", handler);
+
+    return () => {
+      ipcRenderer.removeListener("window:close-requested", handler);
     };
   },
 };

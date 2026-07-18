@@ -1468,6 +1468,17 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 // Summary generation failure should not block the conversation
               });
           }
+
+          // 通知系统：AI 流程正常结束时触发系统通知。
+          // 窗口是否聚焦的判断由主进程 notificationManager 负责 —
+          // 如果用户正在看应用，主进程会自动跳过通知，不会打扰。
+          if (
+            finalSessionKey !== PENDING_SESSION_KEY &&
+            !ref?.isAbortRequested
+          ) {
+            const sessionState = ctx.sessionsRef.current?.[finalSessionKey];
+            ctx.notifyAiComplete(sessionState?.summary || undefined);
+          }
         });
     },
     [
@@ -1480,6 +1491,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       ctx.addStreamingId,
       ctx.removeStreamingId,
       ctx.setActiveId,
+      ctx.notifyAiComplete,
       requestToolAuthorizations,
     ]
   );

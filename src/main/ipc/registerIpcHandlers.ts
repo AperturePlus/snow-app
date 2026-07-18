@@ -9,6 +9,7 @@ import { registerWorkspaceHandlers } from "./handlers/workspaceHandlers";
 import { registerSshHandlers } from "./handlers/sshHandlers";
 import { registerGitHandlers } from "./handlers/gitHandlers";
 import { registerWindowHandlers } from "./handlers/windowHandlers";
+import { registerNotificationHandlers } from "./handlers/notificationHandlers";
 
 export const registerIpcHandlers = (native: NativeBridge): void => {
   registerPtyHandlers();
@@ -22,4 +23,5 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
   registerSshHandlers(native);
   registerGitHandlers(native);
   registerWindowHandlers(native);
+  registerNotificationHandlers();
 };

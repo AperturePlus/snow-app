@@ -10,6 +10,16 @@ import {
 } from "./constants";
 import { killAllPtyForWebContents } from "../pty/ptyManager";
 
+// 模块级关闭确认标志：渲染进程确认关闭后置为 true，使 close 事件不再被拦截。
+// 这样可以统一覆盖所有关闭路径（自定义标题栏按钮、Alt+F4、任务栏关闭等）。
+let closeConfirmed = false;
+
+export const markCloseConfirmed = (): void => {
+  closeConfirmed = true;
+};
+
+export const isCloseConfirmed = (): boolean => closeConfirmed;
+
 const getWindowBackgroundColor = (): string =>
   nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff";
 
@@ -71,8 +81,15 @@ export const createWindow = (): void => {
     mainWindow.on("maximize", notifyMaximizeState);
     mainWindow.on("unmaximize", notifyMaximizeState);
   }
-  // Clean up PTY sessions before window is fully destroyed
-  mainWindow.on("close", () => {
+
+  // Clean up PTY sessions before window is fully destroyed.
+  // 拦截未确认的关闭请求，通知渲染进程弹出二次确认弹窗。
+  mainWindow.on("close", (event) => {
+    if (!isCloseConfirmed()) {
+      event.preventDefault();
+      mainWindow.webContents.send("window:close-requested");
+      return;
+    }
     killAllPtyForWebContents(mainWindow.webContents);
   });
 

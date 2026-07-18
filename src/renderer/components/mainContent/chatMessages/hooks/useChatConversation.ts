@@ -201,6 +201,9 @@ export const useChatConversation = (
     migrateSession: () => {},
     addStreamingId: () => {},
     removeStreamingId: () => {},
+    notifyAiComplete: () => {},
+    notifySensitiveCommandIntercepted: () => {},
+    notifyUserInteractionRequired: () => {},
   };
 
   // --- 1. Conversation session management ---
@@ -212,6 +215,10 @@ export const useChatConversation = (
   ctx.migrateSession = sessionApi.migrateSession;
   ctx.addStreamingId = sessionApi.addStreamingId;
   ctx.removeStreamingId = sessionApi.removeStreamingId;
+  ctx.notifyAiComplete = sessionApi.notifyAiComplete;
+  ctx.notifySensitiveCommandIntercepted =
+    sessionApi.notifySensitiveCommandIntercepted;
+  ctx.notifyUserInteractionRequired = sessionApi.notifyUserInteractionRequired;
 
   // --- 2. Tool authorization ---
   const toolAuthApi = useToolAuthorization(ctx);

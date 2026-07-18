@@ -233,6 +233,11 @@ export type ConversationContextValue = {
   migrateSession: (oldKey: string, newKey: string) => void;
   addStreamingId: (id: string) => void;
   removeStreamingId: (id: string) => void;
+
+  // 通知系统：AI 流程结束 / 敏感命令拦截 / 用户交互确认时触发系统通知
+  notifyAiComplete: (conversationTitle?: string) => void;
+  notifySensitiveCommandIntercepted: (toolName: string) => void;
+  notifyUserInteractionRequired: (reason: string) => void;
 };
 
 export type UseChatConversationResult = {

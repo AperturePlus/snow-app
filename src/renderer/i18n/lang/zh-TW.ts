@@ -1021,4 +1021,8 @@ export const zhTW = {
   "git.remoteBranches": "遠端",
   "git.noBranches": "找不到分支",
   "git.getStatusError": "取得 Git 狀態失敗",
+  "app.closeConfirmTitle": "結束 Snow App？",
+  "app.closeConfirmMessage": "確定要結束應用程式嗎？",
+  "app.closeConfirm": "結束",
+  "app.closeCancel": "取消",
 } satisfies Record<string, string>;

@@ -1079,4 +1079,8 @@ export const en = {
   "git.remoteBranches": "Remote",
   "git.noBranches": "No branches found",
   "git.getStatusError": "Failed to get git status",
+  "app.closeConfirmTitle": "Quit Snow App?",
+  "app.closeConfirmMessage": "Are you sure you want to quit the application?",
+  "app.closeConfirm": "Quit",
+  "app.closeCancel": "Cancel",
 } satisfies Record<string, string>;

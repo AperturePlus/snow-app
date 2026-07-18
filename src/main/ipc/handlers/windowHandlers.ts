@@ -7,6 +7,7 @@ import {
   session,
 } from "electron";
 import type { NativeBridge } from "../../native/types";
+import { markCloseConfirmed } from "../../app/mainWindow";
 
 export const registerWindowHandlers = (_native: NativeBridge): void => {
   // ===== Window Controls (Windows custom titlebar) =====
@@ -26,8 +27,20 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
     }
   });
 
+  // 渲染进程触发关闭：与原生关闭路径一致，走 close 事件拦截流程。
+  // mainWindow.ts 的 close 监听会 preventDefault 并回推 window:close-requested。
   ipcMain.handle("window:close", (event) => {
     BrowserWindow.fromWebContents(event.sender)?.close();
+  });
+
+  // 渲染进程用户确认关闭后调用：标记已确认，再次触发 close 以真正退出。
+  ipcMain.handle("window:confirm-close", (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) {
+      return;
+    }
+    markCloseConfirmed();
+    win.close();
   });
 
   ipcMain.handle("window:is-maximized", (event) => {

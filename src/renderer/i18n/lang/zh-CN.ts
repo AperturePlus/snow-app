@@ -1021,4 +1021,8 @@ export const zhCN = {
   "git.remoteBranches": "远程",
   "git.noBranches": "未找到分支",
   "git.getStatusError": "获取 Git 状态失败",
+  "app.closeConfirmTitle": "退出 Snow App？",
+  "app.closeConfirmMessage": "确定要退出应用吗？",
+  "app.closeConfirm": "退出",
+  "app.closeCancel": "取消",
 } satisfies Record<string, string>;

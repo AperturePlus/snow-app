@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -13,6 +14,8 @@ import { WindowControls } from "./components/WindowControls";
 import { ChatConversationProvider } from "./components/mainContent/chatMessages";
 import type { MainContentView } from "./components/mainContent/types";
 import { SshConnectWizard } from "./components/sidebar/mainSidebar/SshConnectWizard";
+import { ConfirmDialog } from "./components/common/ConfirmDialog";
+import { useI18n } from "./i18n";
 import type { WorkspaceDirectoryRecord } from "../preload";
 
 const SIDEBAR_MIN_WIDTH = 180;
@@ -50,7 +53,29 @@ export const App = (): React.JSX.Element => {
   const [activeResizeTarget, setActiveResizeTarget] =
     useState<ResizeTarget | null>(null);
   const [showSshWizard, setShowSshWizard] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const isWindows = navigator.userAgent.includes("Win");
+  const { t } = useI18n();
+
+  // 监听主进程的关闭请求：所有关闭路径（标题栏按钮、Alt+F4、任务栏）
+  // 都会在主进程被拦截并回推 window:close-requested，此处弹出二次确认。
+  useEffect(() => {
+    const dispose = window.snow.onCloseRequested(() => {
+      setShowCloseConfirm(true);
+    });
+    return () => {
+      dispose();
+    };
+  }, []);
+
+  const handleConfirmClose = useCallback((): void => {
+    setShowCloseConfirm(false);
+    void window.snow.confirmCloseWindow();
+  }, []);
+
+  const handleCancelClose = useCallback((): void => {
+    setShowCloseConfirm(false);
+  }, []);
 
   const handleOpenTerminal = useCallback(() => {
     const rawPath = activeDirectory?.path ?? "";
@@ -262,6 +287,16 @@ export const App = (): React.JSX.Element => {
             onCancel={handleSshWizardCancel}
           />
         ) : null}
+        <ConfirmDialog
+          open={showCloseConfirm}
+          title={t("app.closeConfirmTitle")}
+          message={t("app.closeConfirmMessage")}
+          confirmLabel={t("app.closeConfirm")}
+          cancelLabel={t("app.closeCancel")}
+          onConfirm={handleConfirmClose}
+          onCancel={handleCancelClose}
+          variant="warning"
+        />
       </div>
     </ChatConversationProvider>
   );
