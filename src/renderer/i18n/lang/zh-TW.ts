@@ -877,6 +877,7 @@ export const zhTW = {
   "chatCommand.codebaseDescription": "管理目前專案的程式碼庫索引",
   "chatCommand.codebaseNoProject": "請先選擇專案再管理程式碼庫",
   "chatCommand.empty": "找不到相符指令",
+  "chatCommand.trigger": "開啟指令面板",
   "projectSensitiveCommands.title": "專案敏感命令管理",
   "projectSensitiveCommands.description":
     "管理套用於 {{project}} 的敏感命令規則",

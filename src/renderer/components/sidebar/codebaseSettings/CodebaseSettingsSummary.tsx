@@ -23,7 +23,7 @@ export function CodebaseSettingsSummary({
       : t("settings.sourceManual", { defaultValue: "Manual" });
 
   return (
-    <div className="api-settings-summary-grid">
+    <div className="api-settings-summary-grid codebase-settings-summary-grid">
       <div className="api-settings-summary-card">
         <BrainCircuit size={15} strokeWidth={1.8} />
         <span>{embeddingLabel}</span>

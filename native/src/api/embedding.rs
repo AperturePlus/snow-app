@@ -4,7 +4,10 @@ use napi::bindgen_prelude::*;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde_json::{json, Value};
 
-use crate::api::config::normalize_base_url;
+use crate::api::config::{normalize_base_url, DEFAULT_GEMINI_BASE_URL, DEFAULT_OPENAI_BASE_URL};
+
+const DEFAULT_JINA_BASE_URL: &str = "https://api.jina.ai/v1";
+const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434";
 
 /// Configuration for the embedding API, derived from the codebase settings.
 #[derive(Debug, Clone)]
@@ -37,14 +40,16 @@ impl EmbeddingConfig {
 /// Embed a batch of text inputs and return their vector representations.
 ///
 /// This function is fully async and uses `reqwest`'s async client, so it
-/// never blocks the Node.js main thread. It supports two embedding types:
+/// never blocks the Node.js main thread. It supports multiple embedding types:
 ///
-/// - `openai`: Standard OpenAI-compatible `/v1/embeddings` endpoint.
+/// - `openai`/`jina`: Standard OpenAI-compatible `/v1/embeddings` endpoint.
 ///   Supports batch requests (multiple inputs per API call).
-/// - `jina`: Jina AI embedding API (also OpenAI-compatible format).
-///
-/// Both types use the same request/response format, differing only in
-/// authentication header conventions.
+/// - `ollama`: Ollama embedding API. Auto-detects between native `/api/embed`
+///   and OpenAI-compatible `/v1/embeddings` based on the base URL.
+/// - `gemini`: Google Gemini `:batchEmbedContents` endpoint. Uses
+///   `x-goog-api-key` header and a distinct request/response format.
+/// - `mistral`: Mistral embedding API. OpenAI-compatible but uses
+///   `output_dimension` instead of `dimensions` in the request body.
 pub async fn embed_batch(
     config: &EmbeddingConfig,
     inputs: &[String],
@@ -60,7 +65,7 @@ pub async fn embed_batch(
             Error::from_reason(format!("Failed to create HTTP client: {error}"))
         })?;
 
-    let endpoint = resolve_embedding_endpoint(&config.base_url, &config.embedding_type);
+    let endpoint = resolve_embedding_endpoint(config);
     let headers = build_headers(config);
     let body = build_request_body(config, inputs);
 
@@ -90,35 +95,108 @@ pub async fn embed_batch(
         )));
     }
 
-    parse_embedding_response(&response_text, inputs.len())
+    parse_embedding_response(&response_text, inputs.len(), &config.embedding_type)
 }
 
-/// Resolve the full embedding API endpoint URL.
-fn resolve_embedding_endpoint(base_url: &str, embedding_type: &str) -> String {
-    let normalized = normalize_base_url(base_url);
+/// Resolve the default model name for the given embedding type when the user
+/// has not explicitly configured one.
+fn resolve_default_model(config: &EmbeddingConfig) -> String {
+    if !config.model_name.is_empty() {
+        return config.model_name.clone();
+    }
+    match config.embedding_type.as_str() {
+        "jina" => "jina-embeddings-v3".to_string(),
+        "gemini" => "text-embedding-004".to_string(),
+        "ollama" => "nomic-embed-text".to_string(),
+        "mistral" => "mistral-embed".to_string(),
+        _ => "text-embedding-3-small".to_string(),
+    }
+}
 
-    if normalized.is_empty() {
-        // Default endpoints when base_url is empty
+/// Resolve the full embedding API endpoint URL based on embedding type.
+fn resolve_embedding_endpoint(config: &EmbeddingConfig) -> String {
+    let normalized = normalize_base_url(&config.base_url);
+
+    match config.embedding_type.as_str() {
+        "gemini" => resolve_gemini_endpoint(&normalized, &resolve_default_model(config)),
+        "ollama" => resolve_ollama_endpoint(&normalized),
+        _ => resolve_openai_compatible_endpoint(&normalized, &config.embedding_type),
+    }
+}
+
+/// Gemini endpoint: `{base}/models/{model}:batchEmbedContents`
+///
+/// Uses the batch embed endpoint to support multiple inputs in a single API
+/// call, which is more efficient than calling `:embedContent` repeatedly.
+fn resolve_gemini_endpoint(base_url: &str, model: &str) -> String {
+    let base = if base_url.is_empty() {
+        DEFAULT_GEMINI_BASE_URL
+    } else {
+        base_url
+    };
+    let clean_model = model.strip_prefix("models/").unwrap_or(model);
+    format!("{base}/models/{clean_model}:batchEmbedContents")
+}
+
+/// Ollama endpoint: auto-detect `/api/embed` (native) or `/v1/embeddings`
+/// (OpenAI-compatible) from the base URL suffix.
+///
+/// Detection rules (mirrors snow-cli `resolveOllamaEmbeddingsEndpoint`):
+/// - `/v1/embeddings` or `/embeddings` -> use as-is (OpenAI mode)
+/// - `/api/embed` or `/embed` -> use as-is (native mode)
+/// - `/v1` -> append `/embeddings` (OpenAI mode)
+/// - `/api` -> append `/embed` (native mode)
+/// - otherwise -> default to `/v1/embeddings` for interoperability
+fn resolve_ollama_endpoint(base_url: &str) -> String {
+    if base_url.is_empty() {
+        return format!("{DEFAULT_OLLAMA_BASE_URL}/v1/embeddings");
+    }
+
+    if base_url.ends_with("/v1/embeddings") || base_url.ends_with("/embeddings") {
+        return base_url.to_string();
+    }
+
+    if base_url.ends_with("/api/embed") || base_url.ends_with("/embed") {
+        return base_url.to_string();
+    }
+
+    if base_url.ends_with("/v1") {
+        return format!("{base_url}/embeddings");
+    }
+
+    if base_url.ends_with("/api") {
+        return format!("{base_url}/embed");
+    }
+
+    // Default to OpenAI-compatible endpoint for better interoperability.
+    format!("{base_url}/v1/embeddings")
+}
+
+/// OpenAI-compatible endpoint for `jina`, `mistral`, `openai`, and any other
+/// provider that follows the standard `/v1/embeddings` convention.
+fn resolve_openai_compatible_endpoint(base_url: &str, embedding_type: &str) -> String {
+    if base_url.is_empty() {
         return match embedding_type {
-            "jina" => "https://api.jina.ai/v1/embeddings".to_string(),
-            _ => "https://api.openai.com/v1/embeddings".to_string(),
+            "jina" => format!("{DEFAULT_JINA_BASE_URL}/embeddings"),
+            _ => format!("{DEFAULT_OPENAI_BASE_URL}/embeddings"),
         };
     }
 
-    // If the base URL already ends with /embeddings, use as-is
-    if normalized.ends_with("/embeddings") {
-        return normalized;
+    if base_url.ends_with("/v1/embeddings") || base_url.ends_with("/embeddings") {
+        return base_url.to_string();
     }
 
-    // If it ends with /v1, append /embeddings
-    if normalized.ends_with("/v1") {
-        return format!("{normalized}/embeddings");
+    if base_url.ends_with("/v1") {
+        return format!("{base_url}/embeddings");
     }
 
-    // Otherwise, append /v1/embeddings
-    format!("{normalized}/v1/embeddings")
+    format!("{base_url}/v1/embeddings")
 }
 
+/// Build HTTP headers based on embedding type.
+///
+/// - `gemini`: uses `x-goog-api-key` header for authentication
+/// - all others: use standard `Authorization: Bearer {key}` header
 fn build_headers(config: &EmbeddingConfig) -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -130,8 +208,17 @@ fn build_headers(config: &EmbeddingConfig) -> HeaderMap {
         HeaderValue::from_static("application/json"),
     );
 
-    if !config.api_key.is_empty() {
-        // Jina uses "Bearer" token as well, same as OpenAI
+    if config.api_key.is_empty() {
+        return headers;
+    }
+
+    if config.embedding_type == "gemini" {
+        // Gemini uses x-goog-api-key header instead of Authorization
+        if let Ok(value) = HeaderValue::from_str(&config.api_key) {
+            headers.insert("x-goog-api-key", value);
+        }
+    } else {
+        // Jina, Ollama, Mistral, OpenAI all use Bearer token
         let auth_value = HeaderValue::from_str(&format!("Bearer {}", config.api_key));
         if let Ok(value) = auth_value {
             headers.insert("Authorization", value);
@@ -141,36 +228,96 @@ fn build_headers(config: &EmbeddingConfig) -> HeaderMap {
     headers
 }
 
+/// Build the request body based on embedding type.
 fn build_request_body(config: &EmbeddingConfig, inputs: &[String]) -> Value {
-    let model = if config.model_name.is_empty() {
-        match config.embedding_type.as_str() {
-            "jina" => "jina-embeddings-v3",
-            _ => "text-embedding-3-small",
-        }
-        .to_string()
-    } else {
-        config.model_name.clone()
-    };
+    let model = resolve_default_model(config);
 
-    json!({
-        "model": model,
-        "input": inputs,
-        "dimensions": config.dimensions,
-    })
+    match config.embedding_type.as_str() {
+        "gemini" => build_gemini_request_body(&model, inputs, config.dimensions),
+        "mistral" => build_mistral_request_body(&model, inputs, config.dimensions),
+        _ => build_openai_request_body(&model, inputs, config.dimensions),
+    }
 }
 
-/// Parse the OpenAI-compatible embedding response.
-///
-/// Expected format:
+/// Gemini request body format:
 /// ```json
 /// {
-///   "data": [
-///     { "embedding": [0.1, 0.2, ...], "index": 0 },
-///     { "embedding": [0.3, 0.4, ...], "index": 1 }
+///   "requests": [
+///     {
+///       "model": "models/{model}",
+///       "content": {"parts": [{"text": "..."}]},
+///       "outputDimensionality": 768
+///     }
 ///   ]
 /// }
 /// ```
-fn parse_embedding_response(response_text: &str, expected_count: usize) -> Result<Vec<Vec<f64>>> {
+fn build_gemini_request_body(model: &str, inputs: &[String], dimensions: usize) -> Value {
+    let clean_model = model.strip_prefix("models/").unwrap_or(model);
+    let full_model = format!("models/{clean_model}");
+
+    let requests: Vec<Value> = inputs
+        .iter()
+        .map(|text| {
+            let mut request = json!({
+                "model": full_model,
+                "content": {
+                    "parts": [{"text": text}]
+                }
+            });
+            if dimensions > 0 {
+                request["outputDimensionality"] = json!(dimensions);
+            }
+            request
+        })
+        .collect();
+
+    json!({ "requests": requests })
+}
+
+/// Mistral request body format (uses `output_dimension` instead of `dimensions`):
+/// ```json
+/// {
+///   "model": "...",
+///   "input": ["..."],
+///   "output_dimension": 1024
+/// }
+/// ```
+fn build_mistral_request_body(model: &str, inputs: &[String], dimensions: usize) -> Value {
+    let mut body = json!({
+        "model": model,
+        "input": inputs,
+    });
+    if dimensions > 0 {
+        body["output_dimension"] = json!(dimensions);
+    }
+    body
+}
+
+/// Standard OpenAI-compatible request body (jina, ollama, openai):
+/// ```json
+/// {
+///   "model": "...",
+///   "input": ["..."],
+///   "dimensions": 1536
+/// }
+/// ```
+fn build_openai_request_body(model: &str, inputs: &[String], dimensions: usize) -> Value {
+    let mut body = json!({
+        "model": model,
+        "input": inputs,
+    });
+    if dimensions > 0 {
+        body["dimensions"] = json!(dimensions);
+    }
+    body
+}
+
+/// Parse the embedding response based on embedding type.
+fn parse_embedding_response(
+    response_text: &str,
+    expected_count: usize,
+    embedding_type: &str,
+) -> Result<Vec<Vec<f64>>> {
     let response_text = response_text
         .strip_prefix('\u{feff}')
         .unwrap_or(response_text);
@@ -181,6 +328,23 @@ fn parse_embedding_response(response_text: &str, expected_count: usize) -> Resul
         ))
     })?;
 
+    match embedding_type {
+        "gemini" => parse_gemini_response(&parsed, expected_count),
+        "ollama" => parse_ollama_response(&parsed, expected_count),
+        _ => parse_openai_response(&parsed, expected_count),
+    }
+}
+
+/// Parse OpenAI-compatible response:
+/// ```json
+/// {
+///   "data": [
+///     {"embedding": [0.1, 0.2, ...], "index": 0},
+///     {"embedding": [0.3, 0.4, ...], "index": 1}
+///   ]
+/// }
+/// ```
+fn parse_openai_response(parsed: &Value, expected_count: usize) -> Result<Vec<Vec<f64>>> {
     let data = parsed
         .get("data")
         .and_then(Value::as_array)
@@ -223,6 +387,98 @@ fn parse_embedding_response(response_text: &str, expected_count: usize) -> Resul
 
     indexed_embeddings.sort_by_key(|(index, _)| *index);
     Ok(indexed_embeddings.into_iter().map(|(_, emb)| emb).collect())
+}
+
+/// Parse Ollama response. Handles both native and OpenAI-compatible formats:
+///
+/// Native (`/api/embed`):
+/// ```json
+/// {"model": "...", "embeddings": [[0.1, 0.2, ...], ...]}
+/// ```
+///
+/// OpenAI-compatible (`/v1/embeddings`): falls through to `parse_openai_response`.
+fn parse_ollama_response(parsed: &Value, expected_count: usize) -> Result<Vec<Vec<f64>>> {
+    // Some Ollama deployments return OpenAI-compatible format from /v1/embeddings.
+    if parsed.get("data").and_then(Value::as_array).is_some() {
+        return parse_openai_response(parsed, expected_count);
+    }
+
+    // Ollama native response format from /api/embed.
+    let embeddings = parsed
+        .get("embeddings")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            Error::from_reason(
+                "Ollama embedding response missing 'embeddings' array. \
+                 Try setting baseUrl to http://localhost:11434 \
+                 (or /v1 for OpenAI-compatible mode).",
+            )
+        })?;
+
+    if embeddings.len() != expected_count {
+        return Err(Error::from_reason(format!(
+            "Ollama embedding response count mismatch: expected {expected_count}, got {}",
+            embeddings.len()
+        )));
+    }
+
+    embeddings
+        .iter()
+        .map(|emb| {
+            emb.as_array()
+                .ok_or_else(|| Error::from_reason("Ollama embedding vector is not an array"))?
+                .iter()
+                .map(|v| {
+                    v.as_f64().ok_or_else(|| {
+                        Error::from_reason("Embedding vector contains non-numeric value")
+                    })
+                })
+                .collect::<Result<Vec<f64>>>()
+        })
+        .collect()
+}
+
+/// Parse Gemini response:
+/// ```json
+/// {
+///   "embeddings": [
+///     {"values": [0.1, 0.2, ...]},
+///     {"values": [0.3, 0.4, ...]}
+///   ]
+/// }
+/// ```
+fn parse_gemini_response(parsed: &Value, expected_count: usize) -> Result<Vec<Vec<f64>>> {
+    let embeddings = parsed
+        .get("embeddings")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            Error::from_reason("Gemini embedding response missing 'embeddings' array")
+        })?;
+
+    if embeddings.len() != expected_count {
+        return Err(Error::from_reason(format!(
+            "Gemini embedding response count mismatch: expected {expected_count}, got {}",
+            embeddings.len()
+        )));
+    }
+
+    embeddings
+        .iter()
+        .map(|emb| {
+            emb.get("values")
+                .and_then(Value::as_array)
+                .ok_or_else(|| {
+                    Error::from_reason("Gemini embedding item missing 'values' array")
+                })?
+                .iter()
+                .map(|v| {
+                    v.as_f64().ok_or_else(|| {
+                        Error::from_reason("Embedding vector contains non-numeric value")
+                    })
+                })
+                .collect::<Result<Vec<f64>>>()
+        })
+        .collect()
 }
 
 fn truncate_error(text: &str, max_len: usize) -> String {

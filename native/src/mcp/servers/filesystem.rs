@@ -123,7 +123,7 @@ impl McpService for FilesystemService {
                             "description": "Whether to overwrite the file if it already exists (default false)."
                         }
                     },
-                    "required": ["filePath", "content"]
+                    "required": ["filePath", "content","overwrite"]
                 }),
             },
         ]
@@ -282,10 +282,8 @@ impl FilesystemService {
         // Step 2: Try with line number prefixes stripped from searchContent
         // (AI often copies content from read output which includes line number prefixes)
         if let Some(stripped) = try_strip_line_prefixes(search_content) {
-            let stripped_matches: Vec<usize> = content
-                .match_indices(&stripped)
-                .map(|(i, _)| i)
-                .collect();
+            let stripped_matches: Vec<usize> =
+                content.match_indices(&stripped).map(|(i, _)| i).collect();
 
             if !stripped_matches.is_empty() {
                 let target_idx = stripped_matches
@@ -582,10 +580,7 @@ fn compute_similarity(a: &str, b: &str) -> f64 {
 /// 在文件内容中，按行滑动窗口查找与 searchContent 最相似的区间。
 /// 返回 (起始行号, 结束行号(不含), 相似度)。
 /// 起始行号和结束行号都是 0-indexed。
-fn find_best_line_match(
-    search_content: &str,
-    file_content: &str,
-) -> Option<(usize, usize, f64)> {
+fn find_best_line_match(search_content: &str, file_content: &str) -> Option<(usize, usize, f64)> {
     let search_lines: Vec<&str> = search_content.lines().collect();
     let file_lines: Vec<&str> = file_content.lines().collect();
 
@@ -760,8 +755,7 @@ fn read_path(
     if file_path.is_empty() {
         return Err(Error::new(
             Status::InvalidArg,
-            "filePath must be a non-empty string for tool \"mcp__filesystem__read\"."
-                .to_string(),
+            "filePath must be a non-empty string for tool \"mcp__filesystem__read\".".to_string(),
         ));
     }
 

@@ -877,6 +877,7 @@ export const zhCN = {
   "chatCommand.codebaseDescription": "管理当前项目的代码库索引",
   "chatCommand.codebaseNoProject": "请先选择项目再管理代码库",
   "chatCommand.empty": "未找到匹配指令",
+  "chatCommand.trigger": "打开指令面板",
   "projectSensitiveCommands.title": "项目敏感命令管理",
   "projectSensitiveCommands.description": "管理 {{project}} 生效的敏感命令规则",
   "projectSensitiveCommands.noProject":

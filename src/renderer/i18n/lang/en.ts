@@ -923,6 +923,7 @@ export const en = {
     "Manage codebase indexing for this project",
   "chatCommand.codebaseNoProject": "Select a project before managing codebase",
   "chatCommand.empty": "No matching commands",
+  "chatCommand.trigger": "Open command panel",
   "projectSensitiveCommands.title": "Project sensitive commands",
   "projectSensitiveCommands.description":
     "Sensitive command rules applied to {{project}}",

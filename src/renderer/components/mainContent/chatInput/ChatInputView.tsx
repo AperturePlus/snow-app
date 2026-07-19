@@ -4,6 +4,7 @@ import {
   Bot,
   Check,
   ChevronDown,
+  Command,
   Keyboard,
   Loader2,
   Paperclip,
@@ -106,6 +107,7 @@ export const ChatInputView = ({
   const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState("");
   const commandPanelRef = useRef<CommandPanelHandle>(null);
+  const commandTriggerRef = useRef<HTMLButtonElement>(null);
   const [isProjectMcpOpen, setIsProjectMcpOpen] = useState(false);
   const [isProjectSensitiveCommandsOpen, setIsProjectSensitiveCommandsOpen] =
     useState(false);
@@ -167,9 +169,8 @@ export const ChatInputView = ({
           skillsDescription: projectId
             ? t("chatCommand.skillsDescription")
             : t("chatCommand.skillsNoProject"),
-          codebaseDescription: projectId
-            ? t("chatCommand.codebaseDescription")
-            : t("chatCommand.codebaseNoProject"),
+          codebaseDescription: t("chatCommand.codebaseDescription"),
+          codebaseNoProject: t("chatCommand.codebaseNoProject"),
         },
       }),
     [
@@ -295,6 +296,40 @@ export const ChatInputView = ({
     setIsCommandOpen(false);
     setCommandQuery("");
   }, []);
+
+  const handleToggleCommand = useCallback(() => {
+    setIsCommandOpen((prev) => {
+      const next = !prev;
+      if (!next) {
+        setCommandQuery("");
+      }
+      return next;
+    });
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [textareaRef]);
+
+  useEffect(() => {
+    if (!isCommandOpen) {
+      return;
+    }
+    const handleDocumentPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (commandTriggerRef.current?.contains(target)) {
+        return;
+      }
+      const panelEl = document.querySelector(".chat-command-panel");
+      if (panelEl?.contains(target)) {
+        return;
+      }
+      handleCloseCommand();
+    };
+    document.addEventListener("mousedown", handleDocumentPointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handleDocumentPointerDown);
+    };
+  }, [isCommandOpen, handleCloseCommand]);
 
   const handleCommandSelect = useCallback(
     (command: ChatCommand) => {
@@ -793,6 +828,21 @@ export const ChatInputView = ({
                 autoScrollEnabled={autoScrollEnabled}
                 onAutoScrollChange={onAutoScrollChange}
               />
+              {value.trim() === "" && (
+                <button
+                  ref={commandTriggerRef}
+                  className={`toolbar-btn command-trigger${
+                    isCommandOpen ? " is-active" : ""
+                  }`}
+                  aria-label={t("chatCommand.trigger")}
+                  aria-expanded={isCommandOpen}
+                  onClick={handleToggleCommand}
+                  type="button"
+                  title={t("chatCommand.trigger")}
+                >
+                  <Command size={15} />
+                </button>
+              )}
             </div>
             <div className="toolbar-right">
               <div className="model-selector" ref={dropdownRef}>
