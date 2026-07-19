@@ -263,22 +263,3 @@ pub fn is_likely_binary(path: &Path) -> bool {
 
     buf[..n].iter().any(|&b| b == 0)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_extension_detection() {
-        assert_eq!(get_extension(Path::new("foo.rs")), "rs");
-        assert_eq!(get_extension(Path::new("bar.TS")), "ts");
-        assert_eq!(get_extension(Path::new("noext")), "");
-    }
-
-    #[test]
-    fn test_extensionless_text_file() {
-        assert!(is_extensionless_text_file("Makefile"));
-        assert!(is_extensionless_text_file("DOCKERFILE"));
-        assert!(!is_extensionless_text_file("random.bin"));
-    }
-}

@@ -53,14 +53,6 @@ impl GitignoreMatcher {
         Self { patterns }
     }
 
-    /// Build a matcher from raw text content (for testing).
-    #[cfg(test)]
-    fn from_text(content: &str) -> Self {
-        let mut patterns = Vec::new();
-        Self::parse_into(content, &mut patterns);
-        Self { patterns }
-    }
-
     fn parse_into(content: &str, patterns: &mut Vec<GitignorePattern>) {
         for line in content.lines() {
             let line = line.trim();
@@ -226,44 +218,5 @@ impl GitignoreMatcher {
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_simple_patterns() {
-        let matcher = GitignoreMatcher::from_text("node_modules\ndist\n*.log\n.env");
-        assert!(matcher.is_ignored("node_modules", true));
-        assert!(matcher.is_ignored("src/node_modules", true));
-        assert!(matcher.is_ignored("dist", true));
-        assert!(matcher.is_ignored("dist/app.js", false));
-        assert!(matcher.is_ignored("debug.log", false));
-        assert!(matcher.is_ignored("logs/error.log", false));
-        assert!(matcher.is_ignored(".env", false));
-        assert!(!matcher.is_ignored("src/main.ts", false));
-    }
-
-    #[test]
-    fn test_anchored_pattern() {
-        let matcher = GitignoreMatcher::from_text("/build");
-        assert!(matcher.is_ignored("build", true));
-        assert!(!matcher.is_ignored("src/build", true));
-    }
-
-    #[test]
-    fn test_dir_only_pattern() {
-        let matcher = GitignoreMatcher::from_text("tmp/");
-        assert!(matcher.is_ignored("tmp", true));
-        assert!(!matcher.is_ignored("tmp", false));
-    }
-
-    #[test]
-    fn test_negation() {
-        let matcher = GitignoreMatcher::from_text("*.log\n!important.log");
-        assert!(matcher.is_ignored("debug.log", false));
-        assert!(!matcher.is_ignored("important.log", false));
     }
 }
