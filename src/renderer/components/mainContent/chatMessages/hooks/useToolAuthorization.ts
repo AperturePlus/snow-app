@@ -79,23 +79,27 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         }
       });
 
-    void window.snow
-      .listAlwaysApprovedTools(ctx.directoryPath)
-      .then((toolNames) => {
-        if (!disposed) {
-          ctx.alwaysApprovedToolsRef.current = new Set(toolNames);
-        }
-      })
-      .catch(() => {
-        if (!disposed) {
-          ctx.alwaysApprovedToolsRef.current = new Set();
-        }
-      });
+    if (ctx.directoryId) {
+      void window.snow
+        .listToolApprovalProjectApprovedTools(ctx.directoryId)
+        .then((toolNames) => {
+          if (!disposed) {
+            ctx.alwaysApprovedToolsRef.current = new Set(toolNames);
+          }
+        })
+        .catch(() => {
+          if (!disposed) {
+            ctx.alwaysApprovedToolsRef.current = new Set();
+          }
+        });
+    } else {
+      ctx.alwaysApprovedToolsRef.current = new Set();
+    }
 
     return () => {
       disposed = true;
     };
-  }, [applyYoloMode, ctx.directoryPath, ctx.alwaysApprovedToolsRef]);
+  }, [applyYoloMode, ctx.directoryId, ctx.alwaysApprovedToolsRef]);
 
   const setYoloMode = useCallback(
     async (enabled: boolean): Promise<void> => {
@@ -289,19 +293,29 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
 
   const approveToolAuthorizationAlways = useCallback(
     (toolCall: ToolCallInfo): void => {
-      void window.snow
-        .addAlwaysApprovedTool(ctx.directoryPath, toolCall.name)
-        .then(() => {
-          ctx.alwaysApprovedToolsRef.current.add(toolCall.name);
-        })
-        .catch(() => {
-          // The current execution can continue even if persistence fails.
-        })
-        .finally(() =>
-          settleToolAuthorization(toolCall, { status: "approved" })
-        );
+      if (ctx.directoryId) {
+        void window.snow
+          .setToolApprovalProjectToolApproved(
+            ctx.directoryId,
+            toolCall.name,
+            true
+          )
+          .then(() => {
+            ctx.alwaysApprovedToolsRef.current.add(toolCall.name);
+          })
+          .catch(() => {
+            // The current execution can continue even if persistence fails.
+          })
+          .finally(() =>
+            settleToolAuthorization(toolCall, { status: "approved" })
+          );
+      } else {
+        // No project context: skip persistence and just approve this call.
+        ctx.alwaysApprovedToolsRef.current.add(toolCall.name);
+        settleToolAuthorization(toolCall, { status: "approved" });
+      }
     },
-    [ctx.directoryPath, ctx.alwaysApprovedToolsRef, settleToolAuthorization]
+    [ctx.directoryId, ctx.alwaysApprovedToolsRef, settleToolAuthorization]
   );
 
   // 卸载时清理所有待处理授权

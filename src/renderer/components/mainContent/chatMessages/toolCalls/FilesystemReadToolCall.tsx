@@ -1,15 +1,7 @@
 import { useMemo } from "react";
-import {
-  CheckCircle,
-  ChevronRight,
-  Loader2,
-  AlertCircle,
-  FileText,
-  Hash,
-  Files,
-} from "lucide-react";
+import { ChevronRight, Loader2, AlertCircle, Hash, Files } from "lucide-react";
 import { useI18n } from "../../../../i18n";
-import type { ToolCallInfo } from "../hooks/useChatConversation";
+import type { ToolCallInfo } from "../utils/conversationTypes";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
 import { ToolNameBadge } from "./shared/ToolNameBadge";
 
@@ -190,10 +182,7 @@ const parseSingleResultValue = (
   return { type: "raw", text: resultText };
 };
 
-const parseResult = (
-  result: string | undefined,
-  parsedArgs: ParsedArgs | null
-): ParsedResult => {
+const parseResult = (result: string | undefined): ParsedResult => {
   if (!result) {
     return { type: "empty" };
   }
@@ -355,8 +344,8 @@ export const FilesystemReadToolCall = ({
     [toolCall.arguments]
   );
   const parsedResult = useMemo(
-    () => parseResult(toolCall.result, parsedArgs),
-    [toolCall.result, parsedArgs]
+    () => parseResult(toolCall.result),
+    [toolCall.result]
   );
 
   const isMulti = parsedArgs?.isMulti === true || parsedResult.type === "multi";
@@ -377,15 +366,6 @@ export const FilesystemReadToolCall = ({
   const effectiveStatus = hasError ? "error" : toolCall.status;
   const statusLabel = t(`toolCall.filesystem.status.${effectiveStatus}`);
 
-  const StatusIcon =
-    effectiveStatus === "completed"
-      ? CheckCircle
-      : effectiveStatus === "running"
-      ? Loader2
-      : effectiveStatus === "error"
-      ? AlertCircle
-      : FileText;
-
   return (
     <details className="tool-call-item tool-call-filesystem-read">
       <summary className="tool-call-header">
@@ -395,19 +375,17 @@ export const FilesystemReadToolCall = ({
           aria-hidden="true"
         />
         <ToolNameBadge name="read" category="read" />
-        {isMulti ? (
-          <Files
+        {toolCall.status === "running" ? (
+          <Loader2
             size={14}
-            className={
-              toolCall.status === "running" ? "tool-call-icon-spinning" : ""
-            }
+            className="tool-call-icon-spinning"
             aria-hidden="true"
           />
+        ) : isMulti ? (
+          <Files size={14} aria-hidden="true" />
         ) : (
           getFileTypeIcon(fileName, isDirectory, false, {
             size: 14,
-            className:
-              toolCall.status === "running" ? "tool-call-icon-spinning" : "",
             "aria-hidden": true,
           })
         )}

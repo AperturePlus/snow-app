@@ -35,6 +35,9 @@ const PROJECT_SKILLS_SETTING_CODE_PREFIX: &str = "project_skills_scope_";
 const PROJECT_CODEBASE_SETTING_NAME: &str = "Project Codebase scope";
 const PROJECT_CODEBASE_SETTING_CODE_PREFIX: &str = "project_codebase_scope_";
 
+const PROJECT_TOOL_APPROVAL_SETTING_NAME: &str = "Project Tool approval scope";
+const PROJECT_TOOL_APPROVAL_SETTING_CODE_PREFIX: &str = "project_tool_approval_scope_";
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct McpProjectScopeSettings {
@@ -124,6 +127,28 @@ impl CodebaseProjectScopeSettings {
 
     fn normalize(&mut self) {
         self.project_id = self.project_id.trim().to_string();
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ToolApprovalProjectScopeSettings {
+    pub project_id: String,
+    pub approved_tool_names: BTreeSet<String>,
+}
+
+impl ToolApprovalProjectScopeSettings {
+    fn set_tool_approved(&mut self, tool_name: &str, approved: bool) {
+        if approved {
+            self.approved_tool_names.insert(tool_name.to_string());
+        } else {
+            self.approved_tool_names.remove(tool_name);
+        }
+    }
+
+    fn normalize(&mut self) {
+        self.project_id = self.project_id.trim().to_string();
+        self.approved_tool_names = normalized_set(&self.approved_tool_names);
     }
 }
 
@@ -431,6 +456,87 @@ fn write_codebase_project_scope_settings(
 fn project_codebase_setting_code(project_id: &str) -> String {
     format!(
         "{PROJECT_CODEBASE_SETTING_CODE_PREFIX}{}",
+        blake3::hash(project_id.as_bytes()).to_hex()
+    )
+}
+
+pub fn get_tool_approval_project_scope_settings(
+    database_path: &Path,
+    project_id: &str,
+) -> Result<ToolApprovalProjectScopeSettings> {
+    let normalized_project_id = normalize_required_value(project_id, "Project id")?;
+    let setting_code = project_tool_approval_setting_code(&normalized_project_id);
+    let Some(raw_value) = get_system_setting_value(database_path, &setting_code)? else {
+        return Ok(ToolApprovalProjectScopeSettings {
+            project_id: normalized_project_id,
+            ..ToolApprovalProjectScopeSettings::default()
+        });
+    };
+
+    let mut settings =
+        serde_json::from_str::<ToolApprovalProjectScopeSettings>(&raw_value).map_err(|error| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to parse project Tool approval scope settings: {error}"),
+            )
+        })?;
+    settings.normalize();
+    if settings.project_id.is_empty() {
+        settings.project_id = normalized_project_id.clone();
+    }
+    if settings.project_id != normalized_project_id {
+        return Err(Error::new(
+            Status::GenericFailure,
+            "Project Tool approval scope setting identity does not match the requested project"
+                .to_string(),
+        ));
+    }
+
+    Ok(settings)
+}
+
+pub fn list_tool_approval_project_approved_tools(
+    database_path: &Path,
+    project_id: &str,
+) -> Result<Vec<String>> {
+    let settings = get_tool_approval_project_scope_settings(database_path, project_id)?;
+    Ok(settings.approved_tool_names.into_iter().collect())
+}
+
+pub fn set_tool_approval_project_tool_approved(
+    database_path: &Path,
+    project_id: &str,
+    tool_name: &str,
+    approved: bool,
+) -> Result<()> {
+    let normalized_tool_name = normalize_required_value(tool_name, "Tool name")?;
+    let mut settings = get_tool_approval_project_scope_settings(database_path, project_id)?;
+    settings.set_tool_approved(&normalized_tool_name, approved);
+    write_tool_approval_project_scope_settings(database_path, &settings)
+}
+
+fn write_tool_approval_project_scope_settings(
+    database_path: &Path,
+    settings: &ToolApprovalProjectScopeSettings,
+) -> Result<()> {
+    let setting_code = project_tool_approval_setting_code(&settings.project_id);
+    let setting_value = serde_json::to_string(settings).map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to serialize project Tool approval scope settings: {error}"),
+        )
+    })?;
+    set_system_setting(
+        database_path,
+        PROJECT_TOOL_APPROVAL_SETTING_NAME,
+        &setting_code,
+        &setting_value,
+    )
+}
+
+fn project_tool_approval_setting_code(project_id: &str) -> String {
+    format!(
+        "{PROJECT_TOOL_APPROVAL_SETTING_CODE_PREFIX}{}",
         blake3::hash(project_id.as_bytes()).to_hex()
     )
 }

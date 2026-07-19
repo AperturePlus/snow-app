@@ -24,4 +24,10 @@ pub struct ConversationContextRequest<'a> {
     /// system prompt. Used by lightweight single-shot completions such as the
     /// AI commit-message generator.
     pub skip_context: bool,
+    /// JSON-encoded list of user system prompt IDs configured for the active
+    /// API profile. Empty string means "follow the global active list";
+    /// `__DISABLED__` or an empty array opts out. Resolved into prompt
+    /// contents and injected as leading `system` messages, mirroring
+    /// Snow CLI's `getCustomSystemPromptForConfig`.
+    pub system_prompt_ids_json: &'a str,
 }

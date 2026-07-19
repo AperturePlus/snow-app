@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import { useChatConversationContext } from "../components/ChatConversationContext";
-import type { ToolCallInfo } from "../hooks/useChatConversation";
+import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolNameBadge } from "./shared/ToolNameBadge";
 
 type AskUserQuestionToolCallProps = {

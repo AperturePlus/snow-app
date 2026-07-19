@@ -39,6 +39,8 @@ const normalizeResponseStreamChunk = (
     retryAttempt:
       typeof value.retryAttempt === "number" ? value.retryAttempt : null,
     retryError: typeof value.retryError === "string" ? value.retryError : null,
+    streamTokenCount:
+      typeof value.streamTokenCount === "number" ? value.streamTokenCount : 0,
   };
 };
 
@@ -61,16 +63,20 @@ export const apiConfigApi = {
     ipcRenderer.invoke("settings:get-yolo-mode"),
   setYoloMode: (enabled: boolean): Promise<void> =>
     ipcRenderer.invoke("settings:set-yolo-mode", enabled),
-  listAlwaysApprovedTools: (workspacePath?: string): Promise<string[]> =>
-    ipcRenderer.invoke("permissions:list-always-approved-tools", workspacePath),
-  addAlwaysApprovedTool: (
-    workspacePath: string | undefined,
-    toolName: string
+  listToolApprovalProjectApprovedTools: (
+    projectId: string
+  ): Promise<string[]> =>
+    ipcRenderer.invoke("permissions:list-tool-approvals", projectId),
+  setToolApprovalProjectToolApproved: (
+    projectId: string,
+    toolName: string,
+    approved: boolean
   ): Promise<void> =>
     ipcRenderer.invoke(
-      "permissions:add-always-approved-tool",
-      workspacePath,
-      toolName
+      "permissions:set-tool-approval",
+      projectId,
+      toolName,
+      approved
     ),
   listApiConfigs: (): Promise<ApiConfigRecord[]> =>
     ipcRenderer.invoke("api-configs:list"),

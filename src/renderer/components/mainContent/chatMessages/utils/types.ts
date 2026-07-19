@@ -20,6 +20,12 @@ export type AiResponseProps = {
   isRetrying?: boolean;
   retryAttempt?: number;
   retryError?: string;
+  /**
+   * Cumulative token count produced by the Rust backend for the current
+   * streaming iteration. Forwarded to {@link StreamCursor} so the progress
+   * is visible at the tail of the streaming AI response.
+   */
+  streamTokenCount?: number;
   showActions?: boolean;
   toolCalls?: ToolCallInfo[];
   pendingToolAuthorizations?: ToolCallInfo[];

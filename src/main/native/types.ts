@@ -206,6 +206,49 @@ export type McpServerConfigInput = {
   source: string;
 };
 
+export type HookScope = "global" | "project";
+
+export type HookConfigInput = {
+  hookType: string;
+  scope: HookScope;
+  projectId?: string;
+  rulesJson: string;
+};
+
+export type HookConfigRecord = {
+  hookType: string;
+  scope: HookScope;
+  projectId: string;
+  rulesJson: string;
+  updatedAt: string;
+};
+
+export type HookExecuteInput = {
+  hookType: string;
+  projectId?: string;
+  contextJson: string;
+};
+
+export type HookActionResultRecord = {
+  actionType: string;
+  success: boolean;
+  command?: string | null;
+  exitCode?: number | null;
+  output?: string | null;
+  error?: string | null;
+  additionalContext?: string | null;
+};
+
+export type HookExecuteResult = {
+  success: boolean;
+  results: HookActionResultRecord[];
+  executedActions: number;
+  skippedActions: number;
+  softSignal?: boolean | null;
+  blocked?: boolean | null;
+  blockMessage?: string | null;
+};
+
 export type McpServerConfigRecord = Omit<McpServerConfigInput, "timeoutMs"> & {
   id: string;
   timeoutMs: number | null;
@@ -374,6 +417,7 @@ export type ResponsesApiStreamChunk = {
   retrying: boolean;
   retryAttempt?: number | null;
   retryError?: string | null;
+  streamTokenCount: number;
 };
 
 export type McpToolDefinition = {
@@ -569,10 +613,13 @@ export type NativeBridge = {
     projectId: string
   ) => Promise<ResumableCodebaseSession[]>;
   discardResumableCodebaseSession: (sessionId: string) => Promise<void>;
-  listAlwaysApprovedTools: (workspacePath?: string) => Promise<string[]>;
-  addAlwaysApprovedTool: (
-    workspacePath: string | undefined,
-    toolName: string
+  listToolApprovalProjectApprovedTools: (
+    projectId: string
+  ) => Promise<string[]>;
+  setToolApprovalProjectToolApproved: (
+    projectId: string,
+    toolName: string,
+    approved: boolean
   ) => Promise<void>;
   listApiConfigs: () => Promise<ApiConfigRecord[]>;
   upsertApiConfig: (config: ApiConfigInput) => Promise<void>;
@@ -613,6 +660,17 @@ export type NativeBridge = {
     projectId: string,
     serverId: string
   ) => Promise<void>;
+  listHookConfigs: (
+    scope: HookScope,
+    projectId?: string
+  ) => Promise<HookConfigRecord[]>;
+  upsertHookConfig: (item: HookConfigInput) => Promise<void>;
+  deleteHookConfig: (
+    hookType: string,
+    scope: HookScope,
+    projectId?: string
+  ) => Promise<void>;
+  executeHooks: (input: HookExecuteInput) => Promise<HookExecuteResult>;
   listSubAgentConfigs: () => Promise<SubAgentConfigRecord[]>;
   getSubAgentConfig: (agentId: string) => Promise<SubAgentConfigRecord | null>;
   upsertSubAgentConfig: (item: SubAgentConfigInput) => Promise<void>;

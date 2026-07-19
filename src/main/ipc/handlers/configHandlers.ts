@@ -19,12 +19,45 @@ import {
   readSnowCliSensitiveCommandConfig,
 } from "../../settings/sensitiveCommandSettings";
 import { normalizeSubAgentConfig } from "../../settings/subAgentSettings";
+import type { HookConfigInput, HookScope } from "../../preload";
 
 const requireProjectId = (value: unknown): string => {
   if (typeof value !== "string" || !value.trim()) {
     throw new Error("Project id is required");
   }
   return value.trim();
+};
+
+const normalizeHookConfig = (item: unknown): HookConfigInput => {
+  if (!item || typeof item !== "object") {
+    throw new Error("Hook config must be an object");
+  }
+  const raw = item as Record<string, unknown>;
+  const hookType = typeof raw.hookType === "string" ? raw.hookType.trim() : "";
+  if (!hookType) {
+    throw new Error("Hook type is required");
+  }
+  const scope = typeof raw.scope === "string" ? raw.scope.trim() : "";
+  if (scope !== "global" && scope !== "project") {
+    throw new Error("Hook scope must be 'global' or 'project'");
+  }
+  const rulesJson = typeof raw.rulesJson === "string" ? raw.rulesJson : "";
+  if (!rulesJson.trim()) {
+    throw new Error("Hook rules JSON is required");
+  }
+  const projectId =
+    typeof raw.projectId === "string" && raw.projectId.trim()
+      ? raw.projectId.trim()
+      : undefined;
+  if (scope === "project" && !projectId) {
+    throw new Error("Project id is required for project scope hooks");
+  }
+  return {
+    hookType,
+    scope: scope as HookScope,
+    projectId,
+    rulesJson,
+  };
 };
 
 const validateSubAgentTools = async (
@@ -315,4 +348,75 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
       return native.checkSensitiveCommandMatch(command, normalizedProjectId);
     }
   );
+
+  // ===== Hook Configs =====
+  ipcMain.handle(
+    "hook-configs:list",
+    (_event, scope: unknown, projectId: unknown) => {
+      if (
+        typeof scope !== "string" ||
+        (scope !== "global" && scope !== "project")
+      ) {
+        throw new Error("Hook scope must be 'global' or 'project'");
+      }
+      const normalizedProjectId =
+        typeof projectId === "string" && projectId.trim()
+          ? projectId.trim()
+          : undefined;
+      if (scope === "project" && !normalizedProjectId) {
+        throw new Error("Project id is required for project scope hooks");
+      }
+      return native.listHookConfigs(scope, normalizedProjectId);
+    }
+  );
+  ipcMain.handle("hook-configs:upsert", async (_event, item: unknown) => {
+    await native.upsertHookConfig(normalizeHookConfig(item));
+    return;
+  });
+  ipcMain.handle(
+    "hook-configs:delete",
+    async (_event, hookType: unknown, scope: unknown, projectId: unknown) => {
+      if (typeof hookType !== "string" || !hookType.trim()) {
+        throw new Error("Hook type is required");
+      }
+      if (
+        typeof scope !== "string" ||
+        (scope !== "global" && scope !== "project")
+      ) {
+        throw new Error("Hook scope must be 'global' or 'project'");
+      }
+      const normalizedProjectId =
+        typeof projectId === "string" && projectId.trim()
+          ? projectId.trim()
+          : undefined;
+      if (scope === "project" && !normalizedProjectId) {
+        throw new Error("Project id is required for project scope hooks");
+      }
+      await native.deleteHookConfig(
+        hookType.trim(),
+        scope,
+        normalizedProjectId
+      );
+      return;
+    }
+  );
+
+  ipcMain.handle("hooks:execute", async (_event, input: unknown) => {
+    if (!input || typeof input !== "object") {
+      throw new Error("Hook execute input must be an object");
+    }
+    const raw = input as Record<string, unknown>;
+    const hookType =
+      typeof raw.hookType === "string" ? raw.hookType.trim() : "";
+    if (!hookType) {
+      throw new Error("Hook type is required");
+    }
+    const projectId =
+      typeof raw.projectId === "string" && raw.projectId.trim()
+        ? raw.projectId.trim()
+        : undefined;
+    const contextJson =
+      typeof raw.contextJson === "string" ? raw.contextJson : "{}";
+    return native.executeHooks({ hookType, projectId, contextJson });
+  });
 };

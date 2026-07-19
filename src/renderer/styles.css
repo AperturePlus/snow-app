@@ -2303,6 +2303,10 @@ input {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.hooks-settings-summary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .codebase-settings-summary-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -4136,7 +4140,7 @@ input {
 }
 
 .ai-message-summary.is-streaming::after,
-.stream-cursor {
+.stream-cursor-dot {
   display: inline-block;
   width: 7px;
   height: 7px;
@@ -4146,6 +4150,39 @@ input {
   vertical-align: 0.05em;
   animation: stream-dot-pulse 1s ease-in-out infinite;
   content: "";
+}
+
+.stream-cursor {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  vertical-align: 0.05em;
+}
+
+.stream-cursor-tokens {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-island);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.stream-cursor-tokens-icon {
+  color: #22c55e;
+  flex-shrink: 0;
+}
+
+.stream-cursor-tokens-label {
+  color: var(--text-tertiary);
+  font-weight: 400;
 }
 
 @keyframes stream-dot-pulse {

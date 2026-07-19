@@ -225,14 +225,32 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     }
   );
   ipcMain.handle(
-    "permissions:list-always-approved-tools",
-    async (_event, workspacePath: string | undefined) =>
-      native.listAlwaysApprovedTools(workspacePath)
+    "permissions:list-tool-approvals",
+    (_event, projectId: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      return native.listToolApprovalProjectApprovedTools(projectId.trim());
+    }
   );
   ipcMain.handle(
-    "permissions:add-always-approved-tool",
-    async (_event, workspacePath: string | undefined, toolName: string) =>
-      native.addAlwaysApprovedTool(workspacePath, toolName)
+    "permissions:set-tool-approval",
+    (_event, projectId: unknown, toolName: unknown, approved: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      if (typeof toolName !== "string" || !toolName.trim()) {
+        throw new Error("Tool name is required");
+      }
+      if (typeof approved !== "boolean") {
+        throw new Error("Tool approval state must be a boolean");
+      }
+      return native.setToolApprovalProjectToolApproved(
+        projectId.trim(),
+        toolName.trim(),
+        approved
+      );
+    }
   );
 
   ipcMain.handle("native:sum", (_event, a: number, b: number) =>

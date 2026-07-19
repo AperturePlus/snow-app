@@ -13,7 +13,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
-import type { ToolCallInfo } from "../hooks/useChatConversation";
+import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolNameBadge } from "./shared/ToolNameBadge";
 
 type CodebaseToolCallProps = {

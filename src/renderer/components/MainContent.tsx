@@ -1,6 +1,7 @@
 import { ApiSettingsTreePanel } from "./sidebar/ApiSettingsTreePanel";
 import { CodebaseSettingsPanel } from "./sidebar/CodebaseSettingsPanel";
 import { CustomHeadersSettingsPanel } from "./sidebar/CustomHeadersSettingsPanel";
+import { HooksSettingsPanel } from "./sidebar/HooksSettingsPanel";
 import { McpSettingsPanel } from "./sidebar/McpSettingsPanel";
 import { ProxyBrowserSettingsPanel } from "./sidebar/ProxyBrowserSettingsPanel";
 import { SensitiveCommandsPanel } from "./sidebar/SensitiveCommandsPanel";
@@ -52,6 +53,11 @@ export const MainContent = ({
         />
       ) : activeView === "sensitive-command-settings" ? (
         <SensitiveCommandsPanel
+          activeDirectory={activeDirectory}
+          onClose={() => onSelectView("chat")}
+        />
+      ) : activeView === "hooks-settings" ? (
+        <HooksSettingsPanel
           activeDirectory={activeDirectory}
           onClose={() => onSelectView("chat")}
         />

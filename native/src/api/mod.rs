@@ -12,4 +12,5 @@ pub mod reranking;
 pub mod retry;
 pub mod responses;
 pub mod summary;
+pub mod token_counter;
 pub mod vision;

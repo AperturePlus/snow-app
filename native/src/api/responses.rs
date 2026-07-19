@@ -76,6 +76,15 @@ pub struct ResponsesApiStreamChunk {
     pub retrying: bool,
     pub retry_attempt: Option<i32>,
     pub retry_error: Option<String>,
+    /// Cumulative token count for the current agent-loop iteration.
+    ///
+    /// The Rust backend counts tokens for every streamed delta (content and
+    /// thinking) using the `o200k_base` tokenizer and accumulates them across
+    /// chunks within a single `collect_streaming_response` call. The renderer
+    /// treats this as a real-time probe: it resets to zero when a new
+    /// iteration starts and ignores it for non-streaming chunks (retry
+    /// events), where the field stays at the previously-accumulated value.
+    pub stream_token_count: i64,
 }
 
 /// ThreadsafeFunction variant of the streaming callback.
@@ -153,6 +162,7 @@ async fn create_response_async(
         directory_id: request.directory_id.as_deref(),
         context_compaction: request.context_compaction.unwrap_or(false),
         skip_context: request.skip_context.unwrap_or(false),
+        system_prompt_ids_json: &api_config.system_prompt_ids_json,
     })?;
 
     // Inject conversation_id and session_id as request headers for prompt
@@ -196,6 +206,7 @@ async fn create_response_async(
         &request,
         &api_config,
         tools,
+        &prepared_request.user_system_prompts,
     )?;
     let retry_options = RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
     let streamed_response = collect_streaming_response(&client, payload, on_chunk, &cancel_token, &retry_options).await?;
@@ -297,6 +308,7 @@ fn build_responses_payload(
     request: &ResponsesApiRequest,
     api_config: &ApiConfigRecord,
     tools: Option<Value>,
+    user_system_prompts: &[String],
 ) -> Result<Value> {
     let model = request
         .model
@@ -312,45 +324,92 @@ fn build_responses_payload(
     }
 
     let skip_image_parsing = request.skip_context.unwrap_or(false);
-    let input = messages
-        .iter()
-        .map(|message| {
-            let content = message.content.trim();
-            if content.is_empty() {
-                return Ok(None);
-            }
+    let has_user_system_prompts = !user_system_prompts.is_empty();
+    let mut builtin_system_parts = Vec::new();
+    let mut input = Vec::new();
 
-            let content = if skip_image_parsing {
-                Value::String(content.to_string())
+    for message in messages {
+        let content = message.content.trim();
+        if content.is_empty() {
+            continue;
+        }
+
+        let content = if skip_image_parsing {
+            Value::String(content.to_string())
+        } else {
+            let parsed_content = parse_chat_message_content(content, database_path)?;
+            if parsed_content.images.is_empty() {
+                Value::String(parsed_content.text)
             } else {
-                let parsed_content = parse_chat_message_content(content, database_path)?;
-                if parsed_content.images.is_empty() {
-                    Value::String(parsed_content.text)
-                } else {
-                    let mut parts = Vec::new();
-                    if !parsed_content.text.is_empty() {
-                        parts.push(json!({ "type": "input_text", "text": parsed_content.text }));
-                    }
-                    parts.extend(parsed_content.images.iter().map(|image| {
-                        json!({
-                            "type": "input_image",
-                            "image_url": image.data_url,
-                        })
-                    }));
-                    Value::Array(parts)
+                let mut parts = Vec::new();
+                if !parsed_content.text.is_empty() {
+                    parts.push(json!({ "type": "input_text", "text": parsed_content.text }));
                 }
-            };
+                parts.extend(parsed_content.images.iter().map(|image| {
+                    json!({
+                        "type": "input_image",
+                        "image_url": image.data_url,
+                    })
+                }));
+                Value::Array(parts)
+            }
+        };
 
-            Ok(Some(json!({
+        let role = message.role.trim();
+        if role == "system" || role == "developer" {
+            // Collect built-in system prompt parts; they will be emitted
+            // either as a `system` message (no user prompts) or demoted to
+            // a leading `user` message (user prompts present), matching
+            // Snow CLI PR #127.
+            if let Value::String(text) = &content {
+                if !text.is_empty() {
+                    builtin_system_parts.push(text.clone());
+                }
+            }
+            continue;
+        }
+
+        input.push(json!({
+            "type": "message",
+            "role": normalize_message_role(role),
+            "content": content,
+        }));
+    }
+
+    // When user system prompts are present, emit them as a `system` message
+    // with multiple content blocks and demote the built-in prompt to a
+    // leading `user` message (Snow CLI PR #127).
+    if has_user_system_prompts {
+        let user_prompt_blocks: Vec<Value> = user_system_prompts
+            .iter()
+            .map(|text| json!({ "type": "input_text", "text": text }))
+            .collect();
+        let system_message = json!({
+            "type": "message",
+            "role": "system",
+            "content": user_prompt_blocks,
+        });
+        input.insert(0, system_message);
+
+        if !builtin_system_parts.is_empty() {
+            let builtin_text = builtin_system_parts.join("\n\n");
+            let builtin_message = json!({
                 "type": "message",
-                "role": normalize_message_role(&message.role),
-                "content": content,
-            })))
-        })
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .filter_map(|message| message)
-        .collect::<Vec<_>>();
+                "role": "user",
+                "content": builtin_text,
+            });
+            input.insert(1, builtin_message);
+        }
+    } else if !builtin_system_parts.is_empty() {
+        // No user prompts: keep built-in prompt as a `system` message.
+        let builtin_text = builtin_system_parts.join("\n\n");
+        let system_message = json!({
+            "type": "message",
+            "role": "system",
+            "content": builtin_text,
+        });
+        input.insert(0, system_message);
+    }
 
     if input.is_empty() {
         return Err(Error::from_reason("Chat message content is required"));
@@ -450,6 +509,11 @@ async fn collect_streaming_response(
 ) -> Result<StreamingResponseResult> {
     let responses = client.responses();
     let mut attempt: u32 = 0;
+    // Cumulative token counter for the current agent-loop iteration.
+    // Declared here (before the retry loop) so retry chunks can report
+    // the current cumulative value. The counter is mutated by
+    // `emit_stream_chunk` and the tool-argument probe below.
+    let mut stream_token_count: usize = 0;
     let mut stream: ResponseValueStream = loop {
         if cancel_token.is_cancelled() {
             return Ok(StreamingResponseResult {
@@ -512,6 +576,7 @@ async fn collect_streaming_response(
                         retrying: true,
                         retry_attempt: Some((attempt + 1) as i32),
                         retry_error: Some(error.reason.clone()),
+                        stream_token_count: stream_token_count as i64,
                     },
                     ThreadsafeFunctionCallMode::NonBlocking,
                 );
@@ -568,14 +633,24 @@ async fn collect_streaming_response(
                         let content_delta = read_stream_text_delta(event.get("delta"));
                         if !content_delta.is_empty() {
                             content_chunks.push(content_delta.clone());
-                            emit_stream_chunk(on_chunk, content_delta, String::new());
+                            emit_stream_chunk(
+                                on_chunk,
+                                content_delta,
+                                String::new(),
+                                &mut stream_token_count,
+                            );
                         }
                     }
                     "response.reasoning_summary_text.delta" => {
                         let thinking_delta = read_stream_text_delta(event.get("delta"));
                         if !thinking_delta.is_empty() {
                             thinking_chunks.push(thinking_delta.clone());
-                            emit_stream_chunk(on_chunk, String::new(), thinking_delta);
+                            emit_stream_chunk(
+                                on_chunk,
+                                String::new(),
+                                thinking_delta,
+                                &mut stream_token_count,
+                            );
                         }
                     }
                     "response.reasoning_summary.delta" => {
@@ -585,8 +660,45 @@ async fn collect_streaming_response(
                             let thinking_delta = delta_chunks.join("");
                             if !thinking_delta.is_empty() {
                                 thinking_chunks.push(thinking_delta.clone());
-                                emit_stream_chunk(on_chunk, String::new(), thinking_delta);
+                                emit_stream_chunk(
+                                    on_chunk,
+                                    String::new(),
+                                    thinking_delta,
+                                    &mut stream_token_count,
+                                );
                             }
+                        }
+                    }
+                    // Tool-call argument deltas. The Responses API streams
+                    // function arguments as they are generated. We count
+                    // these tokens immediately so the probe reflects long
+                    // tool arguments in real time, rather than waiting for
+                    // `response.output_item.done` to assemble the full call.
+                    //
+                    // The chunk is emitted as a probe-only update: both
+                    // content_delta and thinking_delta are empty because the
+                    // argument text should NOT be appended to the assistant
+                    // message body — it is assembled separately by
+                    // `collect_tool_calls` on `output_item.done`.
+                    "response.function_call_arguments.delta" => {
+                        let args_delta = read_stream_text_delta(event.get("delta"));
+                        if !args_delta.is_empty() {
+                            let delta_tokens =
+                                crate::api::token_counter::count_tokens(&args_delta);
+                            stream_token_count += delta_tokens;
+                            on_chunk.call(
+                                ResponsesApiStreamChunk {
+                                    content_delta: String::new(),
+                                    thinking_delta: String::new(),
+                                    content: String::new(),
+                                    thinking: String::new(),
+                                    retrying: false,
+                                    retry_attempt: None,
+                                    retry_error: None,
+                                    stream_token_count: stream_token_count as i64,
+                                },
+                                ThreadsafeFunctionCallMode::NonBlocking,
+                            );
                         }
                     }
                     "response.output_item.done" => {
@@ -677,14 +789,54 @@ fn read_stream_text_delta(value: Option<&Value>) -> String {
 /// Only the delta strings are sent; the `content` and `thinking` fields are
 /// left empty to avoid O(n^2) data transfer. The renderer accumulates deltas
 /// locally and the final complete text arrives via the resolved Promise.
+///
+/// `stream_token_count` is the cumulative token counter for the current
+/// agent-loop iteration. The counter is mutated in place: each call adds the
+/// token count of the delta text (content + thinking) so the renderer always
+/// receives the up-to-date probe value.
 fn emit_stream_chunk(
     on_chunk: &ResponsesApiStreamCallback,
     content_delta: String,
     thinking_delta: String,
+    stream_token_count: &mut usize,
 ) {
     if content_delta.is_empty() && thinking_delta.is_empty() {
         return;
     }
+
+    // Count tokens for the delta text only. Using `encode_ordinary` avoids
+    // treating substrings as special tokens, matching the JS `tiktoken`
+    // `encode_ordinary` behavior used by Snow CLI.
+    let delta_text = if content_delta.is_empty() {
+        &thinking_delta
+    } else if thinking_delta.is_empty() {
+        &content_delta
+    } else {
+        // Combine both deltas for a single encode pass. This branch is rare
+        // (current callers always pass one empty string), but we handle it
+        // for correctness.
+        // We need an owned String to avoid lifetime issues.
+        let combined = format!("{content_delta}{thinking_delta}");
+        let count = crate::api::token_counter::count_tokens(&combined);
+        *stream_token_count += count;
+        on_chunk.call(
+            ResponsesApiStreamChunk {
+                content_delta,
+                thinking_delta,
+                content: String::new(),
+                thinking: String::new(),
+                retrying: false,
+                retry_attempt: None,
+                retry_error: None,
+                stream_token_count: *stream_token_count as i64,
+            },
+            ThreadsafeFunctionCallMode::NonBlocking,
+        );
+        return;
+    };
+
+    let count = crate::api::token_counter::count_tokens(delta_text);
+    *stream_token_count += count;
 
     on_chunk.call(
         ResponsesApiStreamChunk {
@@ -695,6 +847,7 @@ fn emit_stream_chunk(
             retrying: false,
             retry_attempt: None,
             retry_error: None,
+            stream_token_count: *stream_token_count as i64,
         },
         ThreadsafeFunctionCallMode::NonBlocking,
     );

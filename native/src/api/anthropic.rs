@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use futures::StreamExt;
 use napi::bindgen_prelude::*;
@@ -9,6 +10,7 @@ use reqwest::header::{
 };
 use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 use crate::api::config::{
     normalize_base_url, resolve_sdk_api_base_url, DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_OPENAI_BASE_URL,
@@ -28,6 +30,23 @@ use crate::storage::services::chat_conversations::{
 use crate::storage::ApiConfigRecord;
 
 const DEFAULT_MAX_TOKENS: i32 = 64000;
+
+/// Process-level persistent Anthropic user_id.
+///
+/// Mirrors Snow CLI's `getPersistentUserId`: the value is generated once per
+/// application session and reused for every request, matching Anthropic's
+/// expected `user_<hash>_account__session_<uuid>` format for tracking and
+/// prompt-cache routing.
+static PERSISTENT_USER_ID: OnceLock<String> = OnceLock::new();
+
+fn get_persistent_user_id() -> &'static str {
+    PERSISTENT_USER_ID.get_or_init(|| {
+        let session_id = Uuid::new_v4();
+        let hash_input = format!("anthropic_user_{session_id}");
+        let hash = blake3::hash(hash_input.as_bytes()).to_hex();
+        format!("user_{hash}_account__session_{session_id}")
+    })
+}
 
 pub async fn create_anthropic_response_stream(
     request: ResponsesApiRequest,
@@ -91,6 +110,7 @@ async fn create_anthropic_response_async(
         directory_id: request.directory_id.as_deref(),
         context_compaction: request.context_compaction.unwrap_or(false),
         skip_context: request.skip_context.unwrap_or(false),
+        system_prompt_ids_json: &api_config.system_prompt_ids_json,
     })?;
 
     let client = reqwest::Client::builder()
@@ -112,10 +132,7 @@ async fn create_anthropic_response_async(
     } else {
         match resolve_sub_agent_tools(&request).await {
             Ok(tools) => Some(crate::mcp::tools::tools_as_anthropic_json(&tools)),
-            Err(error) => {
-                eprintln!("Failed to prepare MCP tools for Anthropic: {error}");
-                None
-            }
+            Err(_) => None,
         }
     };
     let payload = build_anthropic_payload(
@@ -124,6 +141,7 @@ async fn create_anthropic_response_async(
         &request,
         &api_config,
         tools,
+        &prepared_request.user_system_prompts,
     )?;
     let retry_options = RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
     let streamed_response = collect_anthropic_stream(
@@ -204,6 +222,7 @@ fn build_anthropic_payload(
     request: &ResponsesApiRequest,
     api_config: &ApiConfigRecord,
     tools: Option<Value>,
+    user_system_prompts: &[String],
 ) -> Result<Value> {
     let model = request
         .model
@@ -219,7 +238,12 @@ fn build_anthropic_payload(
     }
 
     let skip_image_parsing = request.skip_context.unwrap_or(false);
-    let mut system_parts = Vec::new();
+    let has_user_system_prompts = !user_system_prompts.is_empty();
+    // When user-configured system prompts exist, they occupy the `system`
+    // slot exclusively. The built-in system prompt (already injected as a
+    // `system` message by `prepare_context_request`) is demoted to a
+    // leading `user` message, matching Snow CLI PR #127.
+    let mut builtin_system_parts = Vec::new();
     let mut anthropic_messages = Vec::new();
 
     for message in messages {
@@ -233,7 +257,7 @@ fn build_anthropic_payload(
             match role {
                 "system" | "developer" => {
                     if !content.is_empty() {
-                        system_parts.push(content.to_string());
+                        builtin_system_parts.push(content.to_string());
                     }
                 }
                 _ => {
@@ -250,7 +274,7 @@ fn build_anthropic_payload(
         match role {
             "system" | "developer" => {
                 if !parsed_content.text.is_empty() {
-                    system_parts.push(parsed_content.text);
+                    builtin_system_parts.push(parsed_content.text);
                 }
             }
             _ => {
@@ -282,6 +306,24 @@ fn build_anthropic_payload(
         }
     }
 
+    // When user system prompts are present, demote the built-in system
+    // prompt to a leading `user` message so the `system` field can be
+    // exclusively populated with user prompts (Snow CLI PR #127).
+    if has_user_system_prompts && !builtin_system_parts.is_empty() {
+        let builtin_text = builtin_system_parts.join("\n\n");
+        let builtin_block = json!({
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": builtin_text,
+                    "cache_control": { "type": "ephemeral", "ttl": "5m" }
+                }
+            ]
+        });
+        anthropic_messages.insert(0, builtin_block);
+    }
+
     if anthropic_messages.is_empty() {
         return Err(Error::from_reason("Chat message content is required"));
     }
@@ -298,9 +340,17 @@ fn build_anthropic_payload(
         "stream": true,
     });
 
-    // Build system as an array of text blocks with cache_control on the last
-    // block, matching the Anthropic prompt-caching best practice used in
-    // snow-cli.  A plain string system field cannot carry cache_control.
+    // Build the `system` field. When user system prompts exist they occupy
+    // the field exclusively (each prompt as an independent text block, with
+    // cache_control on the last block). Otherwise the built-in system
+    // prompt parts are used. A plain string system field cannot carry
+    // cache_control, so we always emit an array of text blocks.
+    let system_parts: Vec<&String> = if has_user_system_prompts {
+        user_system_prompts.iter().collect()
+    } else {
+        builtin_system_parts.iter().collect()
+    };
+
     if !system_parts.is_empty() {
         let system_blocks: Vec<Value> = system_parts
             .iter()
@@ -317,7 +367,7 @@ fn build_anthropic_payload(
     }
 
     // Add metadata.user_id for tracking and caching (matches snow-cli behavior).
-    payload["metadata"] = json!({ "user_id": "snow-app-user" });
+    payload["metadata"] = json!({ "user_id": get_persistent_user_id() });
 
     if let Some(thinking) = build_anthropic_thinking(&api_config.config_json) {
         payload["thinking"] = thinking;
@@ -333,32 +383,48 @@ fn build_anthropic_payload(
     // This enables Anthropic to cache the conversation prefix up to and
     // including the last user turn, so subsequent tool-call rounds benefit
     // from cache hits.  Matches snow-cli's convertToAnthropicMessages logic.
+    // Skip the leading built-in prompt user message (index 0) when user
+    // system prompts are present, since it already carries cache_control.
     if let Some(messages) = payload.get_mut("messages").and_then(Value::as_array_mut) {
-        for msg in messages.iter_mut().rev() {
-            if msg.get("role").and_then(Value::as_str) == Some("user") {
-                match msg.get_mut("content") {
-                    Some(Value::String(_)) => {
-                        // Convert plain string content to structured array
-                        // so we can attach cache_control.
-                        let text = msg["content"].as_str().unwrap_or("").to_string();
-                        msg["content"] = json!([
-                            {
-                                "type": "text",
-                                "text": text,
-                                "cache_control": { "type": "ephemeral", "ttl": "5m" }
-                            }
-                        ]);
-                    }
-                    Some(Value::Array(arr)) => {
-                        if let Some(last_block) = arr.last_mut() {
-                            last_block["cache_control"] =
-                                json!({ "type": "ephemeral", "ttl": "5m" });
-                        }
-                    }
-                    _ => {}
-                }
-                break;
+        let total = messages.len();
+        for index in (0..total).rev() {
+            let is_first_user_message = index == 0;
+            let is_user_message = messages[index]
+                .get("role")
+                .and_then(Value::as_str)
+                == Some("user");
+            if !is_user_message {
+                continue;
             }
+            // When user system prompts are present, the first user message
+            // is the demoted built-in prompt which already has cache_control;
+            // skip it so we don't double-tag.
+            if has_user_system_prompts && is_first_user_message {
+                continue;
+            }
+            let msg = &mut messages[index];
+            match msg.get_mut("content") {
+                Some(Value::String(_)) => {
+                    // Convert plain string content to structured array
+                    // so we can attach cache_control.
+                    let text = msg["content"].as_str().unwrap_or("").to_string();
+                    msg["content"] = json!([
+                        {
+                            "type": "text",
+                            "text": text,
+                            "cache_control": { "type": "ephemeral", "ttl": "5m" }
+                        }
+                    ]);
+                }
+                Some(Value::Array(arr)) => {
+                    if let Some(last_block) = arr.last_mut() {
+                        last_block["cache_control"] =
+                            json!({ "type": "ephemeral", "ttl": "5m" });
+                    }
+                }
+                _ => {}
+            }
+            break;
         }
     }
 
@@ -415,6 +481,7 @@ async fn collect_anthropic_stream(
     retry_options: &RetryOptions,
 ) -> Result<AnthropicStreamResult> {
     let mut attempt: u32 = 0;
+    let mut stream_token_count: usize = 0;
     let response = loop {
         if cancel_token.is_cancelled() {
             return Ok(AnthropicStreamResult {
@@ -478,6 +545,7 @@ async fn collect_anthropic_stream(
                             retrying: true,
                             retry_attempt: Some((attempt + 1) as i32),
                             retry_error: Some(error.reason.clone()),
+                            stream_token_count: stream_token_count as i64,
                         },
                         ThreadsafeFunctionCallMode::NonBlocking,
                     );
@@ -502,11 +570,12 @@ async fn collect_anthropic_stream(
                         content: String::new(),
                         thinking: String::new(),
                         retrying: true,
-                    retry_attempt: Some((attempt + 1) as i32),
-                    retry_error: Some(error.reason.clone()),
-                },
-                ThreadsafeFunctionCallMode::NonBlocking,
-            );
+                        retry_attempt: Some((attempt + 1) as i32),
+                        retry_error: Some(error.reason.clone()),
+                        stream_token_count: stream_token_count as i64,
+                    },
+                    ThreadsafeFunctionCallMode::NonBlocking,
+                );
 
                 match wait_before_retry(retry_options, cancel_token).await {
                     Ok(()) => { attempt += 1; continue; }
@@ -526,6 +595,11 @@ async fn collect_anthropic_stream(
     let mut response_model = String::new();
     let mut response_status = String::from("completed");
     let mut token_usage = ChatTokenUsage::default();
+    // Cumulative token counter for the current agent-loop iteration.
+    // Every streamed delta (content, thinking, and tool-call arguments)
+    // contributes to this counter so the renderer can display a real-time
+    // probe that updates on every chunk — including long tool arguments
+    // that previously were only counted after the full call assembled.
     let mut buffer = String::new();
     let mut stream = response.bytes_stream();
     loop {
@@ -549,6 +623,7 @@ async fn collect_anthropic_stream(
                     buffer = buffer[separator_index + 2..].to_string();
                     let content_start_index = content_chunks.len();
                     let thinking_start_index = thinking_chunks.len();
+                    let mut tool_args_delta = String::new();
                     process_anthropic_sse_event_block(
                         &event_block,
                         &mut raw_events,
@@ -561,10 +636,20 @@ async fn collect_anthropic_stream(
                         &mut response_model,
                         &mut response_status,
                         &mut token_usage,
+                        &mut tool_args_delta,
                     )?;
                     let content_delta = content_chunks[content_start_index..].join("");
                     let thinking_delta = thinking_chunks[thinking_start_index..].join("");
-                    emit_stream_chunk(on_chunk, content_delta, thinking_delta);
+                    emit_stream_chunk(
+                        on_chunk,
+                        content_delta,
+                        thinking_delta,
+                        &mut stream_token_count,
+                    );
+                    // Tool-call argument deltas arrive separately from the
+                    // content stream. Emit a probe-only chunk so the
+                    // renderer reflects long tool arguments in real time.
+                    emit_tool_args_probe(on_chunk, &mut stream_token_count, &tool_args_delta);
                 }
             }
         }
@@ -573,6 +658,7 @@ async fn collect_anthropic_stream(
     if response_status != "cancelled" && !buffer.trim().is_empty() {
         let content_start_index = content_chunks.len();
         let thinking_start_index = thinking_chunks.len();
+        let mut tool_args_delta = String::new();
         process_anthropic_sse_event_block(
             &buffer,
             &mut raw_events,
@@ -585,10 +671,17 @@ async fn collect_anthropic_stream(
             &mut response_model,
             &mut response_status,
             &mut token_usage,
+            &mut tool_args_delta,
         )?;
         let content_delta = content_chunks[content_start_index..].join("");
         let thinking_delta = thinking_chunks[thinking_start_index..].join("");
-        emit_stream_chunk(on_chunk, content_delta, thinking_delta);
+        emit_stream_chunk(
+            on_chunk,
+            content_delta,
+            thinking_delta,
+            &mut stream_token_count,
+        );
+        emit_tool_args_probe(on_chunk, &mut stream_token_count, &tool_args_delta);
     }
 
     let content = content_chunks.join("").trim().to_string();
@@ -627,6 +720,7 @@ fn process_anthropic_sse_event_block(
     response_model: &mut String,
     response_status: &mut String,
     token_usage: &mut ChatTokenUsage,
+    tool_args_delta: &mut String,
 ) -> Result<()> {
     let data = event_block
         .lines()
@@ -653,6 +747,7 @@ fn process_anthropic_sse_event_block(
         response_model,
         response_status,
         token_usage,
+        tool_args_delta,
     )?;
     raw_events.push(event);
 
@@ -671,6 +766,7 @@ fn process_anthropic_event(
     response_model: &mut String,
     response_status: &mut String,
     token_usage: &mut ChatTokenUsage,
+    tool_args_delta: &mut String,
 ) -> Result<()> {
     let event_type = event.get("type").and_then(Value::as_str).unwrap_or_default();
 
@@ -770,6 +866,10 @@ fn process_anthropic_event(
                             {
                                 let input_json = tool_input_json_by_index.entry(index).or_default();
                                 input_json.push_str(partial_json);
+                                // Also accumulate the argument delta for the
+                                // token probe so the renderer reflects long
+                                // tool arguments in real time.
+                                tool_args_delta.push_str(partial_json);
 
                                 // Best-effort intermediate parse for early UI updates.
                                 // The final, authoritative parse happens in content_block_stop.
@@ -843,10 +943,38 @@ fn emit_stream_chunk(
     on_chunk: &ResponsesApiStreamCallback,
     content_delta: String,
     thinking_delta: String,
+    stream_token_count: &mut usize,
 ) {
     if content_delta.is_empty() && thinking_delta.is_empty() {
         return;
     }
+
+    let delta_text = if content_delta.is_empty() {
+        &thinking_delta
+    } else if thinking_delta.is_empty() {
+        &content_delta
+    } else {
+        let combined = format!("{content_delta}{thinking_delta}");
+        let count = crate::api::token_counter::count_tokens(&combined);
+        *stream_token_count += count;
+        on_chunk.call(
+            ResponsesApiStreamChunk {
+                content_delta,
+                thinking_delta,
+                content: String::new(),
+                thinking: String::new(),
+                retrying: false,
+                retry_attempt: None,
+                retry_error: None,
+                stream_token_count: *stream_token_count as i64,
+            },
+            ThreadsafeFunctionCallMode::NonBlocking,
+        );
+        return;
+    };
+
+    let count = crate::api::token_counter::count_tokens(delta_text);
+    *stream_token_count += count;
 
     on_chunk.call(
         ResponsesApiStreamChunk {
@@ -857,6 +985,39 @@ fn emit_stream_chunk(
             retrying: false,
             retry_attempt: None,
             retry_error: None,
+            stream_token_count: *stream_token_count as i64,
+        },
+        ThreadsafeFunctionCallMode::NonBlocking,
+    );
+}
+
+/// Emit a probe-only chunk that carries just the updated token count.
+///
+/// Used for tool-call argument deltas (Anthropic `input_json_delta`),
+/// where the argument text is assembled separately via
+/// `tool_input_json_by_index` and must NOT be appended to the assistant
+/// message body. The probe still needs to update so the renderer
+/// reflects long tool arguments in real time.
+fn emit_tool_args_probe(
+    on_chunk: &ResponsesApiStreamCallback,
+    stream_token_count: &mut usize,
+    args_delta: &str,
+) {
+    if args_delta.is_empty() {
+        return;
+    }
+    let count = crate::api::token_counter::count_tokens(args_delta);
+    *stream_token_count += count;
+    on_chunk.call(
+        ResponsesApiStreamChunk {
+            content_delta: String::new(),
+            thinking_delta: String::new(),
+            content: String::new(),
+            thinking: String::new(),
+            retrying: false,
+            retry_attempt: None,
+            retry_error: None,
+            stream_token_count: *stream_token_count as i64,
         },
         ThreadsafeFunctionCallMode::NonBlocking,
     );
@@ -886,9 +1047,7 @@ fn build_header_map(api_key: &str, custom_headers: &HashMap<String, String>) -> 
             continue;
         }
 
-        if trimmed_key.eq_ignore_ascii_case("content-type")
-            || trimmed_key.eq_ignore_ascii_case("accept-encoding")
-            || trimmed_key.eq_ignore_ascii_case("authorization")
+        if trimmed_key.eq_ignore_ascii_case("authorization")
             || trimmed_key.eq_ignore_ascii_case("x-api-key")
         {
             continue;

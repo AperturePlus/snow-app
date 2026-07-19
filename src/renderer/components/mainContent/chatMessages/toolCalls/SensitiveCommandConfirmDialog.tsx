@@ -1,7 +1,7 @@
 import { ShieldAlert } from "lucide-react";
 import { useState } from "react";
 import { useI18n } from "../../../../i18n";
-import type { ToolCallInfo } from "../../hooks/useChatConversation";
+import type { ToolCallInfo } from "../utils/conversationTypes";
 
 type SensitiveCommandMatch = {
   commandId: string;

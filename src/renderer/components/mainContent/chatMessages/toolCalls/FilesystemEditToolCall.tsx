@@ -1,7 +1,7 @@
 import { useMemo } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
-import type { ToolCallInfo } from "../hooks/useChatConversation";
+import type { ToolCallInfo } from "../utils/conversationTypes";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
 import { ToolNameBadge } from "./shared/ToolNameBadge";
 import { getFileName, getToolDisplayName } from "./shared/formatters";
@@ -130,12 +130,18 @@ export const FilesystemEditToolCall = ({
           aria-hidden="true"
         />
         <ToolNameBadge name={toolName} category="edit" />
-        {getFileTypeIcon(fileName, false, false, {
-          size: 14,
-          className:
-            toolCall.status === "running" ? "tool-call-icon-spinning" : "",
-          "aria-hidden": true,
-        })}
+        {toolCall.status === "running" ? (
+          <Loader2
+            size={14}
+            className="tool-call-icon-spinning"
+            aria-hidden="true"
+          />
+        ) : (
+          getFileTypeIcon(fileName, false, false, {
+            size: 14,
+            "aria-hidden": true,
+          })
+        )}
         <span className="tool-call-name" title={filePath}>
           {fileName}
         </span>
@@ -177,9 +183,7 @@ export const FilesystemEditToolCall = ({
           </div>
         ) : null}
 
-        {diffLines.length > 0 ? (
-          <MiniDiffViewer diffLines={diffLines} maxLines={50} />
-        ) : null}
+        {diffLines.length > 0 ? <MiniDiffViewer diffLines={diffLines} /> : null}
 
         {parsedResult.type === "raw" ? (
           <pre className="tool-call-section-pre">{parsedResult.text}</pre>

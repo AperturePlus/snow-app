@@ -2,6 +2,11 @@ import { ipcRenderer } from "electron";
 import type {
   CustomHeaderSchemeInput,
   CustomHeaderSchemeRecord,
+  HookConfigInput,
+  HookConfigRecord,
+  HookExecuteInput,
+  HookExecuteResult,
+  HookScope,
   McpServerConfigInput,
   McpServerConfigRecord,
   ProjectMcpServerConfigRecord,
@@ -136,4 +141,19 @@ export const configApi = {
       command,
       projectId
     ),
+  listHookConfigs: (
+    scope: HookScope,
+    projectId?: string
+  ): Promise<HookConfigRecord[]> =>
+    ipcRenderer.invoke("hook-configs:list", scope, projectId),
+  upsertHookConfig: (item: HookConfigInput): Promise<void> =>
+    ipcRenderer.invoke("hook-configs:upsert", item),
+  deleteHookConfig: (
+    hookType: string,
+    scope: HookScope,
+    projectId?: string
+  ): Promise<void> =>
+    ipcRenderer.invoke("hook-configs:delete", hookType, scope, projectId),
+  executeHooks: (input: HookExecuteInput): Promise<HookExecuteResult> =>
+    ipcRenderer.invoke("hooks:execute", input),
 };

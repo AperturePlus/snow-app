@@ -4,6 +4,7 @@ use crate::prompt::system_prompt::build_system_prompt;
 use crate::storage::services::chat_conversations::{
     load_context_messages, resolve_conversation_id, ChatContextMessage,
 };
+use crate::storage::services::system_prompts::resolve_active_system_prompt_contents;
 use crate::storage::services::workspace_directories::get_workspace_directory_path;
 
 use super::{images::persist_inline_images_to_disk, ConversationContextRequest};
@@ -12,6 +13,13 @@ pub struct PreparedConversationRequest {
     pub conversation_id: String,
     pub messages: Vec<ChatContextMessage>,
     pub current_messages: Vec<ChatContextMessage>,
+    /// User-configured system prompt contents resolved from
+    /// `system_prompt_ids_json`. Providers use this to decide whether to
+    /// keep the built-in system prompt as a `system` message or demote it
+    /// to a `user` message (matching Snow CLI PR #127): when non-empty, the
+    /// user prompts occupy the `system` slot exclusively and the built-in
+    /// prompt is prepended as a leading `user` message.
+    pub user_system_prompts: Vec<String>,
 }
 
 pub fn prepare_context_request(
@@ -40,6 +48,7 @@ pub fn prepare_context_request(
             conversation_id: String::new(),
             messages: current_messages.clone(),
             current_messages,
+            user_system_prompts: Vec::new(),
         });
     }
 
@@ -49,6 +58,16 @@ pub fn prepare_context_request(
         request.previous_response_id,
     )?;
     let mut messages = load_context_messages(request.database_path, &conversation_id)?;
+
+    // Resolve user-configured system prompts (mirrors Snow CLI's
+    // `getCustomSystemPromptForConfig`). They are NOT injected into
+    // `messages` here; instead they are returned via
+    // `PreparedConversationRequest.user_system_prompts` so each provider
+    // can decide how to combine them with the built-in system prompt
+    // (e.g. Anthropic demotes the built-in prompt to a user message when
+    // user prompts are present, matching Snow CLI PR #127).
+    let user_system_prompts =
+        resolve_active_system_prompt_contents(request.database_path, request.system_prompt_ids_json);
 
     // Inject the built-in system prompt as the first message.
     let working_directory = request
@@ -79,6 +98,7 @@ pub fn prepare_context_request(
         conversation_id,
         messages,
         current_messages,
+        user_system_prompts,
     })
 }
 

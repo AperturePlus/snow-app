@@ -285,6 +285,7 @@ export const useChatConversation = (
     activeConversationId,
     conversationDirectoryId: activeSession?.directoryId,
     tokenUsage: activeSession?.tokenUsage ?? null,
+    streamTokenCount: activeSession?.streamTokenCount ?? 0,
     forkedFromConversationId: activeSession?.forkedFromConversationId,
     forkMessageCount: activeSession?.forkMessageCount,
     streamingConversationIds,

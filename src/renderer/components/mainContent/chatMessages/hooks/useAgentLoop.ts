@@ -265,6 +265,15 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 ) {
                   return;
                 }
+
+                // Mirror the real-time token probe into the sub-agent
+                // session state so its UI stays in sync.
+                ctx.updateSessionField(
+                  subConvId,
+                  "streamTokenCount",
+                  chunk.streamTokenCount
+                );
+
                 ctx.updateSessionMessages(subConvId, (currentMessages) =>
                   currentMessages.map((currentMessage) => {
                     if (currentMessage.id !== subAssistantMessageId) {
@@ -710,6 +719,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           return;
         }
 
+        // Reset the real-time token probe at the start of each agent-loop
+        // iteration. The Rust backend accumulates tokens from scratch for
+        // every `collect_streaming_response` call, so the frontend probe
+        // must also start from zero to stay in sync.
+        ctx.updateSessionField(effectiveKey, "streamTokenCount", 0);
+
         const response = await window.snow.createResponseStream(
           {
             messages: requestMessages,
@@ -724,6 +739,17 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             ) {
               return;
             }
+
+            // Update the real-time token probe. The Rust backend counts
+            // tokens for every streamed delta (content, thinking, and
+            // tool-call arguments) and sends the cumulative value in
+            // `chunk.streamTokenCount`. We mirror it into session state so
+            // the ChatInputView probe stays in sync.
+            ctx.updateSessionField(
+              effectiveKey,
+              "streamTokenCount",
+              chunk.streamTokenCount
+            );
 
             ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
               currentMessages.map((currentMessage) => {
@@ -1160,59 +1186,115 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                       sessionDirId ?? ctx.directoryId ?? ""
                     );
                   } else {
-                    result = await window.snow.callMcpTool(
-                      toolCall.name,
-                      toolArgs,
-                      sessionDirId,
-                      checkpointIds,
-                      checkpointIds.length > 0 ? ctx.directoryPath : undefined,
-                      sensitiveAuthorizationToken,
-                      (chunk) => {
-                        if (!chunk.data) {
-                          return;
+                    // Execute beforeToolCall hooks (with matcher) before calling the tool
+                    try {
+                      const beforeHookContext = JSON.stringify({
+                        toolName: toolCall.name,
+                        args: JSON.parse(toolArgs),
+                        cwd: ctx.directoryPath ?? "",
+                      });
+                      const beforeHookResult = await window.snow.executeHooks({
+                        hookType: "beforeToolCall",
+                        projectId: sessionDirId ?? undefined,
+                        contextJson: beforeHookContext,
+                      });
+                      if (beforeHookResult.blocked) {
+                        result = JSON.stringify({
+                          success: false,
+                          error:
+                            beforeHookResult.blockMessage ||
+                            "Tool call blocked by beforeToolCall hook",
+                        });
+                      }
+                    } catch {
+                      // Hook execution failed — continue with tool call
+                    }
+
+                    if (result === undefined) {
+                      result = await window.snow.callMcpTool(
+                        toolCall.name,
+                        toolArgs,
+                        sessionDirId,
+                        checkpointIds,
+                        checkpointIds.length > 0
+                          ? ctx.directoryPath
+                          : undefined,
+                        sensitiveAuthorizationToken,
+                        (chunk) => {
+                          if (!chunk.data) {
+                            return;
+                          }
+
+                          ctx.updateSessionMessages(
+                            effectiveKey,
+                            (currentMessages) =>
+                              currentMessages.map((currentMessage) => {
+                                if (
+                                  currentMessage.id !==
+                                  currentAssistantMessageId
+                                ) {
+                                  return currentMessage;
+                                }
+
+                                return {
+                                  ...currentMessage,
+                                  toolCalls: updateFirstMatchingToolCall(
+                                    currentMessage.toolCalls,
+                                    toolCall,
+                                    ["pending", "running"],
+                                    (currentToolCall) => ({
+                                      ...currentToolCall,
+                                      streamingStdout:
+                                        chunk.stream === "stdout"
+                                          ? `${
+                                              currentToolCall.streamingStdout ??
+                                              ""
+                                            }${chunk.data}`
+                                          : currentToolCall.streamingStdout,
+                                      streamingStderr:
+                                        chunk.stream === "stderr"
+                                          ? `${
+                                              currentToolCall.streamingStderr ??
+                                              ""
+                                            }${chunk.data}`
+                                          : currentToolCall.streamingStderr,
+                                    })
+                                  ),
+                                };
+                              })
+                          );
+                        },
+                        toolCall.interactionId
+                      );
+                    }
+
+                    // Execute afterToolCall hooks (with matcher) after the tool call completes
+                    if (result !== undefined) {
+                      try {
+                        const afterHookContext = JSON.stringify({
+                          toolName: toolCall.name,
+                          args: JSON.parse(toolArgs),
+                          result: JSON.parse(result),
+                          cwd: ctx.directoryPath ?? "",
+                        });
+                        const afterHookResult = await window.snow.executeHooks({
+                          hookType: "afterToolCall",
+                          projectId: sessionDirId ?? undefined,
+                          contextJson: afterHookContext,
+                        });
+                        if (afterHookResult.blocked) {
+                          result = JSON.stringify({
+                            success: false,
+                            error:
+                              afterHookResult.blockMessage ||
+                              "Tool result blocked by afterToolCall hook",
+                          });
                         }
-
-                        ctx.updateSessionMessages(
-                          effectiveKey,
-                          (currentMessages) =>
-                            currentMessages.map((currentMessage) => {
-                              if (
-                                currentMessage.id !== currentAssistantMessageId
-                              ) {
-                                return currentMessage;
-                              }
-
-                              return {
-                                ...currentMessage,
-                                toolCalls: updateFirstMatchingToolCall(
-                                  currentMessage.toolCalls,
-                                  toolCall,
-                                  ["pending", "running"],
-                                  (currentToolCall) => ({
-                                    ...currentToolCall,
-                                    streamingStdout:
-                                      chunk.stream === "stdout"
-                                        ? `${
-                                            currentToolCall.streamingStdout ??
-                                            ""
-                                          }${chunk.data}`
-                                        : currentToolCall.streamingStdout,
-                                    streamingStderr:
-                                      chunk.stream === "stderr"
-                                        ? `${
-                                            currentToolCall.streamingStderr ??
-                                            ""
-                                          }${chunk.data}`
-                                        : currentToolCall.streamingStderr,
-                                  })
-                                ),
-                              };
-                            })
-                        );
-                      },
-                      toolCall.interactionId
-                    );
-                  }
+                      } catch {
+                        // Hook execution failed — keep original result
+                      }
+                    }
+                  } // end of else (non-sub-agent tool call)
                 } finally {
                   if (isUserQuestionTool) {
                     ctx.userQuestionTargetRef.current.delete(
@@ -1373,12 +1455,63 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             // Best effort — continue without a checkpoint
           }
         }
-        await runAgentLoop(
-          assistantMessageId,
-          [{ role: "user", content: trimmed }],
-          sessionKey === PENDING_SESSION_KEY ? undefined : sessionKey,
-          checkpointId
-        );
+
+        // Execute onUserMessage hooks before sending the message to the AI.
+        // Hooks run in the Rust backend (spawn_blocking) and may modify the
+        // message content via soft signal (exit code 1) or block it (exit >= 2).
+        try {
+          const hookContext = JSON.stringify({
+            message: trimmed,
+            cwd: ctx.directoryPath ?? "",
+            sessionId:
+              sessionKey === PENDING_SESSION_KEY ? undefined : sessionKey,
+          });
+          const hookResult = await window.snow.executeHooks({
+            hookType: "onUserMessage",
+            projectId: sessionDirId ?? undefined,
+            contextJson: hookContext,
+          });
+          if (hookResult.blocked) {
+            ctx.updateSessionMessages(finalSessionKey, (currentMessages) =>
+              currentMessages.map((currentMessage) =>
+                currentMessage.id === assistantMessageId
+                  ? {
+                      ...currentMessage,
+                      content:
+                        hookResult.blockMessage ||
+                        "Message blocked by onUserMessage hook",
+                      timestamp: formatMessageTime(),
+                      status: "error",
+                      isRetrying: false,
+                    }
+                  : currentMessage
+              )
+            );
+            return;
+          }
+          // Collect additional context from hook results (context/command output)
+          const additionalContext = hookResult.results
+            .map((r) => r.additionalContext)
+            .filter((ctx): ctx is string => Boolean(ctx))
+            .join("\n");
+          const effectiveMessage = additionalContext
+            ? `${trimmed}\n\n[Hook Context]\n${additionalContext}`
+            : trimmed;
+          await runAgentLoop(
+            assistantMessageId,
+            [{ role: "user", content: effectiveMessage }],
+            sessionKey === PENDING_SESSION_KEY ? undefined : sessionKey,
+            checkpointId
+          );
+        } catch (hookError) {
+          // If hook execution fails, fall back to sending the original message
+          await runAgentLoop(
+            assistantMessageId,
+            [{ role: "user", content: trimmed }],
+            sessionKey === PENDING_SESSION_KEY ? undefined : sessionKey,
+            checkpointId
+          );
+        }
       };
 
       void initCheckpointAndRun()

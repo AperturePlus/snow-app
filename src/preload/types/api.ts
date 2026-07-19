@@ -96,4 +96,5 @@ export type ResponsesApiStreamChunk = {
   retrying: boolean;
   retryAttempt?: number | null;
   retryError?: string | null;
+  streamTokenCount: number;
 };

@@ -4,14 +4,15 @@ use napi_derive::napi;
 use crate::storage::{
     ApiConfigInput, ApiConfigRecord, AppStorageInfo, ChatConversationPage,
     ChatConversationRecord, ChatMessagePage, ChatMessageRecord, CodebaseProjectScopeSettings,
-    CustomHeaderSchemeInput, CustomHeaderSchemeRecord, McpServerConfigInput,
-    McpServerConfigRecord, ProjectMcpServerConfigRecord, ProjectSensitiveCommandConfigInput,
-    ProjectSensitiveCommandConfigRecord,
+    CustomHeaderSchemeInput, CustomHeaderSchemeRecord, HookConfigInput, HookConfigRecord,
+    McpServerConfigInput, McpServerConfigRecord, ProjectMcpServerConfigRecord,
+    ProjectSensitiveCommandConfigInput, ProjectSensitiveCommandConfigRecord,
     SensitiveCommandConfigInput, SensitiveCommandConfigRecord, SensitiveCommandMatchResult,
     SubAgentConfigInput, SubAgentConfigRecord, SystemPromptItemInput, SystemPromptItemRecord,
     WorkspaceDirectoryInput,
     WorkspaceDirectoryRecord,
 };
+use crate::hooks::{HookExecuteInput, HookExecuteResult};
 use crate::storage::services::fs_explorer::{DirectoryEntry, FileContentResult, FileSearchResult};
 
 // ============================================================================
@@ -117,23 +118,24 @@ pub async fn check_project_has_gitignore(project_id: String) -> napi::Result<boo
 }
 
 #[napi]
-pub async fn list_always_approved_tools(
-    workspace_path: Option<String>,
+pub async fn list_tool_approval_project_approved_tools(
+    project_id: String,
 ) -> napi::Result<Vec<String>> {
     tokio::task::spawn_blocking(move || {
-        crate::storage::services::permissions::list_always_approved_tools(workspace_path)
+        crate::storage::list_tool_approval_project_approved_tools(project_id)
     })
     .await
     .map_err(map_spawn_error)?
 }
 
 #[napi]
-pub async fn add_always_approved_tool(
-    workspace_path: Option<String>,
+pub async fn set_tool_approval_project_tool_approved(
+    project_id: String,
     tool_name: String,
+    approved: bool,
 ) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || {
-        crate::storage::services::permissions::add_always_approved_tool(workspace_path, tool_name)
+        crate::storage::set_tool_approval_project_tool_approved(project_id, tool_name, approved)
     })
     .await
     .map_err(map_spawn_error)?
@@ -332,6 +334,48 @@ pub async fn delete_project_mcp_server_config(
     })
     .await
     .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn list_hook_configs(
+    scope: String,
+    project_id: Option<String>,
+) -> napi::Result<Vec<HookConfigRecord>> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::list_hook_configs(scope, project_id)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn upsert_hook_config(item: HookConfigInput) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::upsert_hook_config(item))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn delete_hook_config(
+    hook_type: String,
+    scope: String,
+    project_id: Option<String>,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::delete_hook_config(hook_type, scope, project_id)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn execute_hooks(input: HookExecuteInput) -> napi::Result<HookExecuteResult> {
+    // 获取数据库路径需要文件系统 I/O，使用 spawn_blocking 避免阻塞 Node.js 主线程
+    let database_path = tokio::task::spawn_blocking(crate::storage::get_storage_dir)
+        .await
+        .map_err(map_spawn_error)??;
+    // execute_hooks 内部使用 tokio::process::Command 异步执行命令，直接 await
+    crate::hooks::execute_hooks(&database_path, &input).await
 }
 
 #[napi]

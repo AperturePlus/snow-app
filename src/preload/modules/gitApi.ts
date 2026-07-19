@@ -37,6 +37,8 @@ const normalizeStreamChunk = (
     retryAttempt:
       typeof value.retryAttempt === "number" ? value.retryAttempt : null,
     retryError: typeof value.retryError === "string" ? value.retryError : null,
+    streamTokenCount:
+      typeof value.streamTokenCount === "number" ? value.streamTokenCount : 0,
   };
 };
 

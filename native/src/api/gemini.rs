@@ -100,6 +100,7 @@ async fn create_gemini_response_async(
         directory_id: request.directory_id.as_deref(),
         context_compaction: request.context_compaction.unwrap_or(false),
         skip_context: request.skip_context.unwrap_or(false),
+        system_prompt_ids_json: &api_config.system_prompt_ids_json,
     })?;
 
     let client = reqwest::Client::builder()
@@ -133,6 +134,7 @@ async fn create_gemini_response_async(
         &request,
         &api_config,
         tools,
+        &prepared_request.user_system_prompts,
     )?;
     let retry_options = RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
     let streamed_response = collect_gemini_stream(
@@ -224,9 +226,11 @@ fn build_gemini_payload(
     request: &ResponsesApiRequest,
     api_config: &ApiConfigRecord,
     tools: Option<Value>,
+    user_system_prompts: &[String],
 ) -> Result<Value> {
     let skip_image_parsing = request.skip_context.unwrap_or(false);
-    let mut system_parts = Vec::new();
+    let has_user_system_prompts = !user_system_prompts.is_empty();
+    let mut builtin_system_parts = Vec::new();
     let mut contents = Vec::new();
 
     for message in messages {
@@ -236,50 +240,55 @@ fn build_gemini_payload(
         }
 
         let role = message.role.trim();
-        if skip_image_parsing {
-            match role {
-                "system" | "developer" => {
-                    if !content.is_empty() {
-                        system_parts.push(content.to_string());
-                    }
-                }
-                _ => {
-                    contents.push(json!({
-                        "role": normalize_gemini_role(role),
-                        "parts": [{ "text": content }],
-                    }));
-                }
+        if role == "system" || role == "developer" {
+            // Collect built-in system prompt parts; they will be emitted
+            // either as `systemInstruction` (no user prompts) or demoted to
+            // a leading `user` message (user prompts present), matching
+            // Snow CLI PR #127.
+            if !content.is_empty() {
+                builtin_system_parts.push(content.to_string());
             }
             continue;
         }
 
-        let parsed_content = parse_chat_message_content(content, database_path)?;
-        match role {
-            "system" | "developer" => {
-                if !parsed_content.text.is_empty() {
-                    system_parts.push(parsed_content.text);
-                }
-            }
-            _ => {
-                let mut parts = Vec::new();
-                if !parsed_content.text.is_empty() {
-                    parts.push(json!({ "text": parsed_content.text }));
-                }
-                parts.extend(parsed_content.images.iter().map(|image| {
-                    json!({
-                        "inlineData": {
-                            "mimeType": image.media_type,
-                            "data": image.data,
-                        },
-                    })
-                }));
-
-                contents.push(json!({
-                    "role": normalize_gemini_role(role),
-                    "parts": parts,
-                }));
-            }
+        if skip_image_parsing {
+            contents.push(json!({
+                "role": normalize_gemini_role(role),
+                "parts": [{ "text": content }],
+            }));
+            continue;
         }
+
+        let parsed_content = parse_chat_message_content(content, database_path)?;
+        let mut parts = Vec::new();
+        if !parsed_content.text.is_empty() {
+            parts.push(json!({ "text": parsed_content.text }));
+        }
+        parts.extend(parsed_content.images.iter().map(|image| {
+            json!({
+                "inlineData": {
+                    "mimeType": image.media_type,
+                    "data": image.data,
+                },
+            })
+        }));
+
+        contents.push(json!({
+            "role": normalize_gemini_role(role),
+            "parts": parts,
+        }));
+    }
+
+    // When user system prompts are present, they occupy `systemInstruction`
+    // exclusively and the built-in prompt is demoted to a leading `user`
+    // message (Snow CLI PR #127).
+    if has_user_system_prompts && !builtin_system_parts.is_empty() {
+        let builtin_text = builtin_system_parts.join("\n\n");
+        let builtin_message = json!({
+            "role": "user",
+            "parts": [{ "text": builtin_text }],
+        });
+        contents.insert(0, builtin_message);
     }
 
     if contents.is_empty() {
@@ -290,10 +299,21 @@ fn build_gemini_payload(
         "contents": contents,
     });
 
+    // Build `systemInstruction`. When user system prompts are present they
+    // occupy the field exclusively (each prompt as an independent part).
+    // Otherwise the built-in system prompt parts are used.
+    let system_parts: Vec<&String> = if has_user_system_prompts {
+        user_system_prompts.iter().collect()
+    } else {
+        builtin_system_parts.iter().collect()
+    };
+
     if !system_parts.is_empty() {
-        payload["systemInstruction"] = json!({
-            "parts": [{"text": system_parts.join("\n")}],
-        });
+        let parts: Vec<Value> = system_parts
+            .iter()
+            .map(|text| json!({ "text": text }))
+            .collect();
+        payload["systemInstruction"] = json!({ "parts": parts });
     }
 
     let mut generation_config = json!({});
@@ -308,20 +328,13 @@ fn build_gemini_payload(
         generation_config["thinkingConfig"] = thinking_config;
     }
 
-    if generation_config
-        .as_object()
-        .is_some_and(|object| !object.is_empty())
-    {
+    if !generation_config.as_object().map(|obj| obj.is_empty()).unwrap_or(true) {
         payload["generationConfig"] = generation_config;
     }
 
     if let Some(tools) = tools {
-        if tools
-            .get("functionDeclarations")
-            .and_then(Value::as_array)
-            .is_some_and(|items| !items.is_empty())
-        {
-            payload["tools"] = json!([tools]);
+        if tools.as_array().is_some_and(|items| !items.is_empty()) {
+            payload["tools"] = tools;
         }
     }
 
@@ -379,6 +392,7 @@ async fn collect_gemini_stream(
     retry_options: &RetryOptions,
 ) -> Result<GeminiStreamResult> {
     let mut attempt: u32 = 0;
+    let mut stream_token_count: usize = 0;
     let response = loop {
         if cancel_token.is_cancelled() {
             return Ok(GeminiStreamResult {
@@ -442,6 +456,7 @@ async fn collect_gemini_stream(
                             retrying: true,
                             retry_attempt: Some((attempt + 1) as i32),
                             retry_error: Some(error.reason.clone()),
+                            stream_token_count: stream_token_count as i64,
                         },
                         ThreadsafeFunctionCallMode::NonBlocking,
                     );
@@ -466,11 +481,12 @@ async fn collect_gemini_stream(
                         content: String::new(),
                         thinking: String::new(),
                         retrying: true,
-                    retry_attempt: Some((attempt + 1) as i32),
-                    retry_error: Some(error.reason.clone()),
-                },
-                ThreadsafeFunctionCallMode::NonBlocking,
-            );
+                        retry_attempt: Some((attempt + 1) as i32),
+                        retry_error: Some(error.reason.clone()),
+                        stream_token_count: stream_token_count as i64,
+                    },
+                    ThreadsafeFunctionCallMode::NonBlocking,
+                );
 
                 match wait_before_retry(retry_options, cancel_token).await {
                     Ok(()) => { attempt += 1; continue; }
@@ -488,6 +504,11 @@ async fn collect_gemini_stream(
     let mut response_model = String::new();
     let mut response_status = String::from("completed");
     let mut token_usage = ChatTokenUsage::default();
+    // Cumulative token counter for the current agent-loop iteration.
+    // Every streamed delta (content, thinking, and tool-call arguments)
+    // contributes to this counter so the renderer can display a real-time
+    // probe that updates on every chunk — including long tool arguments
+    // that previously were only counted after the full call assembled.
     let mut buffer = String::new();
     let mut stream = response.bytes_stream();
     loop {
@@ -511,6 +532,7 @@ async fn collect_gemini_stream(
                     buffer = buffer[separator_index + 2..].to_string();
                     let content_start_index = content_chunks.len();
                     let thinking_start_index = thinking_chunks.len();
+                    let mut tool_args_delta = String::new();
                     process_gemini_sse_event_block(
                         &event_block,
                         &mut raw_events,
@@ -521,10 +543,20 @@ async fn collect_gemini_stream(
                         &mut response_model,
                         &mut response_status,
                         &mut token_usage,
+                        &mut tool_args_delta,
                     )?;
                     let content_delta = content_chunks[content_start_index..].join("");
                     let thinking_delta = thinking_chunks[thinking_start_index..].join("");
-                    emit_stream_chunk(on_chunk, content_delta, thinking_delta);
+                    emit_stream_chunk(
+                        on_chunk,
+                        content_delta,
+                        thinking_delta,
+                        &mut stream_token_count,
+                    );
+                    // Tool-call argument deltas arrive separately from the
+                    // content stream. Emit a probe-only chunk so the
+                    // renderer reflects long tool arguments in real time.
+                    emit_tool_args_probe(on_chunk, &mut stream_token_count, &tool_args_delta);
                 }
             }
         }
@@ -533,6 +565,7 @@ async fn collect_gemini_stream(
     if response_status != "cancelled" && !buffer.trim().is_empty() {
         let content_start_index = content_chunks.len();
         let thinking_start_index = thinking_chunks.len();
+        let mut tool_args_delta = String::new();
         process_gemini_sse_event_block(
             &buffer,
             &mut raw_events,
@@ -543,10 +576,17 @@ async fn collect_gemini_stream(
             &mut response_model,
             &mut response_status,
             &mut token_usage,
+            &mut tool_args_delta,
         )?;
         let content_delta = content_chunks[content_start_index..].join("");
         let thinking_delta = thinking_chunks[thinking_start_index..].join("");
-        emit_stream_chunk(on_chunk, content_delta, thinking_delta);
+        emit_stream_chunk(
+            on_chunk,
+            content_delta,
+            thinking_delta,
+            &mut stream_token_count,
+        );
+        emit_tool_args_probe(on_chunk, &mut stream_token_count, &tool_args_delta);
     }
 
     let content = content_chunks.join("").trim().to_string();
@@ -576,6 +616,7 @@ fn process_gemini_sse_event_block(
     response_model: &mut String,
     response_status: &mut String,
     token_usage: &mut ChatTokenUsage,
+    tool_args_delta: &mut String,
 ) -> Result<()> {
     let data = event_block
         .lines()
@@ -600,6 +641,7 @@ fn process_gemini_sse_event_block(
         response_model,
         response_status,
         token_usage,
+        tool_args_delta,
     )?;
     raw_events.push(event);
 
@@ -616,6 +658,7 @@ fn process_gemini_event(
     response_model: &mut String,
     response_status: &mut String,
     token_usage: &mut ChatTokenUsage,
+    tool_args_delta: &mut String,
 ) -> Result<()> {
     if let Some(error) = event.get("error") {
         let message = error
@@ -679,6 +722,14 @@ fn process_gemini_event(
                         }
 
                         if let Some(function_call) = part.get("functionCall") {
+                            // Serialize the function call so the token
+                            // probe can reflect tool arguments in real
+                            // time. Gemini returns the complete object
+                            // at once (no streaming argument deltas), so
+                            // we count it immediately when it appears.
+                            if let Ok(json) = serde_json::to_string(function_call) {
+                                tool_args_delta.push_str(&json);
+                            }
                             tool_calls.push(function_call.clone());
                         }
                     }
@@ -706,10 +757,38 @@ fn emit_stream_chunk(
     on_chunk: &ResponsesApiStreamCallback,
     content_delta: String,
     thinking_delta: String,
+    stream_token_count: &mut usize,
 ) {
     if content_delta.is_empty() && thinking_delta.is_empty() {
         return;
     }
+
+    let delta_text = if content_delta.is_empty() {
+        &thinking_delta
+    } else if thinking_delta.is_empty() {
+        &content_delta
+    } else {
+        let combined = format!("{content_delta}{thinking_delta}");
+        let count = crate::api::token_counter::count_tokens(&combined);
+        *stream_token_count += count;
+        on_chunk.call(
+            ResponsesApiStreamChunk {
+                content_delta,
+                thinking_delta,
+                content: String::new(),
+                thinking: String::new(),
+                retrying: false,
+                retry_attempt: None,
+                retry_error: None,
+                stream_token_count: *stream_token_count as i64,
+            },
+            ThreadsafeFunctionCallMode::NonBlocking,
+        );
+        return;
+    };
+
+    let count = crate::api::token_counter::count_tokens(delta_text);
+    *stream_token_count += count;
 
     on_chunk.call(
         ResponsesApiStreamChunk {
@@ -720,6 +799,37 @@ fn emit_stream_chunk(
             retrying: false,
             retry_attempt: None,
             retry_error: None,
+            stream_token_count: *stream_token_count as i64,
+        },
+        ThreadsafeFunctionCallMode::NonBlocking,
+    );
+}
+
+/// Emit a probe-only chunk that carries just the updated token count.
+///
+/// Gemini returns `functionCall` as a complete object (no streaming
+/// argument deltas). We still count its serialized JSON tokens so the
+/// probe reflects the tool call immediately, rather than skipping it.
+fn emit_tool_args_probe(
+    on_chunk: &ResponsesApiStreamCallback,
+    stream_token_count: &mut usize,
+    args_json: &str,
+) {
+    if args_json.is_empty() {
+        return;
+    }
+    let count = crate::api::token_counter::count_tokens(args_json);
+    *stream_token_count += count;
+    on_chunk.call(
+        ResponsesApiStreamChunk {
+            content_delta: String::new(),
+            thinking_delta: String::new(),
+            content: String::new(),
+            thinking: String::new(),
+            retrying: false,
+            retry_attempt: None,
+            retry_error: None,
+            stream_token_count: *stream_token_count as i64,
         },
         ThreadsafeFunctionCallMode::NonBlocking,
     );

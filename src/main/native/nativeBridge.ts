@@ -61,13 +61,13 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to write YOLO mode")
         ),
-      listAlwaysApprovedTools: () =>
+      listToolApprovalProjectApprovedTools: () =>
         Promise.reject(
-          new Error("Rust native bridge is required to read tool permissions")
+          new Error("Rust native bridge is required to read tool approvals")
         ),
-      addAlwaysApprovedTool: () =>
+      setToolApprovalProjectToolApproved: () =>
         Promise.reject(
-          new Error("Rust native bridge is required to write tool permissions")
+          new Error("Rust native bridge is required to write tool approvals")
         ),
       listApiConfigs: () =>
         Promise.reject(
@@ -198,6 +198,22 @@ export const loadNativeBridge = (): NativeBridge => {
           new Error(
             "Rust native bridge is required to delete project MCP server configs"
           )
+        ),
+      listHookConfigs: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to list hook configs")
+        ),
+      upsertHookConfig: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write hook configs")
+        ),
+      deleteHookConfig: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to delete hook configs")
+        ),
+      executeHooks: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to execute hooks")
         ),
       listSubAgentConfigs: () =>
         Promise.reject(

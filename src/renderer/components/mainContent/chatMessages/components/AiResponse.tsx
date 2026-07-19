@@ -2,6 +2,7 @@ import { Loader2 } from "lucide-react";
 import { memo, useMemo } from "react";
 import { useI18n } from "../../../../i18n";
 import { AiResponseActions } from "./AiResponseActions";
+import { StreamCursor } from "./StreamCursor";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallItem } from "./ToolCallItem";
 import { ToolAuthorizationDialog } from "../dialogs/ToolAuthorizationDialog";
@@ -20,6 +21,7 @@ export const AiResponse = memo(
     isRetrying = false,
     retryAttempt,
     retryError,
+    streamTokenCount,
     showActions = true,
     toolCalls = [],
     pendingToolAuthorizations = [],
@@ -141,7 +143,7 @@ export const AiResponse = memo(
               ) : null}
             </span>
           ) : isStreaming ? (
-            <span className="stream-cursor" aria-hidden="true" />
+            <StreamCursor tokenCount={streamTokenCount} />
           ) : null}
         </div>
 

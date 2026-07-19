@@ -3,7 +3,7 @@ use std::process::Stdio;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
-use crate::exports::terminal::detect_default_terminal;
+use crate::exports::terminal::{load_terminal_shell_path, resolve_shell_and_args};
 
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
@@ -37,7 +37,6 @@ const SERVER_ID: &str = "bash";
 const MAX_OUTPUT_LENGTH: usize = 10000;
 const DEFAULT_TIMEOUT_MS: u64 = 30000;
 const OUTPUT_TRUNCATED_MARKER: &str = "... (output truncated)";
-const TERMINAL_SETTINGS_CODE: &str = "terminal_settings";
 const SENSITIVE_AUTHORIZATION_TTL: Duration = Duration::from_secs(60);
 
 struct SensitiveCommandAuthorization {
@@ -90,12 +89,6 @@ async fn consume_sensitive_command_authorization(
         .remove(token)
         .map(|authorization| authorization.command == command && authorization.expires_at > now)
         .unwrap_or(false)
-}
-
-#[derive(serde::Deserialize)]
-struct TerminalSettingsJson {
-    #[serde(rename = "shellPath")]
-    shell_path: String,
 }
 
 impl McpService for BashService {
@@ -303,125 +296,6 @@ impl BashService {
                 format!("Failed to wait for process: {error}"),
             )),
         }
-    }
-}
-
-async fn load_terminal_shell_path() -> napi::Result<String> {
-    let setting_json = tokio::task::spawn_blocking(|| {
-        crate::storage::get_system_setting_value(TERMINAL_SETTINGS_CODE.to_string())
-    })
-    .await
-    .map_err(|error| {
-        Error::new(
-            Status::GenericFailure,
-            format!("Failed to read terminal settings: {error}"),
-        )
-    })?
-    .map_err(|error| {
-        Error::new(
-            Status::GenericFailure,
-            format!("Failed to read terminal settings: {error}"),
-        )
-    })?;
-
-    match setting_json {
-        Some(json) => {
-            let settings: TerminalSettingsJson = serde_json::from_str(&json).map_err(|error| {
-                Error::new(
-                    Status::GenericFailure,
-                    format!("Failed to parse terminal settings: {error}"),
-                )
-            })?;
-            Ok(settings.shell_path)
-        }
-        None => Ok(String::new()),
-    }
-}
-
-async fn resolve_shell_and_args(
-    shell_path: &str,
-    command: &str,
-) -> napi::Result<(String, Vec<String>)> {
-    if shell_path.is_empty() {
-        if let Some(detected) = detect_default_terminal().await? {
-            return build_shell_args(&detected.path, &detected.family, command);
-        }
-        return fallback_shell_args(command);
-    }
-
-    let family = detect_shell_family(shell_path);
-    build_shell_args(shell_path, &family, command)
-}
-
-fn detect_shell_family(shell_path: &str) -> String {
-    let lower = shell_path.to_lowercase();
-    let file_name = std::path::Path::new(shell_path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-
-    if file_name.contains("pwsh")
-        || file_name.contains("powershell")
-        || lower.contains("pwsh")
-        || lower.contains("powershell")
-    {
-        "powershell".to_string()
-    } else if file_name.contains("cmd") || lower.contains("cmd.exe") {
-        "cmd".to_string()
-    } else if file_name.contains("wsl") || lower.contains("wsl.exe") {
-        "wsl".to_string()
-    } else {
-        "posix".to_string()
-    }
-}
-
-fn build_shell_args(
-    shell: &str,
-    family: &str,
-    command: &str,
-) -> napi::Result<(String, Vec<String>)> {
-    match family {
-        "powershell" => {
-            let utf8_command = format!(
-                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; {}",
-                command
-            );
-            Ok((
-                shell.to_string(),
-                vec![
-                    "-NoProfile".to_string(),
-                    "-Command".to_string(),
-                    utf8_command,
-                ],
-            ))
-        }
-        "cmd" => {
-            let utf8_command = format!("chcp 65001>nul && {}", command);
-            Ok((shell.to_string(), vec!["/C".to_string(), utf8_command]))
-        }
-        "wsl" => Ok((
-            shell.to_string(),
-            vec![
-                "-e".to_string(),
-                "bash".to_string(),
-                "-c".to_string(),
-                command.to_string(),
-            ],
-        )),
-        _ => Ok((
-            shell.to_string(),
-            vec!["-c".to_string(), command.to_string()],
-        )),
-    }
-}
-
-fn fallback_shell_args(command: &str) -> napi::Result<(String, Vec<String>)> {
-    if cfg!(target_os = "windows") {
-        let utf8_command = format!("chcp 65001>nul && {}", command);
-        Ok(("cmd".to_string(), vec!["/C".to_string(), utf8_command]))
-    } else {
-        Ok(("sh".to_string(), vec!["-c".to_string(), command.to_string()]))
     }
 }
 

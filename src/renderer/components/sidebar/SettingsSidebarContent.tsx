@@ -158,6 +158,7 @@ export function SettingsSidebarContent({
       activeMainView === "skills-settings" ||
       activeMainView === "sub-agent-settings" ||
       activeMainView === "sensitive-command-settings" ||
+      activeMainView === "hooks-settings" ||
       activeMainView === "terminal-settings"
     ) {
       onSelectMainView("chat");
@@ -205,6 +206,8 @@ export function SettingsSidebarContent({
                   ? "sub-agent-settings"
                   : item.id === "sensitive-commands"
                   ? "sensitive-command-settings"
+                  : item.id === "hooks"
+                  ? "hooks-settings"
                   : item.id === "terminal"
                   ? "terminal-settings"
                   : null;

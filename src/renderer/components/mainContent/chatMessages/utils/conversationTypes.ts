@@ -86,6 +86,11 @@ export type ConversationSessionState = {
   hasNewContent: boolean;
   forkedFromConversationId?: string;
   forkMessageCount?: number;
+  /** Real-time token probe for the current agent-loop iteration.
+   *  Reset to 0 when a new iteration starts; updated on every streaming
+   *  chunk (content, thinking, and tool-call arguments) by the Rust
+   *  backend via `ResponsesApiStreamChunk.streamTokenCount`. */
+  streamTokenCount: number;
 };
 
 export type ConversationSessionRef = {
@@ -255,6 +260,10 @@ export type UseChatConversationResult = {
   activeConversationId: string | undefined;
   conversationDirectoryId: string | undefined;
   tokenUsage: TokenUsage | null;
+  /** Real-time token probe for the current agent-loop iteration.
+   *  Updated on every streaming chunk by the Rust backend; reset to 0
+   *  when a new iteration starts. */
+  streamTokenCount: number;
   forkedFromConversationId: string | undefined;
   forkMessageCount: number | undefined;
   streamingConversationIds: Set<string>;

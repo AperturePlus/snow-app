@@ -140,6 +140,7 @@ export const useConversationManagement = (
             forkedFromConversationId:
               conversationRecord?.forkedFromConversationId || undefined,
             forkMessageCount: conversationRecord?.forkMessageCount || undefined,
+            streamTokenCount: 0,
           },
         }));
       } catch {

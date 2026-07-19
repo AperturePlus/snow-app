@@ -22,7 +22,7 @@ export type ChatInputProps = {
   yoloMode?: boolean;
   isUpdatingYoloMode?: boolean;
   onYoloModeChange?: (enabled: boolean) => void;
-  onRefreshYoloMode?: () => void | Promise<boolean | void>;
+  onRefreshYoloMode?: () => Promise<boolean | void>;
   autoScrollEnabled?: boolean;
   onAutoScrollChange?: (enabled: boolean) => void;
   isCompacting?: boolean;
@@ -107,7 +107,7 @@ export type ChatInputViewProps = ChatInputState &
     yoloMode: boolean;
     isUpdatingYoloMode: boolean;
     onYoloModeChange?: (enabled: boolean) => void;
-    onRefreshYoloMode?: () => void | Promise<boolean | void>;
+    onRefreshYoloMode?: () => Promise<boolean | void>;
     autoScrollEnabled: boolean;
     onAutoScrollChange?: (enabled: boolean) => void;
     isCompacting: boolean;

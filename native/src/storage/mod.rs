@@ -273,6 +273,23 @@ pub struct SensitiveCommandMatchResult {
 }
 
 #[napi(object)]
+pub struct HookConfigInput {
+    pub hook_type: String,
+    pub scope: String,
+    pub project_id: Option<String>,
+    pub rules_json: String,
+}
+
+#[napi(object)]
+pub struct HookConfigRecord {
+    pub hook_type: String,
+    pub scope: String,
+    pub project_id: String,
+    pub rules_json: String,
+    pub updated_at: String,
+}
+
+#[napi(object)]
 pub struct CodebaseProjectScopeSettings {
     pub project_id: String,
     pub enabled: Option<bool>,
@@ -429,6 +446,28 @@ pub fn set_codebase_project_reranking(
 ) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::system_settings::set_codebase_project_reranking(&database_path, &project_id, enabled)
+}
+
+pub fn list_tool_approval_project_approved_tools(project_id: String) -> Result<Vec<String>> {
+    let database_path = ensure_database_file()?;
+    services::system_settings::list_tool_approval_project_approved_tools(
+        &database_path,
+        &project_id,
+    )
+}
+
+pub fn set_tool_approval_project_tool_approved(
+    project_id: String,
+    tool_name: String,
+    approved: bool,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::system_settings::set_tool_approval_project_tool_approved(
+        &database_path,
+        &project_id,
+        &tool_name,
+        approved,
+    )
 }
 
 pub fn check_project_has_gitignore(project_id: String) -> Result<bool> {
@@ -741,11 +780,34 @@ pub fn check_sensitive_command_match(
     Ok(matches)
 }
 
+pub fn list_hook_configs(scope: String, project_id: Option<String>) -> Result<Vec<HookConfigRecord>> {
+    let database_path = ensure_database_file()?;
+    services::hooks_configs::list_hook_configs(&database_path, &scope, project_id.as_deref())
+}
+
+pub fn upsert_hook_config(item: HookConfigInput) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::hooks_configs::upsert_hook_config(&database_path, &item)
+}
+
+pub fn delete_hook_config(
+    hook_type: String,
+    scope: String,
+    project_id: Option<String>,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::hooks_configs::delete_hook_config(
+        &database_path,
+        &hook_type,
+        &scope,
+        project_id.as_deref(),
+    )
+}
+
 pub fn list_chat_conversations(directory_id: String) -> Result<Vec<ChatConversationRecord>> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::list_chat_conversations(&database_path, &directory_id)
 }
-
 pub fn list_chat_conversations_paginated(
     directory_id: String,
     limit: i32,
@@ -763,7 +825,6 @@ pub fn list_pinned_conversations(directory_id: String) -> Result<Vec<ChatConvers
     let database_path = ensure_database_file()?;
     services::chat_conversations::list_pinned_conversations(&database_path, &directory_id)
 }
-
 pub fn get_chat_conversation(
     conversation_id: String,
 ) -> Result<Option<ChatConversationRecord>> {
@@ -926,4 +987,9 @@ fn ensure_storage_dir() -> Result<PathBuf> {
     })?;
 
     Ok(storage_dir)
+}
+
+pub fn get_storage_dir() -> Result<PathBuf> {
+    let database_path = ensure_database_file()?;
+    Ok(database_path)
 }

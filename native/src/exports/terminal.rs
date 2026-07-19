@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use serde::Deserialize;
 
 #[napi(object)]
 pub struct DetectedTerminal {
@@ -210,8 +211,144 @@ pub async fn detect_terminals() -> napi::Result<Vec<DetectedTerminal>> {
         )
     })?
 }
-
 pub(crate) async fn detect_default_terminal() -> napi::Result<Option<DetectedTerminal>> {
     let terminals = detect_terminals().await?;
     Ok(terminals.into_iter().next())
+}
+
+// ============================================================================
+// 终端 Shell 解析逻辑（供 bash MCP 服务和 hooks 执行器共用）
+// ============================================================================
+
+pub(crate) const TERMINAL_SETTINGS_CODE: &str = "terminal_settings";
+
+#[derive(Deserialize)]
+pub(crate) struct TerminalSettingsJson {
+    #[serde(rename = "shellPath")]
+    pub shell_path: String,
+}
+
+/// 从 system_settings.terminal_settings 读取 shellPath。
+/// shellPath 为空时返回空字符串，由调用方决定回退策略。
+pub(crate) async fn load_terminal_shell_path() -> napi::Result<String> {
+    let setting_json = tokio::task::spawn_blocking(|| {
+        crate::storage::get_system_setting_value(TERMINAL_SETTINGS_CODE.to_string())
+    })
+    .await
+    .map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to read terminal settings: {error}"),
+        )
+    })?
+    .map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to read terminal settings: {error}"),
+        )
+    })?;
+
+    match setting_json {
+        Some(json) => {
+            let settings: TerminalSettingsJson =
+                serde_json::from_str(&json).map_err(|error| {
+                    Error::new(
+                        Status::GenericFailure,
+                        format!("Failed to parse terminal settings: {error}"),
+                    )
+                })?;
+            Ok(settings.shell_path)
+        }
+        None => Ok(String::new()),
+    }
+}
+
+/// 根据 shellPath 解析实际要启动的 shell 可执行文件及参数。
+/// shellPath 为空时自动检测默认终端；检测失败时使用平台回退（cmd / sh）。
+pub(crate) async fn resolve_shell_and_args(
+    shell_path: &str,
+    command: &str,
+) -> napi::Result<(String, Vec<String>)> {
+    if shell_path.is_empty() {
+        if let Some(detected) = detect_default_terminal().await? {
+            return build_shell_args(&detected.path, &detected.family, command);
+        }
+        return fallback_shell_args(command);
+    }
+
+    let family = detect_shell_family(shell_path);
+    build_shell_args(shell_path, &family, command)
+}
+
+pub(crate) fn detect_shell_family(shell_path: &str) -> String {
+    let lower = shell_path.to_lowercase();
+    let file_name = std::path::Path::new(shell_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    if file_name.contains("pwsh")
+        || file_name.contains("powershell")
+        || lower.contains("pwsh")
+        || lower.contains("powershell")
+    {
+        "powershell".to_string()
+    } else if file_name.contains("cmd") || lower.contains("cmd.exe") {
+        "cmd".to_string()
+    } else if file_name.contains("wsl") || lower.contains("wsl.exe") {
+        "wsl".to_string()
+    } else {
+        "posix".to_string()
+    }
+}
+
+pub(crate) fn build_shell_args(
+    shell: &str,
+    family: &str,
+    command: &str,
+) -> napi::Result<(String, Vec<String>)> {
+    match family {
+        "powershell" => {
+            // 注入 UTF-8 输出编码，避免中文路径/输出乱码
+            let utf8_command = format!(
+                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; {}",
+                command
+            );
+            Ok((
+                shell.to_string(),
+                vec![
+                    "-NoProfile".to_string(),
+                    "-Command".to_string(),
+                    utf8_command,
+                ],
+            ))
+        }
+        "cmd" => {
+            let utf8_command = format!("chcp 65001>nul && {}", command);
+            Ok((shell.to_string(), vec!["/C".to_string(), utf8_command]))
+        }
+        "wsl" => Ok((
+            shell.to_string(),
+            vec![
+                "-e".to_string(),
+                "bash".to_string(),
+                "-c".to_string(),
+                command.to_string(),
+            ],
+        )),
+        _ => Ok((
+            shell.to_string(),
+            vec!["-c".to_string(), command.to_string()],
+        )),
+    }
+}
+
+pub(crate) fn fallback_shell_args(command: &str) -> napi::Result<(String, Vec<String>)> {
+    if cfg!(target_os = "windows") {
+        let utf8_command = format!("chcp 65001>nul && {}", command);
+        Ok(("cmd".to_string(), vec!["/C".to_string(), utf8_command]))
+    } else {
+        Ok(("sh".to_string(), vec!["-c".to_string(), command.to_string()]))
+    }
 }
