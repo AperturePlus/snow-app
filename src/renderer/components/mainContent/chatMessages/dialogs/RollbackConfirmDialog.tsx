@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   Eye,
+  FileX2,
   ListChecks,
 } from "lucide-react";
 import type {
@@ -14,6 +15,7 @@ import type {
   CheckpointFileDiff,
 } from "../../../../../preload";
 import { useI18n } from "../../../../i18n";
+import type { RollbackMode } from "../utils/conversationTypes";
 import {
   FileChangeIcon,
   FileDiffPreview,
@@ -32,7 +34,7 @@ type RollbackConfirmDialogProps = {
   workDir?: string;
   isFirstMessage: boolean;
   todoItems: RollbackTodoItem[];
-  onConfirm: () => void;
+  onConfirm: (mode: RollbackMode) => void;
   onCancel: () => void;
 };
 
@@ -115,7 +117,7 @@ export const RollbackConfirmDialog = ({
         }
         if (e.key === "Enter" && e.target === dialogRef.current) {
           e.preventDefault();
-          onConfirm();
+          onConfirm("conversation-and-files");
         }
       }}
     >
@@ -280,12 +282,24 @@ export const RollbackConfirmDialog = ({
             >
               {t("common.cancel")}
             </button>
+            {changes.length > 0 && (
+              <button
+                type="button"
+                className="confirm-dialog-btn conversation-only"
+                onClick={() => onConfirm("conversation-only")}
+              >
+                <FileX2 size={14} />
+                {t("chat.rollbackConversationOnlyAction")}
+              </button>
+            )}
             <button
               type="button"
               className="confirm-dialog-btn confirm"
-              onClick={onConfirm}
+              onClick={() => onConfirm("conversation-and-files")}
             >
-              {t("chat.rollbackConfirmAction")}
+              {changes.length > 0
+                ? t("chat.rollbackConversationAndFilesAction")
+                : t("chat.rollbackConfirmAction")}
             </button>
           </div>
         </div>

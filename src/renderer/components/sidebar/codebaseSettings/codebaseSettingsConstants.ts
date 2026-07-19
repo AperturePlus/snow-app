@@ -5,9 +5,6 @@ export const CODEBASE_SETTING_CODE = "codebase_settings";
 
 export const DEFAULT_CODEBASE_SETTINGS: CodebaseSettingsInput = {
   profileName: "default",
-  enabled: false,
-  enableAgentReview: true,
-  enableReranking: false,
   embeddingType: "jina",
   embeddingModelName: "",
   embeddingBaseUrl: "",

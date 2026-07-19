@@ -1,10 +1,16 @@
 pub mod api_configs;
 pub mod chat_conversations;
 pub mod checkpoint;
+pub mod code_chunker;
+pub mod codebase_embed_sessions;
+pub mod codebase_index;
+pub mod codebase_watcher;
 pub mod custom_header_schemes;
+pub mod file_scanner;
 pub mod fs_explorer;
 pub mod git;
 pub mod git_watcher;
+pub mod gitignore;
 pub mod mcp_server_configs;
 pub mod project_mcp_server_configs;
 pub mod project_sensitive_command_configs;

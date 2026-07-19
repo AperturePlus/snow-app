@@ -67,61 +67,6 @@ export function CodebaseSettingsForm({
 
       <div className="api-settings-form-body">
         <div className="api-settings-form-section">
-          <div className="api-settings-form-section-header">
-            <strong className="api-settings-form-section-title">
-              {t("settings.codebaseGeneral", { defaultValue: "General" })}
-            </strong>
-          </div>
-          <div className="api-settings-form-grid">
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
-                checked={form.enabled}
-                onChange={onUpdateField("enabled")}
-                disabled={isBusy}
-                hidden
-              />
-              <span className="toggle-slider" />
-              <span>
-                {t("settings.codebaseEnabled", {
-                  defaultValue: "Enable codebase indexing",
-                })}
-              </span>
-            </label>
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
-                checked={form.enableAgentReview}
-                onChange={onUpdateField("enableAgentReview")}
-                disabled={isBusy}
-                hidden
-              />
-              <span className="toggle-slider" />
-              <span>
-                {t("settings.codebaseAgentReview", {
-                  defaultValue: "Enable agent review",
-                })}
-              </span>
-            </label>
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
-                checked={form.enableReranking}
-                onChange={onUpdateField("enableReranking")}
-                disabled={isBusy}
-                hidden
-              />
-              <span className="toggle-slider" />
-              <span>
-                {t("settings.codebaseReranking", {
-                  defaultValue: "Enable reranking",
-                })}
-              </span>
-            </label>
-          </div>
-        </div>
-
-        <div className="api-settings-form-section">
           <strong className="api-settings-form-section-title">
             {t("settings.codebaseEmbeddingSettings", {
               defaultValue: "Embedding settings",

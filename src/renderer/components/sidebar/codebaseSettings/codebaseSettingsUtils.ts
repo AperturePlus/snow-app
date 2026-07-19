@@ -62,15 +62,6 @@ export const normalizeCodebaseSettings = (
 
   return {
     profileName: profileName || DEFAULT_CODEBASE_SETTINGS.profileName,
-    enabled: toBoolean(source.enabled, DEFAULT_CODEBASE_SETTINGS.enabled),
-    enableAgentReview: toBoolean(
-      source.enableAgentReview,
-      DEFAULT_CODEBASE_SETTINGS.enableAgentReview
-    ),
-    enableReranking: toBoolean(
-      source.enableReranking,
-      DEFAULT_CODEBASE_SETTINGS.enableReranking
-    ),
     embeddingType: embeddingType || DEFAULT_CODEBASE_SETTINGS.embeddingType,
     embeddingModelName: toText(source.embeddingModelName).trim(),
     embeddingBaseUrl: toText(source.embeddingBaseUrl).trim(),
@@ -123,9 +114,6 @@ export const toCodebaseForm = (
   settings: CodebaseSettingsInput
 ): CodebaseSettingsForm => ({
   profileName: settings.profileName,
-  enabled: settings.enabled,
-  enableAgentReview: settings.enableAgentReview,
-  enableReranking: settings.enableReranking,
   embeddingType: settings.embeddingType,
   embeddingModelName: settings.embeddingModelName,
   embeddingBaseUrl: settings.embeddingBaseUrl,
@@ -149,9 +137,6 @@ export const toSnowCliCodebaseConfigJson = (
 ): string =>
   JSON.stringify({
     codebase: {
-      enabled: settings.enabled,
-      enableAgentReview: settings.enableAgentReview,
-      enableReranking: settings.enableReranking,
       embedding: {
         type: settings.embeddingType,
         modelName: settings.embeddingModelName,

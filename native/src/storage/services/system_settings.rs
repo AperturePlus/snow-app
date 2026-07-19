@@ -21,7 +21,7 @@ const DEFAULT_TERMINAL_SETTING_VALUE: &str = "{\"shellPath\":\"\",\"fontFamily\"
 
 const DEFAULT_CODEBASE_SETTING_NAME: &str = "Codebase settings";
 const DEFAULT_CODEBASE_SETTING_CODE: &str = "codebase_settings";
-const DEFAULT_CODEBASE_SETTING_VALUE: &str = "{\"profileName\":\"default\",\"enabled\":false,\"enableAgentReview\":true,\"enableReranking\":false,\"embeddingType\":\"jina\",\"embeddingModelName\":\"\",\"embeddingBaseUrl\":\"\",\"embeddingApiKey\":\"\",\"embeddingDimensions\":1536,\"batchMaxLines\":10,\"batchConcurrency\":3,\"chunkingMaxLinesPerChunk\":200,\"chunkingMinLinesPerChunk\":10,\"chunkingMinCharsPerChunk\":20,\"chunkingOverlapLines\":20,\"rerankingModelName\":\"\",\"rerankingBaseUrl\":\"\",\"rerankingApiKey\":\"\",\"rerankingContextLength\":4096,\"rerankingTopN\":5,\"configJson\":\"{}\",\"source\":\"manual\"}";
+const DEFAULT_CODEBASE_SETTING_VALUE: &str = "{\"profileName\":\"default\",\"embeddingType\":\"jina\",\"embeddingModelName\":\"\",\"embeddingBaseUrl\":\"\",\"embeddingApiKey\":\"\",\"embeddingDimensions\":1536,\"batchMaxLines\":10,\"batchConcurrency\":3,\"chunkingMaxLinesPerChunk\":200,\"chunkingMinLinesPerChunk\":10,\"chunkingMinCharsPerChunk\":20,\"chunkingOverlapLines\":20,\"rerankingModelName\":\"\",\"rerankingBaseUrl\":\"\",\"rerankingApiKey\":\"\",\"rerankingContextLength\":4096,\"rerankingTopN\":5,\"configJson\":\"{}\",\"source\":\"manual\"}";
 
 const DEFAULT_YOLO_MODE_SETTING_NAME: &str = "YOLO mode";
 const DEFAULT_YOLO_MODE_SETTING_CODE: &str = "yolo_mode";
@@ -31,6 +31,9 @@ const PROJECT_MCP_SETTING_NAME: &str = "Project MCP scope";
 const PROJECT_MCP_SETTING_CODE_PREFIX: &str = "project_mcp_scope_";
 const PROJECT_SKILLS_SETTING_NAME: &str = "Project Skills scope";
 const PROJECT_SKILLS_SETTING_CODE_PREFIX: &str = "project_skills_scope_";
+
+const PROJECT_CODEBASE_SETTING_NAME: &str = "Project Codebase scope";
+const PROJECT_CODEBASE_SETTING_CODE_PREFIX: &str = "project_codebase_scope_";
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -94,6 +97,33 @@ impl SkillsProjectScopeSettings {
                     .then(|| (normalized_skill_key.to_string(), *enabled))
             })
             .collect();
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct CodebaseProjectScopeSettings {
+    pub project_id: String,
+    pub enabled: Option<bool>,
+    pub enable_agent_review: Option<bool>,
+    pub enable_reranking: Option<bool>,
+}
+
+impl CodebaseProjectScopeSettings {
+    fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = Some(enabled);
+    }
+
+    fn set_agent_review(&mut self, enabled: bool) {
+        self.enable_agent_review = Some(enabled);
+    }
+
+    fn set_reranking(&mut self, enabled: bool) {
+        self.enable_reranking = Some(enabled);
+    }
+
+    fn normalize(&mut self) {
+        self.project_id = self.project_id.trim().to_string();
     }
 }
 
@@ -310,6 +340,97 @@ fn project_mcp_setting_code(project_id: &str) -> String {
 fn project_skills_setting_code(project_id: &str) -> String {
     format!(
         "{PROJECT_SKILLS_SETTING_CODE_PREFIX}{}",
+        blake3::hash(project_id.as_bytes()).to_hex()
+    )
+}
+
+pub fn get_codebase_project_scope_settings(
+    database_path: &Path,
+    project_id: &str,
+) -> Result<CodebaseProjectScopeSettings> {
+    let normalized_project_id = normalize_required_value(project_id, "Project id")?;
+    let setting_code = project_codebase_setting_code(&normalized_project_id);
+    let Some(raw_value) = get_system_setting_value(database_path, &setting_code)? else {
+        return Ok(CodebaseProjectScopeSettings {
+            project_id: normalized_project_id,
+            ..CodebaseProjectScopeSettings::default()
+        });
+    };
+
+    let mut settings =
+        serde_json::from_str::<CodebaseProjectScopeSettings>(&raw_value).map_err(|error| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to parse project Codebase scope settings: {error}"),
+            )
+        })?;
+    settings.normalize();
+    if settings.project_id.is_empty() {
+        settings.project_id = normalized_project_id.clone();
+    }
+    if settings.project_id != normalized_project_id {
+        return Err(Error::new(
+            Status::GenericFailure,
+            "Project Codebase scope setting identity does not match the requested project"
+                .to_string(),
+        ));
+    }
+
+    Ok(settings)
+}
+
+pub fn set_codebase_project_enabled(
+    database_path: &Path,
+    project_id: &str,
+    enabled: bool,
+) -> Result<()> {
+    let mut settings = get_codebase_project_scope_settings(database_path, project_id)?;
+    settings.set_enabled(enabled);
+    write_codebase_project_scope_settings(database_path, &settings)
+}
+
+pub fn set_codebase_project_agent_review(
+    database_path: &Path,
+    project_id: &str,
+    enabled: bool,
+) -> Result<()> {
+    let mut settings = get_codebase_project_scope_settings(database_path, project_id)?;
+    settings.set_agent_review(enabled);
+    write_codebase_project_scope_settings(database_path, &settings)
+}
+
+pub fn set_codebase_project_reranking(
+    database_path: &Path,
+    project_id: &str,
+    enabled: bool,
+) -> Result<()> {
+    let mut settings = get_codebase_project_scope_settings(database_path, project_id)?;
+    settings.set_reranking(enabled);
+    write_codebase_project_scope_settings(database_path, &settings)
+}
+
+fn write_codebase_project_scope_settings(
+    database_path: &Path,
+    settings: &CodebaseProjectScopeSettings,
+) -> Result<()> {
+    let setting_code = project_codebase_setting_code(&settings.project_id);
+    let setting_value = serde_json::to_string(settings).map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to serialize project Codebase scope settings: {error}"),
+        )
+    })?;
+    set_system_setting(
+        database_path,
+        PROJECT_CODEBASE_SETTING_NAME,
+        &setting_code,
+        &setting_value,
+    )
+}
+
+fn project_codebase_setting_code(project_id: &str) -> String {
+    format!(
+        "{PROJECT_CODEBASE_SETTING_CODE_PREFIX}{}",
         blake3::hash(project_id.as_bytes()).to_hex()
     )
 }

@@ -11,9 +11,6 @@ const CODEBASE_SETTING_CODE = "codebase_settings";
 
 const DEFAULT_CODEBASE_SETTINGS: CodebaseSettingsInput = {
   profileName: "default",
-  enabled: false,
-  enableAgentReview: true,
-  enableReranking: false,
   embeddingType: "jina",
   embeddingModelName: "",
   embeddingBaseUrl: "",
@@ -60,15 +57,6 @@ export const normalizeCodebaseSettings = (
 
   return {
     profileName: profileName || DEFAULT_CODEBASE_SETTINGS.profileName,
-    enabled: toBoolean(source.enabled, DEFAULT_CODEBASE_SETTINGS.enabled),
-    enableAgentReview: toBoolean(
-      source.enableAgentReview,
-      DEFAULT_CODEBASE_SETTINGS.enableAgentReview
-    ),
-    enableReranking: toBoolean(
-      source.enableReranking,
-      DEFAULT_CODEBASE_SETTINGS.enableReranking
-    ),
     embeddingType: embeddingType || DEFAULT_CODEBASE_SETTINGS.embeddingType,
     embeddingModelName: toText(source.embeddingModelName).trim(),
     embeddingBaseUrl: toText(source.embeddingBaseUrl).trim(),
@@ -149,9 +137,6 @@ export const readSnowCliCodebaseSettings = async (
     : {};
   const config = normalizeCodebaseSettings({
     profileName: "default",
-    enabled: projectCodebase.enabled,
-    enableAgentReview: projectCodebase.enableAgentReview,
-    enableReranking: projectCodebase.enableReranking,
     embeddingType: embedding.type,
     embeddingModelName: embedding.modelName,
     embeddingBaseUrl: embedding.baseUrl,

@@ -16,6 +16,7 @@ use similar::TextDiff;
 
 const CHECKPOINT_DIR_NAME: &str = "checkpoints";
 const OBJECT_DIR_NAME: &str = "objects";
+const PENDING_DIR_NAME: &str = "pending";
 const MANIFEST_VERSION: u32 = 2;
 
 const SKIP_DIRS: &[&str] = &[
@@ -57,17 +58,19 @@ struct CheckpointManifest {
     entries: Vec<CheckpointEntry>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct GitBaseline {
     repository_root: String,
     work_dir_prefix: String,
     head: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct CheckpointEntry {
     path: String,
     original: OriginalState,
+    #[serde(default)]
+    expected: Option<OriginalState>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -76,6 +79,21 @@ enum OriginalState {
     Missing,
     Object { object_id: String },
     Git,
+}
+struct PendingFileState(PathBuf);
+
+pub struct CheckpointWorktreeCapture {
+    checkpoint_ids: Vec<String>,
+    work_dir: String,
+    before_paths: HashMap<String, HashSet<String>>,
+    before_states: HashMap<String, PendingFileState>,
+    pending_dir: PathBuf,
+}
+
+impl Drop for CheckpointWorktreeCapture {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.pending_dir);
+    }
 }
 fn checkpoint_root() -> Result<PathBuf> {
     let storage_dir = crate::storage::paths::app_storage_dir()?;
@@ -373,78 +391,46 @@ fn update_checkpoint_git_ref(
     }
 }
 
-fn parse_nul_paths(output: &[u8]) -> Vec<String> {
-    output
-        .split(|byte| *byte == 0)
-        .filter(|part| !part.is_empty())
-        .map(|part| String::from_utf8_lossy(part).to_string())
-        .collect()
-}
-
-fn repository_pathspec(baseline: &GitBaseline) -> String {
-    if baseline.work_dir_prefix.is_empty() {
-        ".".to_string()
-    } else {
-        baseline.work_dir_prefix.clone()
-    }
-}
-
-fn repository_to_work_path(baseline: &GitBaseline, repository_path: &str) -> Option<String> {
-    if baseline.work_dir_prefix.is_empty() {
-        return Some(repository_path.to_string());
-    }
-    let prefix = format!("{}/", baseline.work_dir_prefix.trim_end_matches('/'));
-    repository_path.strip_prefix(&prefix).map(str::to_string)
-}
-
-fn collect_git_change_paths(baseline: &GitBaseline) -> Result<HashSet<String>> {
-    let repository_root = Path::new(&baseline.repository_root);
-    let pathspec = repository_pathspec(baseline);
+fn collect_worktree_file_paths(root: &Path) -> Result<HashSet<String>> {
     let mut paths = HashSet::new();
+    let mut directories = vec![root.to_path_buf()];
 
-    let diff = run_git(
-        repository_root,
-        &[
-            "diff",
-            "--name-only",
-            "-z",
-            &baseline.head,
-            "--",
-            &pathspec,
-        ],
-    )?;
-    if !diff.status.success() {
-        return Err(Error::from_reason(format!(
-            "Failed to inspect Git checkpoint changes: {}",
-            String::from_utf8_lossy(&diff.stderr).trim()
-        )));
-    }
-    for path in parse_nul_paths(&diff.stdout) {
-        if let Some(relative) = repository_to_work_path(baseline, &path) {
-            paths.insert(relative);
-        }
-    }
+    while let Some(directory) = directories.pop() {
+        let entries = fs::read_dir(&directory).map_err(|error| {
+            Error::from_reason(format!(
+                "Failed to scan checkpoint directory '{}': {error}",
+                directory.display()
+            ))
+        })?;
+        for entry in entries {
+            let entry = entry.map_err(|error| {
+                Error::from_reason(format!("Failed to read checkpoint entry: {error}"))
+            })?;
+            let path = entry.path();
+            let relative = path.strip_prefix(root).map_err(|error| {
+                Error::from_reason(format!(
+                    "Failed to resolve checkpoint-relative path '{}': {error}",
+                    path.display()
+                ))
+            })?;
+            if should_skip_relative(relative) {
+                continue;
+            }
 
-    let untracked = run_git(
-        repository_root,
-        &[
-            "ls-files",
-            "--others",
-            "--exclude-standard",
-            "-z",
-            "--",
-            &pathspec,
-        ],
-    )?;
-    if !untracked.status.success() {
-        return Err(Error::from_reason(format!(
-            "Failed to inspect untracked checkpoint files: {}",
-            String::from_utf8_lossy(&untracked.stderr).trim()
-        )));
-    }
-    for path in parse_nul_paths(&untracked.stdout) {
-        if let Some(relative) = repository_to_work_path(baseline, &path) {
-            paths.insert(relative);
+            let file_type = entry.file_type().map_err(|error| {
+                Error::from_reason(format!(
+                    "Failed to inspect checkpoint path '{}': {error}",
+                    path.display()
+                ))
+            })?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
+                directories.push(path);
+            } else if file_type.is_file() {
+                paths.insert(to_forward_slashes(relative));
+            }
         }
     }
 
@@ -473,14 +459,6 @@ fn read_git_object(baseline: &GitBaseline, relative: &str) -> Result<Option<Vec<
     } else {
         Ok(None)
     }
-}
-
-fn git_object_exists(baseline: &GitBaseline, relative: &str) -> Result<bool> {
-    let repository_root = Path::new(&baseline.repository_root);
-    let object_spec = git_object_spec(baseline, relative);
-    Ok(run_git(repository_root, &["cat-file", "-e", &object_spec])?
-        .status
-        .success())
 }
 
 fn store_object(path: &Path) -> Result<String> {
@@ -549,31 +527,44 @@ fn current_state(path: &Path) -> Result<OriginalState> {
     })
 }
 
+fn states_match(
+    current: &Path,
+    expected: &OriginalState,
+    baseline: Option<&GitBaseline>,
+    relative: &str,
+) -> Result<bool> {
+    Ok(classify_change(current, expected, baseline, relative)?.is_none())
+}
+
+fn update_expected_state(manifest: &mut CheckpointManifest, absolute: &Path, path: &str) -> Result<bool> {
+    let Some(entry) = manifest.entries.iter_mut().find(|entry| entry.path == path) else {
+        return Ok(false);
+    };
+    entry.expected = Some(current_state(absolute)?);
+    Ok(true)
+}
+
 fn capture_entry(
     manifest: &mut CheckpointManifest,
     absolute: &Path,
     relative: &Path,
-    prefer_git_baseline: bool,
-    assume_missing_when_untracked: bool,
+    original: OriginalState,
 ) -> Result<()> {
     if relative.as_os_str().is_empty() || should_skip_relative(relative) {
         return Ok(());
     }
     let path = to_forward_slashes(relative);
-    if manifest.entries.iter().any(|entry| entry.path == path) {
+    let expected = current_state(absolute)?;
+    if let Some(entry) = manifest.entries.iter_mut().find(|entry| entry.path == path) {
+        entry.expected = Some(expected);
         return Ok(());
     }
 
-    let original = match manifest.git.as_ref() {
-        Some(baseline)
-            if prefer_git_baseline && git_object_exists(baseline, &path)? =>
-        {
-            OriginalState::Git
-        }
-        _ if assume_missing_when_untracked => OriginalState::Missing,
-        _ => current_state(absolute)?,
-    };
-    manifest.entries.push(CheckpointEntry { path, original });
+    manifest.entries.push(CheckpointEntry {
+        path,
+        original,
+        expected: Some(expected),
+    });
     Ok(())
 }
 
@@ -625,77 +616,160 @@ pub fn record_checkpoint_file(
     let _guard = checkpoint_guard()?;
     let root = canonical_work_dir(&work_dir)?;
     let (absolute, relative) = resolve_checkpoint_path(&root, &file_path)?;
+    if relative.as_os_str().is_empty() || should_skip_relative(&relative) {
+        return Ok(());
+    }
+    let path = to_forward_slashes(&relative);
 
     for checkpoint_id in checkpoint_ids {
         let mut manifest = read_manifest(&checkpoint_id)?;
         validate_manifest_work_dir(&manifest, &work_dir)?;
-        let entry_count = manifest.entries.len();
-        capture_entry(&mut manifest, &absolute, &relative, false, false)?;
-        if manifest.entries.len() != entry_count {
+        if manifest.entries.iter().any(|entry| entry.path == path) {
+            continue;
+        }
+        manifest.entries.push(CheckpointEntry {
+            path: path.clone(),
+            original: current_state(&absolute)?,
+            expected: None,
+        });
+        write_manifest(&checkpoint_id, &manifest)?;
+    }
+    Ok(())
+}
+
+/// Record the state produced by a successful filesystem tool execution.
+pub fn record_checkpoint_file_after(
+    checkpoint_ids: Vec<String>,
+    work_dir: String,
+    file_path: String,
+) -> Result<()> {
+    if checkpoint_ids.is_empty() {
+        return Ok(());
+    }
+    let _guard = checkpoint_guard()?;
+    let root = canonical_work_dir(&work_dir)?;
+    let (absolute, relative) = resolve_checkpoint_path(&root, &file_path)?;
+    let path = to_forward_slashes(&relative);
+
+    for checkpoint_id in checkpoint_ids {
+        let mut manifest = read_manifest(&checkpoint_id)?;
+        validate_manifest_work_dir(&manifest, &work_dir)?;
+        if update_expected_state(&mut manifest, &absolute, &path)? {
             write_manifest(&checkpoint_id, &manifest)?;
         }
     }
     Ok(())
 }
 
-/// Capture Git-visible paths before a terminal command runs. These entries
-/// preserve any pre-existing user edits if the command subsequently changes
-/// the same paths.
-pub fn record_checkpoint_worktree(
-    checkpoint_ids: Vec<String>,
-    work_dir: String,
-) -> Result<()> {
-    record_checkpoint_worktree_changes(checkpoint_ids, work_dir, false)
+fn copy_pending_file(source: &Path, destination: &Path) -> Result<()> {
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            Error::from_reason(format!(
+                "Failed to create pending checkpoint directory '{}': {error}",
+                parent.display()
+            ))
+        })?;
+    }
+    fs::copy(source, destination).map_err(|error| {
+        Error::from_reason(format!(
+            "Failed to capture pending checkpoint file '{}': {error}",
+            source.display()
+        ))
+    })?;
+    Ok(())
 }
 
-/// Capture the paths changed by a completed terminal command. Newly recorded
-/// tracked files use the checkpoint Git baseline; existing entries keep the
-/// state captured before the command.
-pub fn record_checkpoint_worktree_after(
-    checkpoint_ids: Vec<String>,
-    work_dir: String,
-) -> Result<()> {
-    record_checkpoint_worktree_changes(checkpoint_ids, work_dir, true)
+fn pending_state_matches_current(state: &PendingFileState, current: &Path) -> bool {
+    current.is_file() && !files_are_different(current, &state.0)
 }
 
-fn record_checkpoint_worktree_changes(
+fn pending_state_to_original(state: &PendingFileState) -> Result<OriginalState> {
+    Ok(OriginalState::Object {
+        object_id: store_object(&state.0)?,
+    })
+}
+
+/// Snapshot the current worktree into temporary storage before a terminal
+/// command. No manifest entries are committed until the command ends.
+pub fn capture_checkpoint_worktree_before(
     checkpoint_ids: Vec<String>,
     work_dir: String,
-    prefer_git_baseline: bool,
-) -> Result<()> {
+) -> Result<Option<CheckpointWorktreeCapture>> {
     if checkpoint_ids.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
     let _guard = checkpoint_guard()?;
+    let root = canonical_work_dir(&work_dir)?;
+    let pending_dir = checkpoint_root()?
+        .join(PENDING_DIR_NAME)
+        .join(generate_checkpoint_id());
+    let all_paths = collect_worktree_file_paths(&root)?;
+    let mut before_paths = HashMap::new();
 
-    for checkpoint_id in checkpoint_ids {
-        let mut manifest = read_manifest(&checkpoint_id)?;
-        let root = validate_manifest_work_dir(&manifest, &work_dir)?;
-        let Some(baseline) = manifest.git.as_ref() else {
-            continue;
-        };
-        let paths = collect_git_change_paths(baseline)?;
-        let path_states = paths
-            .into_iter()
-            .map(|relative_path| {
-                let exists_in_git = git_object_exists(baseline, &relative_path)?;
-                Ok((relative_path, exists_in_git))
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let entry_count = manifest.entries.len();
-        for (relative_path, exists_in_git) in path_states {
+    for checkpoint_id in &checkpoint_ids {
+        let manifest = read_manifest(checkpoint_id)?;
+        validate_manifest_work_dir(&manifest, &work_dir)?;
+        before_paths.insert(checkpoint_id.clone(), all_paths.clone());
+    }
+
+    let mut before_states = HashMap::new();
+    for relative_path in all_paths {
+        let relative = from_forward_slashes(&relative_path);
+        let absolute = root.join(&relative);
+        let snapshot = pending_dir.join(&relative);
+        copy_pending_file(&absolute, &snapshot)?;
+        before_states.insert(relative_path, PendingFileState(snapshot));
+    }
+
+    Ok(Some(CheckpointWorktreeCapture {
+        checkpoint_ids,
+        work_dir,
+        before_paths,
+        before_states,
+        pending_dir,
+    }))
+}
+
+/// Commit only paths whose state changed while the terminal command ran.
+pub fn record_checkpoint_worktree_after(capture: CheckpointWorktreeCapture) -> Result<()> {
+    let _guard = checkpoint_guard()?;
+
+    for checkpoint_id in &capture.checkpoint_ids {
+        let mut manifest = read_manifest(checkpoint_id)?;
+        let root = validate_manifest_work_dir(&manifest, &capture.work_dir)?;
+        let after_paths = collect_worktree_file_paths(&root)?;
+        let mut candidates = capture
+            .before_paths
+            .get(checkpoint_id)
+            .cloned()
+            .unwrap_or_default();
+        candidates.extend(after_paths);
+        let mut changed = false;
+
+        for relative_path in candidates {
             let relative = from_forward_slashes(&relative_path);
+            if should_skip_relative(&relative) {
+                continue;
+            }
             let absolute = root.join(&relative);
-            capture_entry(
-                &mut manifest,
-                &absolute,
-                &relative,
-                prefer_git_baseline,
-                prefer_git_baseline && !exists_in_git,
-            )?;
+            let before_state = capture.before_states.get(&relative_path);
+            let command_changed_path = before_state
+                .map(|state| !pending_state_matches_current(state, &absolute))
+                .unwrap_or_else(|| absolute.is_file());
+            if !command_changed_path {
+                continue;
+            }
+
+            let original = before_state
+                .map(pending_state_to_original)
+                .transpose()?
+                .unwrap_or(OriginalState::Missing);
+            capture_entry(&mut manifest, &absolute, &relative, original)?;
+            changed = true;
         }
-        if manifest.entries.len() != entry_count {
-            write_manifest(&checkpoint_id, &manifest)?;
+
+        if changed {
+            write_manifest(checkpoint_id, &manifest)?;
         }
     }
     Ok(())
@@ -707,10 +781,27 @@ pub fn restore_checkpoint(checkpoint_id: String, work_dir: String) -> Result<()>
     let manifest = read_manifest(&checkpoint_id)?;
     let root = validate_manifest_work_dir(&manifest, &work_dir)?;
 
+    let mut restored_entries = Vec::new();
     for entry in &manifest.entries {
+        let destination = root.join(from_forward_slashes(&entry.path));
+        let Some(expected) = entry.expected.as_ref() else {
+            continue;
+        };
+        if !states_match(&destination, expected, manifest.git.as_ref(), &entry.path)? {
+            continue;
+        }
         restore_entry(&root, &manifest, entry)?;
+        restored_entries.push(entry.path.clone());
     }
-    prune_empty_parent_directories(&root, &manifest.entries);
+    prune_empty_parent_directories(
+        &root,
+        &manifest
+            .entries
+            .iter()
+            .filter(|entry| restored_entries.contains(&entry.path))
+            .cloned()
+            .collect::<Vec<_>>(),
+    );
 
     Ok(())
 }
@@ -847,13 +938,19 @@ fn collect_unused_objects() -> Result<()> {
     let mut referenced = HashSet::new();
     if let Ok(entries) = fs::read_dir(&root) {
         for entry in entries.flatten() {
-            if !entry.path().is_dir() || entry.file_name() == OBJECT_DIR_NAME {
+            if !entry.path().is_dir()
+                || entry.file_name() == OBJECT_DIR_NAME
+                || entry.file_name() == PENDING_DIR_NAME
+            {
                 continue;
             }
             let checkpoint_id = entry.file_name().to_string_lossy().to_string();
             if let Ok(manifest) = read_manifest(&checkpoint_id) {
                 for item in manifest.entries {
                     if let OriginalState::Object { object_id } = item.original {
+                        referenced.insert(object_id);
+                    }
+                    if let Some(OriginalState::Object { object_id }) = item.expected {
                         referenced.insert(object_id);
                     }
                 }
@@ -898,12 +995,8 @@ pub struct CheckpointFileDiff {
     pub is_binary: bool,
 }
 
-fn collect_tracked_states(manifest: &CheckpointManifest) -> HashMap<String, OriginalState> {
-    manifest
-        .entries
-        .iter()
-        .map(|entry| (entry.path.clone(), entry.original.clone()))
-        .collect()
+fn collect_tracked_entries(manifest: &CheckpointManifest) -> Vec<CheckpointEntry> {
+    manifest.entries.clone()
 }
 
 /// Compare only paths explicitly recorded while this conversation's tools ran.
@@ -914,18 +1007,30 @@ pub fn list_checkpoint_changes(
     let _guard = checkpoint_guard()?;
     let manifest = read_manifest(&checkpoint_id)?;
     let root = validate_manifest_work_dir(&manifest, &work_dir)?;
-    let tracked = collect_tracked_states(&manifest);
+    let tracked = collect_tracked_entries(&manifest);
 
     let mut changes = Vec::new();
-    for (path, original) in tracked {
-        if should_skip_relative(Path::new(&path)) {
+    for entry in tracked {
+        if should_skip_relative(Path::new(&entry.path)) {
             continue;
         }
-        let current = root.join(from_forward_slashes(&path));
-        if let Some(change_type) =
-            classify_change(&current, &original, manifest.git.as_ref(), &path)?
-        {
-            changes.push(CheckpointFileChange { path, change_type });
+        let Some(expected) = entry.expected.as_ref() else {
+            continue;
+        };
+        let current = root.join(from_forward_slashes(&entry.path));
+        if !states_match(&current, expected, manifest.git.as_ref(), &entry.path)? {
+            continue;
+        }
+        if let Some(change_type) = classify_change(
+            &current,
+            &entry.original,
+            manifest.git.as_ref(),
+            &entry.path,
+        )? {
+            changes.push(CheckpointFileChange {
+                path: entry.path,
+                change_type,
+            });
         }
     }
     changes.sort_by(|left, right| left.path.cmp(&right.path));
@@ -941,29 +1046,41 @@ pub fn list_checkpoint_diffs(
     let _guard = checkpoint_guard()?;
     let manifest = read_manifest(&checkpoint_id)?;
     let root = validate_manifest_work_dir(&manifest, &work_dir)?;
-    let tracked = collect_tracked_states(&manifest);
+    let tracked = collect_tracked_entries(&manifest);
 
     let mut diffs = Vec::new();
-    for (path, original) in tracked {
-        if should_skip_relative(Path::new(&path)) {
+    for entry in tracked {
+        if should_skip_relative(Path::new(&entry.path)) {
             continue;
         }
-        let current = root.join(from_forward_slashes(&path));
-        let Some(change_type) =
-            classify_change(&current, &original, manifest.git.as_ref(), &path)?
-        else {
+        let Some(expected) = entry.expected.as_ref() else {
             continue;
         };
-        let original_content =
-            read_original_content(&original, manifest.git.as_ref(), &path)?;
+        let current = root.join(from_forward_slashes(&entry.path));
+        if !states_match(&current, expected, manifest.git.as_ref(), &entry.path)? {
+            continue;
+        }
+        let Some(change_type) = classify_change(
+            &current,
+            &entry.original,
+            manifest.git.as_ref(),
+            &entry.path,
+        )? else {
+            continue;
+        };
+        let original_content = read_original_content(
+            &entry.original,
+            manifest.git.as_ref(),
+            &entry.path,
+        )?;
         let current_content = read_current_content(&current)?;
         let (content, is_binary) = build_unified_diff(
-            &path,
+            &entry.path,
             original_content.as_deref(),
             current_content.as_deref(),
         );
         diffs.push(CheckpointFileDiff {
-            path,
+            path: entry.path,
             change_type,
             content,
             is_binary,

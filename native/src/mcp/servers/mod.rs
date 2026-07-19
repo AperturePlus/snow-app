@@ -1,5 +1,6 @@
 pub mod bash;
 pub mod browser;
+pub mod codebase;
 pub mod filesystem;
 pub mod grep;
 pub mod skills;

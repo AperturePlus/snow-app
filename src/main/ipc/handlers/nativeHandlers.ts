@@ -4,6 +4,7 @@ import type {
   BashStreamChunk,
   BrowserCommand,
   BrowserCommandResponse,
+  CodebaseEmbedProgress,
   NativeBridge,
   UserQuestionCommand,
   UserQuestionResponse,
@@ -47,6 +48,181 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   ipcMain.handle("settings:get-yolo-mode", () => native.getYoloMode());
   ipcMain.handle("settings:set-yolo-mode", (_event, enabled: boolean) =>
     native.setYoloMode(enabled)
+  );
+  ipcMain.handle("codebase:get-project-scope", (_event, projectId: unknown) => {
+    if (typeof projectId !== "string" || !projectId.trim()) {
+      throw new Error("Project id is required");
+    }
+    return native.getCodebaseProjectScopeSettings(projectId.trim());
+  });
+  ipcMain.handle(
+    "codebase:set-project-enabled",
+    (_event, projectId: unknown, enabled: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      if (typeof enabled !== "boolean") {
+        throw new Error("Codebase enabled state must be a boolean");
+      }
+      return native.setCodebaseProjectEnabled(projectId.trim(), enabled);
+    }
+  );
+  ipcMain.handle(
+    "codebase:set-project-agent-review",
+    (_event, projectId: unknown, enabled: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      if (typeof enabled !== "boolean") {
+        throw new Error("Codebase agent review state must be a boolean");
+      }
+      return native.setCodebaseProjectAgentReview(projectId.trim(), enabled);
+    }
+  );
+  ipcMain.handle(
+    "codebase:set-project-reranking",
+    (_event, projectId: unknown, enabled: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      if (typeof enabled !== "boolean") {
+        throw new Error("Codebase reranking state must be a boolean");
+      }
+      return native.setCodebaseProjectReranking(projectId.trim(), enabled);
+    }
+  );
+  ipcMain.handle(
+    "codebase:check-project-gitignore",
+    (_event, projectId: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      return native.checkProjectHasGitignore(projectId.trim());
+    }
+  );
+  ipcMain.handle(
+    "codebase:start-embedding",
+    async (event, projectId: unknown, sessionId: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      if (typeof sessionId !== "string" || !sessionId.trim()) {
+        throw new Error("Session id is required");
+      }
+      const normalizedProjectId = projectId.trim();
+      const normalizedSessionId = sessionId.trim();
+      return native.startCodebaseEmbedding(
+        normalizedProjectId,
+        normalizedSessionId,
+        (progress: CodebaseEmbedProgress) => {
+          if (event.sender.isDestroyed()) {
+            return;
+          }
+          event.sender.send("codebase:embed:progress", {
+            sessionId: normalizedSessionId,
+            progress,
+          });
+        }
+      );
+    }
+  );
+  ipcMain.handle("codebase:pause-embedding", (_event, sessionId: unknown) => {
+    if (typeof sessionId !== "string" || !sessionId.trim()) {
+      throw new Error("Session id is required");
+    }
+    return native.pauseCodebaseEmbedding(sessionId.trim());
+  });
+  ipcMain.handle("codebase:resume-embedding", (_event, sessionId: unknown) => {
+    if (typeof sessionId !== "string" || !sessionId.trim()) {
+      throw new Error("Session id is required");
+    }
+    return native.resumeCodebaseEmbedding(sessionId.trim());
+  });
+  ipcMain.handle("codebase:cancel-embedding", (_event, sessionId: unknown) => {
+    if (typeof sessionId !== "string" || !sessionId.trim()) {
+      throw new Error("Session id is required");
+    }
+    return native.cancelCodebaseEmbedding(sessionId.trim());
+  });
+  ipcMain.handle("codebase:get-index-stats", (_event, projectId: unknown) => {
+    if (typeof projectId !== "string" || !projectId.trim()) {
+      throw new Error("Project id is required");
+    }
+    return native.getCodebaseIndexStats(projectId.trim());
+  });
+  ipcMain.handle("codebase:clear-index", (_event, projectId: unknown) => {
+    if (typeof projectId !== "string" || !projectId.trim()) {
+      throw new Error("Project id is required");
+    }
+    return native.clearCodebaseIndex(projectId.trim());
+  });
+  ipcMain.handle(
+    "codebase:start-watch",
+    (event, projectId: unknown, projectPath: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      if (typeof projectPath !== "string" || !projectPath.trim()) {
+        throw new Error("Project path is required");
+      }
+      const normalizedProjectId = projectId.trim();
+      const normalizedProjectPath = projectPath.trim();
+      native.startCodebaseWatch(
+        normalizedProjectId,
+        normalizedProjectPath,
+        (changedProjectId: string) => {
+          if (event.sender.isDestroyed()) {
+            return;
+          }
+          event.sender.send("codebase:files-changed", changedProjectId);
+        }
+      );
+    }
+  );
+  ipcMain.handle("codebase:stop-watch", (_event, projectId: unknown) => {
+    if (typeof projectId !== "string" || !projectId.trim()) {
+      throw new Error("Project id is required");
+    }
+    return native.stopCodebaseWatch(projectId.trim());
+  });
+  ipcMain.handle("codebase:sync-changes", async (event, projectId: unknown) => {
+    if (typeof projectId !== "string" || !projectId.trim()) {
+      throw new Error("Project id is required");
+    }
+    const normalizedProjectId = projectId.trim();
+    return native.syncCodebaseChanges(normalizedProjectId, (progress) => {
+      if (event.sender.isDestroyed()) {
+        return;
+      }
+      event.sender.send("codebase:sync:progress", {
+        projectId: normalizedProjectId,
+        progress,
+      });
+    });
+  });
+  ipcMain.handle("codebase:preview-scan", (_event, projectId: unknown) => {
+    if (typeof projectId !== "string" || !projectId.trim()) {
+      throw new Error("Project id is required");
+    }
+    return native.previewCodebaseScan(projectId.trim());
+  });
+  ipcMain.handle(
+    "codebase:get-resumable-sessions",
+    (_event, projectId: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      return native.getResumableCodebaseSessions(projectId.trim());
+    }
+  );
+  ipcMain.handle(
+    "codebase:discard-resumable-session",
+    (_event, sessionId: unknown) => {
+      if (typeof sessionId !== "string" || !sessionId.trim()) {
+        throw new Error("Session id is required");
+      }
+      return native.discardResumableCodebaseSession(sessionId.trim());
+    }
   );
   ipcMain.handle(
     "permissions:list-always-approved-tools",

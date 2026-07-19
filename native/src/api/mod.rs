@@ -1,11 +1,14 @@
 pub mod anthropic;
 pub mod cancel;
 pub mod chat;
+pub mod codebase_review;
 pub mod commit_message;
 pub mod config;
 pub mod conversation;
+pub mod embedding;
 pub mod gemini;
 pub mod models;
+pub mod reranking;
 pub mod retry;
 pub mod responses;
 pub mod summary;

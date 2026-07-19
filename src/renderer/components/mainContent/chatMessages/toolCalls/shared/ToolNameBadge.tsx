@@ -58,7 +58,11 @@ const TOOL_ICON_MAP: Record<ToolCategory, LucideIcon> = {
  */
 export const getToolCategory = (toolName: string): ToolCategory => {
   const lower = toolName.toLowerCase();
-  if (lower.includes("sub-agent") || lower.includes("subagent") || lower.includes("activate")) {
+  if (
+    lower.includes("sub-agent") ||
+    lower.includes("subagent") ||
+    lower.includes("activate")
+  ) {
     return "agent";
   }
   if (lower.includes("read")) return "read";
@@ -67,7 +71,8 @@ export const getToolCategory = (toolName: string): ToolCategory => {
   if (
     lower.includes("search") ||
     lower.includes("find") ||
-    lower.includes("semantic")
+    lower.includes("semantic") ||
+    lower.includes("codebase")
   )
     return "search";
   if (

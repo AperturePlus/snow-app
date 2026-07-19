@@ -103,6 +103,8 @@ export type RollbackTodoItem = {
   status: string;
 };
 
+export type RollbackMode = "conversation-only" | "conversation-and-files";
+
 export type RollbackPreview = {
   messageId: string;
   messageContent: string;
@@ -289,7 +291,7 @@ export type UseChatConversationResult = {
   clearDraftToRestore: () => void;
   handleRollback: (messageId: string) => void;
   rollbackPreview: RollbackPreview | null;
-  confirmRollback: () => void;
+  confirmRollback: (mode: RollbackMode) => void;
   cancelRollback: () => void;
   yoloMode: boolean;
   isUpdatingYoloMode: boolean;

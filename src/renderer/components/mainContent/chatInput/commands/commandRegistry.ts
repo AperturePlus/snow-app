@@ -1,4 +1,5 @@
 import { createClearCommand } from "./ClearCommand";
+import { createCodebaseCommand } from "./CodebaseCommand";
 import { createCompactCommand } from "./CompactCommand";
 import { createMcpCommand } from "./McpCommand";
 import { createSensitiveCommandsCommand } from "./SensitiveCommandsCommand";
@@ -7,6 +8,8 @@ import type { ChatCommand } from "./types";
 
 type ChatCommandLabels = {
   clearDescription: string;
+  codebaseDescription: string;
+  codebaseNoProject: string;
   compactDescription: string;
   mcpDescription: string;
   sensitiveCommandsDescription: string;
@@ -19,11 +22,13 @@ type CreateChatCommandsOptions = {
   onOpenMcpPanel: () => void;
   onOpenSensitiveCommandsPanel: () => void;
   onOpenSkillsPanel: () => void;
+  onOpenCodebasePanel: () => void;
   model?: string;
   compactDisabled: boolean;
   mcpDisabled: boolean;
   sensitiveCommandsDisabled: boolean;
   skillsDisabled: boolean;
+  codebaseDisabled: boolean;
   labels: ChatCommandLabels;
 };
 
@@ -33,11 +38,13 @@ export const createChatCommands = ({
   onOpenMcpPanel,
   onOpenSensitiveCommandsPanel,
   onOpenSkillsPanel,
+  onOpenCodebasePanel,
   model,
   compactDisabled,
   mcpDisabled,
   sensitiveCommandsDisabled,
   skillsDisabled,
+  codebaseDisabled,
   labels,
 }: CreateChatCommandsOptions): ChatCommand[] => {
   const commands: ChatCommand[] = [
@@ -52,6 +59,11 @@ export const createChatCommands = ({
       onOpenSkillsPanel,
       labels.skillsDescription,
       skillsDisabled
+    ),
+    createCodebaseCommand(
+      onOpenCodebasePanel,
+      codebaseDisabled ? labels.codebaseNoProject : labels.codebaseDescription,
+      codebaseDisabled
     ),
   ];
 

@@ -31,6 +31,7 @@ import { useDropdownDirection } from "./useDropdownDirection";
 import { PlusMenu, type PlusMenuSection } from "./PlusMenu";
 import { PendingMessages } from "./PendingMessages";
 import { ProjectMcpPanel } from "./ProjectMcpPanel";
+import { ProjectCodebasePanel } from "./ProjectCodebasePanel";
 import { ProjectSensitiveCommandsPanel } from "./ProjectSensitiveCommandsPanel";
 import { ProjectSkillsPanel } from "./ProjectSkillsPanel";
 import { useChatConversationContext } from "../chatMessages";
@@ -109,6 +110,7 @@ export const ChatInputView = ({
   const [isProjectSensitiveCommandsOpen, setIsProjectSensitiveCommandsOpen] =
     useState(false);
   const [isProjectSkillsOpen, setIsProjectSkillsOpen] = useState(false);
+  const [isProjectCodebaseOpen, setIsProjectCodebaseOpen] = useState(false);
   const [isCustomThinkingMode, setIsCustomThinkingMode] = useState(false);
   const [customThinkingValue, setCustomThinkingValue] = useState("");
 
@@ -126,23 +128,33 @@ export const ChatInputView = ({
         onOpenMcpPanel: () => {
           setIsProjectSensitiveCommandsOpen(false);
           setIsProjectSkillsOpen(false);
+          setIsProjectCodebaseOpen(false);
           setIsProjectMcpOpen(true);
         },
         onOpenSensitiveCommandsPanel: () => {
           setIsProjectMcpOpen(false);
           setIsProjectSkillsOpen(false);
+          setIsProjectCodebaseOpen(false);
           setIsProjectSensitiveCommandsOpen(true);
         },
         onOpenSkillsPanel: () => {
           setIsProjectMcpOpen(false);
           setIsProjectSensitiveCommandsOpen(false);
+          setIsProjectCodebaseOpen(false);
           setIsProjectSkillsOpen(true);
+        },
+        onOpenCodebasePanel: () => {
+          setIsProjectMcpOpen(false);
+          setIsProjectSensitiveCommandsOpen(false);
+          setIsProjectSkillsOpen(false);
+          setIsProjectCodebaseOpen(true);
         },
         model: selectedModel || undefined,
         compactDisabled: messages.length === 0 || isStreaming || isCompacting,
         mcpDisabled: !projectId,
         sensitiveCommandsDisabled: !projectId,
         skillsDisabled: !projectId,
+        codebaseDisabled: !projectId,
         labels: {
           clearDescription: t("chatCommand.clearDescription"),
           compactDescription: t("chatCommand.compactDescription"),
@@ -155,6 +167,9 @@ export const ChatInputView = ({
           skillsDescription: projectId
             ? t("chatCommand.skillsDescription")
             : t("chatCommand.skillsNoProject"),
+          codebaseDescription: projectId
+            ? t("chatCommand.codebaseDescription")
+            : t("chatCommand.codebaseNoProject"),
         },
       }),
     [
@@ -687,6 +702,12 @@ export const ChatInputView = ({
         projectId={projectId}
         projectName={projectName}
         onClose={() => setIsProjectSkillsOpen(false)}
+      />
+      <ProjectCodebasePanel
+        open={isProjectCodebaseOpen}
+        projectId={projectId}
+        projectName={projectName}
+        onClose={() => setIsProjectCodebaseOpen(false)}
       />
       <div className="input-content" ref={mentionAnchorRef}>
         <FileMentionPopup

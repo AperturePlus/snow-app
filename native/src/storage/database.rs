@@ -7,6 +7,8 @@ use std::{
 use napi::bindgen_prelude::*;
 use rusqlite::Connection;
 
+use super::services;
+
 const SNOWFLAKE_EPOCH_MS: u64 = 1_704_067_200_000;
 const SNOWFLAKE_WORKER_ID_BITS: u64 = 10;
 const SNOWFLAKE_SEQUENCE_BITS: u64 = 12;
@@ -319,6 +321,10 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            ON todo_items(session_id);
     ",
     )?;
+
+    // Ensure the codebase embed sessions table exists. Defined in a separate
+    // module so the schema lives next to its CRUD functions.
+    services::codebase_embed_sessions::ensure_sessions_table(connection)?;
 
     connection.pragma_update(None, "user_version", 17)?;
 

@@ -23,9 +23,6 @@ export type DetectedTerminal = {
 
 export type CodebaseSettingsInput = {
   profileName: string;
-  enabled: boolean;
-  enableAgentReview: boolean;
-  enableReranking: boolean;
   embeddingType: string;
   embeddingModelName: string;
   embeddingBaseUrl: string;
@@ -44,6 +41,69 @@ export type CodebaseSettingsInput = {
   rerankingTopN: number;
   configJson: string;
   source: string;
+};
+
+export type CodebaseProjectScopeSettings = {
+  projectId: string;
+  enabled?: boolean;
+  enableAgentReview?: boolean;
+  enableReranking?: boolean;
+};
+
+export type CodebaseEmbedProgress = {
+  phase: string;
+  totalFiles: number;
+  processedFiles: number;
+  totalChunks: number;
+  processedChunks: number;
+  currentFile: string;
+  error: string;
+  elapsedMs: number;
+};
+
+export type CodebaseIndexStats = {
+  totalChunks: number;
+  totalFiles: number;
+  totalSizeBytes: number;
+  isIndexed: boolean;
+};
+
+export type CodebaseScanPreview = {
+  fileCount: number;
+  estimatedChunks: number;
+  totalSizeBytes: number;
+};
+
+export type CodebaseSyncProgress = {
+  phase: string;
+  filesToEmbed: number;
+  processedFiles: number;
+  deletedFiles: number;
+  skippedFiles: number;
+  currentFile: string;
+  error: string;
+};
+
+export type CodebaseSyncResult = {
+  changed: boolean;
+  embeddedFiles: number;
+  deletedFiles: number;
+  skippedFiles: number;
+  error: string;
+};
+
+export type ResumableCodebaseSession = {
+  sessionId: string;
+  projectId: string;
+  status: string;
+  totalFiles: number;
+  processedFiles: number;
+  totalChunks: number;
+  processedChunks: number;
+  currentFile: string;
+  error: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type SystemPromptItemInput = {

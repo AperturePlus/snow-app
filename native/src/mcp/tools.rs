@@ -4,13 +4,25 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde_json::{json, Value};
 
+use crate::storage::services::checkpoint::CheckpointWorktreeCapture;
 use crate::storage::services::system_settings::McpProjectScopeSettings;
+
+enum ToolCheckpointCapture {
+    None,
+    File {
+        checkpoint_ids: Vec<String>,
+        work_dir: String,
+        file_path: String,
+    },
+    Worktree(Option<CheckpointWorktreeCapture>),
+}
 
 use super::builtin::{
     execute_builtin_tool, get_builtin_servers_with_tools, get_builtin_tools,
 };
 use super::servers::bash::{BashService, BashStreamCallback};
 use super::servers::browser::{BrowserCommandCallback, BrowserService};
+use super::servers::codebase::CodebaseService;
 use super::servers::grep::GrepService;
 use super::servers::skills::SkillsService;
 use super::servers::todo::TodoService;
@@ -299,9 +311,22 @@ fn required_value(value: String, label: &str) -> Result<String> {
 
 pub async fn collect_all_mcp_tools(project_id: Option<&str>) -> Result<Vec<McpTool>> {
     let scope = load_project_scope(project_id).await?;
+
+    // Determine whether the codebase search tool should be included.
+    // It requires: (1) a project id, (2) codebase enabled in project scope,
+    // and (3) at least one embedded chunk in the vector table.
+    let codebase_available = is_codebase_available(project_id).await?;
+
     let mut tools = get_builtin_tools()
         .into_iter()
-        .filter(|tool| tool_is_enabled(tool, scope.as_ref()))
+        .filter(|tool| {
+            // Exclude codebase search tool unless the project has codebase
+            // enabled and an existing index.
+            if tool.server_id == "codebase" && !codebase_available {
+                return false;
+            }
+            tool_is_enabled(tool, scope.as_ref())
+        })
         .collect::<Vec<_>>();
 
     if let Some(skill_tool) = SkillsService::new().tool(project_id).await? {
@@ -315,6 +340,40 @@ pub async fn collect_all_mcp_tools(project_id: Option<&str>) -> Result<Vec<McpTo
         Err(error) => eprintln!("Failed to discover external MCP tools: {error}"),
     }
     Ok(tools)
+}
+
+/// Check whether the codebase search tool should be available for the
+/// given project: the project must have codebase enabled AND have at
+/// least one embedded chunk in its vector table.
+async fn is_codebase_available(project_id: Option<&str>) -> Result<bool> {
+    let Some(project_id) = project_id.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(false);
+    };
+
+    let project_id = project_id.to_string();
+    let storage_info = crate::storage::initialize_app_storage()?;
+    let database_path = PathBuf::from(storage_info.database_path);
+
+    tokio::task::spawn_blocking(move || {
+        let scope = crate::storage::services::system_settings::get_codebase_project_scope_settings(
+            &database_path,
+            &project_id,
+        )?;
+        if !scope.enabled.unwrap_or(false) {
+            return Ok(false);
+        }
+        match crate::storage::services::codebase_index::get_index_stats(&database_path, &project_id) {
+            Ok(stats) => Ok(stats.total_chunks > 0),
+            Err(_) => Ok(false),
+        }
+    })
+    .await
+    .map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to check codebase availability: {error}"),
+        )
+    })?
 }
 
 pub async fn collect_allowed_mcp_tools(
@@ -610,11 +669,9 @@ pub async fn call_mcp_tool(
 
     let args = parse_tool_args(&tool_full_name, &args_json)?;
 
-    let checkpoint_ids_after = checkpoint_ids.clone();
-    let checkpoint_work_dir_after = checkpoint_work_dir.clone();
     let checkpoint_tool_name = tool_full_name.clone();
     let checkpoint_args = args.clone();
-    tokio::task::spawn_blocking(move || {
+    let checkpoint_capture = tokio::task::spawn_blocking(move || {
         capture_checkpoint_before_tool(
             &checkpoint_tool_name,
             &checkpoint_args,
@@ -640,16 +697,18 @@ pub async fn call_mcp_tool(
                 on_chunk,
             )
             .await;
-        tokio::task::spawn_blocking(move || {
-            capture_checkpoint_after_tool(checkpoint_ids_after, checkpoint_work_dir_after)
-        })
-        .await
-        .map_err(|error| {
-            Error::new(
-                Status::GenericFailure,
-                format!("Failed to capture checkpoint after tool execution: {error}"),
-            )
-        })??;
+        if let ToolCheckpointCapture::Worktree(Some(capture)) = checkpoint_capture {
+            tokio::task::spawn_blocking(move || {
+                crate::storage::services::checkpoint::record_checkpoint_worktree_after(capture)
+            })
+            .await
+            .map_err(|error| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to capture checkpoint after tool execution: {error}"),
+                )
+            })??;
+        }
         terminal_result?
     } else if tool_full_name == "mcp__grep__search" {
         GrepService::new().execute_search(&args).await?
@@ -671,19 +730,27 @@ pub async fn call_mcp_tool(
         SkillsService::new()
             .execute(&args, project_id.as_deref())
             .await?
+    } else if tool_full_name == "mcp__codebase__search" {
+        CodebaseService::new()
+            .execute_search(&args, project_id.as_deref(), &on_chunk)
+            .await?
     } else if let Some(result) =
         super::external::call_tool(project_id.as_deref(), &tool_full_name, &args).await?
     {
         result
     } else {
-        tokio::task::spawn_blocking(move || execute_builtin_tool(&tool_full_name, &args))
-            .await
-            .map_err(|error| {
-                Error::new(
-                    Status::GenericFailure,
-                    format!("Failed to execute MCP tool: {error}"),
-                )
-            })??
+        tokio::task::spawn_blocking(move || {
+            let result = execute_builtin_tool(&tool_full_name, &args);
+            capture_checkpoint_after_tool(checkpoint_capture)?;
+            result
+        })
+        .await
+        .map_err(|error| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to execute MCP tool: {error}"),
+            )
+        })??
     };
 
     if returns_plain_text {
@@ -726,9 +793,9 @@ fn capture_checkpoint_before_tool(
     args: &Value,
     checkpoint_ids: Vec<String>,
     checkpoint_work_dir: Option<String>,
-) -> napi::Result<()> {
+) -> napi::Result<ToolCheckpointCapture> {
     if checkpoint_ids.is_empty() {
-        return Ok(());
+        return Ok(ToolCheckpointCapture::None);
     }
     let work_dir = checkpoint_work_dir.ok_or_else(|| {
         Error::new(
@@ -747,40 +814,45 @@ fn capture_checkpoint_before_tool(
                         Status::InvalidArg,
                         "filePath is required for checkpoint capture".to_string(),
                     )
-                })?;
+                })?
+                .to_string();
             crate::storage::services::checkpoint::record_checkpoint_file(
+                checkpoint_ids.clone(),
+                work_dir.clone(),
+                file_path.clone(),
+            )?;
+            Ok(ToolCheckpointCapture::File {
                 checkpoint_ids,
                 work_dir,
-                file_path.to_string(),
-            )
+                file_path,
+            })
         }
-        "mcp__bash__terminal-execute" => {
-            crate::storage::services::checkpoint::record_checkpoint_worktree(
+        "mcp__bash__terminal-execute" => Ok(ToolCheckpointCapture::Worktree(
+            crate::storage::services::checkpoint::capture_checkpoint_worktree_before(
                 checkpoint_ids,
                 work_dir,
-            )
-        }
-        _ => Ok(()),
+            )?,
+        )),
+        _ => Ok(ToolCheckpointCapture::None),
     }
 }
 
-fn capture_checkpoint_after_tool(
-    checkpoint_ids: Vec<String>,
-    checkpoint_work_dir: Option<String>,
-) -> napi::Result<()> {
-    if checkpoint_ids.is_empty() {
-        return Ok(());
+fn capture_checkpoint_after_tool(capture: ToolCheckpointCapture) -> napi::Result<()> {
+    match capture {
+        ToolCheckpointCapture::File {
+            checkpoint_ids,
+            work_dir,
+            file_path,
+        } => crate::storage::services::checkpoint::record_checkpoint_file_after(
+            checkpoint_ids,
+            work_dir,
+            file_path,
+        ),
+        ToolCheckpointCapture::Worktree(Some(capture)) => {
+            crate::storage::services::checkpoint::record_checkpoint_worktree_after(capture)
+        }
+        ToolCheckpointCapture::None | ToolCheckpointCapture::Worktree(None) => Ok(()),
     }
-    let work_dir = checkpoint_work_dir.ok_or_else(|| {
-        Error::new(
-            Status::InvalidArg,
-            "Checkpoint working directory is required".to_string(),
-        )
-    })?;
-    crate::storage::services::checkpoint::record_checkpoint_worktree_after(
-        checkpoint_ids,
-        work_dir,
-    )
 }
 
 #[cfg(test)]

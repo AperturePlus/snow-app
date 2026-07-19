@@ -16,6 +16,7 @@ import {
   TodoToolCall,
   GrepToolCall,
   SubAgentToolCall,
+  CodebaseToolCall,
 } from "../toolCalls";
 import { ToolNameBadge } from "../toolCalls/shared/ToolNameBadge";
 
@@ -68,6 +69,10 @@ export const ToolCallItem = memo(
 
     if (toolCall.name === "mcp__sub-agents__activate") {
       return <SubAgentToolCall toolCall={toolCall} />;
+    }
+
+    if (toolCall.name === "mcp__codebase__search") {
+      return <CodebaseToolCall toolCall={toolCall} />;
     }
 
     const iconName = toolCall.name.replace(/^mcp__.*__/, "");

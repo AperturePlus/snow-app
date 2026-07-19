@@ -39,9 +39,6 @@ export type ApiConfigRecord = ApiConfigInput & {
 
 export type CodebaseSettingsInput = {
   profileName: string;
-  enabled: boolean;
-  enableAgentReview: boolean;
-  enableReranking: boolean;
   embeddingType: string;
   embeddingModelName: string;
   embeddingBaseUrl: string;
@@ -60,6 +57,69 @@ export type CodebaseSettingsInput = {
   rerankingTopN: number;
   configJson: string;
   source: string;
+};
+
+export type CodebaseProjectScopeSettings = {
+  projectId: string;
+  enabled?: boolean;
+  enableAgentReview?: boolean;
+  enableReranking?: boolean;
+};
+
+export type CodebaseEmbedProgress = {
+  phase: string;
+  totalFiles: number;
+  processedFiles: number;
+  totalChunks: number;
+  processedChunks: number;
+  currentFile: string;
+  error: string;
+  elapsedMs: number;
+};
+
+export type CodebaseIndexStats = {
+  totalChunks: number;
+  totalFiles: number;
+  totalSizeBytes: number;
+  isIndexed: boolean;
+};
+
+export type CodebaseScanPreview = {
+  fileCount: number;
+  estimatedChunks: number;
+  totalSizeBytes: number;
+};
+
+export type CodebaseSyncProgress = {
+  phase: string;
+  filesToEmbed: number;
+  processedFiles: number;
+  deletedFiles: number;
+  skippedFiles: number;
+  currentFile: string;
+  error: string;
+};
+
+export type CodebaseSyncResult = {
+  changed: boolean;
+  embeddedFiles: number;
+  deletedFiles: number;
+  skippedFiles: number;
+  error: string;
+};
+
+export type ResumableCodebaseSession = {
+  sessionId: string;
+  projectId: string;
+  status: string;
+  totalFiles: number;
+  processedFiles: number;
+  totalChunks: number;
+  processedChunks: number;
+  currentFile: string;
+  error: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type SystemPromptItemInput = {
@@ -468,6 +528,47 @@ export type NativeBridge = {
   ) => Promise<void>;
   getYoloMode: () => Promise<boolean>;
   setYoloMode: (enabled: boolean) => Promise<void>;
+  getCodebaseProjectScopeSettings: (
+    projectId: string
+  ) => Promise<CodebaseProjectScopeSettings>;
+  setCodebaseProjectEnabled: (
+    projectId: string,
+    enabled: boolean
+  ) => Promise<void>;
+  setCodebaseProjectAgentReview: (
+    projectId: string,
+    enabled: boolean
+  ) => Promise<void>;
+  setCodebaseProjectReranking: (
+    projectId: string,
+    enabled: boolean
+  ) => Promise<void>;
+  checkProjectHasGitignore: (projectId: string) => Promise<boolean>;
+  startCodebaseEmbedding: (
+    projectId: string,
+    sessionId: string,
+    onProgress: (progress: CodebaseEmbedProgress) => void
+  ) => Promise<void>;
+  pauseCodebaseEmbedding: (sessionId: string) => Promise<boolean>;
+  resumeCodebaseEmbedding: (sessionId: string) => Promise<boolean>;
+  cancelCodebaseEmbedding: (sessionId: string) => Promise<boolean>;
+  getCodebaseIndexStats: (projectId: string) => Promise<CodebaseIndexStats>;
+  clearCodebaseIndex: (projectId: string) => Promise<void>;
+  startCodebaseWatch: (
+    projectId: string,
+    projectPath: string,
+    onChange: (projectId: string) => void
+  ) => void;
+  stopCodebaseWatch: (projectId: string) => void;
+  syncCodebaseChanges: (
+    projectId: string,
+    onProgress: (progress: CodebaseSyncProgress) => void
+  ) => Promise<CodebaseSyncResult>;
+  previewCodebaseScan: (projectId: string) => Promise<CodebaseScanPreview>;
+  getResumableCodebaseSessions: (
+    projectId: string
+  ) => Promise<ResumableCodebaseSession[]>;
+  discardResumableCodebaseSession: (sessionId: string) => Promise<void>;
   listAlwaysApprovedTools: (workspacePath?: string) => Promise<string[]>;
   addAlwaysApprovedTool: (
     workspacePath: string | undefined,

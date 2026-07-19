@@ -1,5 +1,6 @@
 mod api;
-mod checkpoint;
+pub(crate) mod checkpoint;
+mod codebase;
 mod engine;
 mod git;
 mod sample;

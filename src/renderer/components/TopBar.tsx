@@ -12,7 +12,9 @@ import {
 import { useEffect, useRef, useState } from "react";
 import type { WorkspaceDirectoryRecord } from "../../preload";
 import { useChatConversationContext } from "./mainContent/chatMessages";
+import { CodebaseSyncIndicator } from "./TopBar/CodebaseSyncIndicator";
 import { TodoPanelButton } from "./TopBar/TodoPanelButton";
+import { useCodebaseWatcher } from "../hooks/useCodebaseWatcher";
 
 type TopBarProps = {
   isSidebarCollapsed: boolean;
@@ -44,7 +46,48 @@ export const TopBar = ({
   >(undefined);
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
   const [isTodoPanelOpen, setIsTodoPanelOpen] = useState(false);
+  const [codebaseEnabled, setCodebaseEnabled] = useState(false);
   const plusMenuRef = useRef<HTMLDivElement>(null);
+
+  // Resolve the active project id / path for the codebase watcher. Prefer the
+  // conversation's directory (so the watcher follows the active chat), falling
+  // back to the active workspace directory.
+  const activeProjectId =
+    conversationDirectoryId ?? activeDirectory?.directoryId;
+  const activeProjectPath = activeDirectory?.path;
+
+  // Load the codebase scope settings for the active project to determine
+  // whether the watcher should be active.
+  useEffect(() => {
+    if (!activeProjectId) {
+      setCodebaseEnabled(false);
+      return;
+    }
+
+    let cancelled = false;
+    void window.snow
+      .getCodebaseProjectScopeSettings(activeProjectId)
+      .then((scope) => {
+        if (!cancelled) {
+          setCodebaseEnabled(scope.enabled ?? false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCodebaseEnabled(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProjectId]);
+
+  const { syncStatus, watchedProjectId } = useCodebaseWatcher({
+    projectId: activeProjectId,
+    projectPath: activeProjectPath,
+    enabled: codebaseEnabled,
+  });
 
   useEffect(() => {
     if (!conversationDirectoryId) {
@@ -175,6 +218,11 @@ export const TopBar = ({
           messages={messages}
           projectId={conversationDirectoryId ?? activeDirectory?.directoryId}
           onOpenChange={setIsTodoPanelOpen}
+        />
+        <CodebaseSyncIndicator
+          syncStatus={syncStatus}
+          watchedProjectId={watchedProjectId}
+          activeProjectId={activeProjectId}
         />
       </div>
 

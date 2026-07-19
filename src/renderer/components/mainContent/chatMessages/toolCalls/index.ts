@@ -6,3 +6,4 @@ export { FilesystemCreateToolCall } from "./FilesystemCreateToolCall";
 export { TodoToolCall } from "./TodoToolCall";
 export { GrepToolCall } from "./GrepToolCall";
 export { SubAgentToolCall } from "./SubAgentToolCall";
+export { CodebaseToolCall } from "./CodebaseToolCall";

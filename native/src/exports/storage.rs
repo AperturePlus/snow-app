@@ -3,9 +3,9 @@ use napi_derive::napi;
 
 use crate::storage::{
     ApiConfigInput, ApiConfigRecord, AppStorageInfo, ChatConversationPage,
-    ChatConversationRecord, ChatMessagePage, ChatMessageRecord, CustomHeaderSchemeInput,
-    CustomHeaderSchemeRecord, McpServerConfigInput, McpServerConfigRecord,
-    ProjectMcpServerConfigRecord, ProjectSensitiveCommandConfigInput,
+    ChatConversationRecord, ChatMessagePage, ChatMessageRecord, CodebaseProjectScopeSettings,
+    CustomHeaderSchemeInput, CustomHeaderSchemeRecord, McpServerConfigInput,
+    McpServerConfigRecord, ProjectMcpServerConfigRecord, ProjectSensitiveCommandConfigInput,
     ProjectSensitiveCommandConfigRecord,
     SensitiveCommandConfigInput, SensitiveCommandConfigRecord, SensitiveCommandMatchResult,
     SubAgentConfigInput, SubAgentConfigRecord, SystemPromptItemInput, SystemPromptItemRecord,
@@ -58,6 +58,62 @@ pub async fn set_yolo_mode(enabled: bool) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || crate::storage::set_yolo_mode(enabled))
         .await
         .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn get_codebase_project_scope_settings(
+    project_id: String,
+) -> napi::Result<CodebaseProjectScopeSettings> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::get_codebase_project_scope_settings(project_id)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn set_codebase_project_enabled(
+    project_id: String,
+    enabled: bool,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::set_codebase_project_enabled(project_id, enabled)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn set_codebase_project_agent_review(
+    project_id: String,
+    enabled: bool,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::set_codebase_project_agent_review(project_id, enabled)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn set_codebase_project_reranking(
+    project_id: String,
+    enabled: bool,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::set_codebase_project_reranking(project_id, enabled)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn check_project_has_gitignore(project_id: String) -> napi::Result<bool> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::check_project_has_gitignore(project_id)
+    })
+    .await
+    .map_err(map_spawn_error)?
 }
 
 #[napi]

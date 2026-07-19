@@ -5,10 +5,17 @@ import type {
   BrowserCommandResponse,
   CheckpointFileChange,
   CheckpointFileDiff,
+  CodebaseEmbedProgress,
+  CodebaseIndexStats,
+  CodebaseProjectScopeSettings,
+  CodebaseScanPreview,
+  CodebaseSyncProgress,
+  CodebaseSyncResult,
   McpProjectServerStatus,
   McpProjectToolStatus,
   McpToolDefinition,
   ProjectSkillDefinition,
+  ResumableCodebaseSession,
   SkillDefinition,
   UserQuestionRequest,
   UserQuestionResponse,
@@ -19,6 +26,7 @@ const BROWSER_COMMAND_CHANNEL = "browser:command";
 const BROWSER_COMMAND_RESPONSE_CHANNEL = "browser:command-response";
 const USER_QUESTION_CHANNEL = "user-question:request";
 const USER_QUESTION_RESPONSE_CHANNEL = "user-question:response";
+const CODEBASE_EMBED_PROGRESS_CHANNEL = "codebase:embed:progress";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -68,7 +76,213 @@ const ensureMcpToolChunkListener = (): void => {
   });
 };
 
+const codebaseEmbedProgressCallbacks = new Map<
+  string,
+  (progress: CodebaseEmbedProgress) => void
+>();
+let codebaseEmbedProgressListenerRegistered = false;
+
+const ensureCodebaseEmbedProgressListener = (): void => {
+  if (codebaseEmbedProgressListenerRegistered) {
+    return;
+  }
+  codebaseEmbedProgressListenerRegistered = true;
+  ipcRenderer.on(
+    CODEBASE_EMBED_PROGRESS_CHANNEL,
+    (_event, payload: unknown) => {
+      if (!isRecord(payload)) {
+        return;
+      }
+      const sessionId = payload.sessionId;
+      if (typeof sessionId !== "string") {
+        return;
+      }
+      const callback = codebaseEmbedProgressCallbacks.get(sessionId);
+      if (!callback) {
+        return;
+      }
+      const progress = payload.progress;
+      if (!isRecord(progress)) {
+        return;
+      }
+      callback({
+        phase: typeof progress.phase === "string" ? progress.phase : "",
+        totalFiles:
+          typeof progress.totalFiles === "number" ? progress.totalFiles : 0,
+        processedFiles:
+          typeof progress.processedFiles === "number"
+            ? progress.processedFiles
+            : 0,
+        totalChunks:
+          typeof progress.totalChunks === "number" ? progress.totalChunks : 0,
+        processedChunks:
+          typeof progress.processedChunks === "number"
+            ? progress.processedChunks
+            : 0,
+        currentFile:
+          typeof progress.currentFile === "string" ? progress.currentFile : "",
+        error: typeof progress.error === "string" ? progress.error : "",
+        elapsedMs:
+          typeof progress.elapsedMs === "number" ? progress.elapsedMs : 0,
+      });
+    }
+  );
+};
+
 export const systemApi = {
+  getCodebaseProjectScopeSettings: (
+    projectId: string
+  ): Promise<CodebaseProjectScopeSettings> =>
+    ipcRenderer.invoke("codebase:get-project-scope", projectId),
+  setCodebaseProjectEnabled: (
+    projectId: string,
+    enabled: boolean
+  ): Promise<void> =>
+    ipcRenderer.invoke("codebase:set-project-enabled", projectId, enabled),
+  setCodebaseProjectAgentReview: (
+    projectId: string,
+    enabled: boolean
+  ): Promise<void> =>
+    ipcRenderer.invoke("codebase:set-project-agent-review", projectId, enabled),
+  setCodebaseProjectReranking: (
+    projectId: string,
+    enabled: boolean
+  ): Promise<void> =>
+    ipcRenderer.invoke("codebase:set-project-reranking", projectId, enabled),
+  checkProjectHasGitignore: (projectId: string): Promise<boolean> =>
+    ipcRenderer.invoke("codebase:check-project-gitignore", projectId),
+  startCodebaseEmbedding: (
+    projectId: string,
+    sessionId: string,
+    onProgress?: (progress: CodebaseEmbedProgress) => void
+  ): Promise<void> => {
+    ensureCodebaseEmbedProgressListener();
+    if (onProgress) {
+      codebaseEmbedProgressCallbacks.set(sessionId, onProgress);
+    }
+    return ipcRenderer
+      .invoke("codebase:start-embedding", projectId, sessionId)
+      .finally(() => {
+        codebaseEmbedProgressCallbacks.delete(sessionId);
+      });
+  },
+  pauseCodebaseEmbedding: (sessionId: string): Promise<boolean> =>
+    ipcRenderer.invoke("codebase:pause-embedding", sessionId),
+  resumeCodebaseEmbedding: (sessionId: string): Promise<boolean> =>
+    ipcRenderer.invoke("codebase:resume-embedding", sessionId),
+  cancelCodebaseEmbedding: (sessionId: string): Promise<boolean> =>
+    ipcRenderer.invoke("codebase:cancel-embedding", sessionId),
+  getCodebaseIndexStats: (projectId: string): Promise<CodebaseIndexStats> =>
+    ipcRenderer.invoke("codebase:get-index-stats", projectId),
+  clearCodebaseIndex: (projectId: string): Promise<void> =>
+    ipcRenderer.invoke("codebase:clear-index", projectId),
+  startCodebaseWatch: (projectId: string, projectPath: string): Promise<void> =>
+    ipcRenderer.invoke("codebase:start-watch", projectId, projectPath),
+  stopCodebaseWatch: (projectId: string): Promise<void> =>
+    ipcRenderer.invoke("codebase:stop-watch", projectId),
+  syncCodebaseChanges: (
+    projectId: string,
+    onProgress?: (progress: CodebaseSyncProgress) => void
+  ): Promise<CodebaseSyncResult> => {
+    if (onProgress) {
+      const handler = (_event: IpcRendererEvent, payload: unknown) => {
+        if (!isRecord(payload)) {
+          return;
+        }
+        const progress = payload.progress;
+        if (!isRecord(progress)) {
+          return;
+        }
+        onProgress({
+          phase: typeof progress.phase === "string" ? progress.phase : "",
+          filesToEmbed:
+            typeof progress.filesToEmbed === "number"
+              ? progress.filesToEmbed
+              : 0,
+          processedFiles:
+            typeof progress.processedFiles === "number"
+              ? progress.processedFiles
+              : 0,
+          deletedFiles:
+            typeof progress.deletedFiles === "number"
+              ? progress.deletedFiles
+              : 0,
+          skippedFiles:
+            typeof progress.skippedFiles === "number"
+              ? progress.skippedFiles
+              : 0,
+          currentFile:
+            typeof progress.currentFile === "string"
+              ? progress.currentFile
+              : "",
+          error: typeof progress.error === "string" ? progress.error : "",
+        });
+      };
+      ipcRenderer.on("codebase:sync:progress", handler);
+      return ipcRenderer
+        .invoke("codebase:sync-changes", projectId)
+        .finally(() => {
+          ipcRenderer.removeListener("codebase:sync:progress", handler);
+        });
+    }
+    return ipcRenderer.invoke("codebase:sync-changes", projectId);
+  },
+  onCodebaseFilesChanged: (
+    callback: (projectId: string) => void
+  ): (() => void) => {
+    const handler = (_event: IpcRendererEvent, projectId: string): void => {
+      callback(projectId);
+    };
+
+    ipcRenderer.on("codebase:files-changed", handler);
+
+    return () => {
+      ipcRenderer.removeListener("codebase:files-changed", handler);
+    };
+  },
+  onCodebaseSyncProgress: (
+    callback: (progress: CodebaseSyncProgress) => void
+  ): (() => void) => {
+    const handler = (_event: IpcRendererEvent, payload: unknown): void => {
+      if (!isRecord(payload)) {
+        return;
+      }
+      const progress = payload.progress;
+      if (!isRecord(progress)) {
+        return;
+      }
+      callback({
+        phase: typeof progress.phase === "string" ? progress.phase : "",
+        filesToEmbed:
+          typeof progress.filesToEmbed === "number" ? progress.filesToEmbed : 0,
+        processedFiles:
+          typeof progress.processedFiles === "number"
+            ? progress.processedFiles
+            : 0,
+        deletedFiles:
+          typeof progress.deletedFiles === "number" ? progress.deletedFiles : 0,
+        skippedFiles:
+          typeof progress.skippedFiles === "number" ? progress.skippedFiles : 0,
+        currentFile:
+          typeof progress.currentFile === "string" ? progress.currentFile : "",
+        error: typeof progress.error === "string" ? progress.error : "",
+      });
+    };
+
+    ipcRenderer.on("codebase:sync:progress", handler);
+
+    return () => {
+      ipcRenderer.removeListener("codebase:sync:progress", handler);
+    };
+  },
+  previewCodebaseScan: (projectId: string): Promise<CodebaseScanPreview> =>
+    ipcRenderer.invoke("codebase:preview-scan", projectId),
+  getResumableCodebaseSessions: (
+    projectId: string
+  ): Promise<ResumableCodebaseSession[]> =>
+    ipcRenderer.invoke("codebase:get-resumable-sessions", projectId),
+  discardResumableCodebaseSession: (sessionId: string): Promise<void> =>
+    ipcRenderer.invoke("codebase:discard-resumable-session", sessionId),
   listMcpTools: (): Promise<McpToolDefinition[]> =>
     ipcRenderer.invoke("mcp:list-tools"),
   listAvailableSkills: (projectId?: string): Promise<SkillDefinition[]> =>

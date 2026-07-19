@@ -1,4 +1,4 @@
-import { BrainCircuit, Network, SearchCode } from "lucide-react";
+import { BrainCircuit, Network } from "lucide-react";
 import { useI18n } from "../../../i18n";
 import { EMBEDDING_TYPE_OPTIONS } from "./codebaseSettingsConstants";
 import type { CodebaseSettings } from "./types";
@@ -14,8 +14,9 @@ export function CodebaseSettingsSummary({
 }: CodebaseSettingsSummaryProps): React.JSX.Element {
   const { t } = useI18n();
   const embeddingLabel =
-    EMBEDDING_TYPE_OPTIONS.find((option) => option.value === preview.embeddingType)
-      ?.label ?? preview.embeddingType;
+    EMBEDDING_TYPE_OPTIONS.find(
+      (option) => option.value === preview.embeddingType
+    )?.label ?? preview.embeddingType;
   const sourceLabel =
     lastSaved.source === "snow-cli"
       ? t("settings.sourceSnowCli", { defaultValue: "Snow CLI" })
@@ -23,17 +24,6 @@ export function CodebaseSettingsSummary({
 
   return (
     <div className="api-settings-summary-grid">
-      <div className="api-settings-summary-card">
-        <SearchCode size={15} strokeWidth={1.8} />
-        <span>
-          {preview.enabled
-            ? t("settings.enabled", { defaultValue: "Enabled" })
-            : t("settings.disabled", { defaultValue: "Disabled" })}
-        </span>
-        <small>
-          {t("settings.codebaseIndexStatus", { defaultValue: "Indexing" })}
-        </small>
-      </div>
       <div className="api-settings-summary-card">
         <BrainCircuit size={15} strokeWidth={1.8} />
         <span>{embeddingLabel}</span>

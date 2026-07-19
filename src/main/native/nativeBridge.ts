@@ -497,6 +497,70 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to list todos")
         ),
+      startCodebaseEmbedding: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to start codebase embedding"
+          )
+        ),
+      pauseCodebaseEmbedding: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to pause codebase embedding"
+          )
+        ),
+      resumeCodebaseEmbedding: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to resume codebase embedding"
+          )
+        ),
+      cancelCodebaseEmbedding: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to cancel codebase embedding"
+          )
+        ),
+      getCodebaseIndexStats: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to get codebase index stats"
+          )
+        ),
+      clearCodebaseIndex: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to clear codebase index")
+        ),
+      startCodebaseWatch: () => {
+        throw new Error(
+          "Rust native bridge is required to start codebase watch"
+        );
+      },
+      stopCodebaseWatch: () => {
+        throw new Error(
+          "Rust native bridge is required to stop codebase watch"
+        );
+      },
+      syncCodebaseChanges: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to sync codebase changes")
+        ),
+      previewCodebaseScan: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to preview codebase scan")
+        ),
+      getResumableCodebaseSessions: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to get resumable codebase sessions"
+          )
+        ),
+      discardResumableCodebaseSession: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to discard resumable codebase session"
+          )
+        ),
     };
   }
 };

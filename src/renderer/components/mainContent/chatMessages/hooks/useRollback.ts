@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import type {
   ConversationContextValue,
   CheckpointFileChange,
+  RollbackMode,
   RollbackTodoItem,
 } from "../utils/conversationTypes";
 import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
@@ -150,109 +151,117 @@ export const useRollback = (ctx: ConversationContextValue) => {
     ]
   );
 
-  const confirmRollback = useCallback((): void => {
-    const preview = ctx.rollbackPreview;
-    if (!preview) {
-      return;
-    }
-
-    const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
-    const {
-      messageId,
-      messageContent,
-      checkpointId,
-      convId,
-      responseId,
-      isFirstMessage,
-      isContextCompaction,
-    } = preview;
-
-    ctx.updateSessionMessages(key, (currentMessages) => {
-      const targetIndex = currentMessages.findIndex(
-        (message) => message.id === messageId
-      );
-      return targetIndex === -1
-        ? currentMessages
-        : currentMessages.slice(0, targetIndex);
-    });
-
-    if (
-      checkpointId &&
-      ctx.directoryPath &&
-      !ctx.directoryPath.startsWith("ssh://")
-    ) {
-      const sessionRef = ctx.sessionsRefData.current.get(key);
-      const checkpointIndex =
-        sessionRef?.checkpointIds.indexOf(checkpointId) ?? -1;
-      const discardedCheckpointIds =
-        sessionRef && checkpointIndex >= 0
-          ? sessionRef.checkpointIds.slice(checkpointIndex)
-          : [checkpointId];
-      if (sessionRef && checkpointIndex >= 0) {
-        sessionRef.checkpointIds = sessionRef.checkpointIds.slice(
-          0,
-          checkpointIndex
-        );
+  const confirmRollback = useCallback(
+    (mode: RollbackMode): void => {
+      const preview = ctx.rollbackPreview;
+      if (!preview) {
+        return;
       }
-      void window.snow
-        .restoreCheckpoint(checkpointId, ctx.directoryPath)
-        .then(() => {
+
+      const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+      const {
+        messageId,
+        messageContent,
+        checkpointId,
+        convId,
+        responseId,
+        isFirstMessage,
+        isContextCompaction,
+      } = preview;
+
+      ctx.updateSessionMessages(key, (currentMessages) => {
+        const targetIndex = currentMessages.findIndex(
+          (message) => message.id === messageId
+        );
+        return targetIndex === -1
+          ? currentMessages
+          : currentMessages.slice(0, targetIndex);
+      });
+
+      if (checkpointId) {
+        const sessionRef = ctx.sessionsRefData.current.get(key);
+        const checkpointIndex =
+          sessionRef?.checkpointIds.indexOf(checkpointId) ?? -1;
+        const discardedCheckpointIds =
+          sessionRef && checkpointIndex >= 0
+            ? sessionRef.checkpointIds.slice(checkpointIndex)
+            : [checkpointId];
+        if (sessionRef && checkpointIndex >= 0) {
+          sessionRef.checkpointIds = sessionRef.checkpointIds.slice(
+            0,
+            checkpointIndex
+          );
+        }
+
+        const shouldRestoreFiles =
+          mode === "conversation-and-files" &&
+          Boolean(ctx.directoryPath) &&
+          !ctx.directoryPath?.startsWith("ssh://");
+        if (shouldRestoreFiles && ctx.directoryPath) {
+          void window.snow
+            .restoreCheckpoint(checkpointId, ctx.directoryPath)
+            .then(() => {
+              deleteCheckpoints(discardedCheckpointIds);
+            })
+            .catch(() => {
+              if (
+                sessionRef &&
+                checkpointIndex >= 0 &&
+                !sessionRef.checkpointIds.includes(checkpointId)
+              ) {
+                sessionRef.checkpointIds = [
+                  ...sessionRef.checkpointIds,
+                  ...discardedCheckpointIds,
+                ];
+              }
+            });
+        } else {
           deleteCheckpoints(discardedCheckpointIds);
-        })
-        .catch(() => {
-          if (
-            sessionRef &&
-            checkpointIndex >= 0 &&
-            !sessionRef.checkpointIds.includes(checkpointId)
-          ) {
-            sessionRef.checkpointIds = [
-              ...sessionRef.checkpointIds,
-              ...discardedCheckpointIds,
-            ];
-          }
-        });
-    }
+        }
+      }
 
-    if (isFirstMessage && !isContextCompaction && convId) {
-      void window.snow
-        .deleteConversation(convId)
-        .then(() => {
-          ctx.setConversationVersion((version) => version + 1);
-        })
-        .catch(() => {
-          // Best effort
+      if (isFirstMessage && !isContextCompaction && convId) {
+        void window.snow
+          .deleteConversation(convId)
+          .then(() => {
+            ctx.setConversationVersion((version) => version + 1);
+          })
+          .catch(() => {
+            // Best effort
+          });
+        ctx.sessionsRefData.current.delete(key);
+        ctx.setSessions((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
         });
-      ctx.sessionsRefData.current.delete(key);
-      ctx.setSessions((prev) => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
-      ctx.setActiveId(undefined);
-    } else if (convId && responseId) {
-      ctx.updateSessionField(key, "tokenUsage", null);
-      void window.snow.truncateConversation(convId, responseId).catch(() => {
-        // Best effort — database persistence must not block the UI refresh.
-      });
-    }
+        ctx.setActiveId(undefined);
+      } else if (convId && responseId) {
+        ctx.updateSessionField(key, "tokenUsage", null);
+        void window.snow.truncateConversation(convId, responseId).catch(() => {
+          // Best effort — database persistence must not block the UI refresh.
+        });
+      }
 
-    if (!isContextCompaction) {
-      ctx.setDraftToRestore(messageContent);
-    }
-    ctx.setRollbackPreview(null);
-  }, [
-    ctx.rollbackPreview,
-    ctx.directoryPath,
-    ctx.updateSessionField,
-    ctx.updateSessionMessages,
-    ctx.setConversationVersion,
-    ctx.setActiveId,
-    ctx.setDraftToRestore,
-    ctx.setRollbackPreview,
-    ctx.sessionsRefData,
-    ctx.setSessions,
-    ctx.activeConversationIdRef,
-  ]);
+      if (!isContextCompaction) {
+        ctx.setDraftToRestore(messageContent);
+      }
+      ctx.setRollbackPreview(null);
+    },
+    [
+      ctx.rollbackPreview,
+      ctx.directoryPath,
+      ctx.updateSessionField,
+      ctx.updateSessionMessages,
+      ctx.setConversationVersion,
+      ctx.setActiveId,
+      ctx.setDraftToRestore,
+      ctx.setRollbackPreview,
+      ctx.sessionsRefData,
+      ctx.setSessions,
+      ctx.activeConversationIdRef,
+    ]
+  );
 
   const cancelRollback = useCallback((): void => {
     ctx.setRollbackPreview(null);

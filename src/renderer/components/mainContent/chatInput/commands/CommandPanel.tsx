@@ -110,7 +110,11 @@ export const CommandPanel = forwardRef<CommandPanelHandle, CommandPanelProps>(
                   onMouseEnter={() => setSelectedIndex(index)}
                   onClick={() => onSelect(command)}
                 >
-                  <CommandIcon size={15} className="chat-command-item-icon" />
+                  <CommandIcon
+                    size={15}
+                    strokeWidth={1.8}
+                    className="chat-command-item-icon"
+                  />
                   <span className="chat-command-item-content">
                     <span className="chat-command-item-name">
                       /{command.label}

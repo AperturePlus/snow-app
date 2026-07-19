@@ -6,9 +6,6 @@ export type CodebaseSettingsPanelProps = {
 
 export type CodebaseSettingsForm = {
   profileName: string;
-  enabled: boolean;
-  enableAgentReview: boolean;
-  enableReranking: boolean;
   embeddingType: string;
   embeddingModelName: string;
   embeddingBaseUrl: string;

@@ -15,6 +15,7 @@ import { ChatMessageList, useChatConversationContext } from "./chatMessages";
 import { RollbackConfirmDialog } from "./chatMessages/dialogs/RollbackConfirmDialog";
 import { CompactionStream } from "./chatMessages/components/CompactionStream";
 import type { ChatInputSendOptions } from "./chatInput/types";
+import type { RollbackMode } from "./chatMessages/utils/conversationTypes";
 
 type ChatContentProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
@@ -471,9 +472,12 @@ const ChatContentBody = ({
     [handleSendMessage]
   );
 
-  const handleConfirmRollback = useCallback((): void => {
-    confirmRollback();
-  }, [confirmRollback]);
+  const handleConfirmRollback = useCallback(
+    (mode: RollbackMode): void => {
+      confirmRollback(mode);
+    },
+    [confirmRollback]
+  );
 
   // Cancel any pending scroll-throttle animation frame on unmount.
   useEffect(() => {

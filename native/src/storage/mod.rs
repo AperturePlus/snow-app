@@ -273,6 +273,14 @@ pub struct SensitiveCommandMatchResult {
 }
 
 #[napi(object)]
+pub struct CodebaseProjectScopeSettings {
+    pub project_id: String,
+    pub enabled: Option<bool>,
+    pub enable_agent_review: Option<bool>,
+    pub enable_reranking: Option<bool>,
+}
+
+#[napi(object)]
 pub struct ChatConversationRecord {
     pub conversation_id: String,
     pub title: String,
@@ -334,6 +342,16 @@ pub fn initialize_app_storage() -> Result<AppStorageInfo> {
     services::sub_agent_configs::seed_default_sub_agent_configs(&database_path)?;
     services::sensitive_command_configs::seed_default_sensitive_command_configs(&database_path)?;
 
+    // Mark any embedding sessions that were still "running" or "paused" when
+    // the app was last closed as "interrupted". This lets the frontend detect
+    // them via `get_resumable_codebase_sessions` and offer to resume. Errors
+    // here are non-fatal — we just log them so storage init still succeeds.
+    if let Err(error) =
+        services::codebase_embed_sessions::mark_interrupted_sessions(&database_path)
+    {
+        eprintln!("Failed to mark interrupted codebase sessions: {error}");
+    }
+
     Ok(AppStorageInfo {
         directory_path: storage_dir.to_string_lossy().into_owned(),
         database_path: database_path.to_string_lossy().into_owned(),
@@ -367,6 +385,72 @@ pub fn get_yolo_mode() -> Result<bool> {
 pub fn set_yolo_mode(enabled: bool) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::yolo_settings::set_yolo_mode(&database_path, enabled)
+}
+
+pub fn get_codebase_project_scope_settings(
+    project_id: String,
+) -> Result<CodebaseProjectScopeSettings> {
+    let database_path = ensure_database_file()?;
+    let settings = services::system_settings::get_codebase_project_scope_settings(
+        &database_path,
+        &project_id,
+    )?;
+    Ok(CodebaseProjectScopeSettings {
+        project_id: settings.project_id,
+        enabled: settings.enabled,
+        enable_agent_review: settings.enable_agent_review,
+        enable_reranking: settings.enable_reranking,
+    })
+}
+
+pub fn set_codebase_project_enabled(
+    project_id: String,
+    enabled: bool,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::system_settings::set_codebase_project_enabled(&database_path, &project_id, enabled)
+}
+
+pub fn set_codebase_project_agent_review(
+    project_id: String,
+    enabled: bool,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::system_settings::set_codebase_project_agent_review(
+        &database_path,
+        &project_id,
+        enabled,
+    )
+}
+
+pub fn set_codebase_project_reranking(
+    project_id: String,
+    enabled: bool,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::system_settings::set_codebase_project_reranking(&database_path, &project_id, enabled)
+}
+
+pub fn check_project_has_gitignore(project_id: String) -> Result<bool> {
+    let database_path = ensure_database_file()?;
+    let normalized_project_id = project_id.trim().to_string();
+    if normalized_project_id.is_empty() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Project id is required".to_string(),
+        ));
+    }
+
+    let Some(project_path) = services::workspace_directories::get_workspace_directory_path(
+        &database_path,
+        &normalized_project_id,
+    )?
+    else {
+        return Ok(false);
+    };
+
+    let gitignore_path = PathBuf::from(&project_path).join(".gitignore");
+    Ok(gitignore_path.exists())
 }
 
 pub fn list_api_configs() -> Result<Vec<ApiConfigRecord>> {
