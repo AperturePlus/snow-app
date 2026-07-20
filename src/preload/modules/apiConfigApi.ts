@@ -63,6 +63,10 @@ export const apiConfigApi = {
     ipcRenderer.invoke("settings:get-yolo-mode"),
   setYoloMode: (enabled: boolean): Promise<void> =>
     ipcRenderer.invoke("settings:set-yolo-mode", enabled),
+  getPlanMode: (): Promise<boolean> =>
+    ipcRenderer.invoke("settings:get-plan-mode"),
+  setPlanMode: (enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke("settings:set-plan-mode", enabled),
   listToolApprovalProjectApprovedTools: (
     projectId: string
   ): Promise<string[]> =>

@@ -1,5 +1,6 @@
 use napi::bindgen_prelude::*;
 
+use crate::prompt::plan_mode_system_prompt::build_plan_mode_system_prompt;
 use crate::prompt::system_prompt::build_system_prompt;
 use crate::storage::services::chat_conversations::{
     load_context_messages, resolve_conversation_id, ChatContextMessage,
@@ -77,7 +78,14 @@ pub fn prepare_context_request(
         })
         .unwrap_or_default();
 
-    let system_prompt = build_system_prompt(&working_directory);
+    // Plan Mode: replace the built-in system prompt with the Plan Mode prompt
+    // that instructs the AI to analyze, plan, and get user approval before
+    // executing any changes.
+    let system_prompt = if request.plan_mode {
+        build_plan_mode_system_prompt(&working_directory)
+    } else {
+        build_system_prompt(&working_directory)
+    };
     let has_existing_system = messages
         .iter()
         .any(|msg| msg.role.trim() == "system" || msg.role.trim() == "developer");

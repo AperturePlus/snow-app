@@ -110,6 +110,7 @@ async fn create_anthropic_response_async(
         directory_id: request.directory_id.as_deref(),
         context_compaction: request.context_compaction.unwrap_or(false),
         skip_context: request.skip_context.unwrap_or(false),
+        plan_mode: request.plan_mode.unwrap_or(false),
         system_prompt_ids_json: &api_config.system_prompt_ids_json,
     })?;
 

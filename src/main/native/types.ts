@@ -389,6 +389,7 @@ export type ResponsesApiRequest = {
   subAgentToolsJson?: string;
   subAgentConfigProfile?: string;
   skipContext?: boolean;
+  planMode?: boolean;
 };
 
 export type TokenUsage = {
@@ -572,6 +573,8 @@ export type NativeBridge = {
   ) => Promise<void>;
   getYoloMode: () => Promise<boolean>;
   setYoloMode: (enabled: boolean) => Promise<void>;
+  getPlanMode: () => Promise<boolean>;
+  setPlanMode: (enabled: boolean) => Promise<void>;
   getCodebaseProjectScopeSettings: (
     projectId: string
   ) => Promise<CodebaseProjectScopeSettings>;

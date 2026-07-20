@@ -65,18 +65,16 @@ export const useChatInputController = ({
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const [isManualMode, setIsManualMode] = useState(false);
   const [manualValue, setManualValue] = useState("");
   const [runtimeApiConfig, setRuntimeApiConfig] =
     useState<ApiConfigRecord | null>(null);
   const [isLoadingApiConfig, setIsLoadingApiConfig] = useState(true);
   const [thinkingValue, setThinkingValue] = useState(DEFAULT_THINKING_VALUE);
-  const [isThinkingDropdownOpen, setIsThinkingDropdownOpen] = useState(false);
   const [isSavingThinking, setIsSavingThinking] = useState(false);
   const [thinkingError, setThinkingError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const thinkingDropdownRef = useRef<HTMLDivElement>(null);
 
   const labels = useMemo(
     () => ({
@@ -239,26 +237,17 @@ export const useChatInputController = ({
   );
 
   useEffect(() => {
-    if (!isDropdownOpen && !isThinkingDropdownOpen) {
+    if (!isModelMenuOpen) {
       return;
     }
 
     const handleClickOutside = (event: MouseEvent) => {
       if (
-        isDropdownOpen &&
         dropdownRef.current &&
         !dropdownRef.current.contains(event.target as Node)
       ) {
-        setIsDropdownOpen(false);
+        setIsModelMenuOpen(false);
         setIsManualMode(false);
-      }
-
-      if (
-        isThinkingDropdownOpen &&
-        thinkingDropdownRef.current &&
-        !thinkingDropdownRef.current.contains(event.target as Node)
-      ) {
-        setIsThinkingDropdownOpen(false);
       }
     };
 
@@ -267,7 +256,7 @@ export const useChatInputController = ({
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [isDropdownOpen, isThinkingDropdownOpen]);
+  }, [isModelMenuOpen]);
 
   const adjustHeight = useCallback(() => {
     const textarea = textareaRef.current;
@@ -398,7 +387,7 @@ export const useChatInputController = ({
   const handleSelectModel = useCallback(
     async (modelId: string) => {
       setSelectedModel(modelId);
-      setIsDropdownOpen(false);
+      setIsModelMenuOpen(false);
       setIsManualMode(false);
 
       if (!runtimeApiConfig) {
@@ -432,7 +421,7 @@ export const useChatInputController = ({
       setSelectedModel(trimmed);
     }
     setIsManualMode(false);
-    setIsDropdownOpen(false);
+    setIsModelMenuOpen(false);
 
     if (!runtimeApiConfig || !trimmed) {
       return;
@@ -472,8 +461,8 @@ export const useChatInputController = ({
     await loadModels(true);
   }, [loadModels]);
 
-  const handleToggleModelDropdown = useCallback(() => {
-    setIsDropdownOpen((open) => {
+  const handleToggleModelMenu = useCallback(() => {
+    setIsModelMenuOpen((open) => {
       const nextOpen = !open;
       if (nextOpen) {
         void loadModels();
@@ -502,7 +491,7 @@ export const useChatInputController = ({
       }
 
       setThinkingValue(nextValue);
-      setIsThinkingDropdownOpen(false);
+      setIsModelMenuOpen(false);
       setIsSavingThinking(true);
       setThinkingError(null);
 
@@ -548,7 +537,7 @@ export const useChatInputController = ({
     displayModel,
     isLoadingModels,
     modelError,
-    isDropdownOpen,
+    isModelMenuOpen,
     isManualMode,
     manualValue,
     dropdownRef,
@@ -558,17 +547,14 @@ export const useChatInputController = ({
     thinkingValue,
     thinkingLabel: activeThinkingOption.label,
     ActiveThinkingIcon: activeThinkingOption.icon,
-    isThinkingDropdownOpen,
     isLoadingApiConfig,
     isSavingThinking,
     thinkingError,
-    thinkingDropdownRef,
     labels,
     isStreaming,
     isAborting,
     setManualValue,
     setIsManualMode,
-    setIsThinkingDropdownOpen,
     handleChange,
     handleSend,
     handleAbort: onAbort ?? (() => {}),
@@ -578,7 +564,7 @@ export const useChatInputController = ({
     handleConfirmManualModel,
     handleManualKeyDown,
     handleRetryFetchModels,
-    handleToggleModelDropdown,
+    handleToggleModelMenu,
     handleSelectThinking,
     restoreContent,
   };

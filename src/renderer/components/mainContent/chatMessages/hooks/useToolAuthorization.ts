@@ -12,6 +12,7 @@ import type {
 export const useToolAuthorization = (ctx: ConversationContextValue) => {
   // 保持 ref 与 state 同步
   ctx.yoloModeRef.current = ctx.yoloMode;
+  ctx.planModeRef.current = ctx.planMode;
 
   const approveAllPendingToolAuthorizations = useCallback((): void => {
     const pendingEntries = ctx.pendingToolAuthorizationRef.current;
@@ -62,6 +63,25 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     }
   }, [applyYoloMode]);
 
+  const applyPlanMode = useCallback(
+    (enabled: boolean): void => {
+      ctx.planModeRef.current = enabled;
+      ctx.setPlanModeState(enabled);
+    },
+    [ctx.planModeRef, ctx.setPlanModeState]
+  );
+
+  const refreshPlanMode = useCallback(async (): Promise<boolean> => {
+    try {
+      const enabled = await window.snow.getPlanMode();
+      applyPlanMode(enabled);
+      return enabled;
+    } catch {
+      applyPlanMode(false);
+      return false;
+    }
+  }, [applyPlanMode]);
+
   // 初始化：读取磁盘 YOLO 设置和永久授权工具列表
   useEffect(() => {
     let disposed = false;
@@ -76,6 +96,19 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       .catch(() => {
         if (!disposed) {
           applyYoloMode(false);
+        }
+      });
+
+    void window.snow
+      .getPlanMode()
+      .then((enabled) => {
+        if (!disposed) {
+          applyPlanMode(enabled);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          applyPlanMode(false);
         }
       });
 
@@ -99,7 +132,12 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     return () => {
       disposed = true;
     };
-  }, [applyYoloMode, ctx.directoryId, ctx.alwaysApprovedToolsRef]);
+  }, [
+    applyYoloMode,
+    applyPlanMode,
+    ctx.directoryId,
+    ctx.alwaysApprovedToolsRef,
+  ]);
 
   const setYoloMode = useCallback(
     async (enabled: boolean): Promise<void> => {
@@ -116,6 +154,23 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       }
     },
     [applyYoloMode, ctx.isUpdatingYoloMode, ctx.setIsUpdatingYoloMode]
+  );
+
+  const setPlanMode = useCallback(
+    async (enabled: boolean): Promise<void> => {
+      if (ctx.isUpdatingPlanMode) {
+        return;
+      }
+
+      ctx.setIsUpdatingPlanMode(true);
+      try {
+        await window.snow.setPlanMode(enabled);
+        applyPlanMode(enabled);
+      } finally {
+        ctx.setIsUpdatingPlanMode(false);
+      }
+    },
+    [applyPlanMode, ctx.isUpdatingPlanMode, ctx.setIsUpdatingPlanMode]
   );
 
   const settleToolAuthorization = useCallback(
@@ -329,6 +384,9 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     applyYoloMode,
     refreshYoloMode,
     setYoloMode,
+    applyPlanMode,
+    refreshPlanMode,
+    setPlanMode,
     settleToolAuthorization,
     rejectAllToolAuthorizations,
     requestToolAuthorization,

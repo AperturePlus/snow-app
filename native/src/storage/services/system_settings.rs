@@ -27,6 +27,10 @@ const DEFAULT_YOLO_MODE_SETTING_NAME: &str = "YOLO mode";
 const DEFAULT_YOLO_MODE_SETTING_CODE: &str = "yolo_mode";
 const DEFAULT_YOLO_MODE_SETTING_VALUE: &str = "false";
 
+const DEFAULT_PLAN_MODE_SETTING_NAME: &str = "Plan mode";
+const DEFAULT_PLAN_MODE_SETTING_CODE: &str = "plan_mode";
+const DEFAULT_PLAN_MODE_SETTING_VALUE: &str = "false";
+
 const PROJECT_MCP_SETTING_NAME: &str = "Project MCP scope";
 const PROJECT_MCP_SETTING_CODE_PREFIX: &str = "project_mcp_scope_";
 const PROJECT_SKILLS_SETTING_NAME: &str = "Project Skills scope";
@@ -211,6 +215,28 @@ pub fn set_yolo_mode(database_path: &Path, enabled: bool) -> Result<()> {
         database_path,
         DEFAULT_YOLO_MODE_SETTING_NAME,
         DEFAULT_YOLO_MODE_SETTING_CODE,
+        if enabled { "true" } else { "false" },
+    )
+}
+
+pub fn get_plan_mode(database_path: &Path) -> Result<bool> {
+    let Some(value) = get_system_setting_value(database_path, DEFAULT_PLAN_MODE_SETTING_CODE)? else {
+        return Ok(false);
+    };
+
+    value.parse::<bool>().map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to parse Plan mode setting: {error}"),
+        )
+    })
+}
+
+pub fn set_plan_mode(database_path: &Path, enabled: bool) -> Result<()> {
+    set_system_setting(
+        database_path,
+        DEFAULT_PLAN_MODE_SETTING_NAME,
+        DEFAULT_PLAN_MODE_SETTING_CODE,
         if enabled { "true" } else { "false" },
     )
 }
@@ -644,6 +670,12 @@ fn seed_default_settings_with_connection(connection: &Connection) -> rusqlite::R
         DEFAULT_YOLO_MODE_SETTING_NAME,
         DEFAULT_YOLO_MODE_SETTING_CODE,
         DEFAULT_YOLO_MODE_SETTING_VALUE,
+    )?;
+    insert_default_setting(
+        connection,
+        DEFAULT_PLAN_MODE_SETTING_NAME,
+        DEFAULT_PLAN_MODE_SETTING_CODE,
+        DEFAULT_PLAN_MODE_SETTING_VALUE,
     )?;
 
     Ok(())

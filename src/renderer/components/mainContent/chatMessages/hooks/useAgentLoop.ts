@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import type { ChatInputSendOptions } from "../../chatInput/types";
 import type {
   ChatConversationMessage,
@@ -17,6 +17,7 @@ import {
   updateFirstMatchingToolCall,
   validateToolCall,
 } from "../utils/conversationHelpers";
+import { evaluatePlanGate, isPlanApprovalResult } from "../utils/planModeGate";
 import { calculateAutoCompressThresholdTokens } from "../../../sidebar/apiSettings/autoCompressThreshold";
 
 export type UseAgentLoopParams = {
@@ -36,6 +37,11 @@ export type UseAgentLoopParams = {
  */
 export const useAgentLoop = (params: UseAgentLoopParams) => {
   const { ctx, requestToolAuthorizations } = params;
+
+  // Plan Mode approval state: per-session flag indicating the user has
+  // explicitly approved the plan via askUserQuestion. Reset whenever planMode
+  // is toggled or a new conversation starts.
+  const planApprovedRef = useRef(false);
 
   const handleSendMessage = useCallback(
     (message: string, options: ChatInputSendOptions) => {
@@ -57,6 +63,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
 
       const isFirstMessage = ctx.activeConversationIdRef.current === undefined;
       const sessionDirId = existingRef?.directoryId ?? ctx.directoryId;
+
+      // Reset Plan Mode approval state for each new user message. The user
+      // must re-approve the plan for every new task.
+      planApprovedRef.current = false;
 
       ctx.ensureSession(sessionKey, sessionDirId);
       const sessionRef = ctx.sessionsRefData.current.get(sessionKey);
@@ -737,6 +747,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             conversationId: currentConversationId,
             directoryId: sessionDirId,
             checkpointId,
+            planMode: ctx.planModeRef.current,
           },
           (chunk) => {
             if (
@@ -1066,7 +1077,52 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
 
           let result: string | undefined;
           const authorizationDecision = authorizationDecisions[toolIndex];
-          if (authorizationDecision.status === "rejected") {
+
+          // Plan Mode gate: block mutating tools until the user explicitly
+          // approves the plan via askUserQuestion. Read-only tools and writes
+          // to .snow/plan/** are allowed.
+          const planGate = evaluatePlanGate({
+            planMode: ctx.planModeRef.current,
+            planApproved: planApprovedRef.current,
+            toolName: toolCall.name,
+            args: (() => {
+              try {
+                return JSON.parse(toolCall.arguments);
+              } catch {
+                return undefined;
+              }
+            })(),
+          });
+          if (!planGate.allow) {
+            result = JSON.stringify({
+              success: false,
+              error: "PLAN_GATE_BLOCKED",
+              message: planGate.message,
+              toolName: toolCall.name,
+            });
+
+            ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
+              currentMessages.map((currentMessage) => {
+                if (currentMessage.id !== currentAssistantMessageId) {
+                  return currentMessage;
+                }
+
+                return {
+                  ...currentMessage,
+                  toolCalls: updateFirstMatchingToolCall(
+                    currentMessage.toolCalls,
+                    toolCall,
+                    ["pending", "running"],
+                    (currentToolCall) => ({
+                      ...currentToolCall,
+                      status: "error" as const,
+                      result,
+                    })
+                  ),
+                };
+              })
+            );
+          } else if (authorizationDecision.status === "rejected") {
             const rejectionReason =
               authorizationDecision.reason || "User declined tool execution";
             result = JSON.stringify({
@@ -1343,6 +1399,17 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             isUserQuestionCancellationResult(result!)
           ) {
             userQuestionCancelled = true;
+          }
+
+          // Plan Mode: detect explicit plan approval from askUserQuestion
+          // results. When the user approves the plan, set planApprovedRef to
+          // true so subsequent tool calls are no longer blocked by the gate.
+          if (
+            ctx.planModeRef.current &&
+            !planApprovedRef.current &&
+            isPlanApprovalResult(toolCall.name, result!)
+          ) {
+            planApprovedRef.current = true;
           }
 
           const toolResultIdentifier = toolCall.callId

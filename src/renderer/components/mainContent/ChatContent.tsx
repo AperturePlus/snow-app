@@ -62,6 +62,10 @@ const ChatContentBody = ({
     isUpdatingYoloMode,
     setYoloMode,
     refreshYoloMode,
+    planMode,
+    isUpdatingPlanMode,
+    setPlanMode,
+    refreshPlanMode,
     pendingToolAuthorizations,
   } = useChatConversationContext();
   const { t } = useI18n();
@@ -581,6 +585,10 @@ const ChatContentBody = ({
           isUpdatingYoloMode={isUpdatingYoloMode}
           onYoloModeChange={setYoloMode}
           onRefreshYoloMode={refreshYoloMode}
+          planMode={planMode}
+          isUpdatingPlanMode={isUpdatingPlanMode}
+          onPlanModeChange={setPlanMode}
+          onRefreshPlanMode={refreshPlanMode}
           autoScrollEnabled={autoScrollEnabled}
           onAutoScrollChange={setAutoScrollEnabled}
           isCompacting={isCompacting}

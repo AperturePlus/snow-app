@@ -1,4 +1,9 @@
-import { ArrowDownToLine, Plus, ShieldAlert } from "lucide-react";
+import {
+  ArrowDownToLine,
+  ClipboardList,
+  Plus,
+  ShieldAlert,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "../../../i18n";
@@ -24,6 +29,10 @@ export type PlusMenuProps = {
   isUpdatingYoloMode: boolean;
   onYoloModeChange?: (enabled: boolean) => void;
   onRefreshYoloMode?: () => void | Promise<boolean | void>;
+  planMode: boolean;
+  isUpdatingPlanMode: boolean;
+  onPlanModeChange?: (enabled: boolean) => void;
+  onRefreshPlanMode?: () => void | Promise<boolean | void>;
   autoScrollEnabled: boolean;
   onAutoScrollChange?: (enabled: boolean) => void;
 };
@@ -34,6 +43,10 @@ export const PlusMenu = ({
   isUpdatingYoloMode,
   onYoloModeChange,
   onRefreshYoloMode,
+  planMode,
+  isUpdatingPlanMode,
+  onPlanModeChange,
+  onRefreshPlanMode,
   autoScrollEnabled,
   onAutoScrollChange,
 }: PlusMenuProps): React.JSX.Element => {
@@ -52,10 +65,11 @@ export const PlusMenu = ({
       if (next) {
         // Re-read the persisted app setting whenever the menu opens.
         void onRefreshYoloMode?.();
+        void onRefreshPlanMode?.();
       }
       return next;
     });
-  }, [onRefreshYoloMode]);
+  }, [onRefreshYoloMode, onRefreshPlanMode]);
 
   const handleItemClick = useCallback(
     (item: PlusMenuItem) => {
@@ -170,6 +184,29 @@ export const PlusMenu = ({
                   disabled={isUpdatingYoloMode || !onYoloModeChange}
                   onChange={() => {
                     void onYoloModeChange?.(!yoloMode);
+                  }}
+                  type="checkbox"
+                />
+                <span className="toggle-slider" />
+              </label>
+            </div>
+            <div className="plus-menu-item plus-menu-yolo-item">
+              <ClipboardList size={14} className="plus-menu-item-icon" />
+              <div className="plus-menu-item-content">
+                <span className="plus-menu-item-label">
+                  {t("plusMenu.planMode")}
+                </span>
+                <span className="plus-menu-item-description">
+                  {t("plusMenu.planModeDescription")}
+                </span>
+              </div>
+              <label className="toggle-switch plus-menu-yolo-switch">
+                <input
+                  aria-label={t("plusMenu.planMode")}
+                  checked={planMode}
+                  disabled={isUpdatingPlanMode || !onPlanModeChange}
+                  onChange={() => {
+                    void onPlanModeChange?.(!planMode);
                   }}
                   type="checkbox"
                 />

@@ -61,6 +61,14 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to write YOLO mode")
         ),
+      getPlanMode: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to read Plan mode")
+        ),
+      setPlanMode: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write Plan mode")
+        ),
       listToolApprovalProjectApprovedTools: () =>
         Promise.reject(
           new Error("Rust native bridge is required to read tool approvals")

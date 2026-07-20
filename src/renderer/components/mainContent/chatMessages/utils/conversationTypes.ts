@@ -170,6 +170,8 @@ export type ConversationContextValue = {
   rollbackPreview: RollbackPreview | null;
   yoloMode: boolean;
   isUpdatingYoloMode: boolean;
+  planMode: boolean;
+  isUpdatingPlanMode: boolean;
   pendingToolAuthorizations: ToolCallInfo[];
   activePendingMessages: string[];
   compactionPreview: string;
@@ -194,6 +196,7 @@ export type ConversationContextValue = {
     ) => Promise<string | null>
   >;
   yoloModeRef: RefValue<boolean>;
+  planModeRef: RefValue<boolean>;
   alwaysApprovedToolsRef: RefValue<Set<string>>;
   pendingToolAuthorizationRef: RefValue<Map<string, PendingToolAuthorization>>;
   pendingUserQuestionRef: RefValue<Map<string, PendingUserQuestion>>;
@@ -219,6 +222,8 @@ export type ConversationContextValue = {
   setRollbackPreview: Dispatch<SetStateAction<RollbackPreview | null>>;
   setYoloModeState: Dispatch<SetStateAction<boolean>>;
   setIsUpdatingYoloMode: Dispatch<SetStateAction<boolean>>;
+  setPlanModeState: Dispatch<SetStateAction<boolean>>;
+  setIsUpdatingPlanMode: Dispatch<SetStateAction<boolean>>;
   setPendingToolAuthorizations: Dispatch<SetStateAction<ToolCallInfo[]>>;
   setActivePendingMessages: Dispatch<SetStateAction<string[]>>;
   setCompactionPreview: Dispatch<SetStateAction<string>>;
@@ -306,6 +311,10 @@ export type UseChatConversationResult = {
   isUpdatingYoloMode: boolean;
   setYoloMode: (enabled: boolean) => Promise<void>;
   refreshYoloMode: () => Promise<boolean>;
+  planMode: boolean;
+  isUpdatingPlanMode: boolean;
+  setPlanMode: (enabled: boolean) => Promise<void>;
+  refreshPlanMode: () => Promise<boolean>;
   pendingToolAuthorizations: ToolCallInfo[];
   approveToolAuthorization: (toolCall: ToolCallInfo) => void;
   approveToolAuthorizationAlways: (toolCall: ToolCallInfo) => void;

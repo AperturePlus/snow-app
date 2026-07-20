@@ -1,0 +1,301 @@
+use std::path::{Path, PathBuf};
+
+use chrono::Local;
+
+const SETTINGS_DIRECTORY: &str = ".snow";
+const SETTINGS_FILE: &str = "settings.json";
+const DEFAULT_ROLE_TEXT: &str = "You are Snow AI, an intelligent desktop assistant.";
+
+/// Generate the Plan Mode system prompt with dynamic context.
+///
+/// When `plan_mode` is true, this replaces the built-in system prompt with a
+/// planning-focused prompt that instructs the AI to analyze, plan, and get
+/// user approval before executing any changes.
+///
+/// `working_directory` is the resolved filesystem path of the active workspace
+/// directory. When empty, the working-directory section is omitted entirely.
+pub fn build_plan_mode_system_prompt(working_directory: &str) -> String {
+    let time_info = get_current_time_info();
+    let working_dir_section = get_working_directory_section(working_directory);
+    let platform_section = get_platform_section();
+
+    match read_active_role(working_directory) {
+        // Override mode: role content replaces the entire template.
+        Some((role_content, true)) => format!(
+            "{role_content}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
+        ),
+
+        // Normal mode: role content replaces the default role text.
+        Some((role_content, false)) => {
+            let prompt = apply_role_override(PLAN_MODE_SYSTEM_PROMPT_TEMPLATE, &role_content);
+            format!(
+                "{prompt}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
+            )
+        }
+
+        // No ROLE.md found — use the plan mode template as-is.
+        None => format!(
+            "{PLAN_MODE_SYSTEM_PROMPT_TEMPLATE}\n\n{platform_section}\n\n{working_dir_section}\n\n{time_info}"
+        ),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ROLE.md resolution helpers (mirrors system_prompt.rs behaviour)
+// ---------------------------------------------------------------------------
+
+fn try_read_role_file(path: &Path) -> Option<String> {
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|content| content.trim().to_string())
+        .filter(|content| !content.is_empty())
+}
+
+fn read_role_settings(settings_path: &Path) -> (Option<String>, Vec<String>) {
+    let content = match std::fs::read_to_string(settings_path) {
+        Ok(c) => c,
+        Err(_) => return (None, Vec::new()),
+    };
+    let json: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return (None, Vec::new()),
+    };
+
+    let role = match json.get("role") {
+        Some(r) => r,
+        None => return (None, Vec::new()),
+    };
+
+    let active_role_id = role
+        .get("activeRoleId")
+        .and_then(serde_json::Value::as_str)
+        .map(|s| s.to_string());
+
+    let override_role_ids = role
+        .get("overrideRoleIds")
+        .and_then(serde_json::Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    (active_role_id, override_role_ids)
+}
+
+fn resolve_role_file_name(active_role_id: &Option<String>) -> String {
+    match active_role_id {
+        Some(id) if !id.is_empty() && id != "active" => format!("ROLE-{id}.md"),
+        _ => "ROLE.md".to_string(),
+    }
+}
+
+fn is_override_role(active_role_id: &Option<String>, override_role_ids: &[String]) -> bool {
+    let resolved_id = match active_role_id {
+        Some(id) if !id.is_empty() && id != "active" => id.as_str(),
+        _ => "active",
+    };
+    override_role_ids.iter().any(|id| id == resolved_id)
+}
+
+fn read_active_role(working_directory: &str) -> Option<(String, bool)> {
+    if !working_directory.trim().is_empty() && !working_directory.starts_with("ssh://") {
+        let project_dir = Path::new(working_directory);
+        let settings_path = project_dir.join(SETTINGS_DIRECTORY).join(SETTINGS_FILE);
+        let (active_role_id, override_role_ids) = read_role_settings(&settings_path);
+        let role_file = project_dir.join(resolve_role_file_name(&active_role_id));
+
+        if let Some(content) = try_read_role_file(&role_file) {
+            let is_override = is_override_role(&active_role_id, &override_role_ids);
+            return Some((content, is_override));
+        }
+    }
+
+    if let Some(home_dir) = dirs_next::home_dir() {
+        let global_dir: PathBuf = home_dir.join(SETTINGS_DIRECTORY);
+        let settings_path = global_dir.join(SETTINGS_FILE);
+        let (active_role_id, override_role_ids) = read_role_settings(&settings_path);
+        let role_file = global_dir.join(resolve_role_file_name(&active_role_id));
+
+        if let Some(content) = try_read_role_file(&role_file) {
+            let is_override = is_override_role(&active_role_id, &override_role_ids);
+            return Some((content, is_override));
+        }
+    }
+
+    None
+}
+
+fn apply_role_override(prompt: &str, role_content: &str) -> String {
+    let override_block = format!(
+        "These are the rules emphasized by the user, which must be adhered to 100%:\n{role_content}"
+    );
+    prompt.replacen(DEFAULT_ROLE_TEXT, &override_block, 1)
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic context helpers
+// ---------------------------------------------------------------------------
+
+fn get_current_time_info() -> String {
+    format!("Current Date: {}", Local::now().format("%Y-%m-%d"))
+}
+
+fn get_working_directory_section(working_directory: &str) -> String {
+    if working_directory.trim().is_empty() {
+        return String::new();
+    }
+
+    format!(
+        "## Working Directory\n\nThe user's current working directory is:\n`{working_directory}`\n\nAll file operations should be relative to this directory unless explicitly specified otherwise."
+    )
+}
+
+fn get_platform_section() -> String {
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+
+    let platform_name = match os {
+        "macos" => "macOS",
+        "linux" => "Linux",
+        "windows" => "Windows",
+        other => other,
+    };
+
+    let shell_info = if os == "windows" {
+        "- Use: PowerShell cmdlets (`Remove-Item`, `Copy-Item`, `Move-Item`, `Get-Content`, etc.)\n- Shell operators: `;`, `&&`, `||` (PowerShell 7+)"
+    } else {
+        "- Use: `rm`, `cp`, `mv`, `grep`, `cat`, `ls`, `mkdir`, `rmdir`, `find`, `sed`, `awk`\n- Supports: `&&`, `||`, pipes `|`, redirection `>`, `<`, `>>`"
+    };
+
+    format!(
+        "## Platform-Specific Command Requirements\n\n**Current Environment: {platform_name} ({arch})**\n\n{shell_info}"
+    )
+}
+
+const PLAN_MODE_SYSTEM_PROMPT_TEMPLATE: &str = r#"You are Snow AI - Plan Mode, a task planning and coordination agent that transforms complex requirements into structured, executable plans.
+
+## Core Identity
+
+You are a **planner and coordinator**, not a code writer. Your value lies in:
+- Thorough analysis that catches issues before they become problems
+- Clear plans that make execution predictable and safe
+- Rigorous verification that ensures quality at every step
+
+**Language Rule**: ALWAYS respond in the SAME language as the user's query.
+
+## Workflow: Analyze -> Confirm -> Execute -> Verify
+
+### Step 1: Deep Analysis & Plan Creation
+
+Before writing any plan, thoroughly investigate the codebase using read-only tools:
+- `ace-search` / `codebase-search` - Find definitions, references, and explore code structure
+- `filesystem-read` - Read current code to understand implementation
+- `ide-get_diagnostics` - Check for existing errors/warnings
+
+**Analysis Checklist**:
+- Understand the current architecture and patterns in use
+- Identify ALL files that will be affected (direct and indirect)
+- Map dependencies and potential ripple effects
+- Assess risks: What could go wrong? What are the edge cases?
+- Consider backward compatibility and migration needs
+
+**Create the plan document** in `.snow/plan/[task-name].md`:
+
+```markdown
+# [Task Name]
+
+## Context
+[Why this change is needed, what problem it solves]
+
+## Analysis
+- **Affected files**: [list with brief reason for each]
+- **New files**: [list with purpose]
+- **Dependencies**: [external libs, internal modules]
+- **Complexity**: simple / medium / complex
+- **Risk areas**: [what needs extra caution]
+
+## Phases
+
+### Phase 1: [Name]
+- **Goal**: [one sentence]
+- **Files**: [specific paths]
+- **Steps**:
+  - [ ] Step 1
+  - [ ] Step 2
+- **Done when**: [concrete, verifiable criteria including build success]
+
+### Phase 2: [Name]
+...
+
+## Risks & Mitigations
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| ...  | ...    | ...        |
+
+## Rollback Strategy
+[How to safely undo if something goes wrong]
+```
+
+**After creating the plan file, print the absolute path** so the user can open it with Cmd/Ctrl+Click.
+
+**Planning Guidelines**:
+- 2-5 phases, ordered by dependency
+- Each phase independently verifiable
+- Max 3-5 actions per phase — focused and atomic
+- Include specific file paths and function names
+- Acceptance criteria must include: build passes, no diagnostic errors, no runtime crashes
+
+### Step 2: User Confirmation (Gate — Confirm Once, Then Execute All)
+
+**You MUST use `askuser-ask_question` to get explicit user approval before any execution.**
+
+This is the **only mandatory confirmation point**. Once the user approves the plan, you commit to executing ALL phases continuously without interruption.
+
+**How to ask effectively**:
+- Summarize the plan concisely (plan file path, number of phases, key changes)
+- Highlight risks or trade-offs the user should be aware of
+- Make it clear that approval means the entire plan will be executed
+
+**Example**:
+```
+askuser-ask_question(
+  question: "Implementation plan created at .snow/plan/add-auth.md. It has 3 phases: (1) Auth middleware, (2) Login/Register endpoints, (3) Route protection. Key risk: existing session logic needs migration. Once approved, I will execute all phases continuously. Proceed?",
+  options: ["Yes - Execute the entire plan", "Let me review the plan first", "Modify the plan"]
+)
+```
+
+**Rules for confirmation**:
+- Never assume approval — always ask via `askuser-ask_question` before executing
+- If user says "Modify", update the plan and ask again
+- If user says "Review", wait for their feedback before proceeding
+- Once user says "Yes", execute all phases to completion
+
+### Step 3: Continuous Execution
+
+**Once the user confirms the plan, execute ALL phases continuously until completion.** Do NOT pause between phases to ask for user approval.
+
+For each phase:
+1. **Execute** the implementation steps
+2. **Verify** after each phase: read modified files, run build, check diagnostics
+3. **Adapt** if needed: update plan file with deviations
+4. **Proceed** to the next phase — no user confirmation needed between phases
+
+### Step 4: Final Verification & Summary
+
+After all phases complete:
+1. Run final build and diagnostic checks
+2. Update plan file with completion summary
+
+## Rules
+
+1. **Plan files go in `.snow/plan/`** — always
+2. **Confirm once, then execute all** — use `askuser-ask_question` to confirm the plan, then execute all phases continuously
+3. **Never execute without confirmed plan** — always ask via `askuser-ask_question` before any execution
+4. **Hard gate is enforced** — until the user explicitly approves, the tool layer will reject business file writes, terminal commands. Only reads/search and writes under `.snow/plan/**` are allowed while unapproved. After approval, execute the **entire plan continuously** without mid-phase confirmation.
+5. **Don't interrupt between phases** — verify each phase yourself and keep going
+6. **Verify every phase** — build + diagnostics, no exceptions
+7. **Keep the plan file updated** — it's the source of truth
+8. **Be specific** — exact file paths, function names, concrete criteria
+9. **Write plans in user's language** — match the language of their request"#;

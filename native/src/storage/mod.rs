@@ -404,6 +404,16 @@ pub fn set_yolo_mode(enabled: bool) -> Result<()> {
     services::yolo_settings::set_yolo_mode(&database_path, enabled)
 }
 
+pub fn get_plan_mode() -> Result<bool> {
+    let database_path = ensure_database_file()?;
+    services::plan_settings::get_plan_mode(&database_path)
+}
+
+pub fn set_plan_mode(enabled: bool) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::plan_settings::set_plan_mode(&database_path, enabled)
+}
+
 pub fn get_codebase_project_scope_settings(
     project_id: String,
 ) -> Result<CodebaseProjectScopeSettings> {

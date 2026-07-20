@@ -44,6 +44,8 @@ export const useChatConversation = (
     useState<ConversationContextValue["rollbackPreview"]>(null);
   const [yoloMode, setYoloModeState] = useState(false);
   const [isUpdatingYoloMode, setIsUpdatingYoloMode] = useState(false);
+  const [planMode, setPlanModeState] = useState(false);
+  const [isUpdatingPlanMode, setIsUpdatingPlanMode] = useState(false);
   const [pendingToolAuthorizations, setPendingToolAuthorizations] = useState<
     ConversationContextValue["pendingToolAuthorizations"]
   >([]);
@@ -80,6 +82,7 @@ export const useChatConversation = (
     ) => Promise<string | null>
   >(async () => null);
   const yoloModeRef = useRef(yoloMode);
+  const planModeRef = useRef(planMode);
   const alwaysApprovedToolsRef = useRef(new Set<string>());
   const pendingToolAuthorizationRef = useRef(
     new Map<
@@ -116,6 +119,7 @@ export const useChatConversation = (
   );
   const activeApiConfigRef = useRef<ApiConfigRecord | null>(null);
   yoloModeRef.current = yoloMode;
+  planModeRef.current = planMode;
 
   // --- Load active API config once ---
   useEffect(() => {
@@ -153,6 +157,8 @@ export const useChatConversation = (
     rollbackPreview,
     yoloMode,
     isUpdatingYoloMode,
+    planMode,
+    isUpdatingPlanMode,
     pendingToolAuthorizations,
     activePendingMessages,
     compactionPreview,
@@ -168,6 +174,7 @@ export const useChatConversation = (
     handleSendMessageRef,
     performCompactionRef,
     yoloModeRef,
+    planModeRef,
     alwaysApprovedToolsRef,
     pendingToolAuthorizationRef,
     pendingUserQuestionRef,
@@ -186,6 +193,8 @@ export const useChatConversation = (
     setRollbackPreview,
     setYoloModeState,
     setIsUpdatingYoloMode,
+    setPlanModeState,
+    setIsUpdatingPlanMode,
     setPendingToolAuthorizations,
     setActivePendingMessages,
     setCompactionPreview,
@@ -320,6 +329,10 @@ export const useChatConversation = (
     isUpdatingYoloMode,
     setYoloMode: toolAuthApi.setYoloMode,
     refreshYoloMode: toolAuthApi.refreshYoloMode,
+    planMode,
+    isUpdatingPlanMode,
+    setPlanMode: toolAuthApi.setPlanMode,
+    refreshPlanMode: toolAuthApi.refreshPlanMode,
     pendingToolAuthorizations,
     approveToolAuthorization,
     approveToolAuthorizationAlways: toolAuthApi.approveToolAuthorizationAlways,

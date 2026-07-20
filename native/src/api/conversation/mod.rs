@@ -24,6 +24,8 @@ pub struct ConversationContextRequest<'a> {
     /// system prompt. Used by lightweight single-shot completions such as the
     /// AI commit-message generator.
     pub skip_context: bool,
+    /// When true, replace the built-in system prompt with the Plan Mode prompt.
+    pub plan_mode: bool,
     /// JSON-encoded list of user system prompt IDs configured for the active
     /// API profile. Empty string means "follow the global active list";
     /// `__DISABLED__` or an empty array opts out. Resolved into prompt

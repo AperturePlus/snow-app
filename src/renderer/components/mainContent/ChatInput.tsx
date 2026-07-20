@@ -22,6 +22,10 @@ export const ChatInput = ({
   isUpdatingYoloMode = false,
   onYoloModeChange,
   onRefreshYoloMode,
+  planMode = false,
+  isUpdatingPlanMode = false,
+  onPlanModeChange,
+  onRefreshPlanMode,
   autoScrollEnabled = false,
   onAutoScrollChange,
   isCompacting = false,
@@ -51,6 +55,10 @@ export const ChatInput = ({
       isUpdatingYoloMode={isUpdatingYoloMode}
       onYoloModeChange={onYoloModeChange}
       onRefreshYoloMode={onRefreshYoloMode}
+      planMode={planMode}
+      isUpdatingPlanMode={isUpdatingPlanMode}
+      onPlanModeChange={onPlanModeChange}
+      onRefreshPlanMode={onRefreshPlanMode}
       autoScrollEnabled={autoScrollEnabled}
       onAutoScrollChange={onAutoScrollChange}
       isCompacting={isCompacting}

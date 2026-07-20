@@ -85,6 +85,8 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
         : undefined,
     skipContext:
       typeof source.skipContext === "boolean" ? source.skipContext : undefined,
+    planMode:
+      typeof source.planMode === "boolean" ? source.planMode : undefined,
   };
 };
 

@@ -49,6 +49,10 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   ipcMain.handle("settings:set-yolo-mode", (_event, enabled: boolean) =>
     native.setYoloMode(enabled)
   );
+  ipcMain.handle("settings:get-plan-mode", () => native.getPlanMode());
+  ipcMain.handle("settings:set-plan-mode", (_event, enabled: boolean) =>
+    native.setPlanMode(enabled)
+  );
   ipcMain.handle("codebase:get-project-scope", (_event, projectId: unknown) => {
     if (typeof projectId !== "string" || !projectId.trim()) {
       throw new Error("Project id is required");

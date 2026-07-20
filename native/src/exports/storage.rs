@@ -62,6 +62,20 @@ pub async fn set_yolo_mode(enabled: bool) -> napi::Result<()> {
 }
 
 #[napi]
+pub async fn get_plan_mode() -> napi::Result<bool> {
+    tokio::task::spawn_blocking(crate::storage::get_plan_mode)
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn set_plan_mode(enabled: bool) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::set_plan_mode(enabled))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn get_codebase_project_scope_settings(
     project_id: String,
 ) -> napi::Result<CodebaseProjectScopeSettings> {

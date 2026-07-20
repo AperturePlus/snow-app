@@ -23,6 +23,10 @@ export type ChatInputProps = {
   isUpdatingYoloMode?: boolean;
   onYoloModeChange?: (enabled: boolean) => void;
   onRefreshYoloMode?: () => Promise<boolean | void>;
+  planMode?: boolean;
+  isUpdatingPlanMode?: boolean;
+  onPlanModeChange?: (enabled: boolean) => void;
+  onRefreshPlanMode?: () => Promise<boolean | void>;
   autoScrollEnabled?: boolean;
   onAutoScrollChange?: (enabled: boolean) => void;
   isCompacting?: boolean;
@@ -44,7 +48,7 @@ export type ChatInputState = {
   displayModel: string;
   isLoadingModels: boolean;
   modelError: string | null;
-  isDropdownOpen: boolean;
+  isModelMenuOpen: boolean;
   isManualMode: boolean;
   manualValue: string;
   dropdownRef: RefObject<HTMLDivElement | null>;
@@ -54,11 +58,9 @@ export type ChatInputState = {
   thinkingValue: string;
   thinkingLabel: string;
   ActiveThinkingIcon: LucideIcon;
-  isThinkingDropdownOpen: boolean;
   isLoadingApiConfig: boolean;
   isSavingThinking: boolean;
   thinkingError: string | null;
-  thinkingDropdownRef: RefObject<HTMLDivElement | null>;
   labels: ChatInputLabels;
   isStreaming: boolean;
   isAborting: boolean;
@@ -80,7 +82,6 @@ export type ChatInputLabels = {
 export type ChatInputActions = {
   setManualValue: (value: string) => void;
   setIsManualMode: (value: boolean) => void;
-  setIsThinkingDropdownOpen: (updater: (open: boolean) => boolean) => void;
   handleChange: (value: string) => void;
   handleSend: () => void;
   handleAbort: () => void;
@@ -90,7 +91,7 @@ export type ChatInputActions = {
   handleConfirmManualModel: () => Promise<void>;
   handleManualKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   handleRetryFetchModels: () => Promise<void>;
-  handleToggleModelDropdown: () => void;
+  handleToggleModelMenu: () => void;
   handleSelectThinking: (nextValue: string) => Promise<void>;
   restoreContent: (content: string) => void;
 };
@@ -108,6 +109,10 @@ export type ChatInputViewProps = ChatInputState &
     isUpdatingYoloMode: boolean;
     onYoloModeChange?: (enabled: boolean) => void;
     onRefreshYoloMode?: () => Promise<boolean | void>;
+    planMode: boolean;
+    isUpdatingPlanMode: boolean;
+    onPlanModeChange?: (enabled: boolean) => void;
+    onRefreshPlanMode?: () => Promise<boolean | void>;
     autoScrollEnabled: boolean;
     onAutoScrollChange?: (enabled: boolean) => void;
     isCompacting: boolean;

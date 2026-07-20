@@ -98,6 +98,7 @@ export const en = {
   "chat.greetingNoProject": "Select a workspace project to get started.",
   "chat.scrollToBottom": "Scroll to bottom",
   "chat.selectModel": "Select model",
+  "chat.model": "Model",
   "chat.manualModel": "Enter model manually",
   "chat.manualModelPlaceholder": "e.g. gpt-4.1",
   "chat.noModelsFound": "No models found",
@@ -286,6 +287,7 @@ export const en = {
   "topBar.todo.deleteSelected": "Delete selected",
   "topBar.todo.confirmDeleteMultipleMessage":
     "Are you sure you want to delete the {{count}} selected TODO items?",
+  "common.back": "Back",
   "common.cancel": "Cancel",
   "common.confirm": "Confirm",
   "common.retry": "Retry",
@@ -932,6 +934,9 @@ export const en = {
   "plusMenu.yoloModeDescription": "Skip per-tool approval when enabled",
   "plusMenu.yoloModeEnabled": "Enabled, no per-tool approval required",
   "plusMenu.yoloModeDisabled": "Disabled, approve each tool execution",
+  "plusMenu.planMode": "Plan Mode",
+  "plusMenu.planModeDescription": "Analyze and plan before executing changes",
+  "plusMenu.planModeActive": "Plan Mode active",
   "toolAuthorization.title": "Allow tool execution",
   "toolAuthorization.message":
     "This tool is about to run. Confirm whether to continue.",

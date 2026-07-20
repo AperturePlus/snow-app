@@ -4,6 +4,9 @@ import {
   Bot,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
   Command,
   Keyboard,
   Loader2,
@@ -51,7 +54,7 @@ export const ChatInputView = ({
   displayModel,
   isLoadingModels,
   modelError,
-  isDropdownOpen,
+  isModelMenuOpen,
   isManualMode,
   manualValue,
   dropdownRef,
@@ -61,11 +64,9 @@ export const ChatInputView = ({
   thinkingValue,
   thinkingLabel,
   ActiveThinkingIcon,
-  isThinkingDropdownOpen,
   isLoadingApiConfig,
   isSavingThinking,
   thinkingError,
-  thinkingDropdownRef,
   labels,
   isStreaming,
   isAborting,
@@ -77,12 +78,15 @@ export const ChatInputView = ({
   isUpdatingYoloMode,
   onYoloModeChange,
   onRefreshYoloMode,
+  planMode,
+  isUpdatingPlanMode,
+  onPlanModeChange,
+  onRefreshPlanMode,
   autoScrollEnabled,
   onAutoScrollChange,
   isCompacting,
   setManualValue,
   setIsManualMode,
-  setIsThinkingDropdownOpen,
   handleChange,
   handleSend,
   handleAbort,
@@ -92,7 +96,7 @@ export const ChatInputView = ({
   handleConfirmManualModel,
   handleManualKeyDown,
   handleRetryFetchModels,
-  handleToggleModelDropdown,
+  handleToggleModelMenu,
   handleSelectThinking,
   restoreContent,
 }: ChatInputViewProps): React.JSX.Element => {
@@ -115,12 +119,16 @@ export const ChatInputView = ({
   const [isProjectCodebaseOpen, setIsProjectCodebaseOpen] = useState(false);
   const [isCustomThinkingMode, setIsCustomThinkingMode] = useState(false);
   const [customThinkingValue, setCustomThinkingValue] = useState("");
+  const [modelMenuView, setModelMenuView] = useState<
+    "root" | "model" | "thinking"
+  >("root");
 
   useEffect(() => {
-    if (!isThinkingDropdownOpen) {
+    if (!isModelMenuOpen) {
+      setModelMenuView("root");
       setIsCustomThinkingMode(false);
     }
-  }, [isThinkingDropdownOpen]);
+  }, [isModelMenuOpen]);
 
   const commands = useMemo(
     () =>
@@ -195,11 +203,7 @@ export const ChatInputView = ({
   );
   const [imageLightbox, setImageLightbox] = useState<string | null>(null);
 
-  const modelDropdownDir = useDropdownDirection(dropdownRef, isDropdownOpen);
-  const thinkingDropdownDir = useDropdownDirection(
-    thinkingDropdownRef,
-    isThinkingDropdownOpen
-  );
+  const modelDropdownDir = useDropdownDirection(dropdownRef, isModelMenuOpen);
   const isCustomThinkingValue = !thinkingOptions.some(
     (option) => option.value === thinkingValue
   );
@@ -825,6 +829,10 @@ export const ChatInputView = ({
                 isUpdatingYoloMode={isUpdatingYoloMode}
                 onYoloModeChange={onYoloModeChange}
                 onRefreshYoloMode={onRefreshYoloMode}
+                planMode={planMode}
+                isUpdatingPlanMode={isUpdatingPlanMode}
+                onPlanModeChange={onPlanModeChange}
+                onRefreshPlanMode={onRefreshPlanMode}
                 autoScrollEnabled={autoScrollEnabled}
                 onAutoScrollChange={onAutoScrollChange}
               />
@@ -843,6 +851,17 @@ export const ChatInputView = ({
                   <Command size={15} />
                 </button>
               )}
+              {planMode && (
+                <>
+                  <span className="toolbar-divider" aria-hidden="true" />
+                  <span
+                    className="plan-mode-badge"
+                    title={t("plusMenu.planModeActive")}
+                  >
+                    <ClipboardList size={14} />
+                  </span>
+                </>
+              )}
             </div>
             <div className="toolbar-right">
               <div className="model-selector" ref={dropdownRef}>
@@ -851,8 +870,8 @@ export const ChatInputView = ({
                     modelError ? "model-error" : ""
                   }`}
                   aria-label={labels.selectModel}
-                  aria-expanded={isDropdownOpen}
-                  onClick={handleToggleModelDropdown}
+                  aria-expanded={isModelMenuOpen}
+                  onClick={handleToggleModelMenu}
                   type="button"
                 >
                   {modelError ? (
@@ -863,254 +882,328 @@ export const ChatInputView = ({
                   <span className="model-name" title={displayModel}>
                     {displayModel}
                   </span>
-                  <ChevronDown size={12} />
-                </button>
-                {isDropdownOpen && (
-                  <div className={`model-dropdown drop-${modelDropdownDir}`}>
-                    {isManualMode ? (
-                      <div className="model-manual-input">
-                        <div className="model-manual-header">
-                          <Keyboard size={14} />
-                          <span>{labels.manualModel}</span>
-                        </div>
-                        <input
-                          autoFocus
-                          value={manualValue}
-                          onChange={(event) =>
-                            setManualValue(event.target.value)
-                          }
-                          onKeyDown={handleManualKeyDown}
-                          placeholder={labels.manualModelPlaceholder}
-                          className="model-manual-field"
-                        />
-                        <div className="model-manual-actions">
-                          <button
-                            className="model-manual-btn secondary"
-                            onClick={() => setIsManualMode(false)}
-                            type="button"
-                          >
-                            {labels.cancel}
-                          </button>
-                          <button
-                            className="model-manual-btn primary"
-                            onClick={() => void handleConfirmManualModel()}
-                            disabled={!manualValue.trim()}
-                            type="button"
-                          >
-                            {labels.confirm}
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        {isLoadingModels && (
-                          <div
-                            className="model-dropdown-status"
-                            aria-live="polite"
-                          >
-                            <Loader2 size={14} className="spin" />
-                            <span>{labels.loadingModels}</span>
-                          </div>
-                        )}
-                        {modelError && (
-                          <div className="model-dropdown-error">
-                            <AlertCircle size={14} />
-                            <span>{modelError}</span>
-                            <button
-                              className="model-dropdown-retry"
-                              onClick={handleRetryFetchModels}
-                              disabled={isLoadingModels}
-                              type="button"
-                            >
-                              {labels.retry}
-                            </button>
-                          </div>
-                        )}
-                        <div className="model-dropdown-list">
-                          {models.length === 0 &&
-                            !modelError &&
-                            !isLoadingModels && (
-                              <div className="model-dropdown-empty">
-                                {labels.noModelsFound}
-                              </div>
-                            )}
-                          {models.map((model) => (
-                            <button
-                              key={model.id}
-                              className={`model-dropdown-item ${
-                                selectedModel === model.id ? "active" : ""
-                              }`}
-                              onClick={() => void handleSelectModel(model.id)}
-                              type="button"
-                              title={model.id}
-                            >
-                              <span className="model-dropdown-item-name">
-                                {model.id}
-                              </span>
-                              {selectedModel === model.id && (
-                                <Check
-                                  size={14}
-                                  className="model-dropdown-check"
-                                />
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="model-dropdown-footer model-dropdown-footer-actions">
-                          <button
-                            className="model-dropdown-action"
-                            onClick={handleRetryFetchModels}
-                            disabled={isLoadingModels}
-                            title={labels.refreshModels}
-                            type="button"
-                          >
-                            <RefreshCw size={14} />
-                            <span>{labels.refreshModels}</span>
-                          </button>
-                          <button
-                            className="model-dropdown-action"
-                            onClick={handleOpenManualMode}
-                            type="button"
-                          >
-                            <Keyboard size={14} />
-                            <span>{labels.manualModel}</span>
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="thinking-selector" ref={thinkingDropdownRef}>
-                <button
-                  className={`toolbar-btn quality ${
-                    thinkingError ? "thinking-error" : ""
-                  }`}
-                  aria-label={t("chat.thinkingStrength")}
-                  aria-expanded={isThinkingDropdownOpen}
-                  onClick={() => setIsThinkingDropdownOpen((open) => !open)}
-                  disabled={
-                    !runtimeApiConfig || isLoadingApiConfig || isSavingThinking
-                  }
-                  title={
-                    thinkingError ??
-                    (isLoadingApiConfig
-                      ? t("chat.loadingApiConfig")
-                      : t("chat.thinkingStrengthWithValue", {
-                          values: { value: thinkingLabel },
-                        }))
-                  }
-                  type="button"
-                >
-                  {isLoadingApiConfig || isSavingThinking ? (
-                    <Loader2 size={14} className="model-icon spin" />
-                  ) : thinkingError ? (
-                    <AlertCircle size={14} className="model-icon" />
-                  ) : (
-                    <ActiveThinkingIcon size={14} className="model-icon" />
-                  )}
-                  <span>{thinkingLabel}</span>
-                  <ChevronDown size={12} />
-                </button>
-                {isThinkingDropdownOpen && (
-                  <div
-                    className={`model-dropdown thinking-dropdown drop-${thinkingDropdownDir}`}
+                  <span
+                    className="model-trigger-thinking"
+                    title={
+                      thinkingError ??
+                      (isLoadingApiConfig
+                        ? t("chat.loadingApiConfig")
+                        : t("chat.thinkingStrengthWithValue", {
+                            values: { value: thinkingLabel },
+                          }))
+                    }
                   >
-                    {isCustomThinkingMode ? (
-                      <div className="model-manual-input thinking-custom-input">
-                        <div className="model-manual-header thinking-custom-header">
-                          <Keyboard size={14} />
-                          <span>{t("chat.customThinkingStrength")}</span>
-                        </div>
-                        <input
-                          autoFocus
-                          value={customThinkingValue}
-                          onChange={(event) =>
-                            setCustomThinkingValue(event.target.value)
-                          }
-                          onKeyDown={handleCustomThinkingKeyDown}
-                          placeholder={t("chat.customThinkingPlaceholder")}
-                          className="model-manual-field thinking-custom-field"
-                          maxLength={64}
-                        />
-                        <div className="model-manual-actions thinking-custom-actions">
-                          <button
-                            className="model-manual-btn thinking-custom-btn secondary"
-                            onClick={() => setIsCustomThinkingMode(false)}
-                            type="button"
-                          >
-                            {labels.cancel}
-                          </button>
-                          <button
-                            className="model-manual-btn thinking-custom-btn primary"
-                            onClick={() => void handleConfirmCustomThinking()}
-                            disabled={
-                              !customThinkingValue.trim() || isSavingThinking
-                            }
-                            type="button"
-                          >
-                            {labels.confirm}
-                          </button>
-                        </div>
-                      </div>
+                    {isLoadingApiConfig || isSavingThinking ? (
+                      <Loader2 size={12} className="spin" />
+                    ) : thinkingError ? (
+                      <AlertCircle size={12} />
                     ) : (
-                      <>
-                        <div className="thinking-dropdown-header">
-                          <span>{t("chat.thinkingStrength")}</span>
-                          <small>{requestMethod}</small>
-                        </div>
-                        <div className="model-dropdown-list">
-                          {thinkingOptions.map((option) => {
-                            const ThinkingOptionIcon = option.icon;
-
-                            return (
+                      <ActiveThinkingIcon size={12} />
+                    )}
+                    <span className="model-trigger-thinking-label">
+                      {thinkingLabel}
+                    </span>
+                  </span>
+                  <ChevronDown size={12} />
+                </button>
+                {isModelMenuOpen && (
+                  <div className={`model-dropdown drop-${modelDropdownDir}`}>
+                    {modelMenuView === "root" && (
+                      <div className="model-dropdown-list">
+                        <button
+                          className="model-dropdown-item"
+                          onClick={() => setModelMenuView("model")}
+                          type="button"
+                        >
+                          <span className="model-dropdown-item-name">
+                            {t("chat.model")}
+                          </span>
+                          <span className="model-menu-value">
+                            <span
+                              className="model-menu-value-text"
+                              title={displayModel}
+                            >
+                              {displayModel}
+                            </span>
+                            <ChevronRight size={12} />
+                          </span>
+                        </button>
+                        <button
+                          className="model-dropdown-item"
+                          disabled={
+                            !runtimeApiConfig ||
+                            isLoadingApiConfig ||
+                            isSavingThinking
+                          }
+                          onClick={() => setModelMenuView("thinking")}
+                          type="button"
+                        >
+                          <span className="model-dropdown-item-name">
+                            {t("chat.thinkingStrength")}
+                          </span>
+                          <span className="model-menu-value">
+                            {isSavingThinking ? (
+                              <Loader2 size={12} className="spin" />
+                            ) : (
+                              <span className="model-menu-value-text">
+                                {thinkingLabel}
+                              </span>
+                            )}
+                            <ChevronRight size={12} />
+                          </span>
+                        </button>
+                      </div>
+                    )}
+                    {modelMenuView === "model" &&
+                      (isManualMode ? (
+                        <>
+                          <div className="model-menu-header">
+                            <button
+                              aria-label={t("common.back")}
+                              className="model-menu-back"
+                              onClick={() => setModelMenuView("root")}
+                              type="button"
+                            >
+                              <ChevronLeft size={14} />
+                            </button>
+                            <span>{labels.manualModel}</span>
+                          </div>
+                          <div className="model-manual-input">
+                            <input
+                              autoFocus
+                              value={manualValue}
+                              onChange={(event) =>
+                                setManualValue(event.target.value)
+                              }
+                              onKeyDown={handleManualKeyDown}
+                              placeholder={labels.manualModelPlaceholder}
+                              className="model-manual-field"
+                            />
+                            <div className="model-manual-actions">
                               <button
-                                key={option.value}
-                                className={`model-dropdown-item ${
-                                  thinkingValue === option.value ? "active" : ""
-                                }`}
-                                onClick={() =>
-                                  void handleSelectThinking(option.value)
-                                }
+                                className="model-manual-btn secondary"
+                                onClick={() => setIsManualMode(false)}
                                 type="button"
                               >
-                                <span className="model-dropdown-item-name with-icon">
-                                  <ThinkingOptionIcon
-                                    size={14}
-                                    className="thinking-option-icon"
-                                  />
-                                  <span>{option.label}</span>
+                                {labels.cancel}
+                              </button>
+                              <button
+                                className="model-manual-btn primary"
+                                onClick={() => void handleConfirmManualModel()}
+                                disabled={!manualValue.trim()}
+                                type="button"
+                              >
+                                {labels.confirm}
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="model-menu-header">
+                            <button
+                              aria-label={t("common.back")}
+                              className="model-menu-back"
+                              onClick={() => setModelMenuView("root")}
+                              type="button"
+                            >
+                              <ChevronLeft size={14} />
+                            </button>
+                            <span>{labels.selectModel}</span>
+                          </div>
+                          {isLoadingModels && (
+                            <div
+                              className="model-dropdown-status"
+                              aria-live="polite"
+                            >
+                              <Loader2 size={14} className="spin" />
+                              <span>{labels.loadingModels}</span>
+                            </div>
+                          )}
+                          {modelError && (
+                            <div className="model-dropdown-error">
+                              <AlertCircle size={14} />
+                              <span>{modelError}</span>
+                              <button
+                                className="model-dropdown-retry"
+                                onClick={handleRetryFetchModels}
+                                disabled={isLoadingModels}
+                                type="button"
+                              >
+                                {labels.retry}
+                              </button>
+                            </div>
+                          )}
+                          <div className="model-dropdown-list">
+                            {models.length === 0 &&
+                              !modelError &&
+                              !isLoadingModels && (
+                                <div className="model-dropdown-empty">
+                                  {labels.noModelsFound}
+                                </div>
+                              )}
+                            {models.map((model) => (
+                              <button
+                                key={model.id}
+                                className={`model-dropdown-item ${
+                                  selectedModel === model.id ? "active" : ""
+                                }`}
+                                onClick={() => void handleSelectModel(model.id)}
+                                type="button"
+                                title={model.id}
+                              >
+                                <span className="model-dropdown-item-name">
+                                  {model.id}
                                 </span>
-                                {thinkingValue === option.value && (
+                                {selectedModel === model.id && (
                                   <Check
                                     size={14}
                                     className="model-dropdown-check"
                                   />
                                 )}
                               </button>
-                            );
-                          })}
-                        </div>
-                        <div className="model-dropdown-footer">
-                          <button
-                            className={`model-dropdown-action ${
-                              isCustomThinkingValue ? "active" : ""
-                            }`}
-                            onClick={handleOpenCustomThinking}
-                            type="button"
-                          >
-                            <Keyboard size={14} />
-                            <span>{t("chat.customThinking")}</span>
-                            {isCustomThinkingValue && (
-                              <Check
-                                size={14}
-                                className="model-dropdown-check"
-                              />
-                            )}
-                          </button>
-                        </div>
-                      </>
-                    )}
+                            ))}
+                          </div>
+                          <div className="model-dropdown-footer model-dropdown-footer-actions">
+                            <button
+                              className="model-dropdown-action"
+                              onClick={handleRetryFetchModels}
+                              disabled={isLoadingModels}
+                              title={labels.refreshModels}
+                              type="button"
+                            >
+                              <RefreshCw size={14} />
+                              <span>{labels.refreshModels}</span>
+                            </button>
+                            <button
+                              className="model-dropdown-action"
+                              onClick={handleOpenManualMode}
+                              type="button"
+                            >
+                              <Keyboard size={14} />
+                              <span>{labels.manualModel}</span>
+                            </button>
+                          </div>
+                        </>
+                      ))}
+                    {modelMenuView === "thinking" &&
+                      (isCustomThinkingMode ? (
+                        <>
+                          <div className="model-menu-header">
+                            <button
+                              aria-label={t("common.back")}
+                              className="model-menu-back"
+                              onClick={() => setModelMenuView("root")}
+                              type="button"
+                            >
+                              <ChevronLeft size={14} />
+                            </button>
+                            <span>{t("chat.customThinkingStrength")}</span>
+                          </div>
+                          <div className="model-manual-input thinking-custom-input">
+                            <input
+                              autoFocus
+                              value={customThinkingValue}
+                              onChange={(event) =>
+                                setCustomThinkingValue(event.target.value)
+                              }
+                              onKeyDown={handleCustomThinkingKeyDown}
+                              placeholder={t("chat.customThinkingPlaceholder")}
+                              className="model-manual-field thinking-custom-field"
+                              maxLength={64}
+                            />
+                            <div className="model-manual-actions thinking-custom-actions">
+                              <button
+                                className="model-manual-btn thinking-custom-btn secondary"
+                                onClick={() => setIsCustomThinkingMode(false)}
+                                type="button"
+                              >
+                                {labels.cancel}
+                              </button>
+                              <button
+                                className="model-manual-btn thinking-custom-btn primary"
+                                onClick={() =>
+                                  void handleConfirmCustomThinking()
+                                }
+                                disabled={
+                                  !customThinkingValue.trim() ||
+                                  isSavingThinking
+                                }
+                                type="button"
+                              >
+                                {labels.confirm}
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="model-menu-header">
+                            <button
+                              aria-label={t("common.back")}
+                              className="model-menu-back"
+                              onClick={() => setModelMenuView("root")}
+                              type="button"
+                            >
+                              <ChevronLeft size={14} />
+                            </button>
+                            <span>{t("chat.thinkingStrength")}</span>
+                            <small>{requestMethod}</small>
+                          </div>
+                          <div className="model-dropdown-list">
+                            {thinkingOptions.map((option) => {
+                              const ThinkingOptionIcon = option.icon;
+
+                              return (
+                                <button
+                                  key={option.value}
+                                  className={`model-dropdown-item ${
+                                    thinkingValue === option.value
+                                      ? "active"
+                                      : ""
+                                  }`}
+                                  onClick={() =>
+                                    void handleSelectThinking(option.value)
+                                  }
+                                  type="button"
+                                >
+                                  <span className="model-dropdown-item-name with-icon">
+                                    <ThinkingOptionIcon
+                                      size={14}
+                                      className="thinking-option-icon"
+                                    />
+                                    <span>{option.label}</span>
+                                  </span>
+                                  {thinkingValue === option.value && (
+                                    <Check
+                                      size={14}
+                                      className="model-dropdown-check"
+                                    />
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <div className="model-dropdown-footer">
+                            <button
+                              className={`model-dropdown-action ${
+                                isCustomThinkingValue ? "active" : ""
+                              }`}
+                              onClick={handleOpenCustomThinking}
+                              type="button"
+                            >
+                              <Keyboard size={14} />
+                              <span>{t("chat.customThinking")}</span>
+                              {isCustomThinkingValue && (
+                                <Check
+                                  size={14}
+                                  className="model-dropdown-check"
+                                />
+                              )}
+                            </button>
+                          </div>
+                        </>
+                      ))}
                   </div>
                 )}
               </div>

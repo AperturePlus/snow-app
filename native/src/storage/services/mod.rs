@@ -21,3 +21,4 @@ pub mod system_prompts;
 pub mod system_settings;
 pub mod workspace_directories;
 pub mod yolo_settings;
+pub mod plan_settings;
