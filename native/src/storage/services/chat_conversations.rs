@@ -106,9 +106,12 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
             let transaction = connection.transaction()?;
             let title = create_title(input.request_messages);
             let preview = create_snippet(input.response_content, 180);
-            let context_usage = if input.context_compaction {
-                Some(ChatTokenUsage::default())
-            } else if input.status == "error" {
+            // Context compaction also persists the real token usage so the
+            // sidebar / token ring reflects the actual context state after the
+            // handoff. Previously this used ChatTokenUsage::default() which
+            // wiped the recorded usage to zero and left the UI blind to the
+            // post-compaction context size.
+            let context_usage = if input.status == "error" {
                 None
             } else {
                 Some(input.token_usage)
@@ -145,13 +148,18 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
             )?;
 
             if input.context_compaction {
+                // Persist the checkpoint id on the compaction boundary row so
+                // the rollback flow can restore files modified by the
+                // post-compaction agent loop. Treat the boundary as a user
+                // message: its checkpoint captures the pre-compaction working
+                // directory state.
                 insert_message(
                     &transaction,
                     input.conversation_id,
                     "user",
                     input.response_content,
                     input.response_id,
-                    "",
+                    input.checkpoint_id,
                     input.model,
                     "context_compaction",
                     input.raw_response_json,

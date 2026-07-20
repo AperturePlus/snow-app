@@ -1,4 +1,4 @@
-import type { ToolCallInfo } from "../hooks/useChatConversation";
+import type { ToolCallInfo } from "./conversationTypes";
 export type UserMessageProps = {
   content: string;
   isStreaming: boolean;

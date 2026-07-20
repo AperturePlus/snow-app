@@ -5,6 +5,7 @@ import type {
 } from "../utils/conversationTypes";
 import {
   createMessageId,
+  deleteCheckpoints,
   formatMessageTime,
 } from "../utils/conversationHelpers";
 
@@ -29,6 +30,33 @@ export const useCompaction = (ctx: ConversationContextValue) => {
       ctx.setCompactionError(null);
       ctx.setIsCompacting(true);
 
+      // Create a file-system checkpoint before compaction so rolling back to
+      // the compaction boundary can restore files modified by the subsequent
+      // agent loop. A compaction boundary is semantically a user message — its
+      // checkpoint captures the working-directory state at the moment the
+      // handoff was generated. Skip checkpoint creation for SSH directories
+      // where local snapshots are not available.
+      let checkpointId: string | undefined;
+      if (
+        ctx.directoryPath &&
+        !ctx.directoryPath.startsWith("ssh://")
+      ) {
+        try {
+          checkpointId = await window.snow.createCheckpoint(
+            ctx.directoryPath
+          );
+          if (sessionRef) {
+            sessionRef.checkpointIds = [
+              ...sessionRef.checkpointIds,
+              checkpointId,
+            ];
+          }
+        } catch {
+          // Best effort — continue without a checkpoint. The rollback flow
+          // will still truncate the conversation, just without file restore.
+        }
+      }
+
       try {
         const response = await window.snow.createResponseStream(
           {
@@ -37,6 +65,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
             conversationId,
             directoryId: sessionRef?.directoryId ?? ctx.directoryId,
             contextCompaction: true,
+            checkpointId,
           },
           (chunk) => {
             if (chunk.retrying) {
@@ -58,7 +87,17 @@ export const useCompaction = (ctx: ConversationContextValue) => {
           throw new Error("Context handoff is empty");
         }
 
-        ctx.updateSessionField(conversationId, "tokenUsage", null);
+        // Mirror the real token usage from the compaction response into the
+        // session so the TokenUsageRing reflects the post-compaction context
+        // size. Previously this was reset to null, leaving the UI blind to
+        // the actual context state after the handoff.
+        if (response.tokenUsage) {
+          ctx.updateSessionField(
+            conversationId,
+            "tokenUsage",
+            response.tokenUsage
+          );
+        }
 
         const compactionMessage: ChatConversationMessage = {
           id: response.id || createMessageId("user"),
@@ -69,6 +108,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
           responseId: response.id || undefined,
           model: response.model || model,
           isContextCompaction: true,
+          checkpointId,
         };
         ctx.updateSessionMessages(conversationId, (currentMessages) => [
           ...currentMessages,
@@ -85,6 +125,17 @@ export const useCompaction = (ctx: ConversationContextValue) => {
           ctx.setCompactionError(
             error instanceof Error ? error.message : "Failed to compact context"
           );
+        }
+        // Compaction failed — discard the checkpoint we created at the start of
+        // this attempt so it does not linger as an orphan snapshot. Rollback
+        // only needs checkpoints for successfully persisted boundaries.
+        if (checkpointId) {
+          if (sessionRef) {
+            sessionRef.checkpointIds = sessionRef.checkpointIds.filter(
+              (id) => id !== checkpointId
+            );
+          }
+          deleteCheckpoints([checkpointId]);
         }
         return null;
       } finally {
@@ -114,6 +165,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
     },
     [
       ctx.directoryId,
+      ctx.directoryPath,
       ctx.updateSessionField,
       ctx.updateSessionMessages,
       ctx.setCompactionPreview,

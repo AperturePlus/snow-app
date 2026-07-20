@@ -3,6 +3,7 @@ import type { DiffLine } from "./types";
 
 type MiniDiffViewerProps = {
   diffLines: DiffLine[];
+  maxLines?: number;
 };
 
 /**
@@ -11,10 +12,14 @@ type MiniDiffViewerProps = {
  * CSS classes from styles.css to stay visually consistent with the right-panel DiffViewer.
  */
 export const MiniDiffViewer = memo(
-  ({ diffLines }: MiniDiffViewerProps): React.JSX.Element => {
+  ({ diffLines, maxLines }: MiniDiffViewerProps): React.JSX.Element => {
+    const visibleLines =
+      typeof maxLines === "number" && maxLines > 0
+        ? diffLines.slice(0, maxLines)
+        : diffLines;
     return (
       <div className="tool-call-diff-content">
-        {diffLines.map((line, idx) => (
+        {visibleLines.map((line, idx) => (
           <div key={idx} className={`diff-line ${line.type}`}>
             <span className="diff-linenum old">{line.oldNum}</span>
             <span className="diff-linenum new">{line.newNum}</span>

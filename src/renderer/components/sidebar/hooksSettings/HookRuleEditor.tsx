@@ -33,7 +33,7 @@ type HookRuleEditorProps = {
   onSave: () => void;
 };
 
-const ACTION_TYPE_OPTIONS = [
+const ACTION_TYPE_OPTIONS: { value: HookActionType; label: string }[] = [
   { value: "command", label: "command" },
   { value: "prompt", label: "prompt" },
   { value: "context", label: "context" },
@@ -43,7 +43,7 @@ const getActionTypeOptions = (
   hookType: HookType
 ): { value: HookActionType; label: string }[] => {
   return ACTION_TYPE_OPTIONS.filter((option) =>
-    isActionTypeAllowed(hookType, option.value as HookActionType)
+    isActionTypeAllowed(hookType, option.value)
   );
 };
 

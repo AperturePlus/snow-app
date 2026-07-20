@@ -362,7 +362,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                         content:
                           subResponse.content ||
                           currentMessage.content ||
-                          "Sub-agent completed with no output.",
+                          (subResponse.status === "incomplete"
+                            ? "Sub-agent response was interrupted. Please retry."
+                            : "Sub-agent completed with no output."),
                         status: "sent" as const,
                         responseId: subResponse.id || undefined,
                         model: subResponse.model || undefined,
@@ -373,7 +375,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               );
 
               return (
-                subResponse.content || "Sub-agent completed with no output."
+                subResponse.content ||
+                (subResponse.status === "incomplete"
+                  ? "Sub-agent response was interrupted. Please retry."
+                  : "Sub-agent completed with no output.")
               );
             }
 
@@ -935,6 +940,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
 
         // Update assistant message with the persisted result. Failed responses
         // still migrate the session, but remain visible locally as an error.
+        // Note: "incomplete" status (stream interrupted mid-response) is NOT
+        // treated as a hard failure — if tool calls were collected before the
+        // interruption, we still process them so the agent loop can continue.
         const responseFailed = response.status === "error";
         ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
           currentMessages.map((currentMessage) => {
@@ -1056,7 +1064,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             continue;
           }
 
-          let result: string;
+          let result: string | undefined;
           const authorizationDecision = authorizationDecisions[toolIndex];
           if (authorizationDecision.status === "rejected") {
             const rejectionReason =
@@ -1332,7 +1340,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
 
           if (
             toolCall.name === "mcp__user-interaction__askUserQuestion" &&
-            isUserQuestionCancellationResult(result)
+            isUserQuestionCancellationResult(result!)
           ) {
             userQuestionCancelled = true;
           }
@@ -1340,7 +1348,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           const toolResultIdentifier = toolCall.callId
             ? `${toolCall.name}#${toolCall.callId}`
             : toolCall.name;
-          const modelToolResult = formatMcpToolResultForModel(result);
+          const modelToolResult = formatMcpToolResultForModel(result!);
           toolResults.push(
             `[Tool: ${toolResultIdentifier}]\n${modelToolResult}`
           );
@@ -1436,6 +1444,68 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       // The checkpoint is awaited before runAgentLoop to guarantee the AI
       // cannot modify files before the snapshot is captured.
       const initCheckpointAndRun = async (): Promise<void> => {
+        // Pre-send auto-compaction: if the existing context already exceeds
+        // the configured threshold, compact first so the new user message is
+        // sent against a fresh, summarized context. This applies both to
+        // direct user sends and to pending-message flushes (which re-enter
+        // handleSendMessage via handleSendMessageRef).
+        if (
+          sessionKey !== PENDING_SESSION_KEY &&
+          !ctx.sessionsRefData.current.get(sessionKey)?.hasAutoCompacted
+        ) {
+          const apiConfig = ctx.activeApiConfigRef.current;
+          if (apiConfig?.enableAutoCompress) {
+            const thresholdTokens = calculateAutoCompressThresholdTokens(
+              apiConfig.maxContextTokens,
+              apiConfig.autoCompressThreshold
+            );
+            if (thresholdTokens != null && thresholdTokens > 0) {
+              const currentTokenUsage =
+                ctx.sessionsRef.current?.[sessionKey]?.tokenUsage ?? null;
+              if (currentTokenUsage) {
+                const totalTokens =
+                  currentTokenUsage.inputTokens +
+                  currentTokenUsage.outputTokens;
+                if (totalTokens >= thresholdTokens) {
+                  const compactionSummary =
+                    await ctx.performCompactionRef.current(
+                      sessionKey,
+                      options.model,
+                      true
+                    );
+
+                  // performCompaction resets sessionRef.isSending to false in
+                  // its finally block, but we are still mid-send — restore it
+                  // so the outer handleSendMessage flow keeps the session
+                  // locked until it finishes.
+                  const sessionRefAfterCompaction =
+                    ctx.sessionsRefData.current.get(sessionKey);
+                  if (sessionRefAfterCompaction) {
+                    sessionRefAfterCompaction.isSending = true;
+                    sessionRefAfterCompaction.isAbortRequested = false;
+                  }
+
+                  // If the user aborted during compaction, stop here
+                  // regardless of whether compaction succeeded.
+                  if (
+                    ctx.sessionsRefData.current.get(sessionKey)
+                      ?.isAbortRequested
+                  ) {
+                    return;
+                  }
+
+                  // Mark the session as auto-compacted so the in-loop
+                  // post-response compaction check does not trigger again
+                  // for this turn.
+                  if (compactionSummary && sessionRefAfterCompaction) {
+                    sessionRefAfterCompaction.hasAutoCompacted = true;
+                  }
+                }
+              }
+            }
+          }
+        }
+
         let checkpointId: string | undefined;
         if (ctx.directoryPath && !ctx.directoryPath.startsWith("ssh://")) {
           try {

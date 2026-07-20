@@ -19,7 +19,7 @@ import {
   readSnowCliSensitiveCommandConfig,
 } from "../../settings/sensitiveCommandSettings";
 import { normalizeSubAgentConfig } from "../../settings/subAgentSettings";
-import type { HookConfigInput, HookScope } from "../../preload";
+import type { HookConfigInput, HookScope } from "../../native/types";
 
 const requireProjectId = (value: unknown): string => {
   if (typeof value !== "string" || !value.trim()) {

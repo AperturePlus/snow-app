@@ -85,25 +85,30 @@ export const FilesystemCreateToolCall = ({
     [toolCall.result]
   );
 
+  const hasError = parsedResult.type === "error";
+
   const diffLines = useMemo(() => {
+    if (hasError) {
+      return [];
+    }
     if (!parsedArgs?.content) {
       return [];
     }
     return computeCreateDiff(parsedArgs.content);
-  }, [parsedArgs]);
+  }, [parsedArgs, hasError]);
 
   const toolName = getToolDisplayName("create");
   const filePath = parsedArgs?.filePath ?? "create";
   const fileName = getFileName(filePath);
 
-  const hasError = parsedResult.type === "error";
   const effectiveStatus = hasError ? "error" : toolCall.status;
   const statusLabel = t(`toolCall.filesystem.status.${effectiveStatus}`);
 
   const lineCount = useMemo(() => {
+    if (hasError) return 0;
     if (!parsedArgs?.content) return 0;
     return parsedArgs.content.split("\n").length;
-  }, [parsedArgs]);
+  }, [parsedArgs, hasError]);
 
   return (
     <details className="tool-call-item tool-call-filesystem-create">

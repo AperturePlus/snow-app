@@ -156,9 +156,22 @@ pub struct FileSearchLineMatch {
     pub text: String,
 }
 
-const MAX_RESULTS: usize = 200;
-const MAX_DEPTH: usize = 10;
+// Upper bound for the number of files returned to the renderer. This only
+// limits the number of result entries; content matches inside a single file
+// do not consume extra slots.
+const MAX_RESULTS: usize = 500;
+// Allow deep traversal so nested source files are still discoverable. The
+// per-directory skip list below keeps the walk from exploding in size.
+const MAX_DEPTH: usize = 32;
+// Maximum number of matching lines to collect per file.
+const MAX_LINE_MATCHES_PER_FILE: usize = 20;
+// Skip reading file content larger than this size (8 MB) to avoid heavy I/O.
+const MAX_FILE_SIZE_FOR_CONTENT_SEARCH: u64 = 8 * 1024 * 1024;
+// Truncate each matched line to avoid shipping huge blobs to the renderer.
+const MAX_LINE_LENGTH: usize = 300;
 
+// Directories that are always skipped during traversal. These are build
+// artifacts, dependency caches, VCS metadata, or IDE-local state.
 const SKIP_DIRS: &[&str] = &[
     "node_modules",
     ".git",
@@ -173,7 +186,141 @@ const SKIP_DIRS: &[&str] = &[
     ".cache",
     ".turbo",
     ".vercel",
+    "target",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".tox",
+    ".venv",
+    "venv",
+    "env",
+    ".idea",
+    ".vscode",
+    ".gradle",
+    ".terraform",
+    "Pods",
+    "DerivedData",
 ];
+
+// Directories that start with a dot are usually hidden config dirs. Some of
+// them (like `.github`, `.claude`, `.cursor`) may still contain content the
+// user wants to search, so we keep an allowlist that overrides the dot-prefix
+// skip rule for directories.
+const DOTDIR_ALLOWLIST: &[&str] = &[
+    "github",
+    "claude",
+    "cursor",
+    "husky",
+    "storybook",
+    "devcontainer",
+];
+
+// File extensions that are textual and worth scanning for content matches.
+// Binary / image / archive / media extensions are excluded automatically.
+const TEXTUAL_EXTENSIONS: &[&str] = &[
+    "txt", "md", "mdx", "markdown", "rst", "log", "csv", "tsv", "ini", "cfg",
+    "conf", "config", "properties", "yaml", "yml", "toml", "json", "jsonc",
+    "json5", "xml", "html", "htm", "css", "scss", "sass", "less", "styl",
+    "js", "jsx", "ts", "tsx", "mjs", "cjs", "mts", "cts", "vue", "svelte",
+    "astro", "py", "rb", "php", "go", "rs", "c", "h", "cpp", "cc", "cxx",
+    "hpp", "hxx", "java", "kt", "kts", "swift", "scala", "clj", "cljs",
+    "edn", "ex", "exs", "erl", "hrl", "fs", "fsx", "ml", "mli", "nim",
+    "dart", "lua", "pl", "pm", "r", "R", "jl", "sh", "bash", "zsh", "fish",
+    "ps1", "bat", "cmd", "sql", "graphql", "gql", "proto", "thrift", "sol",
+    "vy", "asm", "s", "wasm", "wat", "make", "mk", "tf",
+    "tfvars", "hcl", "env", "gitignore", "dockerignore", "npmignore",
+    "editorconfig", "prettierrc", "eslintrc", "babelrc", "stylelintrc",
+    "wxml", "wxss", "axml", "acss",
+];
+
+// Extensions that are known to be binary and must never be scanned for text.
+const BINARY_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "bmp", "webp", "ico", "tiff", "tif", "heic",
+    "heif", "avif", "psd", "ai", "sketch", "fig", "xcf", "mp3", "wav", "flac",
+    "ogg", "opus", "aac", "m4a", "wma", "mp4", "mov", "mkv", "avi", "wmv",
+    "flv", "webm", "m4v", "mpg", "mpeg", "3gp", "zip", "tar", "gz", "tgz",
+    "bz2", "xz", "zst", "lz", "lzma", "7z", "rar", "iso", "dmg", "pkg",
+    "deb", "rpm", "msi", "exe", "dll", "so", "dylib", "a", "lib", "o", "obj",
+    "pdb", "ipa", "apk", "aab", "jar", "war", "class", "wasm", "ncb",
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp",
+    "sqlite", "sqlite3", "db", "mdb", "lock", "bin", "dat",
+];
+
+fn is_textual_extension(ext: &str) -> bool {
+    TEXTUAL_EXTENSIONS.contains(&ext)
+}
+
+fn is_binary_extension(ext: &str) -> bool {
+    BINARY_EXTENSIONS.contains(&ext)
+}
+
+// Decide whether a file is worth opening for a content scan. We accept known
+// textual extensions, common extensionless build files, and dotfiles; we
+// reject known binary extensions. Unknown extensions fall through to the
+// binary-null-byte check inside `read_file_lines`.
+fn should_read_content(name: &str) -> bool {
+    let ext = match Path::new(name).extension() {
+        Some(e) => e.to_string_lossy().to_lowercase(),
+        None => {
+            // Files without an extension: treat common dotfiles and plain
+            // names as textual (e.g. "Dockerfile", "Makefile", ".gitignore").
+            return matches!(
+                name,
+                "Dockerfile"
+                    | "Makefile"
+                    | "makefile"
+                    | "Rakefile"
+                    | "CMakeLists.txt"
+                    | "Gemfile"
+                    | "Procfile"
+                    | "Brewfile"
+                    | "Jenkinsfile"
+                    | "Vagrantfile"
+            ) || name.starts_with('.');
+        }
+    };
+
+    if is_binary_extension(&ext) {
+        return false;
+    }
+
+    if is_textual_extension(&ext) {
+        return true;
+    }
+
+    // Unknown extension: default to trying to read it; the binary-null check
+    // inside read_file_lines will guard us from accidentally shipping garbage.
+    true
+}
+
+fn read_file_lines(path: &Path) -> Option<Vec<String>> {
+    let metadata = match fs::metadata(path) {
+        Ok(m) => m,
+        Err(_) => return None,
+    };
+
+    if !metadata.is_file() {
+        return None;
+    }
+
+    if metadata.len() > MAX_FILE_SIZE_FOR_CONTENT_SEARCH {
+        return None;
+    }
+
+    let buffer = match fs::read(path) {
+        Ok(b) => b,
+        Err(_) => return None,
+    };
+
+    // Quick binary check: if the first 8 KB contain a null byte, treat as binary.
+    let check_len = buffer.len().min(8192);
+    if buffer[..check_len].iter().any(|&b| b == 0) {
+        return None;
+    }
+
+    let content = String::from_utf8_lossy(&buffer);
+    Some(content.lines().map(|l| l.to_string()).collect())
+}
 
 pub fn read_directory_entries(dir_path: &str) -> Result<Vec<DirectoryEntry>> {
     let path = Path::new(dir_path);
@@ -245,11 +392,74 @@ pub fn read_directory_entries(dir_path: &str) -> Result<Vec<DirectoryEntry>> {
     Ok(result)
 }
 
-fn should_skip(name: &str) -> bool {
-    if name.starts_with('.') {
+fn should_skip_dir(name: &str) -> bool {
+    if SKIP_DIRS.contains(&name) {
         return true;
     }
-    SKIP_DIRS.contains(&name)
+
+    // Allow selected dot-directories through; skip all other dot-prefixed
+    // directories to avoid scanning transient caches.
+    if name.starts_with('.') {
+        let stripped = &name[1..];
+        return !DOTDIR_ALLOWLIST.contains(&stripped);
+    }
+
+    false
+}
+
+// Build the line matches for a single file. Returns an empty vector when the
+// file should not be scanned (binary, too large, unreadable, no matches).
+fn collect_line_matches(path: &Path, query_lower: &str) -> Vec<FileSearchLineMatch> {
+    if !should_read_content(&path.to_string_lossy()) {
+        return Vec::new();
+    }
+
+    let lines = match read_file_lines(path) {
+        Some(l) => l,
+        None => return Vec::new(),
+    };
+
+    let mut matches: Vec<FileSearchLineMatch> = Vec::new();
+    for (idx, line) in lines.iter().enumerate() {
+        if matches.len() >= MAX_LINE_MATCHES_PER_FILE {
+            break;
+        }
+        // Case-insensitive substring match. We do a byte-level scan on the
+        // lowercased line so unicode case folding is good enough for the
+        // common ASCII-heavy source files.
+        let lower = line.to_lowercase();
+        if lower.contains(query_lower) {
+            let truncated: String = if line.len() > MAX_LINE_LENGTH {
+                let mut end = MAX_LINE_LENGTH;
+                // Avoid splitting in the middle of a UTF-8 continuation byte.
+                while end > 0 && !line.is_char_boundary(end) {
+                    end -= 1;
+                }
+                format!("{}...", &line[..end])
+            } else {
+                line.clone()
+            };
+            matches.push(FileSearchLineMatch {
+                line: (idx as i64) + 1,
+                text: truncated,
+            });
+        }
+    }
+
+    matches
+}
+
+fn push_result(
+    results: &Arc<Mutex<Vec<FileSearchResult>>>,
+    counter: &Arc<AtomicUsize>,
+    result: FileSearchResult,
+) {
+    let mut guard = results.lock().unwrap();
+    if guard.len() >= MAX_RESULTS {
+        return;
+    }
+    guard.push(result);
+    counter.store(guard.len(), Ordering::Relaxed);
 }
 
 fn search_dir_recursive(
@@ -283,52 +493,59 @@ fn search_dir_recursive(
 
         let name = entry.file_name().to_string_lossy().to_string();
 
-        if should_skip(&name) {
-            continue;
-        }
-
         let full_path = entry.path();
 
         if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            if should_skip_dir(&name) {
+                continue;
+            }
+
             if name.to_lowercase().contains(query_lower) {
                 let rel = full_path
                     .strip_prefix(root_dir)
                     .unwrap_or(&full_path)
                     .to_string_lossy()
                     .to_string();
-                let mut results = results.lock().unwrap();
-                if results.len() < MAX_RESULTS {
-                    results.push(FileSearchResult {
+                push_result(
+                    &results,
+                    &counter,
+                    FileSearchResult {
                         path: full_path.to_string_lossy().to_string(),
                         relative_path: rel,
                         name: name.clone(),
                         is_directory: true,
                         matched_name: true,
                         line_matches: Vec::new(),
-                    });
-                    counter.store(results.len(), Ordering::Relaxed);
-                }
+                    },
+                );
             }
             sub_dirs.push(full_path);
         } else if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
-            if name.to_lowercase().contains(query_lower) {
+            let name_matched = name.to_lowercase().contains(query_lower);
+
+            // Always scan the file content so we can surface matches even for
+            // files whose name does not contain the query (e.g. searching for
+            // `context-compaction-message` inside a source file).
+            let line_matches = collect_line_matches(&full_path, query_lower);
+
+            if name_matched || !line_matches.is_empty() {
                 let rel = full_path
                     .strip_prefix(root_dir)
                     .unwrap_or(&full_path)
                     .to_string_lossy()
                     .to_string();
-                let mut results = results.lock().unwrap();
-                if results.len() < MAX_RESULTS {
-                    results.push(FileSearchResult {
+                push_result(
+                    &results,
+                    &counter,
+                    FileSearchResult {
                         path: full_path.to_string_lossy().to_string(),
                         relative_path: rel,
                         name: name.clone(),
                         is_directory: false,
-                        matched_name: true,
-                        line_matches: Vec::new(),
-                    });
-                    counter.store(results.len(), Ordering::Relaxed);
-                }
+                        matched_name: name_matched,
+                        line_matches,
+                    },
+                );
             }
         }
     }
@@ -337,7 +554,7 @@ fn search_dir_recursive(
         return;
     }
 
-    // Recurse into sub-directories, collecting handles for parallel execution
+    // Recurse into sub-directories, collecting handles for parallel execution.
     if !sub_dirs.is_empty() {
         let mut handles = Vec::new();
 
@@ -379,7 +596,15 @@ pub fn search_files(root_dir: &str, query: &str) -> Result<Vec<FileSearchResult>
         )));
     }
 
-    let query_lower = query.to_lowercase();
+    // Very short queries (single char) would match nearly every file and
+    // produce a huge amount of I/O; we require at least two characters so
+    // the content scan stays responsive. An empty query returns nothing.
+    let trimmed = query.trim();
+    if trimmed.len() < 2 {
+        return Ok(Vec::new());
+    }
+
+    let query_lower = trimmed.to_lowercase();
 
     let results = Arc::new(Mutex::new(Vec::<FileSearchResult>::new()));
     let counter = Arc::new(AtomicUsize::new(0));
@@ -395,7 +620,9 @@ pub fn search_files(root_dir: &str, query: &str) -> Result<Vec<FileSearchResult>
 
     let mut final_results = results.lock().unwrap().drain(..).collect::<Vec<_>>();
 
-    // Sort: directories first, then exact name match, then starts-with, then alphabetical
+    // Sort: directories first, then files with name matches, then files with
+    // content matches, then alphabetical by name. This keeps the most relevant
+    // results on top without discarding content-only hits.
     final_results.sort_by(|a, b| {
         if a.is_directory != b.is_directory {
             return if a.is_directory {
@@ -404,9 +631,16 @@ pub fn search_files(root_dir: &str, query: &str) -> Result<Vec<FileSearchResult>
                 std::cmp::Ordering::Greater
             };
         }
+        if a.matched_name != b.matched_name {
+            return if a.matched_name {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            };
+        }
         a.name.cmp(&b.name)
     });
-final_results.truncate(MAX_RESULTS);
+    final_results.truncate(MAX_RESULTS);
 
     Ok(final_results)
 }

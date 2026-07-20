@@ -402,6 +402,10 @@ export const loadNativeBridge = (): NativeBridge => {
       gitUnstageAll: () => {
         throw new Error("Rust native bridge is required for git unstage all");
       },
+      gitUnstageFiles: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required for git unstage files")
+        ),
       gitCommit: () => {
         throw new Error("Rust native bridge is required for git commit");
       },
@@ -512,6 +516,36 @@ export const loadNativeBridge = (): NativeBridge => {
       listTodosForRollback: () =>
         Promise.reject(
           new Error("Rust native bridge is required to list todos")
+        ),
+      getCodebaseProjectScopeSettings: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to get codebase project scope settings"
+          )
+        ),
+      setCodebaseProjectEnabled: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to set codebase project enabled"
+          )
+        ),
+      setCodebaseProjectAgentReview: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to set codebase project agent review"
+          )
+        ),
+      setCodebaseProjectReranking: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to set codebase project reranking"
+          )
+        ),
+      checkProjectHasGitignore: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to check project .gitignore"
+          )
         ),
       startCodebaseEmbedding: () =>
         Promise.reject(

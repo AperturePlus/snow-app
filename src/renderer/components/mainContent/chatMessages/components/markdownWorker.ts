@@ -65,6 +65,22 @@ const markdown = new MarkdownIt({
   },
 });
 
+// The highlight callback above returns a complete .code-block-wrapper element.
+// markdown-it's default fence renderer would nest any highlight result that
+// does not start with "<pre" inside an extra <pre><code>, producing invalid
+// HTML (<div> inside inline <code>) whose empty inline fragments render as
+// stray gray bars around the code block. Return the wrapper directly instead.
+markdown.renderer.rules.fence = (tokens, idx, options): string => {
+  const token = tokens[idx];
+  const lang = token.info ? token.info.trim() : "";
+  const rendered = options.highlight
+    ? options.highlight(token.content, lang, "")
+    : "";
+  return (
+    (rendered || `<pre><code>${escapeHtml(token.content)}</code></pre>`) + "\n"
+  );
+};
+
 /**
  * Tiny LRU cache for rendered HTML. Keyed by content string. We cap the
  * number of entries (not byte size) — markdown HTML for chat messages is

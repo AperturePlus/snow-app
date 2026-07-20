@@ -593,6 +593,13 @@ async fn collect_streaming_response(
     let mut content_chunks = Vec::new();
     let mut thinking_chunks = Vec::new();
     let mut tool_calls = Vec::new();
+    // Streaming tool-call accumulator: maps output_item index -> (item_json, accumulated_arguments).
+    // When the stream ends abruptly (network error, server disconnect) before
+    // `response.output_item.done` fires, we rebuild tool calls from these
+    // partial entries so the agent loop can still execute the requested tools
+    // instead of silently dropping them.
+    let mut streaming_tool_items: std::collections::HashMap<u64, (Value, String)> =
+        std::collections::HashMap::new();
     let mut completed_response: Option<Value> = None;
     let mut response_id = String::new();
     let mut response_model = String::new();
@@ -603,16 +610,26 @@ async fn collect_streaming_response(
         cache_creation_input_tokens: 0,
         cache_read_input_tokens: 0,
     };
+    // Track whether the stream completed normally. If the loop exits because
+    // of a read error or unexpected EOF (not via response.completed/incomplete/
+    // failed event, and not via cancellation), we mark the response as
+    // "incomplete" so the frontend can still process any collected content
+    // and tool calls instead of treating it as a hard failure.
+    let mut stream_completed_normally = false;
 
     loop {
         tokio::select! {
             biased;
             _ = cancel_token.cancelled() => {
                 response_status = String::from("cancelled");
+                stream_completed_normally = true;
                 break;
             }
             event_result = stream.next() => {
                 let Some(event_result) = event_result else {
+                    // Stream ended without an explicit terminal event. Treat
+                    // this as an incomplete response rather than a hard error
+                    // so partial content and tool calls remain usable.
                     break;
                 };
 
@@ -620,10 +637,12 @@ async fn collect_streaming_response(
                     Ok(event) => event,
                     Err(error) if is_stream_ended_error(&error) => break,
                     Err(error) => {
-                        return Err(Error::from_reason(format!(
-                            "Failed to read response stream: {}",
-                            error
-                        )));
+                        // Network/read error mid-stream: log and break instead
+                        // of returning Err. We keep whatever content and tool
+                        // calls have been collected so far so the agent loop
+                        // can continue with partial results.
+                        eprintln!("Responses stream read error (keeping partial result): {error}");
+                        break;
                     }
                 };
                 let event_type = event.get("type").and_then(Value::as_str).unwrap_or_default();
@@ -680,6 +699,11 @@ async fn collect_streaming_response(
                     // argument text should NOT be appended to the assistant
                     // message body — it is assembled separately by
                     // `collect_tool_calls` on `output_item.done`.
+                    //
+                    // We also accumulate the argument fragments per output
+                    // item index so that, if the stream is interrupted before
+                    // `output_item.done`, we can still reconstruct the tool
+                    // call with its (possibly partial) arguments.
                     "response.function_call_arguments.delta" => {
                         let args_delta = read_stream_text_delta(event.get("delta"));
                         if !args_delta.is_empty() {
@@ -699,12 +723,59 @@ async fn collect_streaming_response(
                                 },
                                 ThreadsafeFunctionCallMode::NonBlocking,
                             );
+
+                            // Accumulate argument fragments for partial-recovery.
+                            if let Some(index) = event
+                                .get("output_index")
+                                .and_then(Value::as_u64)
+                                .or_else(|| event.get("index").and_then(Value::as_u64))
+                            {
+                                streaming_tool_items
+                                    .entry(index)
+                                    .and_modify(|(_, args)| args.push_str(&args_delta))
+                                    .or_insert_with(|| (Value::Null, args_delta));
+                            }
+                        }
+                    }
+                    // Track newly added function_call output items so we can
+                    // reconstruct them (name + call_id) if the stream ends
+                    // before `output_item.done`.
+                    "response.output_item.added" => {
+                        if let Some(item) = event.get("item") {
+                            let item_type = item
+                                .get("type")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default();
+                            if matches!(
+                                item_type,
+                                "function_call" | "tool_call" | "custom_tool_call" | "mcp_call"
+                            ) {
+                                if let Some(index) = event
+                                    .get("output_index")
+                                    .and_then(Value::as_u64)
+                                    .or_else(|| event.get("index").and_then(Value::as_u64))
+                                {
+                                    streaming_tool_items
+                                        .entry(index)
+                                        .and_modify(|(stored, _)| *stored = item.clone())
+                                        .or_insert_with(|| (item.clone(), String::new()));
+                                }
+                            }
                         }
                     }
                     "response.output_item.done" => {
                         collect_tool_calls(event.get("item"), &mut tool_calls);
+                        // Remove from the streaming map once finalized.
+                        if let Some(index) = event
+                            .get("output_index")
+                            .and_then(Value::as_u64)
+                            .or_else(|| event.get("index").and_then(Value::as_u64))
+                        {
+                            streaming_tool_items.remove(&index);
+                        }
                     }
                     "response.completed" | "response.incomplete" | "response.failed" => {
+                        stream_completed_normally = true;
                         if let Some(response) = event.get("response") {
                             response_id = read_response_string(response, "id").unwrap_or(response_id);
                             response_model = read_response_string(response, "model").unwrap_or(response_model);
@@ -733,6 +804,49 @@ async fn collect_streaming_response(
 
                 raw_events.push(event);
             }
+        }
+    }
+
+    // If the stream ended abnormally (no terminal event and no cancellation),
+    // mark the response as incomplete so the frontend knows the result is
+    // partial but still usable.
+    if !stream_completed_normally && response_status == "completed" {
+        response_status = String::from("incomplete");
+    }
+
+    // Reconstruct tool calls from streaming fragments when the normal
+    // `output_item.done` path did not fire for every item. This handles the
+    // case where the stream was interrupted mid-tool-call: we take the item
+    // metadata (name, call_id) captured in `output_item.added` and attach the
+    // accumulated argument fragments. Even if the arguments are partial JSON,
+    // we pass them through as a string so the frontend/tool layer can decide
+    // how to handle them.
+    if tool_calls.is_empty() && !streaming_tool_items.is_empty() {
+        let mut indices: Vec<u64> = streaming_tool_items.keys().copied().collect();
+        indices.sort_unstable();
+        for index in indices {
+            let (item, args) = streaming_tool_items.remove(&index).unwrap();
+            if item.is_null() {
+                // We have arguments but no item metadata — cannot reconstruct
+                // a meaningful tool call without name/call_id. Skip it.
+                continue;
+            }
+            let mut reconstructed = item;
+            if !args.is_empty() {
+                // Try to parse the accumulated arguments as JSON; if that
+                // fails, embed the raw string so the tool layer can surface a
+                // clear error rather than silently dropping the call.
+                if let Ok(parsed) = serde_json::from_str::<Value>(&args) {
+                    reconstructed
+                        .as_object_mut()
+                        .map(|obj| obj.insert("arguments".to_string(), parsed));
+                } else {
+                    reconstructed
+                        .as_object_mut()
+                        .map(|obj| obj.insert("arguments".to_string(), Value::String(args)));
+                }
+            }
+            tool_calls.push(reconstructed);
         }
     }
 

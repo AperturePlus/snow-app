@@ -13,6 +13,9 @@ use super::super::tools::McpTool;
 /// 当 searchContent 与文件中某段内容相似度达到此值时，视为匹配成功。
 const FUZZY_MATCH_THRESHOLD: f64 = 0.75;
 
+/// 编辑成功后，在响应中返回编辑区域前后各多少行上下文供 AI 复核。
+const EDIT_REVIEW_CONTEXT_LINES: usize = 5;
+
 /// 当 searchContent 不含行号前缀但文件内容含行号前缀（或反之）时，
 /// 逐行剥离前缀后重试匹配。
 const LINE_PREFIX_REGEX: &str = r"^\s*\d+[\s\|:]*";
@@ -79,7 +82,7 @@ impl McpService for FilesystemService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "replace_edit".to_string(),
-                description: "Fuzzy search-and-replace editing. Finds searchContent in the file and replaces it with replaceContent. IMPORTANT: searchContent must be COPIED EXACTLY from the file - do NOT include line number prefixes (like \"42:\") that appear in read output, do NOT retype or paraphrase. Copy the raw source text verbatim. If the exact text is not found, a fuzzy match is attempted; on failure the error includes the closest matching region to help you correct your searchContent.".to_string(),
+                description: "Fuzzy search-and-replace editing. Finds searchContent in the file and replaces it with replaceContent. IMPORTANT: searchContent must be COPIED EXACTLY from the file - do NOT include line number prefixes (like \"42:\") that appear in read output, do NOT retype or paraphrase. Copy the raw source text verbatim. If the exact text is not found, a fuzzy match is attempted; on failure the error includes the closest matching region to help you correct your searchContent. On success the response includes a \"review\" field with the edited region plus surrounding context lines (edited lines marked with \">>>\") - always verify the edit landed correctly.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -270,12 +273,19 @@ impl FilesystemService {
                 )
             })?;
 
+            let review = build_edit_review_context(
+                &new_content,
+                target_idx,
+                target_idx + replace_content.len(),
+            );
+
             return Ok(json!({
                 "success": true,
                 "matchIndex": target_idx,
                 "totalMatches": matches.len(),
                 "occurrence": occurrence,
-                "matchType": "exact"
+                "matchType": "exact",
+                "review": review
             }));
         }
 
@@ -315,12 +325,19 @@ impl FilesystemService {
                     )
                 })?;
 
+                let review = build_edit_review_context(
+                    &new_content,
+                    target_idx,
+                    target_idx + replace_content.len(),
+                );
+
                 return Ok(json!({
                     "success": true,
                     "matchIndex": target_idx,
                     "totalMatches": stripped_matches.len(),
                     "occurrence": occurrence,
-                    "matchType": "exact_after_stripping_prefixes"
+                    "matchType": "exact_after_stripping_prefixes",
+                    "review": review
                 }));
             }
         }
@@ -351,13 +368,20 @@ impl FilesystemService {
                         )
                     })?;
 
+                    let review = build_edit_review_context(
+                        &new_content,
+                        start_byte,
+                        start_byte + replace_content.len(),
+                    );
+
                     return Ok(json!({
                         "success": true,
                         "matchType": "fuzzy",
                         "similarity": similarity,
                         "matchedLineStart": start_line + 1,
                         "matchedLineEnd": end_line,
-                        "totalLines": total_lines
+                        "totalLines": total_lines,
+                        "review": review
                     }));
                 }
             }
@@ -656,6 +680,65 @@ fn line_range_to_byte_range(content: &str, start_line: usize, end_line: usize) -
     }
 
     (start_byte, end_byte)
+}
+
+/// 构建编辑成功后的复核上下文：返回编辑区域前后各 EDIT_REVIEW_CONTEXT_LINES 行
+/// 的带行号代码块（编辑行以 ">>>" 标记），供 AI 复核编辑结果是否正确。
+///
+/// edit_start_byte / edit_end_byte 是替换内容在新文件中的字节范围。
+fn build_edit_review_context(
+    new_content: &str,
+    edit_start_byte: usize,
+    edit_end_byte: usize,
+) -> Value {
+    let lines: Vec<&str> = new_content.lines().collect();
+    let total_lines = lines.len();
+    if total_lines == 0 {
+        return json!({
+            "startLine": 0,
+            "endLine": 0,
+            "editedLineStart": 0,
+            "editedLineEnd": 0,
+            "totalLines": 0,
+            "content": ""
+        });
+    }
+
+    // 通过换行符计数定位编辑区域所在行（0-indexed），对 LF/CRLF 均安全。
+    let edit_start_line = new_content[..edit_start_byte].matches('\n').count();
+    let mut edit_end_line = new_content[..edit_end_byte].matches('\n').count();
+    // 若替换内容以换行结尾，end 落在下一行行首，需回退一行避免多标记。
+    if edit_end_byte > edit_start_byte
+        && new_content.as_bytes().get(edit_end_byte.wrapping_sub(1)) == Some(&b'\n')
+    {
+        edit_end_line = edit_end_line.saturating_sub(1);
+    }
+    if edit_end_line >= total_lines {
+        edit_end_line = total_lines - 1;
+    }
+
+    let context_start = edit_start_line.saturating_sub(EDIT_REVIEW_CONTEXT_LINES);
+    let context_end = (edit_end_line + 1 + EDIT_REVIEW_CONTEXT_LINES).min(total_lines);
+
+    let block: Vec<String> = (context_start..context_end)
+        .map(|i| {
+            let marker = if i >= edit_start_line && i <= edit_end_line {
+                ">>>"
+            } else {
+                "   "
+            };
+            format!("{} {:>6}: {}", marker, i + 1, lines[i])
+        })
+        .collect();
+
+    json!({
+        "startLine": context_start + 1,
+        "endLine": context_end,
+        "editedLineStart": edit_start_line + 1,
+        "editedLineEnd": edit_end_line + 1,
+        "totalLines": total_lines,
+        "content": block.join("\n")
+    })
 }
 
 /// 构建 "searchContent not found" 的详细错误信息，包含最相似区间的上下文。

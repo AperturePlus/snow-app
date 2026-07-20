@@ -94,20 +94,18 @@ export function CodebaseSettingsPanel({
   };
 
   const validate = (): string | null => {
-    if (form.enabled) {
-      if (!form.embeddingModelName.trim()) {
-        return t("settings.codebaseValidationModelNameRequired", {
-          defaultValue:
-            "Embedding model name is required when codebase is enabled.",
-        });
-      }
+    if (!form.embeddingModelName.trim()) {
+      return t("settings.codebaseValidationModelNameRequired", {
+        defaultValue:
+          "Embedding model name is required when codebase is enabled.",
+      });
+    }
 
-      if (!form.embeddingBaseUrl.trim()) {
-        return t("settings.codebaseValidationBaseUrlRequired", {
-          defaultValue:
-            "Embedding base URL is required when codebase is enabled.",
-        });
-      }
+    if (!form.embeddingBaseUrl.trim()) {
+      return t("settings.codebaseValidationBaseUrlRequired", {
+        defaultValue:
+          "Embedding base URL is required when codebase is enabled.",
+      });
     }
 
     const numericChecks: Array<[string, string]> = [
@@ -175,7 +173,7 @@ export function CodebaseSettingsPanel({
       });
     }
 
-    if (form.enabled && form.enableReranking) {
+    if (form.rerankingModelName.trim() || form.rerankingBaseUrl.trim()) {
       if (!form.rerankingModelName.trim()) {
         return t("settings.codebaseValidationRerankingModelNameRequired", {
           defaultValue:

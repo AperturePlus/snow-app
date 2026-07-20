@@ -99,18 +99,22 @@ export const FilesystemEditToolCall = ({
     [toolCall.result]
   );
 
+  const hasError = parsedResult.type === "error";
+
   const diffLines = useMemo(() => {
+    if (hasError) {
+      return [];
+    }
     if (!parsedArgs?.searchContent || !parsedArgs?.replaceContent) {
       return [];
     }
     return computeLineDiff(parsedArgs.searchContent, parsedArgs.replaceContent);
-  }, [parsedArgs]);
+  }, [parsedArgs, hasError]);
 
   const toolName = getToolDisplayName("edit");
   const filePath = parsedArgs?.filePath ?? "edit";
   const fileName = getFileName(filePath);
 
-  const hasError = parsedResult.type === "error";
   const effectiveStatus = hasError ? "error" : toolCall.status;
   const statusLabel = t(`toolCall.filesystem.status.${effectiveStatus}`);
 

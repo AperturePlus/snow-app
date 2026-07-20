@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatInputSendOptions } from "../../chatInput/types";
 import type { ApiConfigRecord } from "../../../../../preload";
-import { calculateAutoCompressThresholdTokens } from "../../../sidebar/apiSettings/autoCompressThreshold";
 
 import type {
   ConversationContextValue,

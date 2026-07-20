@@ -83,15 +83,24 @@ export const createWindow = (): void => {
   }
 
   // Clean up PTY sessions before window is fully destroyed.
-  // 拦截未确认的关闭请求，通知渲染进程弹出二次确认弹窗。
-  mainWindow.on("close", (event) => {
-    if (!isCloseConfirmed()) {
-      event.preventDefault();
-      mainWindow.webContents.send("window:close-requested");
-      return;
-    }
-    killAllPtyForWebContents(mainWindow.webContents);
-  });
+  // 关闭二次确认仅适用于关闭即退出的平台（Windows/Linux）。
+  // macOS 关闭按钮只是隐藏窗口，应用仍驻留程序坞，真正退出需 dock 右键退出
+  // 或 Cmd+Q，不应弹出"退出确认"打断用户。
+  if (!isMacOS) {
+    mainWindow.on("close", (event) => {
+      if (!isCloseConfirmed()) {
+        event.preventDefault();
+        mainWindow.webContents.send("window:close-requested");
+        return;
+      }
+      killAllPtyForWebContents(mainWindow.webContents);
+    });
+  } else {
+    // macOS: 关窗不退出，仍需清理 PTY 会话。
+    mainWindow.on("close", () => {
+      killAllPtyForWebContents(mainWindow.webContents);
+    });
+  }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url).catch((error) => {

@@ -9,7 +9,7 @@ import {
 import { getFileName } from "../toolCalls/shared/formatters";
 import { MiniDiffViewer } from "../toolCalls/shared/MiniDiffViewer";
 import type { DiffLine } from "../toolCalls/shared/types";
-import type { ToolCallInfo } from "../hooks/useChatConversation";
+import type { ToolCallInfo } from "../utils/conversationTypes";
 
 type ToolAuthorizationDialogProps = {
   toolCalls: ToolCallInfo[];

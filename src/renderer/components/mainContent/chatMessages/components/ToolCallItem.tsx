@@ -6,7 +6,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { memo } from "react";
-import type { ToolCallInfo } from "../hooks/useChatConversation";
+import type { ToolCallInfo } from "../utils/conversationTypes";
 import {
   AskUserQuestionToolCall,
   BashToolCall,

@@ -602,20 +602,38 @@ async fn collect_anthropic_stream(
     // that previously were only counted after the full call assembled.
     let mut buffer = String::new();
     let mut stream = response.bytes_stream();
+    // Track whether the stream completed normally. If the loop exits because
+    // of a read error or unexpected EOF (not via message_delta/message_stop
+    // and not via cancellation), we mark the response as "incomplete" so the
+    // frontend can still process any collected content and tool calls.
+    let mut stream_completed_normally = false;
     loop {
         tokio::select! {
             biased;
             _ = cancel_token.cancelled() => {
                 response_status = String::from("cancelled");
+                stream_completed_normally = true;
                 break;
             }
             chunk_result = stream.next() => {
                 let Some(chunk_result) = chunk_result else {
+                    // Stream ended without message_stop. Treat as incomplete
+                    // rather than a hard error so partial content and tool
+                    // calls remain usable.
                     break;
                 };
 
-                let chunk = chunk_result
-                    .map_err(|error| Error::from_reason(format!("Failed to read Anthropic stream: {}", error)))?;
+                let chunk = match chunk_result {
+                    Ok(chunk) => chunk,
+                    Err(error) => {
+                        // Network/read error mid-stream: log and break instead
+                        // of returning Err. We keep whatever content and tool
+                        // calls have been collected so far so the agent loop
+                        // can continue with partial results.
+                        eprintln!("Anthropic stream read error (keeping partial result): {error}");
+                        break;
+                    }
+                };
                 buffer.push_str(&String::from_utf8_lossy(&chunk));
 
                 while let Some(separator_index) = buffer.find("\n\n") {
@@ -624,7 +642,11 @@ async fn collect_anthropic_stream(
                     let content_start_index = content_chunks.len();
                     let thinking_start_index = thinking_chunks.len();
                     let mut tool_args_delta = String::new();
-                    process_anthropic_sse_event_block(
+                    // Process each SSE event block with error tolerance: if a
+                    // single event block is malformed (invalid JSON, unexpected
+                    // shape), skip it and continue processing the rest of the
+                    // stream rather than aborting the entire response.
+                    if let Err(parse_error) = process_anthropic_sse_event_block(
                         &event_block,
                         &mut raw_events,
                         &mut content_chunks,
@@ -637,7 +659,13 @@ async fn collect_anthropic_stream(
                         &mut response_status,
                         &mut token_usage,
                         &mut tool_args_delta,
-                    )?;
+                    ) {
+                        // Propagate "error" type events (server-sent errors)
+                        // as actual errors, but skip malformed JSON events.
+                        eprintln!(
+                            "Anthropic stream event error (skipping event): {parse_error}"
+                        );
+                    }
                     let content_delta = content_chunks[content_start_index..].join("");
                     let thinking_delta = thinking_chunks[thinking_start_index..].join("");
                     emit_stream_chunk(
@@ -655,11 +683,18 @@ async fn collect_anthropic_stream(
         }
     }
 
+    // If the stream ended abnormally (no message_stop and no cancellation),
+    // mark the response as incomplete so the frontend knows the result is
+    // partial but still usable.
+    if !stream_completed_normally && response_status == "completed" {
+        response_status = String::from("incomplete");
+    }
+
     if response_status != "cancelled" && !buffer.trim().is_empty() {
         let content_start_index = content_chunks.len();
         let thinking_start_index = thinking_chunks.len();
         let mut tool_args_delta = String::new();
-        process_anthropic_sse_event_block(
+        if let Err(parse_error) = process_anthropic_sse_event_block(
             &buffer,
             &mut raw_events,
             &mut content_chunks,
@@ -672,7 +707,11 @@ async fn collect_anthropic_stream(
             &mut response_status,
             &mut token_usage,
             &mut tool_args_delta,
-        )?;
+        ) {
+            eprintln!(
+                "Anthropic stream trailing event error (skipping event): {parse_error}"
+            );
+        }
         let content_delta = content_chunks[content_start_index..].join("");
         let thinking_delta = thinking_chunks[thinking_start_index..].join("");
         emit_stream_chunk(
