@@ -426,6 +426,12 @@ export const loadNativeBridge = (): NativeBridge => {
       gitDiscardChanges: () => {
         throw new Error("Rust native bridge is required for git discard");
       },
+      getGitLog: () => {
+        throw new Error("Rust native bridge is required for git log");
+      },
+      getGitCommitFiles: () => {
+        throw new Error("Rust native bridge is required for git commit files");
+      },
       generateCommitMessage: () =>
         Promise.reject(
           new Error(

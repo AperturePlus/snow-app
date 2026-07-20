@@ -7,4 +7,5 @@ export type {
   GitCommitResult,
   GitPushPullResult,
   GitCheckoutResult,
+  GitLogEntry,
 } from "../../../../preload";

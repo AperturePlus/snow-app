@@ -149,6 +149,31 @@ export const registerGitHandlers = (native: NativeBridge): void => {
     }
   );
 
+  ipcMain.handle(
+    "git:log",
+    async (_event, repoPath: unknown, skip: unknown, limit: unknown) => {
+      if (typeof repoPath !== "string" || !repoPath.trim()) {
+        throw new Error("Repository path is required");
+      }
+      const skipCount =
+        typeof skip === "number" && skip > 0 ? Math.floor(skip) : 0;
+      const maxCount = typeof limit === "number" && limit > 0 ? limit : 50;
+      return native.getGitLog(repoPath.trim(), skipCount, maxCount);
+    }
+  );
+
+  ipcMain.handle(
+    "git:commit-files",
+    async (_event, repoPath: unknown, hash: unknown) => {
+      if (typeof repoPath !== "string" || !repoPath.trim()) {
+        throw new Error("Repository path is required");
+      }
+      if (typeof hash !== "string" || !hash.trim()) {
+        throw new Error("Commit hash is required");
+      }
+      return native.getGitCommitFiles(repoPath.trim(), hash.trim());
+    }
+  );
   // ===== AI commit message generation =====
   ipcMain.handle(
     "git:generate-commit-message",

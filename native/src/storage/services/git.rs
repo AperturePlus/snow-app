@@ -73,6 +73,24 @@ pub struct GitCheckoutResult {
     pub message: String,
 }
 
+#[napi(object)]
+pub struct GitLogEntry {
+    pub hash: String,
+    pub short_hash: String,
+    pub author: String,
+    pub email: String,
+    pub date: String,
+    pub message: String,
+    pub refs: String,
+    pub parents: Vec<String>,
+}
+
+#[napi(object)]
+pub struct GitCommitFile {
+    pub path: String,
+    pub status: String,
+}
+
 // ===== Internal helpers =====
 
 fn run_git(repo_path: &str, args: &[&str]) -> Result<String> {
@@ -716,4 +734,87 @@ pub fn get_file_diff(repo_path: &str, file_path: &str, staged: bool) -> Result<G
             is_binary: false,
         }),
     }
+}
+
+pub fn get_git_log(repo_path: &str, skip: i32, limit: i32) -> Result<Vec<GitLogEntry>> {
+    if !is_git_repo(repo_path) {
+        return Ok(Vec::new());
+    }
+
+    let skip_count = if skip > 0 { skip } else { 0 };
+    let max_count = if limit <= 0 { 50 } else { limit };
+    let skip_str = skip_count.to_string();
+    let max_count_str = max_count.to_string();
+    let format_arg = "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%s%x1f%D%x1f%P";
+
+    // Use run_git_raw because `git log` on an empty repo exits with code 128
+    // ("fatal: your current branch does not have any commits yet").
+    // run_git_raw returns stdout regardless of exit code, so we get an empty
+    // string for repos with no commits.
+    let output = run_git_raw(
+        repo_path,
+        &["log", "--all", format_arg, "--date=iso", "--skip", &skip_str, "--max-count", &max_count_str],
+    )?;
+
+    let mut entries: Vec<GitLogEntry> = Vec::new();
+
+    for line in output.lines() {
+        if line.is_empty() {
+            continue;
+        }
+
+        let parts: Vec<&str> = line.split('\x1f').collect();
+        if parts.len() < 8 {
+            continue;
+        }
+
+        let parents: Vec<String> = parts[7]
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
+
+        entries.push(GitLogEntry {
+            hash: parts[0].to_string(),
+            short_hash: parts[1].to_string(),
+            author: parts[2].to_string(),
+            email: parts[3].to_string(),
+            date: parts[4].to_string(),
+            message: parts[5].to_string(),
+            refs: parts[6].to_string(),
+            parents,
+        });
+    }
+
+    Ok(entries)
+}
+
+pub fn get_commit_files(repo_path: &str, hash: &str) -> Result<Vec<GitCommitFile>> {
+    if !is_git_repo(repo_path) {
+        return Ok(Vec::new());
+    }
+
+    let output = run_git_raw(
+        repo_path,
+        &["diff-tree", "--no-commit-id", "--name-status", "-r", hash],
+    )?;
+
+    let mut files: Vec<GitCommitFile> = Vec::new();
+
+    for line in output.lines() {
+        if line.is_empty() {
+            continue;
+        }
+
+        let parts: Vec<&str> = line.splitn(2, '\t').collect();
+        if parts.len() < 2 {
+            continue;
+        }
+
+        files.push(GitCommitFile {
+            status: parts[0].to_string(),
+            path: parts[1].to_string(),
+        });
+    }
+
+    Ok(files)
 }

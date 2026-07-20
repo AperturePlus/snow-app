@@ -9644,10 +9644,14 @@ input {
   width: 26px;
   height: 26px;
 }
-
 .git-action-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.git-action-btn.active {
+  background: var(--bg-active);
+  color: var(--text-primary);
 }
 
 .git-sync-status {
@@ -9807,6 +9811,18 @@ input {
   display: flex;
   align-items: center;
   gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.git-file-list-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.git-file-list-chevron.collapsed {
+  transform: rotate(-90deg);
 }
 
 .git-file-list-label {
@@ -9941,6 +9957,23 @@ input {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+.git-file-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.git-file-path {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 10;
+  min-width: 0;
 }
 
 .git-file-type-icon {
@@ -12141,6 +12174,185 @@ input {
   width: 26px;
   height: 26px;
   padding: 0;
+}
+
+.git-graph {
+  flex: 1;
+  min-height: 0;
+}
+
+.git-graph-loading,
+.git-graph-error,
+.git-graph-empty {
+  padding: 20px 14px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.git-graph-error {
+  color: var(--accent-red);
+}
+
+.git-graph-sentinel {
+  min-height: 1px;
+}
+
+.git-graph-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  min-height: 28px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.git-graph-row:hover {
+  background: var(--bg-hover);
+}
+
+.git-graph-row.selected {
+  background: var(--bg-active);
+}
+
+.git-graph-svg {
+  flex-shrink: 0;
+}
+
+.git-graph-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.git-graph-hash {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.git-graph-message {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.git-graph-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 10;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.git-graph-author {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-graph-date {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.git-graph-refs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 20;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.git-graph-ref {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 500;
+  background: var(--bg-active);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.git-graph-ref.head {
+  background: var(--accent-green-bg);
+  color: var(--accent-green-text);
+}
+
+.git-graph-ref.tag {
+  background: rgba(245, 158, 11, 0.15);
+  color: #b45309;
+}
+
+:root[data-theme="dark"] .git-graph-ref.tag {
+  color: #fbbf24;
+}
+
+.git-graph-ref.remote {
+  background: rgba(59, 130, 246, 0.15);
+  color: #2563eb;
+}
+
+:root[data-theme="dark"] .git-graph-ref.remote {
+  color: #60a5fa;
+}
+
+.git-graph-detail {
+  padding: 4px 12px 8px 40px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+  /* Reserve space for the loading/empty placeholder so the row height does
+     not jump when the file list arrives, which would shift all following
+     rows in the scroll container and cause visible jitter. */
+  min-height: 30px;
+}
+
+.git-graph-detail-loading,
+.git-graph-detail-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+
+.git-graph-detail-files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.git-graph-detail-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.git-graph-detail-path {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
 }
 
 .git-commit-actions {

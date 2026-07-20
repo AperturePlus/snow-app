@@ -3,8 +3,8 @@ use napi_derive::napi;
 use crate::api::commit_message::generate_commit_message_stream;
 use crate::api::responses::{ResponsesApiResult, ResponsesApiStreamCallback};
 use crate::storage::services::git::{
-    GitBranch, GitCheckoutResult, GitCommitResult, GitDiffResult, GitPushPullResult,
-    GitStageResult, GitStatusResult,
+    GitBranch, GitCheckoutResult, GitCommitFile, GitCommitResult, GitDiffResult,
+    GitLogEntry, GitPushPullResult, GitStageResult, GitStatusResult,
 };
 use crate::storage::services::git_watcher::{GitChangeCallback};
 
@@ -73,6 +73,23 @@ pub async fn git_discard_changes(
     file_paths: Vec<String>,
 ) -> napi::Result<GitStageResult> {
     crate::storage::services::git::discard_changes(&repo_path, &file_paths)
+}
+
+#[napi]
+pub async fn get_git_log(
+    repo_path: String,
+    skip: i32,
+    limit: i32,
+) -> napi::Result<Vec<GitLogEntry>> {
+    crate::storage::services::git::get_git_log(&repo_path, skip, limit)
+}
+
+#[napi]
+pub async fn get_git_commit_files(
+    repo_path: String,
+    hash: String,
+) -> napi::Result<Vec<GitCommitFile>> {
+    crate::storage::services::git::get_commit_files(&repo_path, &hash)
 }
 
 #[napi(

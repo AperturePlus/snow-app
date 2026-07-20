@@ -50,3 +50,19 @@ export type GitCheckoutResult = {
   success: boolean;
   message: string;
 };
+
+export type GitLogEntry = {
+  hash: string;
+  shortHash: string;
+  author: string;
+  email: string;
+  date: string;
+  message: string;
+  refs: string;
+  parents: string[];
+};
+
+export type GitCommitFile = {
+  path: string;
+  status: string;
+};

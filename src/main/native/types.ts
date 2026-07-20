@@ -613,6 +613,22 @@ export type GitCheckoutResult = {
   message: string;
 };
 
+export type GitLogEntry = {
+  hash: string;
+  shortHash: string;
+  author: string;
+  email: string;
+  date: string;
+  message: string;
+  refs: string;
+  parents: string[];
+};
+
+export type GitCommitFile = {
+  path: string;
+  status: string;
+};
+
 export type DetectedTerminal = {
   name: string;
   path: string;
@@ -915,6 +931,15 @@ export type NativeBridge = {
     repoPath: string,
     filePaths: string[]
   ) => Promise<GitStageResult>;
+  getGitLog: (
+    repoPath: string,
+    skip: number,
+    limit: number
+  ) => Promise<GitLogEntry[]>;
+  getGitCommitFiles: (
+    repoPath: string,
+    hash: string
+  ) => Promise<GitCommitFile[]>;
   startGitWatch: (
     repoPath: string,
     onChange: (repoPath: string) => void

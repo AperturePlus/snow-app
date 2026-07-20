@@ -2,8 +2,10 @@ import { ipcRenderer, type IpcRendererEvent } from "electron";
 import type {
   GitBranch,
   GitCheckoutResult,
+  GitCommitFile,
   GitCommitResult,
   GitDiffResult,
+  GitLogEntry,
   GitPushPullResult,
   GitStageResult,
   GitStatusResult,
@@ -95,6 +97,14 @@ export const gitApi = {
     filePaths: string[]
   ): Promise<GitStageResult> =>
     ipcRenderer.invoke("git:discard", repoPath, filePaths),
+  gitLog: (
+    repoPath: string,
+    skip: number,
+    limit: number
+  ): Promise<GitLogEntry[]> =>
+    ipcRenderer.invoke("git:log", repoPath, skip, limit),
+  gitCommitFiles: (repoPath: string, hash: string): Promise<GitCommitFile[]> =>
+    ipcRenderer.invoke("git:commit-files", repoPath, hash),
   generateCommitMessage: (
     repoPath: string,
     onChunk?: (chunk: ResponsesApiStreamChunk) => void,

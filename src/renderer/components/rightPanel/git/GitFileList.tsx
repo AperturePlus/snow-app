@@ -1,4 +1,5 @@
 import {
+  ChevronDown,
   FilePlus,
   FileMinus,
   FileEdit,
@@ -6,6 +7,7 @@ import {
   Plus,
   Undo2,
 } from "lucide-react";
+import { useState } from "react";
 import type { GitFileStatus } from "../../../../preload";
 import { useI18n } from "../../../i18n";
 import { getFileTypeIcon } from "../../../utils/fileIcons";
@@ -100,10 +102,47 @@ export const GitFileList = ({
   const headerLabel = isStaged ? t("git.stagedChanges") : t("git.changes");
   const headerCount = files.length;
 
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(`git-collapse-${section}`) === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleCollapse = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(`git-collapse-${section}`, String(next));
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="git-file-list">
       <div className="git-file-list-header">
-        <div className="git-file-list-title">
+        <div
+          className="git-file-list-title"
+          onClick={toggleCollapse}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              toggleCollapse();
+            }
+          }}
+          title={collapsed ? t("git.expandSection") : t("git.collapseSection")}
+        >
+          <ChevronDown
+            size={14}
+            strokeWidth={1.8}
+            className={`git-file-list-chevron${collapsed ? " collapsed" : ""}`}
+          />
           <span className="git-file-list-label">{headerLabel}</span>
           {headerCount > 0 && (
             <span className="git-file-list-badge">{headerCount}</span>
@@ -135,80 +174,92 @@ export const GitFileList = ({
               )}
         </div>
       </div>
-      {files.length === 0 ? (
-        <div className="git-file-list-empty">
-          {isStaged ? t("git.noStagedChanges") : t("git.noChanges")}
-        </div>
-      ) : (
-        <div className="git-file-list-items">
-          {files.map((file) => {
-            const isSelected = selectedPaths.has(`${section}:${file.path}`);
-            return (
-              <div
-                key={`${section}-${file.path}`}
-                className={`git-file-item${isSelected ? " selected" : ""}`}
-                onClick={(e) => onFileSelect(file, e, section)}
-              >
-                <span
-                  className={`git-file-status ${getStatusColor(file.status)}`}
+      {!collapsed &&
+        (files.length === 0 ? (
+          <div className="git-file-list-empty">
+            {isStaged ? t("git.noStagedChanges") : t("git.noChanges")}
+          </div>
+        ) : (
+          <div className="git-file-list-items">
+            {files.map((file) => {
+              const isSelected = selectedPaths.has(`${section}:${file.path}`);
+              const lastSep = Math.max(
+                file.path.lastIndexOf("/"),
+                file.path.lastIndexOf("\\")
+              );
+              const fileName =
+                lastSep === -1 ? file.path : file.path.slice(lastSep + 1);
+              const dirPath =
+                lastSep === -1 ? "" : file.path.slice(0, lastSep + 1);
+              return (
+                <div
+                  key={`${section}-${file.path}`}
+                  className={`git-file-item${isSelected ? " selected" : ""}`}
+                  onClick={(e) => onFileSelect(file, e, section)}
                 >
-                  {getStatusLabel(file.status)}
-                </span>
-                <span
-                  className={`git-file-name${
-                    file.status === "D" ? " deleted" : ""
-                  }`}
-                  title={file.path}
-                >
-                  {getFileTypeIcon(
-                    file.path.split("/").pop() ?? file.path,
-                    false,
-                    false,
-                    { size: 13, className: "git-file-type-icon" }
-                  )}
-                  {file.path}
-                </span>
-                <button
-                  type="button"
-                  className="git-file-action"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const filesToToggle = isSelected
-                      ? files.filter((f) =>
-                          selectedPaths.has(`${section}:${f.path}`)
-                        )
-                      : [file];
-                    onStageToggle(filesToToggle, section);
-                  }}
-                  disabled={actionInProgress}
-                  title={isStaged ? t("git.unstageFile") : t("git.stageFile")}
-                >
-                  <span>{isStaged ? "-" : "+"}</span>
-                </button>
-                {!isStaged && onDiscard && (
+                  <span
+                    className={`git-file-status ${getStatusColor(file.status)}`}
+                  >
+                    {getStatusLabel(file.status)}
+                  </span>
+                  <span
+                    className={`git-file-name${
+                      file.status === "D" ? " deleted" : ""
+                    }`}
+                    title={file.path}
+                  >
+                    {getFileTypeIcon(
+                      file.path.split("/").pop() ?? file.path,
+                      false,
+                      false,
+                      { size: 13, className: "git-file-type-icon" }
+                    )}
+                    <span className="git-file-name-text">{fileName}</span>
+                    {dirPath && (
+                      <span className="git-file-path">{dirPath}</span>
+                    )}
+                  </span>
                   <button
                     type="button"
-                    className="git-file-action git-discard-action"
+                    className="git-file-action"
                     onClick={(e) => {
                       e.stopPropagation();
-                      const filesToDiscard = isSelected
+                      const filesToToggle = isSelected
                         ? files.filter((f) =>
                             selectedPaths.has(`${section}:${f.path}`)
                           )
                         : [file];
-                      onDiscard(filesToDiscard);
+                      onStageToggle(filesToToggle, section);
                     }}
                     disabled={actionInProgress}
-                    title={t("git.discardFile")}
+                    title={isStaged ? t("git.unstageFile") : t("git.stageFile")}
                   >
-                    <Undo2 size={12} strokeWidth={1.8} />
+                    <span>{isStaged ? "-" : "+"}</span>
                   </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+                  {!isStaged && onDiscard && (
+                    <button
+                      type="button"
+                      className="git-file-action git-discard-action"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const filesToDiscard = isSelected
+                          ? files.filter((f) =>
+                              selectedPaths.has(`${section}:${f.path}`)
+                            )
+                          : [file];
+                        onDiscard(filesToDiscard);
+                      }}
+                      disabled={actionInProgress}
+                      title={t("git.discardFile")}
+                    >
+                      <Undo2 size={12} strokeWidth={1.8} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
     </div>
   );
 };

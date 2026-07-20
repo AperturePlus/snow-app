@@ -1,7 +1,9 @@
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
+  Diff,
   GitCommitHorizontal,
+  GitGraph as GitGraphIcon,
   Sparkles,
   Square,
 } from "lucide-react";
@@ -12,6 +14,7 @@ import { useI18n } from "../../../i18n";
 import { useGitStatus } from "./useGitStatus";
 import { BranchSelector } from "./BranchSelector";
 import { GitFileList } from "./GitFileList";
+import { GitGraph } from "./GitGraph";
 
 type GitControlProps = {
   repoPath: string | undefined | null;
@@ -42,6 +45,7 @@ export const GitControl = ({
   // Set to true after a commit succeeds; the effect below resets scroll
   // to top once the refreshed status has been applied to the DOM.
   const commitPendingRef = useRef(false);
+  const [viewMode, setViewMode] = useState<"changes" | "graph">("changes");
 
   // Propagate status changes upward via ref to avoid render-cycle side effects
   useEffect(() => {
@@ -442,6 +446,22 @@ export const GitControl = ({
           >
             <ArrowUpFromLine size={14} strokeWidth={1.8} />
           </button>
+          <button
+            type="button"
+            className={`icon-btn git-action-btn${
+              viewMode === "graph" ? " active" : ""
+            }`}
+            onClick={() =>
+              setViewMode(viewMode === "graph" ? "changes" : "graph")
+            }
+            title={viewMode === "graph" ? t("git.changes") : t("git.graph")}
+          >
+            {viewMode === "graph" ? (
+              <Diff size={14} strokeWidth={1.8} />
+            ) : (
+              <GitGraphIcon size={14} strokeWidth={1.8} />
+            )}
+          </button>
         </div>
       </div>
 
@@ -460,75 +480,81 @@ export const GitControl = ({
         </div>
       )}
 
-      <GitFileList
-        files={unstagedFiles}
-        section="unstaged"
-        selectedPaths={selectedPaths}
-        actionInProgress={actionInProgress}
-        onFileSelect={handleFileSelect}
-        onStageToggle={handleStageToggle}
-        onStageAll={handleStageAll}
-        onDiscard={handleDiscardRequest}
-      />
-
-      <GitFileList
-        files={stagedFiles}
-        section="staged"
-        selectedPaths={selectedPaths}
-        actionInProgress={actionInProgress}
-        onFileSelect={handleFileSelect}
-        onStageToggle={handleStageToggle}
-        onUnstageAll={handleUnstageAll}
-      />
-
-      <div className="git-commit-section">
-        <div className="git-commit-input-wrapper">
-          <textarea
-            className="git-commit-input"
-            placeholder={t("git.commitMessagePlaceholder")}
-            value={commitMessage}
-            onChange={(e) => setCommitMessage(e.target.value)}
-            rows={2}
+      {viewMode === "changes" ? (
+        <>
+          <GitFileList
+            files={unstagedFiles}
+            section="unstaged"
+            selectedPaths={selectedPaths}
+            actionInProgress={actionInProgress}
+            onFileSelect={handleFileSelect}
+            onStageToggle={handleStageToggle}
+            onStageAll={handleStageAll}
+            onDiscard={handleDiscardRequest}
           />
-          <div className="git-commit-input-actions">
-            <button
-              type="button"
-              className="git-commit-btn git-ai-commit-btn"
-              onClick={
-                isGeneratingCommitMsg
-                  ? handleAbortCommitMessage
-                  : handleGenerateCommitMessage
-              }
-              disabled={
-                !isGeneratingCommitMsg &&
-                (actionInProgress || stagedFiles.length === 0)
-              }
-            >
-              {isGeneratingCommitMsg ? (
-                <Square size={14} strokeWidth={1.8} />
-              ) : (
-                <Sparkles size={14} strokeWidth={1.8} />
-              )}
-            </button>
+
+          <GitFileList
+            files={stagedFiles}
+            section="staged"
+            selectedPaths={selectedPaths}
+            actionInProgress={actionInProgress}
+            onFileSelect={handleFileSelect}
+            onStageToggle={handleStageToggle}
+            onUnstageAll={handleUnstageAll}
+          />
+
+          <div className="git-commit-section">
+            <div className="git-commit-input-wrapper">
+              <textarea
+                className="git-commit-input"
+                placeholder={t("git.commitMessagePlaceholder")}
+                value={commitMessage}
+                onChange={(e) => setCommitMessage(e.target.value)}
+                rows={2}
+              />
+              <div className="git-commit-input-actions">
+                <button
+                  type="button"
+                  className="git-commit-btn git-ai-commit-btn"
+                  onClick={
+                    isGeneratingCommitMsg
+                      ? handleAbortCommitMessage
+                      : handleGenerateCommitMessage
+                  }
+                  disabled={
+                    !isGeneratingCommitMsg &&
+                    (actionInProgress || stagedFiles.length === 0)
+                  }
+                >
+                  {isGeneratingCommitMsg ? (
+                    <Square size={14} strokeWidth={1.8} />
+                  ) : (
+                    <Sparkles size={14} strokeWidth={1.8} />
+                  )}
+                </button>
+              </div>
+            </div>
+            <div className="git-commit-actions">
+              <button
+                type="button"
+                className="git-commit-btn"
+                onClick={handleCommit}
+                disabled={
+                  actionInProgress ||
+                  isGeneratingCommitMsg ||
+                  !commitMessage.trim() ||
+                  stagedFiles.length === 0
+                }
+              >
+                <GitCommitHorizontal size={14} strokeWidth={1.8} />
+                <span>{t("git.commit")}</span>
+              </button>
+            </div>
           </div>
-        </div>
-        <div className="git-commit-actions">
-          <button
-            type="button"
-            className="git-commit-btn"
-            onClick={handleCommit}
-            disabled={
-              actionInProgress ||
-              isGeneratingCommitMsg ||
-              !commitMessage.trim() ||
-              stagedFiles.length === 0
-            }
-          >
-            <GitCommitHorizontal size={14} strokeWidth={1.8} />
-            <span>{t("git.commit")}</span>
-          </button>
-        </div>
-      </div>
+        </>
+      ) : (
+        <GitGraph repoPath={repoPath} />
+      )}
 
       <ConfirmDialog
         open={discardTarget.length > 0}
