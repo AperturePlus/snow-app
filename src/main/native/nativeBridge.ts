@@ -432,6 +432,12 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required for AI commit message generation"
           )
         ),
+      generateThemePalette: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required for AI theme palette generation"
+          )
+        ),
       gitStageAll: () => {
         throw new Error("Rust native bridge is required for git stage all");
       },

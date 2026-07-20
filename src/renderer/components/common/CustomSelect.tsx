@@ -1,5 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Check, ChevronDown } from "lucide-react";
+import { createPortal } from "react-dom";
 
 export type CustomSelectOption = {
   value: string;
@@ -11,6 +18,22 @@ type CustomSelectProps = {
   options: CustomSelectOption[];
   onChange: (value: string) => void;
   disabled?: boolean;
+  /**
+   * When true, the dropdown is rendered into `document.body` via a portal and
+   * positioned absolutely relative to the trigger button. Use this when the
+   * select lives inside a container with `overflow: hidden` or
+   * `overflow: auto` (e.g. inside a Modal) so the dropdown is not clipped.
+   *
+   * Defaults to `false` to preserve the existing in-flow behavior for all
+   * current callers.
+   */
+  portal?: boolean;
+};
+
+type DropdownRect = {
+  top: number;
+  left: number;
+  width: number;
 };
 
 export function CustomSelect({
@@ -18,23 +41,65 @@ export function CustomSelect({
   options,
   onChange,
   disabled = false,
+  portal = false,
 }: CustomSelectProps): React.JSX.Element {
   const [isOpen, setIsOpen] = useState(false);
+  const [dropdownRect, setDropdownRect] = useState<DropdownRect | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
       if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
+        containerRef.current?.contains(target) ||
+        dropdownRef.current?.contains(target)
       ) {
-        setIsOpen(false);
+        return;
       }
+      setIsOpen(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
+
+  // Reposition the portal dropdown on resize/scroll while open.
+  useEffect(() => {
+    if (!isOpen || !portal) return;
+    const update = (): void => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setDropdownRect({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+      });
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [isOpen, portal]);
+
+  // Initial measurement for portal dropdown.
+  useLayoutEffect(() => {
+    if (!isOpen || !portal) {
+      setDropdownRect(null);
+      return;
+    }
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setDropdownRect({
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+    });
+  }, [isOpen, portal]);
 
   const selectedOption = options.find((opt) => opt.value === value);
   const displayLabel = selectedOption?.label ?? value;
@@ -49,12 +114,36 @@ export function CustomSelect({
     [onChange]
   );
 
+  const handleTriggerClick = (): void => {
+    if (disabled) return;
+    setIsOpen((v) => !v);
+  };
+
+  const dropdownContent = (
+    <div className="custom-select-dropdown" ref={dropdownRef}>
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          className="custom-select-item"
+          onClick={(event) => handleSelect(event, opt.value)}
+        >
+          <span>{opt.label}</span>
+          {opt.value === value && (
+            <Check size={14} className="custom-select-check" />
+          )}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div className="custom-select" ref={containerRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="custom-select-trigger"
-        onClick={() => !disabled && setIsOpen((v) => !v)}
+        onClick={handleTriggerClick}
         disabled={disabled}
       >
         <span className="custom-select-label" title={displayLabel}>
@@ -62,23 +151,26 @@ export function CustomSelect({
         </span>
         <ChevronDown size={14} />
       </button>
-      {isOpen && (
-        <div className="custom-select-dropdown">
-          {options.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              className="custom-select-item"
-              onClick={(event) => handleSelect(event, opt.value)}
+      {isOpen &&
+        (portal && dropdownRect ? (
+          createPortal(
+            <div
+              className="custom-select-dropdown-portal"
+              style={{
+                position: "fixed",
+                top: `${dropdownRect.top}px`,
+                left: `${dropdownRect.left}px`,
+                width: `${dropdownRect.width}px`,
+                zIndex: 100000,
+              }}
             >
-              <span>{opt.label}</span>
-              {opt.value === value && (
-                <Check size={14} className="custom-select-check" />
-              )}
-            </button>
-          ))}
-        </div>
-      )}
+              {dropdownContent}
+            </div>,
+            document.body
+          )
+        ) : (
+          dropdownContent
+        ))}
     </div>
   );
 }

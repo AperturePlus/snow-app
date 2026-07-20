@@ -1,10 +1,5 @@
 import { ChevronDown, ChevronRight, ChevronUp } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "../../../../i18n";
 import { MarkdownBlock } from "./markdownRenderer";
 
@@ -143,16 +138,19 @@ export const ThinkingBlock = ({
           <div
             className={`thinking-block-scroll${
               isExpanded ? " thinking-block-scroll--expanded" : ""
-            }`}
+            }${isStreaming ? " thinking-block-scroll--streaming" : ""}`}
             ref={scrollRef}
             onScroll={handleScroll}
           >
             <div ref={bodyRef}>
-              <MarkdownBlock className="thinking-block-body" content={content} />
+              <MarkdownBlock
+                className="thinking-block-body"
+                content={content}
+              />
             </div>
           </div>
 
-          {isOverflow && !isExpanded ? (
+          {isOverflow && !isExpanded && !isStreaming ? (
             <div className="thinking-block-mask">
               <button
                 type="button"

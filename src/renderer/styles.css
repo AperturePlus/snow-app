@@ -2630,6 +2630,23 @@ input {
   box-shadow: var(--island-shadow);
 }
 
+/* Portal variant: rendered into document.body to escape `overflow: hidden`
+   ancestors (e.g. inside a Modal). The outer wrapper handles fixed
+   positioning; the inner dropdown resets absolute offsets and fills width. */
+.custom-select-dropdown-portal {
+  pointer-events: auto;
+}
+
+.custom-select-dropdown-portal .custom-select-dropdown {
+  position: static;
+  top: auto;
+  left: auto;
+  right: auto;
+  z-index: auto;
+  min-width: 0;
+  width: 100%;
+}
+
 .custom-select-item {
   display: flex;
   align-items: center;
@@ -5601,6 +5618,14 @@ input {
 
 /* When expanded, remove height limit but keep scrolling for very long content */
 .thinking-block-scroll--expanded {
+  max-height: none;
+  overflow-y: visible;
+}
+
+/* While streaming, remove the height limit so the full reasoning process is
+   visible as it arrives. The chat-area auto-scroll keeps the newest content
+   in view; no internal scroll is needed. */
+.thinking-block-scroll--streaming {
   max-height: none;
   overflow-y: visible;
 }
@@ -13748,10 +13773,11 @@ input {
 }
 
 .theme-mode-option {
-  display: inline-flex;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
+  gap: 8px;
+  padding: 10px 14px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-color);
   background: var(--bg-secondary);
@@ -13855,8 +13881,12 @@ input {
   justify-content: center;
 }
 
-.theme-custom-editor {
+.theme-custom-edit-action {
   margin-top: 10px;
+  justify-content: flex-start;
+}
+
+.theme-custom-editor {
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -14106,7 +14136,67 @@ input {
   filter: blur(var(--theme-bg-blur, 0px));
   pointer-events: none;
 }
-
 :root:not([data-theme-bg="on"]) .app-shell::after {
   display: none;
+}
+
+/* ===== AI Color Palette Modal ===== */
+.theme-ai-color-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.theme-ai-color-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.theme-ai-color-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.theme-ai-color-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.theme-ai-color-warning {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--accent-red);
+  border-radius: var(--radius-md);
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* Fixed-height streaming JSON preview with stable scrollbar gutter so the
+   layout does not shift when content grows past the scroll threshold. */
+.theme-ai-color-preview {
+  height: 280px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+}
+
+.theme-ai-color-markdown {
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.theme-ai-color-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }

@@ -7,7 +7,6 @@ use crate::api::config::get_api_config_custom_headers;
 use crate::api::conversation::{
     create_response_stream as create_conversation_response_stream,
 };
-use crate::api::summary::generate_conversation_summary as generate_summary;
 use crate::api::models::{
     fetch_available_models as fetch_models_with_config, fetch_available_models_for_active_config,
     ApiConfigForModels, Model,
@@ -15,6 +14,8 @@ use crate::api::models::{
 use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback,
 };
+use crate::api::summary::generate_conversation_summary as generate_summary;
+use crate::api::theme_palette::generate_theme_palette_stream;
 use crate::mcp::servers::bash::{authorize_sensitive_command as authorize_command, BashStreamCallback};
 use crate::mcp::servers::browser::BrowserCommandCallback;
 use crate::mcp::servers::skills::{ProjectSkillDefinition, SkillDefinition, SkillsService};
@@ -83,6 +84,41 @@ pub async fn create_response_stream(
 #[napi]
 pub fn abort_response_stream(stream_id: String) -> napi::Result<bool> {
     Ok(crate::api::cancel::cancel_stream(&stream_id))
+}
+
+/// Generate a theme palette JSON from a background image using the selected
+/// API config's **advanced model** (must support vision). Dispatches to
+/// whichever provider (chat / responses / anthropic / gemini) the config
+/// specifies.
+///
+/// - `imagePath`: absolute path to the background image file
+/// - `profileName`: API config profile name. Empty string means "use the
+///   active profile".
+/// - `onChunk`: streaming callback receiving `ResponsesApiStreamChunk`
+/// - `streamId`: unique stream id for cancellation support
+///
+/// Returns the full `ResponsesApiResult` (`.content` holds the JSON palette).
+#[napi(
+    ts_args_type = "imagePath: string, profileName: string, onChunk: (chunk: ResponsesApiStreamChunk) => void, streamId: string",
+    ts_return_type = "Promise<ResponsesApiResult>"
+)]
+pub async fn generate_theme_palette(
+    image_path: String,
+    profile_name: String,
+    on_chunk: ResponsesApiStreamCallback,
+    stream_id: String,
+) -> napi::Result<ResponsesApiResult> {
+    // 1. Register cancellation token
+    let cancel_token = crate::api::cancel::create_and_register(&stream_id);
+
+    // 2. Stream theme palette generation
+    let result =
+        generate_theme_palette_stream(image_path, profile_name, on_chunk, cancel_token).await;
+
+    // 3. Unregister stream
+    crate::api::cancel::unregister_stream(&stream_id);
+
+    result
 }
 #[napi(ts_return_type = "Promise<string>")]
 pub async fn generate_conversation_summary(conversation_id: String) -> napi::Result<String> {

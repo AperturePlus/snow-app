@@ -5,9 +5,18 @@ import type {
   ThemeMode,
 } from "./types";
 import { DEFAULT_THEME_PRESET_ID, getPresetById } from "./themePresets";
+import { themeBgUrl } from "../../../utils/themeBgUrl";
 
 export const THEME_SETTING_NAME = "Theme settings";
 export const THEME_SETTING_CODE = "theme_settings";
+
+/**
+ * 背景图不透明度上限。超过此值后前景内容可读性极差，因此滑块与归一化
+ * 都以此值为上限。调整此值需同步：normalizeThemeBackground、
+ * applyThemeCacheToDocument、ThemeBackgroundSection 滑块 max、
+ * ThemeSettingsPanel 预览 useEffect。
+ */
+export const MAX_BACKGROUND_OPACITY = 0.6;
 
 export const PALETTE_ROLE_TO_CSS_VAR: Record<keyof ThemePalette, string> = {
   bgPrimary: "--bg-primary",
@@ -211,7 +220,7 @@ export const DEFAULT_THEME_SETTINGS: ThemeSettings = {
   background: {
     enabled: false,
     imagePath: "",
-    opacity: 1,
+    opacity: 0.2,
     blur: 0,
   },
 };
@@ -276,8 +285,8 @@ export function normalizeThemeBackground(
   const source = isRecord(value) ? value : {};
   const opacity =
     typeof source.opacity === "number" && Number.isFinite(source.opacity)
-      ? Math.max(0, Math.min(1, source.opacity))
-      : 1;
+      ? Math.max(0, Math.min(MAX_BACKGROUND_OPACITY, source.opacity))
+      : DEFAULT_THEME_SETTINGS.background.opacity;
   const blur =
     typeof source.blur === "number" && Number.isFinite(source.blur)
       ? Math.max(0, Math.min(100, source.blur))
@@ -299,7 +308,7 @@ export function normalizeThemeSettings(value: unknown): ThemeSettings {
   return {
     mode,
     presetId,
-    custom: normalizeCustomTheme(source),
+    custom: normalizeCustomTheme(source.custom),
     background: normalizeThemeBackground(source.background),
   };
 }
@@ -351,3 +360,111 @@ export function isValidHex(value: string): boolean {
   }
   return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(trimmed);
 }
+
+/* ============================================================
+ * 主题启动缓存（localStorage）
+ *
+ * 主题持久化在 Rust 后端，渲染进程启动时需通过 IPC 异步读取，
+ * 期间 CSS 变量保持默认浅色，会导致深色用户看到短暂白闪。
+ * 这里在 localStorage 中缓存最近一次应用过的主题快照，供
+ * main.tsx 在加载 React 之前同步应用，消除启动闪烁。
+ * ============================================================ */
+
+const THEME_CACHE_KEY = "snow:theme-cache-v1";
+
+type ThemeCacheSnapshot = {
+  settings: ThemeSettings;
+  /** 应用快照时的系统暗色判定，仅用于调试，不参与恢复逻辑。 */
+  systemDark?: boolean;
+};
+
+const safeLocalStorage = (): Storage | null => {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) {
+      return null;
+    }
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+};
+
+/** 读取 localStorage 中的主题快照；不存在或解析失败时返回 null。 */
+export const readThemeCache = (): ThemeSettings | null => {
+  const storage = safeLocalStorage();
+  if (!storage) {
+    return null;
+  }
+  try {
+    const raw = storage.getItem(THEME_CACHE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as ThemeCacheSnapshot;
+    if (!parsed || typeof parsed !== "object" || !parsed.settings) {
+      return null;
+    }
+    return normalizeThemeSettings(parsed.settings);
+  } catch {
+    return null;
+  }
+};
+
+/** 将主题快照写入 localStorage，供下次启动使用。写入失败静默忽略。 */
+export const writeThemeCache = (settings: ThemeSettings): void => {
+  const storage = safeLocalStorage();
+  if (!storage) {
+    return;
+  }
+  try {
+    const snapshot: ThemeCacheSnapshot = { settings };
+    storage.setItem(THEME_CACHE_KEY, JSON.stringify(snapshot));
+  } catch {
+    // 忽略写入失败（如配额超限或隐私模式）。
+  }
+};
+
+/**
+ * 在 React 渲染之前同步应用缓存的主题快照到 document。
+ *
+ * 该函数刻意保持同步且不抛错，确保即使缓存缺失或损坏也不会阻塞启动。
+ * 调用方应在 main.tsx 的模块顶层（createRoot 之前）调用一次。
+ *
+ * 返回应用后的 effective mode（"light" | "dark"），便于调用方记录。
+ */
+export const applyThemeCacheToDocument = (): "light" | "dark" | null => {
+  if (typeof document === "undefined") {
+    return null;
+  }
+  const settings = readThemeCache();
+  if (!settings) {
+    return null;
+  }
+
+  const systemDark =
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const isDark =
+    settings.mode === "system" ? systemDark : settings.mode === "dark";
+
+  applyThemeModeToDocument(settings.mode);
+  const palette = resolveActivePalette(settings, isDark);
+  applyPaletteToDocument(palette);
+
+  // 同步背景图层 CSS 变量，避免启动时背景图延迟出现。
+  const bg = settings.background;
+  const root = document.documentElement;
+  if (bg.enabled && bg.imagePath) {
+    const opacity = Math.max(0, Math.min(MAX_BACKGROUND_OPACITY, bg.opacity));
+    const blur = Math.max(0, bg.blur);
+    root.style.setProperty(
+      "--theme-bg-image",
+      `url("${themeBgUrl(bg.imagePath)}")`
+    );
+    root.style.setProperty("--theme-bg-opacity", String(opacity));
+    root.style.setProperty("--theme-bg-blur", `${blur}px`);
+    root.setAttribute("data-theme-bg", "on");
+  }
+
+  return isDark ? "dark" : "light";
+};

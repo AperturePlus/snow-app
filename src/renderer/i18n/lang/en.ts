@@ -927,6 +927,31 @@ export const en = {
   "settings.themeBackgroundOpacity": "Opacity",
   "settings.themeBackgroundBlur": "Blur",
   "settings.themeBackgroundSaveError": "Failed to save background image",
+  "settings.themeAiColorButton": "AI palette",
+  "settings.themeAiColorButtonTitle":
+    "Generate a palette from the background image",
+  "settings.themeAiColorTitle": "AI color palette",
+  "settings.themeAiColorDescription":
+    "Generate a theme palette from your background image using AI.",
+  "settings.themeAiColorClose": "Close AI color palette",
+  "settings.themeAiColorProfileLabel": "API configuration",
+  "settings.themeAiColorVisionHint":
+    'AI color palette requires the selected profile\'s advanced model to support vision. Make sure "Supports vision" is enabled in API settings.',
+  "settings.themeAiColorVisionWarning":
+    "The selected profile's advanced model is marked as not supporting vision. Generation may fail.",
+  "settings.themeAiColorGenerate": "Generate",
+  "settings.themeAiColorGenerating": "Generating...",
+  "settings.themeAiColorCancel": "Cancel",
+  "settings.themeAiColorNoImageError":
+    "Please select a background image first.",
+  "settings.themeAiColorNoProfileError": "Please select an API configuration.",
+  "settings.themeAiColorLoadConfigsError": "Failed to load API configurations.",
+  "settings.themeAiColorParseError":
+    "Failed to parse the AI-generated palette. Please try again.",
+  "settings.themeAiColorGenerateError": "Failed to generate AI palette.",
+  "settings.themeAiColorSuccess": "AI palette generated and applied.",
+  "settings.themeAiColorApplied":
+    "AI palette applied. Adjust colors in the editor if needed.",
   "settings.themePreviewTitle": "Preview",
   "settings.themePreviewSidebarItem": "Selected item",
   "settings.themePreviewSidebarNormal": "Normal item",

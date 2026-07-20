@@ -1,6 +1,6 @@
-import { Monitor, Moon, Sun } from "lucide-react";
 import { useI18n } from "../../../i18n";
 import type { ThemeMode } from "./types";
+import { ThemeModeThumbnail } from "./ThemeModeThumbnail";
 
 type ThemeModeSelectorProps = {
   mode: ThemeMode;
@@ -10,25 +10,21 @@ type ThemeModeSelectorProps = {
 
 const MODE_OPTIONS: {
   value: ThemeMode;
-  icon: typeof Monitor;
   labelKey: string;
   defaultLabel: string;
 }[] = [
   {
     value: "system",
-    icon: Monitor,
     labelKey: "settings.themeModeSystem",
     defaultLabel: "System",
   },
   {
     value: "light",
-    icon: Sun,
     labelKey: "settings.themeModeLight",
     defaultLabel: "Light",
   },
   {
     value: "dark",
-    icon: Moon,
     labelKey: "settings.themeModeDark",
     defaultLabel: "Dark",
   },
@@ -44,7 +40,6 @@ export function ThemeModeSelector({
   return (
     <div className="theme-mode-selector" role="radiogroup">
       {MODE_OPTIONS.map((option) => {
-        const Icon = option.icon;
         const isActive = mode === option.value;
         return (
           <button
@@ -56,7 +51,7 @@ export function ThemeModeSelector({
             onClick={() => onChange(option.value)}
             disabled={disabled}
           >
-            <Icon size={16} strokeWidth={1.8} />
+            <ThemeModeThumbnail mode={option.value} />
             <span>
               {t(option.labelKey, { defaultValue: option.defaultLabel })}
             </span>

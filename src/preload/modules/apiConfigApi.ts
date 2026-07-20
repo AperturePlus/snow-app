@@ -23,6 +23,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const createResponseStreamId = (): string =>
   `response-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+const createThemePaletteStreamId = (): string =>
+  `theme-palette-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
 const normalizeResponseStreamChunk = (
   value: unknown
 ): ResponsesApiStreamChunk | null => {
@@ -156,4 +159,37 @@ export const apiConfigApi = {
     ipcRenderer.invoke("terminal:detect-terminals"),
   selectTerminalExecutable: (dialogTitle?: string): Promise<string | null> =>
     ipcRenderer.invoke("terminal-settings:select-executable", dialogTitle),
+  generateThemePalette: (
+    imagePath: string,
+    profileName: string,
+    onChunk?: (chunk: ResponsesApiStreamChunk) => void,
+    onStreamId?: (streamId: string) => void
+  ): Promise<ResponsesApiResult> => {
+    const streamId = createThemePaletteStreamId();
+    onStreamId?.(streamId);
+
+    const handleChunk = (_event: IpcRendererEvent, payload: unknown): void => {
+      if (!isRecord(payload) || payload.streamId !== streamId) {
+        return;
+      }
+
+      const chunk = normalizeResponseStreamChunk(payload.chunk);
+      if (chunk) {
+        onChunk?.(chunk);
+      }
+    };
+
+    ipcRenderer.on("theme:generate-palette:chunk", handleChunk);
+
+    return ipcRenderer
+      .invoke("theme:generate-palette", imagePath, profileName, streamId)
+      .finally(() => {
+        ipcRenderer.removeListener(
+          "theme:generate-palette:chunk",
+          handleChunk
+        );
+      });
+  },
+  abortThemePalette: (streamId: string): Promise<boolean> =>
+    ipcRenderer.invoke("chat:abort-response-stream", streamId),
 };

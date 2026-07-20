@@ -1,5 +1,9 @@
 import { ipcMain } from "electron";
-import type { ApiModelsConfig, NativeBridge } from "../../native/types";
+import type {
+  ApiModelsConfig,
+  NativeBridge,
+  ResponsesApiStreamChunk,
+} from "../../native/types";
 import {
   normalizeApiConfigInput,
   toApiConfigInput,
@@ -79,5 +83,41 @@ export const registerApiConfigHandlers = (native: NativeBridge): void => {
 
   ipcMain.handle("codebase-settings:import-snow-cli", () =>
     readSnowCliCodebaseSettings(native)
+  );
+
+  // ===== AI theme palette generation =====
+  ipcMain.handle(
+    "theme:generate-palette",
+    async (
+      event,
+      imagePath: unknown,
+      profileName: unknown,
+      streamId: unknown
+    ) => {
+      if (typeof imagePath !== "string" || !imagePath.trim()) {
+        throw new Error("Image path is required");
+      }
+      if (typeof streamId !== "string" || !streamId.trim()) {
+        throw new Error("Stream ID is required");
+      }
+
+      const normalizedStreamId = streamId.trim();
+      const normalizedProfileName =
+        typeof profileName === "string" ? profileName.trim() : "";
+
+      return await native.generateThemePalette(
+        imagePath.trim(),
+        normalizedProfileName,
+        (chunk: ResponsesApiStreamChunk) => {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send("theme:generate-palette:chunk", {
+              streamId: normalizedStreamId,
+              chunk,
+            });
+          }
+        },
+        normalizedStreamId
+      );
+    }
   );
 };

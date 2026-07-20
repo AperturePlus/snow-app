@@ -5,6 +5,7 @@ import {
   DEFAULT_THEME_SETTINGS,
   normalizeThemeSettings,
   resolveActivePalette,
+  writeThemeCache,
 } from "../components/sidebar/themeSettings/themeSettingsUtils";
 import type { ThemeSettings } from "../components/sidebar/themeSettings/types";
 import { themeBgUrl } from "../utils/themeBgUrl";
@@ -35,6 +36,10 @@ export const useTheme = (): {
       applyThemeModeToDocument(settings.mode);
       const palette = resolveActivePalette(settings, isDark);
       applyPaletteToDocument(palette);
+
+      // 将主题快照写入 localStorage，供下次启动时在 React 渲染前同步应用，
+      // 消除从 Rust 后端异步加载主题期间的白屏闪烁。
+      writeThemeCache(settings);
 
       // 同步窗口背景色到主进程，消除切换时的白闪。
       const bg = palette.bgPrimary;

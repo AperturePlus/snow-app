@@ -925,6 +925,12 @@ export type NativeBridge = {
     onChunk: (chunk: ResponsesApiStreamChunk) => void,
     streamId: string
   ) => Promise<ResponsesApiResult>;
+  generateThemePalette: (
+    imagePath: string,
+    profileName: string,
+    onChunk: (chunk: ResponsesApiStreamChunk) => void,
+    streamId: string
+  ) => Promise<ResponsesApiResult>;
   createCheckpoint: (workDir: string) => Promise<string>;
   restoreCheckpoint: (checkpointId: string, workDir: string) => Promise<void>;
   deleteCheckpoint: (checkpointId: string) => Promise<void>;
