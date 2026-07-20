@@ -688,6 +688,7 @@ pub async fn call_mcp_tool(
     })??;
 
     let returns_plain_text = tool_full_name == "mcp__skills__skill-execute";
+    let masking_tool_name = tool_full_name.clone();
     let result = if tool_full_name == "mcp__bash__terminal-execute" {
         let terminal_result = BashService::new()
             .execute_terminal_stream(
@@ -754,20 +755,27 @@ pub async fn call_mcp_tool(
     };
 
     if returns_plain_text {
-        return result.as_str().map(str::to_string).ok_or_else(|| {
+        let plain_text = result.as_str().map(str::to_string).ok_or_else(|| {
             Error::new(
                 Status::GenericFailure,
                 "Skill execution returned an invalid text result".to_string(),
             )
-        });
+        })?;
+        let masked = super::privacy_mask::mask_tool_result_if_needed(
+            &masking_tool_name,
+            &plain_text,
+        )
+        .await?;
+        return Ok(masked);
     }
 
-    serde_json::to_string(&result).map_err(|error| {
+    let serialized = serde_json::to_string(&result).map_err(|error| {
         Error::new(
             Status::GenericFailure,
             format!("Failed to serialize result: {error}"),
         )
-    })
+    })?;
+    super::privacy_mask::mask_tool_result_if_needed(&masking_tool_name, &serialized).await
 }
 
 fn parse_tool_args(tool_full_name: &str, args_json: &str) -> napi::Result<Value> {

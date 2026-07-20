@@ -10,4 +10,5 @@ export type MainContentView =
   | "sub-agent-settings"
   | "sensitive-command-settings"
   | "hooks-settings"
-  | "terminal-settings";
+  | "terminal-settings"
+  | "privacy-settings";

@@ -53,6 +53,18 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   ipcMain.handle("settings:set-plan-mode", (_event, enabled: boolean) =>
     native.setPlanMode(enabled)
   );
+  ipcMain.handle("settings:get-privacy-settings", () =>
+    native.getPrivacySettings()
+  );
+  ipcMain.handle(
+    "settings:set-privacy-settings",
+    (_event, settings: unknown) => {
+      if (!settings || typeof settings !== "object") {
+        throw new Error("Privacy settings must be an object");
+      }
+      return native.setPrivacySettings(settings as never);
+    }
+  );
   ipcMain.handle("codebase:get-project-scope", (_event, projectId: unknown) => {
     if (typeof projectId !== "string" || !projectId.trim()) {
       throw new Error("Project id is required");

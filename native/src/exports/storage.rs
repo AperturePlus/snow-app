@@ -14,6 +14,9 @@ use crate::storage::{
 };
 use crate::hooks::{HookExecuteInput, HookExecuteResult};
 use crate::storage::services::fs_explorer::{DirectoryEntry, FileContentResult, FileSearchResult};
+use crate::storage::services::privacy_settings::{
+    PrivacyApiConfig, PrivacySettings, PrivacyToolResultsConfig,
+};
 
 // ============================================================================
 // 所有 storage NAPI 函数均使用 async + spawn_blocking 模式，
@@ -57,6 +60,76 @@ pub async fn get_yolo_mode() -> napi::Result<bool> {
 #[napi]
 pub async fn set_yolo_mode(enabled: bool) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || crate::storage::set_yolo_mode(enabled))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi(object)]
+pub struct PrivacyApiConfigNapi {
+    pub url: String,
+    pub api_key: String,
+    pub model: String,
+}
+
+#[napi(object)]
+pub struct PrivacyToolResultsConfigNapi {
+    pub tools: Vec<String>,
+}
+
+#[napi(object)]
+pub struct PrivacySettingsNapi {
+    pub enabled: bool,
+    pub mode: String,
+    pub api: PrivacyApiConfigNapi,
+    pub tool_results: PrivacyToolResultsConfigNapi,
+}
+
+impl From<PrivacySettings> for PrivacySettingsNapi {
+    fn from(settings: PrivacySettings) -> Self {
+        PrivacySettingsNapi {
+            enabled: settings.enabled,
+            mode: settings.mode,
+            api: PrivacyApiConfigNapi {
+                url: settings.api.url,
+                api_key: settings.api.api_key,
+                model: settings.api.model,
+            },
+            tool_results: PrivacyToolResultsConfigNapi {
+                tools: settings.tool_results.tools,
+            },
+        }
+    }
+}
+
+impl From<PrivacySettingsNapi> for PrivacySettings {
+    fn from(settings: PrivacySettingsNapi) -> Self {
+        PrivacySettings {
+            enabled: settings.enabled,
+            mode: settings.mode,
+            api: PrivacyApiConfig {
+                url: settings.api.url,
+                api_key: settings.api.api_key,
+                model: settings.api.model,
+            },
+            tool_results: PrivacyToolResultsConfig {
+                tools: settings.tool_results.tools,
+            },
+        }
+    }
+}
+
+#[napi]
+pub async fn get_privacy_settings() -> napi::Result<PrivacySettingsNapi> {
+    let settings = tokio::task::spawn_blocking(crate::storage::get_privacy_settings)
+        .await
+        .map_err(map_spawn_error)??;
+    Ok(settings.into())
+}
+
+#[napi]
+pub async fn set_privacy_settings(settings: PrivacySettingsNapi) -> napi::Result<()> {
+    let settings = settings.into();
+    tokio::task::spawn_blocking(move || crate::storage::set_privacy_settings(settings))
         .await
         .map_err(map_spawn_error)?
 }

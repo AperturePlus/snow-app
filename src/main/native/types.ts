@@ -66,6 +66,23 @@ export type CodebaseProjectScopeSettings = {
   enableReranking?: boolean;
 };
 
+export type PrivacyApiConfig = {
+  url: string;
+  apiKey: string;
+  model: string;
+};
+
+export type PrivacyToolResultsConfig = {
+  tools: string[];
+};
+
+export type PrivacySettings = {
+  enabled: boolean;
+  mode: string;
+  api: PrivacyApiConfig;
+  toolResults: PrivacyToolResultsConfig;
+};
+
 export type CodebaseEmbedProgress = {
   phase: string;
   totalFiles: number;
@@ -575,6 +592,8 @@ export type NativeBridge = {
   setYoloMode: (enabled: boolean) => Promise<void>;
   getPlanMode: () => Promise<boolean>;
   setPlanMode: (enabled: boolean) => Promise<void>;
+  getPrivacySettings: () => Promise<PrivacySettings>;
+  setPrivacySettings: (settings: PrivacySettings) => Promise<void>;
   getCodebaseProjectScopeSettings: (
     projectId: string
   ) => Promise<CodebaseProjectScopeSettings>;

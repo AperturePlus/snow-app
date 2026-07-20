@@ -7,6 +7,7 @@ import type {
   DetectedTerminal,
   ImportSnowCliApiConfigsResult,
   Model,
+  PrivacySettings,
   ProxyBrowserSettings,
   ResponsesApiRequest,
   ResponsesApiResult,
@@ -67,6 +68,10 @@ export const apiConfigApi = {
     ipcRenderer.invoke("settings:get-plan-mode"),
   setPlanMode: (enabled: boolean): Promise<void> =>
     ipcRenderer.invoke("settings:set-plan-mode", enabled),
+  getPrivacySettings: (): Promise<PrivacySettings> =>
+    ipcRenderer.invoke("settings:get-privacy-settings"),
+  setPrivacySettings: (settings: PrivacySettings): Promise<void> =>
+    ipcRenderer.invoke("settings:set-privacy-settings", settings),
   listToolApprovalProjectApprovedTools: (
     projectId: string
   ): Promise<string[]> =>

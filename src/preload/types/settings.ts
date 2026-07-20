@@ -15,6 +15,23 @@ export type TerminalSettings = {
   proxy: string;
 };
 
+export type PrivacyApiConfig = {
+  url: string;
+  apiKey: string;
+  model: string;
+};
+
+export type PrivacyToolResultsConfig = {
+  tools: string[];
+};
+
+export type PrivacySettings = {
+  enabled: boolean;
+  mode: string;
+  api: PrivacyApiConfig;
+  toolResults: PrivacyToolResultsConfig;
+};
+
 export type DetectedTerminal = {
   name: string;
   path: string;

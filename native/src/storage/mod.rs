@@ -414,6 +414,18 @@ pub fn set_plan_mode(enabled: bool) -> Result<()> {
     services::plan_settings::set_plan_mode(&database_path, enabled)
 }
 
+pub fn get_privacy_settings() -> Result<services::system_settings::PrivacySettings> {
+    let database_path = ensure_database_file()?;
+    services::privacy_settings::get_privacy_settings(&database_path)
+}
+
+pub fn set_privacy_settings(
+    settings: services::system_settings::PrivacySettings,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::privacy_settings::set_privacy_settings(&database_path, &settings)
+}
+
 pub fn get_codebase_project_scope_settings(
     project_id: String,
 ) -> Result<CodebaseProjectScopeSettings> {
@@ -976,7 +988,7 @@ pub fn truncate_conversation_from_response(
     )
 }
 
-fn ensure_database_file() -> Result<PathBuf> {
+pub fn ensure_database_file() -> Result<PathBuf> {
     let storage_dir = ensure_storage_dir()?;
     let database_path = paths::database_file_path(&storage_dir);
     database::ensure_database(&database_path)?;

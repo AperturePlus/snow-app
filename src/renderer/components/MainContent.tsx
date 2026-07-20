@@ -3,6 +3,7 @@ import { CodebaseSettingsPanel } from "./sidebar/CodebaseSettingsPanel";
 import { CustomHeadersSettingsPanel } from "./sidebar/CustomHeadersSettingsPanel";
 import { HooksSettingsPanel } from "./sidebar/HooksSettingsPanel";
 import { McpSettingsPanel } from "./sidebar/McpSettingsPanel";
+import { PrivacySettingsPanel } from "./sidebar/PrivacySettingsPanel";
 import { ProxyBrowserSettingsPanel } from "./sidebar/ProxyBrowserSettingsPanel";
 import { SensitiveCommandsPanel } from "./sidebar/SensitiveCommandsPanel";
 import { SkillsSettingsPanel } from "./sidebar/SkillsSettingsPanel";
@@ -63,6 +64,8 @@ export const MainContent = ({
         />
       ) : activeView === "terminal-settings" ? (
         <TerminalSettingsPanel onClose={() => onSelectView("chat")} />
+      ) : activeView === "privacy-settings" ? (
+        <PrivacySettingsPanel onClose={() => onSelectView("chat")} />
       ) : (
         <ChatContent activeDirectory={activeDirectory} />
       )}

@@ -134,7 +134,7 @@ const SETTINGS_ITEMS: SettingsItem[] = [
     labelKey: "settings.privacySettings",
     defaultLabel: "Privacy settings",
     descriptionKey: "settings.privacySettingsInfo",
-    defaultDescription: "Control telemetry and privacy options.",
+    defaultDescription: "Redact sensitive data from tool results.",
   },
 ];
 
@@ -159,7 +159,8 @@ export function SettingsSidebarContent({
       activeMainView === "sub-agent-settings" ||
       activeMainView === "sensitive-command-settings" ||
       activeMainView === "hooks-settings" ||
-      activeMainView === "terminal-settings"
+      activeMainView === "terminal-settings" ||
+      activeMainView === "privacy-settings"
     ) {
       onSelectMainView("chat");
     }
@@ -210,6 +211,8 @@ export function SettingsSidebarContent({
                   ? "hooks-settings"
                   : item.id === "terminal"
                   ? "terminal-settings"
+                  : item.id === "privacy"
+                  ? "privacy-settings"
                   : null;
               const isActive = targetView === activeMainView;
 

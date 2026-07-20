@@ -69,6 +69,14 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to write Plan mode")
         ),
+      getPrivacySettings: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to read privacy settings")
+        ),
+      setPrivacySettings: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write privacy settings")
+        ),
       listToolApprovalProjectApprovedTools: () =>
         Promise.reject(
           new Error("Rust native bridge is required to read tool approvals")
