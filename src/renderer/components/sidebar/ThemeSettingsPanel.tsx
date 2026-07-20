@@ -1,5 +1,11 @@
-import { Loader2, Palette, RotateCcw, Save, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { RotateCcw, X } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { CustomSelect } from "../common/CustomSelect";
 import { useI18n } from "../../i18n";
@@ -27,6 +33,8 @@ import { ThemePreview } from "./themeSettings/ThemePreview";
 
 type EditorTab = "light" | "dark";
 
+const SAVE_DEBOUNCE_MS = 600;
+
 export function ThemeSettingsPanel({
   onClose,
 }: ThemeSettingsPanelProps): React.JSX.Element {
@@ -41,6 +49,19 @@ export function ThemeSettingsPanel({
   const [editorTab, setEditorTab] = useState<EditorTab>("light");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const isMountedRef = useRef(true);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -227,32 +248,58 @@ export function ThemeSettingsPanel({
     }
   };
 
-  const handleSave = async (): Promise<void> => {
-    setIsSaving(true);
-    setError("");
-    setStatus("");
-    try {
-      await window.snow.setThemeSettings(form);
-      setLastSaved(form);
-      // 通知全局 useTheme Hook 重新加载，使 App 级状态与持久化数据同步。
-      window.dispatchEvent(new CustomEvent("theme:changed"));
-      setStatus(
-        t("settings.themeSaveSuccess", {
-          defaultValue: "Theme settings saved.",
-        })
-      );
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : t("settings.themeSaveError", {
-              defaultValue: "Failed to save theme settings",
+  const saveSettings = useCallback(
+    async (settings: ThemeSettings) => {
+      setIsSaving(true);
+      setError("");
+      try {
+        await window.snow.setThemeSettings(settings);
+        if (isMountedRef.current) {
+          setLastSaved(settings);
+          // 通知全局 useTheme Hook 重新加载，使 App 级状态与持久化数据同步。
+          window.dispatchEvent(new CustomEvent("theme:changed"));
+          setStatus(
+            t("settings.themeSaveSuccess", {
+              defaultValue: "Theme settings saved.",
             })
-      );
-    } finally {
-      setIsSaving(false);
+          );
+        }
+      } catch (e) {
+        if (isMountedRef.current) {
+          setError(
+            e instanceof Error
+              ? e.message
+              : t("settings.themeSaveError", {
+                  defaultValue: "Failed to save theme settings",
+                })
+          );
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setIsSaving(false);
+        }
+      }
+    },
+    [t]
+  );
+
+  // 修改即保存：表单变化后 debounce 保存。
+  useEffect(() => {
+    if (isLoading) {
+      return;
     }
-  };
+    if (JSON.stringify(form) === JSON.stringify(lastSaved)) {
+      return;
+    }
+
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      void saveSettings(form);
+    }, SAVE_DEBOUNCE_MS);
+  }, [form, isLoading, lastSaved, saveSettings]);
 
   const handleReset = (): void => {
     setForm(lastSaved);
@@ -298,191 +345,160 @@ export function ThemeSettingsPanel({
         )}
       </div>
 
-      {isLoading ? (
-        <div className="api-settings-manual-form">
-          <div className="api-settings-manual-header">
-            <span>
-              {t("settings.themeLoading", {
-                defaultValue: "Loading theme settings...",
+      <AutoDismissNotice
+        message={error || status}
+        tone={error ? "error" : "success"}
+        onDismiss={() => {
+          setError("");
+          setStatus("");
+        }}
+      />
+
+      <div className="api-settings-manual-form">
+        <div className="api-settings-form-body">
+          <div className="api-settings-form-section">
+            <div className="api-settings-form-section-header">
+              <strong className="api-settings-form-section-title">
+                {t("settings.themeMode", {
+                  defaultValue: "Appearance mode",
+                })}
+              </strong>
+            </div>
+            <span className="settings-item-description">
+              {t("settings.themeModeInfo", {
+                defaultValue:
+                  "Choose whether the app follows the system, stays light, or stays dark.",
               })}
             </span>
+            <ThemeModeSelector
+              mode={form.mode}
+              disabled={busy}
+              onChange={handleModeChange}
+            />
           </div>
-        </div>
-      ) : (
-        <>
-          <AutoDismissNotice
-            message={error || status}
-            tone={error ? "error" : "success"}
-            onDismiss={() => {
-              setError("");
-              setStatus("");
-            }}
+
+          <div className="api-settings-form-section">
+            <div className="api-settings-form-section-header">
+              <strong className="api-settings-form-section-title">
+                {t("settings.themePresets", {
+                  defaultValue: "Preset themes",
+                })}
+              </strong>
+            </div>
+            <span className="settings-item-description">
+              {t("settings.themePresetsInfo", {
+                defaultValue:
+                  "Pick a built-in color scheme. Light and dark variants are bundled together.",
+              })}
+            </span>
+            <ThemePresetGrid
+              selectedPresetId={form.presetId}
+              disabled={busy}
+              onSelect={handlePresetSelect}
+            />
+          </div>
+
+          <div className="api-settings-form-section">
+            <div className="api-settings-form-section-header">
+              <strong className="api-settings-form-section-title">
+                {t("settings.themeCustomTitle", {
+                  defaultValue: "Custom theme",
+                })}
+              </strong>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={isCustom}
+                  onChange={(event) =>
+                    handleEnableCustom(event.target.checked)
+                  }
+                  disabled={busy}
+                  hidden
+                />
+                <span className="toggle-slider" />
+                <span>
+                  {isCustom
+                    ? t("settings.enabled", {
+                        defaultValue: "Enabled",
+                      })
+                    : t("settings.disabled", {
+                        defaultValue: "Disabled",
+                      })}
+                </span>
+              </label>
+            </div>
+            <span className="settings-item-description">
+              {t("settings.themeCustomInfo", {
+                defaultValue:
+                  "Enable to fine-tune every color. Light and dark palettes are edited separately.",
+              })}
+            </span>
+            {isCustom && (
+              <div className="theme-custom-editor">
+                <div className="theme-custom-editor-tabs">
+                  <CustomSelect
+                    value={editorTab}
+                    onChange={(value) =>
+                      handleTabChange(value as EditorTab)
+                    }
+                    disabled={busy}
+                    options={[
+                      {
+                        value: "light",
+                        label: t("settings.themeTabLight", {
+                          defaultValue: "Light palette",
+                        }),
+                      },
+                      {
+                        value: "dark",
+                        label: t("settings.themeTabDark", {
+                          defaultValue: "Dark palette",
+                        }),
+                      },
+                    ]}
+                  />
+                </div>
+                <ThemeColorEditor
+                  palette={currentPalette}
+                  disabled={busy}
+                  onChange={handleColorChange}
+                />
+              </div>
+            )}
+          </div>
+
+          <ThemeBackgroundSection
+            background={form.background}
+            disabled={busy}
+            busy={isBusy}
+            onChange={handleBackgroundChange}
+            onSelectImage={handleSelectImage}
           />
 
-          <div className="api-settings-manual-form">
-            <div className="api-settings-form-body">
-              <div className="api-settings-form-section">
-                <div className="api-settings-form-section-header">
-                  <strong className="api-settings-form-section-title">
-                    {t("settings.themeMode", {
-                      defaultValue: "Appearance mode",
-                    })}
-                  </strong>
-                </div>
-                <span className="settings-item-description">
-                  {t("settings.themeModeInfo", {
-                    defaultValue:
-                      "Choose whether the app follows the system, stays light, or stays dark.",
-                  })}
-                </span>
-                <ThemeModeSelector
-                  mode={form.mode}
-                  disabled={busy}
-                  onChange={handleModeChange}
-                />
-              </div>
-
-              <div className="api-settings-form-section">
-                <div className="api-settings-form-section-header">
-                  <strong className="api-settings-form-section-title">
-                    {t("settings.themePresets", {
-                      defaultValue: "Preset themes",
-                    })}
-                  </strong>
-                </div>
-                <span className="settings-item-description">
-                  {t("settings.themePresetsInfo", {
-                    defaultValue:
-                      "Pick a built-in color scheme. Light and dark variants are bundled together.",
-                  })}
-                </span>
-                <ThemePresetGrid
-                  selectedPresetId={form.presetId}
-                  disabled={busy}
-                  onSelect={handlePresetSelect}
-                />
-              </div>
-
-              <div className="api-settings-form-section">
-                <div className="api-settings-form-section-header">
-                  <strong className="api-settings-form-section-title">
-                    {t("settings.themeCustomTitle", {
-                      defaultValue: "Custom theme",
-                    })}
-                  </strong>
-                  <label className="toggle-switch">
-                    <input
-                      type="checkbox"
-                      checked={isCustom}
-                      onChange={(event) =>
-                        handleEnableCustom(event.target.checked)
-                      }
-                      disabled={busy}
-                      hidden
-                    />
-                    <span className="toggle-slider" />
-                    <span>
-                      {isCustom
-                        ? t("settings.enabled", {
-                            defaultValue: "Enabled",
-                          })
-                        : t("settings.disabled", {
-                            defaultValue: "Disabled",
-                          })}
-                    </span>
-                  </label>
-                </div>
-                <span className="settings-item-description">
-                  {t("settings.themeCustomInfo", {
-                    defaultValue:
-                      "Enable to fine-tune every color. Light and dark palettes are edited separately.",
-                  })}
-                </span>
-                {isCustom && (
-                  <div className="theme-custom-editor">
-                    <div className="theme-custom-editor-tabs">
-                      <CustomSelect
-                        value={editorTab}
-                        onChange={(value) =>
-                          handleTabChange(value as EditorTab)
-                        }
-                        disabled={busy}
-                        options={[
-                          {
-                            value: "light",
-                            label: t("settings.themeTabLight", {
-                              defaultValue: "Light palette",
-                            }),
-                          },
-                          {
-                            value: "dark",
-                            label: t("settings.themeTabDark", {
-                              defaultValue: "Dark palette",
-                            }),
-                          },
-                        ]}
-                      />
-                    </div>
-                    <ThemeColorEditor
-                      palette={currentPalette}
-                      disabled={busy}
-                      onChange={handleColorChange}
-                    />
-                  </div>
-                )}
-              </div>
-
-              <ThemeBackgroundSection
-                background={form.background}
-                disabled={busy}
-                busy={isBusy}
-                onChange={handleBackgroundChange}
-                onSelectImage={handleSelectImage}
-              />
-
-              <div className="api-settings-form-section">
-                <div className="api-settings-form-section-header">
-                  <strong className="api-settings-form-section-title">
-                    {t("settings.themePreviewTitle", {
-                      defaultValue: "Preview",
-                    })}
-                  </strong>
-                </div>
-                <ThemePreview palette={previewPalette} />
-              </div>
+          <div className="api-settings-form-section">
+            <div className="api-settings-form-section-header">
+              <strong className="api-settings-form-section-title">
+                {t("settings.themePreviewTitle", {
+                  defaultValue: "Preview",
+                })}
+              </strong>
             </div>
-
-            <div className="api-settings-form-actions">
-              <button
-                className="api-settings-form-btn secondary"
-                onClick={handleReset}
-                type="button"
-                disabled={busy}
-              >
-                <RotateCcw size={15} strokeWidth={1.9} />
-                <span>{t("settings.reset", { defaultValue: "Reset" })}</span>
-              </button>
-              <button
-                className="api-settings-form-btn primary"
-                onClick={() => void handleSave()}
-                type="button"
-                disabled={busy}
-              >
-                {isSaving ? (
-                  <Loader2 size={15} className="spin" />
-                ) : (
-                  <Save size={15} strokeWidth={1.9} />
-                )}
-                <span>
-                  {t("settings.saveTerminalSettings", {
-                    defaultValue: "Save settings",
-                  })}
-                </span>
-              </button>
-            </div>
+            <ThemePreview palette={previewPalette} />
           </div>
-        </>
-      )}
+        </div>
+
+        <div className="api-settings-form-actions">
+          <button
+            className="api-settings-form-btn secondary"
+            onClick={handleReset}
+            type="button"
+            disabled={busy}
+          >
+            <RotateCcw size={15} strokeWidth={1.9} />
+            <span>{t("settings.reset", { defaultValue: "Reset" })}</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

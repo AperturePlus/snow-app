@@ -1,5 +1,11 @@
 import { X } from "lucide-react";
-import { useCallback, useEffect, useState, type ChangeEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { useI18n } from "../../i18n";
 import { TerminalSettingsForm } from "./terminalSettings/TerminalSettingsForm";
@@ -22,6 +28,8 @@ import type {
   TerminalSettingsValue,
 } from "./terminalSettings/types";
 
+const SAVE_DEBOUNCE_MS = 600;
+
 export function TerminalSettingsPanel({
   onClose,
 }: TerminalSettingsPanelProps): React.JSX.Element {
@@ -40,6 +48,19 @@ export function TerminalSettingsPanel({
   >([]);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const isMountedRef = useRef(true);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -85,69 +106,93 @@ export function TerminalSettingsPanel({
     setForm((previous) => ({ ...previous, [field]: value }));
   };
 
-  const validate = (): string | null => {
-    const fontSize = Number.parseFloat(form.fontSize);
-    const lineHeight = Number.parseFloat(form.lineHeight);
+  const validate = useCallback(
+    (currentForm: TerminalSettingsFormValue): string | null => {
+      const fontSize = Number.parseFloat(currentForm.fontSize);
+      const lineHeight = Number.parseFloat(currentForm.lineHeight);
 
-    if (!Number.isFinite(fontSize) || fontSize < 6 || fontSize > 72) {
-      return t("settings.terminalFontSizeValidationError", {
-        defaultValue: "Font size must be between 6 and 72.",
-      });
+      if (!Number.isFinite(fontSize) || fontSize < 6 || fontSize > 72) {
+        return t("settings.terminalFontSizeValidationError", {
+          defaultValue: "Font size must be between 6 and 72.",
+        });
+      }
+
+      if (!Number.isFinite(lineHeight) || lineHeight < 0.5 || lineHeight > 3) {
+        return t("settings.terminalLineHeightValidationError", {
+          defaultValue: "Line height must be between 0.5 and 3.",
+        });
+      }
+
+      return null;
+    },
+    [t]
+  );
+
+  const saveSettings = useCallback(
+    async (settings: TerminalSettingsValue) => {
+      setIsSaving(true);
+      setError("");
+      try {
+        await window.snow.setSystemSetting(
+          TERMINAL_SETTING_NAME,
+          TERMINAL_SETTING_CODE,
+          JSON.stringify(settings)
+        );
+        if (isMountedRef.current) {
+          setLastSaved(settings);
+          notifyTerminalSettingsChanged();
+          setStatus(
+            t("settings.terminalSaveSuccess", {
+              defaultValue: "Saved terminal settings.",
+            })
+          );
+        }
+      } catch (e) {
+        if (isMountedRef.current) {
+          setError(
+            e instanceof Error
+              ? e.message
+              : t("settings.terminalSaveError", {
+                  defaultValue: "Failed to save terminal settings",
+                })
+          );
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setIsSaving(false);
+        }
+      }
+    },
+    [t]
+  );
+
+  // 修改即保存：表单变化后 debounce 保存，验证失败则不保存。
+  useEffect(() => {
+    if (isLoading) {
+      return;
     }
-
-    if (!Number.isFinite(lineHeight) || lineHeight < 0.5 || lineHeight > 3) {
-      return t("settings.terminalLineHeightValidationError", {
-        defaultValue: "Line height must be between 0.5 and 3.",
-      });
-    }
-
-    return null;
-  };
-
-  const saveSettings = async (settings: TerminalSettingsValue) => {
-    await window.snow.setSystemSetting(
-      TERMINAL_SETTING_NAME,
-      TERMINAL_SETTING_CODE,
-      JSON.stringify(settings)
-    );
-    setLastSaved(settings);
-  };
-
-  const handleSave = async () => {
-    const validationError = validate();
-
+    const validationError = validate(form);
     if (validationError) {
-      setError(validationError);
-      setStatus("");
+      setError((prev) =>
+        prev === validationError ? prev : validationError
+      );
+      return;
+    }
+    setError((prev) => (prev === "" ? prev : ""));
+
+    const settings = toTerminalSettings(form);
+    if (JSON.stringify(settings) === JSON.stringify(lastSaved)) {
       return;
     }
 
-    const settings = toTerminalSettings(form);
-    setIsSaving(true);
-    setError("");
-    setStatus("");
-
-    try {
-      await saveSettings(settings);
-      setForm(toTerminalForm(settings));
-      notifyTerminalSettingsChanged();
-      setStatus(
-        t("settings.terminalSaveSuccess", {
-          defaultValue: "Saved terminal settings.",
-        })
-      );
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : t("settings.terminalSaveError", {
-              defaultValue: "Failed to save terminal settings",
-            })
-      );
-    } finally {
-      setIsSaving(false);
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
     }
-  };
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      void saveSettings(settings);
+    }, SAVE_DEBOUNCE_MS);
+  }, [form, isLoading, lastSaved, saveSettings, validate]);
 
   const handleSelectExecutable = async () => {
     setIsSelectingExecutable(true);
@@ -230,7 +275,6 @@ export function TerminalSettingsPanel({
           <TerminalSettingsForm
             form={form}
             isBusy={isBusy}
-            isSaving={isSaving}
             isSelectingExecutable={isSelectingExecutable}
             detectedTerminals={detectedTerminals}
             onUpdateField={updateField}
@@ -239,7 +283,6 @@ export function TerminalSettingsPanel({
               setForm((previous) => ({ ...previous, shellPath: path }))
             }
             onReset={() => setForm(toTerminalForm(lastSaved))}
-            onSave={() => void handleSave()}
             onSelectExecutable={() => void handleSelectExecutable()}
           />
         </>

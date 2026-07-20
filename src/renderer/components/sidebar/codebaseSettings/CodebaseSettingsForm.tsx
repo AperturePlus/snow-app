@@ -1,4 +1,4 @@
-import { RotateCcw, Save, Loader2 } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { type ChangeEvent } from "react";
 import { useI18n } from "../../../i18n";
 import { CustomSelect } from "../../common/CustomSelect";
@@ -9,23 +9,19 @@ import type { CodebaseSettingsForm as CodebaseSettingsFormValue } from "./types"
 type CodebaseSettingsFormProps = {
   form: CodebaseSettingsFormValue;
   isBusy: boolean;
-  isSaving: boolean;
   onUpdateField: (
     field: keyof CodebaseSettingsFormValue
   ) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
   onSetValue: (field: keyof CodebaseSettingsFormValue, value: string) => void;
   onReset: () => void;
-  onSave: () => void;
 };
 
 export function CodebaseSettingsForm({
   form,
   isBusy,
-  isSaving,
   onUpdateField,
   onSetValue,
   onReset,
-  onSave,
 }: CodebaseSettingsFormProps): React.JSX.Element {
   const { t } = useI18n();
 
@@ -244,23 +240,6 @@ export function CodebaseSettingsForm({
         >
           <RotateCcw size={15} strokeWidth={1.9} />
           <span>{t("settings.reset", { defaultValue: "Reset" })}</span>
-        </button>
-        <button
-          className="api-settings-form-btn primary"
-          onClick={onSave}
-          type="button"
-          disabled={isBusy}
-        >
-          {isSaving ? (
-            <Loader2 size={15} className="spin" />
-          ) : (
-            <Save size={15} strokeWidth={1.9} />
-          )}
-          <span>
-            {t("settings.saveCodebaseSettings", {
-              defaultValue: "Save settings",
-            })}
-          </span>
         </button>
       </div>
     </div>

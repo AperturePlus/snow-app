@@ -1,4 +1,4 @@
-import { FolderOpen, Loader2, MonitorCog, RotateCcw, Save } from "lucide-react";
+import { FolderOpen, Loader2, MonitorCog, RotateCcw } from "lucide-react";
 import { type ChangeEvent } from "react";
 import { useI18n } from "../../../i18n";
 import { CustomSelect } from "../../common/CustomSelect";
@@ -12,7 +12,6 @@ type ProxyBrowserSettingsFormProps = {
   form: ProxyBrowserSettingsFormValue;
   preview: ProxyBrowserSettingsValue;
   isBusy: boolean;
-  isSaving: boolean;
   isSelectingBrowser: boolean;
   onUpdateField: (
     field: keyof ProxyBrowserSettingsFormValue
@@ -22,7 +21,6 @@ type ProxyBrowserSettingsFormProps = {
     value: string
   ) => void;
   onReset: () => void;
-  onSave: () => void;
   onSelectBrowserExecutable: () => void;
 };
 
@@ -30,12 +28,10 @@ export function ProxyBrowserSettingsForm({
   form,
   preview,
   isBusy,
-  isSaving,
   isSelectingBrowser,
   onUpdateField,
   onSetValue,
   onReset,
-  onSave,
   onSelectBrowserExecutable,
 }: ProxyBrowserSettingsFormProps): React.JSX.Element {
   const { t } = useI18n();
@@ -194,23 +190,6 @@ export function ProxyBrowserSettingsForm({
         >
           <RotateCcw size={15} strokeWidth={1.9} />
           <span>{t("settings.reset", { defaultValue: "Reset" })}</span>
-        </button>
-        <button
-          className="api-settings-form-btn primary"
-          onClick={onSave}
-          type="button"
-          disabled={isBusy}
-        >
-          {isSaving ? (
-            <Loader2 size={15} className="spin" />
-          ) : (
-            <Save size={15} strokeWidth={1.9} />
-          )}
-          <span>
-            {t("settings.saveProxyBrowserSettings", {
-              defaultValue: "Save settings",
-            })}
-          </span>
         </button>
       </div>
     </div>

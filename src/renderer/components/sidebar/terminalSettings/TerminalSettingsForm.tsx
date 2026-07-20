@@ -1,4 +1,4 @@
-import { Loader2, RotateCcw, Save } from "lucide-react";
+import { Loader2, RotateCcw } from "lucide-react";
 import { type ChangeEvent } from "react";
 import { useI18n } from "../../../i18n";
 import { CustomSelect } from "../../common/CustomSelect";
@@ -12,7 +12,6 @@ import type {
 type TerminalSettingsFormProps = {
   form: TerminalSettingsFormValue;
   isBusy: boolean;
-  isSaving: boolean;
   isSelectingExecutable: boolean;
   detectedTerminals: DetectedTerminalOption[];
   onUpdateField: (
@@ -21,21 +20,18 @@ type TerminalSettingsFormProps = {
   onSetValue: (field: keyof TerminalSettingsFormValue, value: string) => void;
   onShellPathChange: (value: string) => void;
   onReset: () => void;
-  onSave: () => void;
   onSelectExecutable: () => void;
 };
 
 export function TerminalSettingsForm({
   form,
   isBusy,
-  isSaving,
   isSelectingExecutable,
   detectedTerminals,
   onUpdateField,
   onSetValue,
   onShellPathChange,
   onReset,
-  onSave,
   onSelectExecutable,
 }: TerminalSettingsFormProps): React.JSX.Element {
   const { t } = useI18n();
@@ -193,23 +189,6 @@ export function TerminalSettingsForm({
         >
           <RotateCcw size={15} strokeWidth={1.9} />
           <span>{t("settings.reset", { defaultValue: "Reset" })}</span>
-        </button>
-        <button
-          className="api-settings-form-btn primary"
-          onClick={onSave}
-          type="button"
-          disabled={isBusy}
-        >
-          {isSaving ? (
-            <Loader2 size={15} className="spin" />
-          ) : (
-            <Save size={15} strokeWidth={1.9} />
-          )}
-          <span>
-            {t("settings.saveTerminalSettings", {
-              defaultValue: "Save settings",
-            })}
-          </span>
         </button>
       </div>
     </div>

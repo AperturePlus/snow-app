@@ -1,8 +1,9 @@
-import { Loader2, RotateCcw, Save, X } from "lucide-react";
+import { RotateCcw, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ChangeEvent,
 } from "react";
@@ -72,6 +73,8 @@ const TOOL_OPTIONS: ToolOption[] = [
   },
 ];
 
+const SAVE_DEBOUNCE_MS = 600;
+
 type PrivacySettingsPanelProps = {
   onClose?: () => void;
 };
@@ -88,6 +91,19 @@ export function PrivacySettingsPanel({
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const isMountedRef = useRef(true);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -160,32 +176,58 @@ export function PrivacySettingsPanel({
     });
   };
 
-  const handleSave = async (): Promise<void> => {
-    setIsSaving(true);
-    setError("");
-    setStatus("");
-    try {
-      const normalized = normalizePrivacySettings(form);
-      await window.snow.setPrivacySettings(normalized);
-      setForm(normalized);
-      setLastSaved(normalized);
-      setStatus(
-        t("settings.privacySaveSuccess", {
-          defaultValue: "Privacy settings saved.",
-        })
-      );
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : t("settings.privacySaveError", {
-              defaultValue: "Failed to save privacy settings",
+  const saveSettings = useCallback(
+    async (settings: PrivacySettings) => {
+      setIsSaving(true);
+      setError("");
+      try {
+        const normalized = normalizePrivacySettings(settings);
+        await window.snow.setPrivacySettings(normalized);
+        if (isMountedRef.current) {
+          setForm(normalized);
+          setLastSaved(normalized);
+          setStatus(
+            t("settings.privacySaveSuccess", {
+              defaultValue: "Privacy settings saved.",
             })
-      );
-    } finally {
-      setIsSaving(false);
+          );
+        }
+      } catch (e) {
+        if (isMountedRef.current) {
+          setError(
+            e instanceof Error
+              ? e.message
+              : t("settings.privacySaveError", {
+                  defaultValue: "Failed to save privacy settings",
+                })
+          );
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setIsSaving(false);
+        }
+      }
+    },
+    [t]
+  );
+
+  // 修改即保存：表单变化后 debounce 保存。
+  useEffect(() => {
+    if (isLoading) {
+      return;
     }
-  };
+    if (JSON.stringify(form) === JSON.stringify(lastSaved)) {
+      return;
+    }
+
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      void saveSettings(form);
+    }, SAVE_DEBOUNCE_MS);
+  }, [form, isLoading, lastSaved, saveSettings]);
 
   const handleReset = (): void => {
     setForm(lastSaved);
@@ -220,243 +262,212 @@ export function PrivacySettingsPanel({
         )}
       </div>
 
-      {isLoading ? (
-        <div className="api-settings-manual-form">
-          <div className="api-settings-manual-header">
-            <span>
-              {t("settings.privacyLoading", {
-                defaultValue: "Loading privacy settings...",
+      <AutoDismissNotice
+        message={error || status}
+        tone={error ? "error" : "success"}
+        onDismiss={() => {
+          setError("");
+          setStatus("");
+        }}
+      />
+
+      <div className="api-settings-manual-form">
+        <div className="api-settings-manual-header">
+          <strong>
+            {t("settings.privacyManualTitle", {
+              defaultValue: "Filter configuration",
+            })}
+          </strong>
+          <span>
+            {t("settings.privacyManualInfo", {
+              defaultValue:
+                "These values are stored locally and used to redact tool results before they are sent to the model.",
+            })}
+          </span>
+        </div>
+
+        <div className="api-settings-form-body">
+          <div className="api-settings-form-section">
+            <div className="api-settings-form-section-header">
+              <strong className="api-settings-form-section-title">
+                {t("settings.privacyEnable", {
+                  defaultValue: "Enable privacy filter",
+                })}
+              </strong>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={form.enabled}
+                  onChange={(event) => updateEnabled(event.target.checked)}
+                  disabled={isBusy}
+                  hidden
+                />
+                <span className="toggle-slider" />
+                <span>
+                  {form.enabled
+                    ? t("settings.enabled", { defaultValue: "Enabled" })
+                    : t("settings.disabled", {
+                        defaultValue: "Disabled",
+                      })}
+                </span>
+              </label>
+            </div>
+            <span className="settings-item-description">
+              {t("settings.privacyEnableInfo", {
+                defaultValue:
+                  "Redact sensitive data (API keys, tokens, IDs, cards) from selected tool results before sending to the model.",
               })}
             </span>
           </div>
-        </div>
-      ) : (
-        <>
-          <AutoDismissNotice
-            message={error || status}
-            tone={error ? "error" : "success"}
-            onDismiss={() => {
-              setError("");
-              setStatus("");
-            }}
-          />
 
-          <div className="api-settings-manual-form">
-            <div className="api-settings-manual-header">
-              <strong>
-                {t("settings.privacyManualTitle", {
-                  defaultValue: "Filter configuration",
+          <div className="api-settings-form-section">
+            <div className="api-settings-form-section-header">
+              <strong className="api-settings-form-section-title">
+                {t("settings.privacyMode", {
+                  defaultValue: "Filter mode",
                 })}
               </strong>
-              <span>
-                {t("settings.privacyManualInfo", {
+            </div>
+            <div className="api-settings-form-grid">
+              <CustomSelect
+                value={form.mode}
+                options={modeOptions}
+                onChange={updateMode}
+                disabled={isBusy}
+              />
+            </div>
+            <span className="settings-item-description">
+              {form.mode === "api"
+                ? t("settings.privacyModeApiInfo", {
+                    defaultValue:
+                      "Send tool results to a configured privacy filter API for redaction.",
+                  })
+                : t("settings.privacyModeLocalInfo", {
+                    defaultValue:
+                      "Use built-in Rust regex rules for redaction. No external service required.",
+                  })}
+            </span>
+          </div>
+
+          {form.mode === "api" && (
+            <div className="api-settings-form-section">
+              <div className="api-settings-form-section-header">
+                <strong className="api-settings-form-section-title">
+                  {t("settings.privacyApiConfig", {
+                    defaultValue: "API configuration",
+                  })}
+                </strong>
+              </div>
+              <span className="settings-item-description">
+                {t("settings.privacyApiConfigInfo", {
                   defaultValue:
-                    "These values are stored locally and used to redact tool results before they are sent to the model.",
+                    "Configure the online privacy filter API endpoint.",
                 })}
               </span>
-            </div>
-
-            <div className="api-settings-form-body">
-              <div className="api-settings-form-section">
-                <div className="api-settings-form-section-header">
-                  <strong className="api-settings-form-section-title">
-                    {t("settings.privacyEnable", {
-                      defaultValue: "Enable privacy filter",
+              <div className="api-settings-form-grid">
+                <label className="api-settings-field wide">
+                  <span>
+                    {t("settings.privacyUrlLabel", {
+                      defaultValue: "URL",
                     })}
-                  </strong>
-                  <label className="toggle-switch">
+                  </span>
+                  <input
+                    value={form.api.url}
+                    onChange={updateApiField("url")}
+                    placeholder={t("settings.privacyUrlPlaceholder", {
+                      defaultValue: "https://example.com/privacy-filter",
+                    })}
+                    disabled={isBusy}
+                  />
+                </label>
+                <label className="api-settings-field wide">
+                  <span>
+                    {t("settings.privacyApiKeyLabel", {
+                      defaultValue: "API key (optional)",
+                    })}
+                  </span>
+                  <input
+                    value={form.api.apiKey}
+                    onChange={updateApiField("apiKey")}
+                    placeholder={t("settings.privacyApiKeyPlaceholder", {
+                      defaultValue: "Leave empty if not required",
+                    })}
+                    type="password"
+                    disabled={isBusy}
+                  />
+                </label>
+                <label className="api-settings-field wide">
+                  <span>
+                    {t("settings.privacyModelLabel", {
+                      defaultValue: "Model",
+                    })}
+                  </span>
+                  <input
+                    value={form.api.model}
+                    onChange={updateApiField("model")}
+                    placeholder={t("settings.privacyModelPlaceholder", {
+                      defaultValue: "openai/privacy-filter",
+                    })}
+                    disabled={isBusy}
+                  />
+                </label>
+              </div>
+            </div>
+          )}
+
+          <div className="api-settings-form-section">
+            <div className="api-settings-form-section-header">
+              <strong className="api-settings-form-section-title">
+                {t("settings.privacyToolResults", {
+                  defaultValue: "Tool results to filter",
+                })}
+              </strong>
+            </div>
+            <span className="settings-item-description">
+              {t("settings.privacyToolResultsInfo", {
+                defaultValue:
+                  "Select which tool results should be redacted before reaching the model.",
+              })}
+            </span>
+            <div className="api-settings-form-grid">
+              {TOOL_OPTIONS.map((option) => {
+                const checked = form.toolResults.tools.includes(
+                  option.value
+                );
+                return (
+                  <label key={option.value} className="toggle-switch">
                     <input
                       type="checkbox"
-                      checked={form.enabled}
-                      onChange={(event) => updateEnabled(event.target.checked)}
+                      checked={checked}
+                      onChange={() => toggleTool(option.value)}
                       disabled={isBusy}
                       hidden
                     />
                     <span className="toggle-slider" />
                     <span>
-                      {form.enabled
-                        ? t("settings.enabled", { defaultValue: "Enabled" })
-                        : t("settings.disabled", {
-                            defaultValue: "Disabled",
-                          })}
+                      {t(option.labelKey, {
+                        defaultValue: option.defaultLabel,
+                      })}
                     </span>
                   </label>
-                </div>
-                <span className="settings-item-description">
-                  {t("settings.privacyEnableInfo", {
-                    defaultValue:
-                      "Redact sensitive data (API keys, tokens, IDs, cards) from selected tool results before sending to the model.",
-                  })}
-                </span>
-              </div>
-
-              <div className="api-settings-form-section">
-                <div className="api-settings-form-section-header">
-                  <strong className="api-settings-form-section-title">
-                    {t("settings.privacyMode", {
-                      defaultValue: "Filter mode",
-                    })}
-                  </strong>
-                </div>
-                <div className="api-settings-form-grid">
-                  <CustomSelect
-                    value={form.mode}
-                    options={modeOptions}
-                    onChange={updateMode}
-                    disabled={isBusy}
-                  />
-                </div>
-                <span className="settings-item-description">
-                  {form.mode === "api"
-                    ? t("settings.privacyModeApiInfo", {
-                        defaultValue:
-                          "Send tool results to a configured privacy filter API for redaction.",
-                      })
-                    : t("settings.privacyModeLocalInfo", {
-                        defaultValue:
-                          "Use built-in Rust regex rules for redaction. No external service required.",
-                      })}
-                </span>
-              </div>
-
-              {form.mode === "api" && (
-                <div className="api-settings-form-section">
-                  <div className="api-settings-form-section-header">
-                    <strong className="api-settings-form-section-title">
-                      {t("settings.privacyApiConfig", {
-                        defaultValue: "API configuration",
-                      })}
-                    </strong>
-                  </div>
-                  <span className="settings-item-description">
-                    {t("settings.privacyApiConfigInfo", {
-                      defaultValue:
-                        "Configure the online privacy filter API endpoint.",
-                    })}
-                  </span>
-                  <div className="api-settings-form-grid">
-                    <label className="api-settings-field wide">
-                      <span>
-                        {t("settings.privacyUrlLabel", {
-                          defaultValue: "URL",
-                        })}
-                      </span>
-                      <input
-                        value={form.api.url}
-                        onChange={updateApiField("url")}
-                        placeholder={t("settings.privacyUrlPlaceholder", {
-                          defaultValue: "https://example.com/privacy-filter",
-                        })}
-                        disabled={isBusy}
-                      />
-                    </label>
-                    <label className="api-settings-field wide">
-                      <span>
-                        {t("settings.privacyApiKeyLabel", {
-                          defaultValue: "API key (optional)",
-                        })}
-                      </span>
-                      <input
-                        value={form.api.apiKey}
-                        onChange={updateApiField("apiKey")}
-                        placeholder={t("settings.privacyApiKeyPlaceholder", {
-                          defaultValue: "Leave empty if not required",
-                        })}
-                        type="password"
-                        disabled={isBusy}
-                      />
-                    </label>
-                    <label className="api-settings-field wide">
-                      <span>
-                        {t("settings.privacyModelLabel", {
-                          defaultValue: "Model",
-                        })}
-                      </span>
-                      <input
-                        value={form.api.model}
-                        onChange={updateApiField("model")}
-                        placeholder={t("settings.privacyModelPlaceholder", {
-                          defaultValue: "openai/privacy-filter",
-                        })}
-                        disabled={isBusy}
-                      />
-                    </label>
-                  </div>
-                </div>
-              )}
-
-              <div className="api-settings-form-section">
-                <div className="api-settings-form-section-header">
-                  <strong className="api-settings-form-section-title">
-                    {t("settings.privacyToolResults", {
-                      defaultValue: "Tool results to filter",
-                    })}
-                  </strong>
-                </div>
-                <span className="settings-item-description">
-                  {t("settings.privacyToolResultsInfo", {
-                    defaultValue:
-                      "Select which tool results should be redacted before reaching the model.",
-                  })}
-                </span>
-                <div className="api-settings-form-grid">
-                  {TOOL_OPTIONS.map((option) => {
-                    const checked = form.toolResults.tools.includes(
-                      option.value
-                    );
-                    return (
-                      <label key={option.value} className="toggle-switch">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleTool(option.value)}
-                          disabled={isBusy}
-                          hidden
-                        />
-                        <span className="toggle-slider" />
-                        <span>
-                          {t(option.labelKey, {
-                            defaultValue: option.defaultLabel,
-                          })}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div className="api-settings-form-actions">
-              <button
-                className="api-settings-form-btn secondary"
-                onClick={handleReset}
-                type="button"
-                disabled={isBusy}
-              >
-                <RotateCcw size={15} strokeWidth={1.9} />
-                <span>{t("settings.reset", { defaultValue: "Reset" })}</span>
-              </button>
-              <button
-                className="api-settings-form-btn primary"
-                onClick={() => void handleSave()}
-                type="button"
-                disabled={isBusy}
-              >
-                {isSaving ? (
-                  <Loader2 size={15} className="spin" />
-                ) : (
-                  <Save size={15} strokeWidth={1.9} />
-                )}
-                <span>
-                  {t("settings.saveTerminalSettings", {
-                    defaultValue: "Save settings",
-                  })}
-                </span>
-              </button>
+                );
+              })}
             </div>
           </div>
-        </>
-      )}
+        </div>
+
+        <div className="api-settings-form-actions">
+          <button
+            className="api-settings-form-btn secondary"
+            onClick={handleReset}
+            type="button"
+            disabled={isBusy}
+          >
+            <RotateCcw size={15} strokeWidth={1.9} />
+            <span>{t("settings.reset", { defaultValue: "Reset" })}</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

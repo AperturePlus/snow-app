@@ -1,5 +1,11 @@
 import { Download, Loader2, X } from "lucide-react";
-import { useCallback, useEffect, useState, type ChangeEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { useI18n } from "../../i18n";
 import { ProxyBrowserSettingsForm } from "./proxyBrowserSettings/ProxyBrowserSettingsForm";
@@ -21,6 +27,8 @@ import type {
   ProxyBrowserSettingsValue,
 } from "./proxyBrowserSettings/types";
 
+const SAVE_DEBOUNCE_MS = 600;
+
 export function ProxyBrowserSettingsPanel({
   onClose,
 }: ProxyBrowserSettingsPanelProps): React.JSX.Element {
@@ -36,6 +44,19 @@ export function ProxyBrowserSettingsPanel({
   const [isSelectingBrowser, setIsSelectingBrowser] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const isMountedRef = useRef(true);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -87,72 +108,96 @@ export function ProxyBrowserSettingsPanel({
     setForm((previous) => ({ ...previous, [field]: value }));
   };
 
-  const validate = (): string | null => {
-    const proxyPort = Number.parseInt(form.port, 10);
-    const browserDebugPort = Number.parseInt(form.browserDebugPort, 10);
+  const validate = useCallback(
+    (currentForm: ProxyBrowserSettingsFormValue): string | null => {
+      const proxyPort = Number.parseInt(currentForm.port, 10);
+      const browserDebugPort = Number.parseInt(currentForm.browserDebugPort, 10);
 
-    if (!Number.isInteger(proxyPort) || proxyPort < 1 || proxyPort > 65535) {
-      return t("settings.proxyPortValidationError", {
-        defaultValue: "Proxy port must be between 1 and 65535.",
-      });
+      if (!Number.isInteger(proxyPort) || proxyPort < 1 || proxyPort > 65535) {
+        return t("settings.proxyPortValidationError", {
+          defaultValue: "Proxy port must be between 1 and 65535.",
+        });
+      }
+
+      if (
+        !Number.isInteger(browserDebugPort) ||
+        browserDebugPort < 1 ||
+        browserDebugPort > 65535
+      ) {
+        return t("settings.browserDebugPortValidationError", {
+          defaultValue: "Browser debug port must be between 1 and 65535.",
+        });
+      }
+
+      return null;
+    },
+    [t]
+  );
+
+  const saveSettings = useCallback(
+    async (settings: ProxyBrowserSettingsValue) => {
+      setIsSaving(true);
+      setError("");
+      try {
+        await window.snow.setSystemSetting(
+          PROXY_BROWSER_SETTING_NAME,
+          PROXY_BROWSER_SETTING_CODE,
+          JSON.stringify(settings)
+        );
+        if (isMountedRef.current) {
+          setLastSaved(settings);
+          setStatus(
+            t("settings.proxyBrowserSaveSuccess", {
+              defaultValue: "Saved proxy and browser settings.",
+            })
+          );
+        }
+      } catch (e) {
+        if (isMountedRef.current) {
+          setError(
+            e instanceof Error
+              ? e.message
+              : t("settings.proxyBrowserSaveError", {
+                  defaultValue: "Failed to save proxy and browser settings",
+                })
+          );
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setIsSaving(false);
+        }
+      }
+    },
+    [t]
+  );
+
+  // 修改即保存：表单变化后 debounce 保存，验证失败则不保存。
+  useEffect(() => {
+    if (isLoading) {
+      return;
     }
-
-    if (
-      !Number.isInteger(browserDebugPort) ||
-      browserDebugPort < 1 ||
-      browserDebugPort > 65535
-    ) {
-      return t("settings.browserDebugPortValidationError", {
-        defaultValue: "Browser debug port must be between 1 and 65535.",
-      });
-    }
-
-    return null;
-  };
-
-  const saveSettings = async (settings: ProxyBrowserSettingsValue) => {
-    await window.snow.setSystemSetting(
-      PROXY_BROWSER_SETTING_NAME,
-      PROXY_BROWSER_SETTING_CODE,
-      JSON.stringify(settings)
-    );
-    setLastSaved(settings);
-  };
-
-  const handleSave = async () => {
-    const validationError = validate();
-
+    const validationError = validate(form);
     if (validationError) {
-      setError(validationError);
-      setStatus("");
+      setError((prev) =>
+        prev === validationError ? prev : validationError
+      );
+      return;
+    }
+    setError((prev) => (prev === "" ? prev : ""));
+
+    const settings = toProxyBrowserSettings(form);
+    if (JSON.stringify(settings) === JSON.stringify(lastSaved)) {
       return;
     }
 
-    const settings = toProxyBrowserSettings(form);
-    setIsSaving(true);
-    setError("");
-    setStatus("");
-
-    try {
-      await saveSettings(settings);
-      setForm(toProxyBrowserForm(settings));
-      setStatus(
-        t("settings.proxyBrowserSaveSuccess", {
-          defaultValue: "Saved proxy and browser settings.",
-        })
-      );
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : t("settings.proxyBrowserSaveError", {
-              defaultValue: "Failed to save proxy and browser settings",
-            })
-      );
-    } finally {
-      setIsSaving(false);
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
     }
-  };
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      void saveSettings(settings);
+    }, SAVE_DEBOUNCE_MS);
+  }, [form, isLoading, lastSaved, saveSettings, validate]);
 
   const handleImport = async () => {
     setIsLoading(true);
@@ -272,12 +317,10 @@ export function ProxyBrowserSettingsPanel({
         form={form}
         preview={preview}
         isBusy={isBusy}
-        isSaving={isSaving}
         isSelectingBrowser={isSelectingBrowser}
         onUpdateField={updateField}
         onSetValue={setValue}
         onReset={() => setForm(toProxyBrowserForm(lastSaved))}
-        onSave={() => void handleSave()}
         onSelectBrowserExecutable={() => void handleSelectBrowserExecutable()}
       />
     </div>

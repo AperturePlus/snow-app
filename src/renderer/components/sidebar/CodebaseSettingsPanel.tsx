@@ -1,5 +1,11 @@
 import { Download, Loader2, X } from "lucide-react";
-import { useCallback, useEffect, useState, type ChangeEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { useI18n } from "../../i18n";
 import { CodebaseSettingsForm } from "./codebaseSettings/CodebaseSettingsForm";
@@ -21,6 +27,8 @@ import type {
   CodebaseSettingsPanelProps,
 } from "./codebaseSettings/types";
 
+const SAVE_DEBOUNCE_MS = 600;
+
 export function CodebaseSettingsPanel({
   onClose,
 }: CodebaseSettingsPanelProps): React.JSX.Element {
@@ -35,6 +43,19 @@ export function CodebaseSettingsPanel({
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const isMountedRef = useRef(true);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -93,167 +114,202 @@ export function CodebaseSettingsPanel({
     return Number.isInteger(parsed) && parsed > 0 ? null : message;
   };
 
-  const validate = (): string | null => {
-    if (!form.embeddingModelName.trim()) {
-      return t("settings.codebaseValidationModelNameRequired", {
-        defaultValue:
-          "Embedding model name is required when codebase is enabled.",
-      });
-    }
-
-    if (!form.embeddingBaseUrl.trim()) {
-      return t("settings.codebaseValidationBaseUrlRequired", {
-        defaultValue:
-          "Embedding base URL is required when codebase is enabled.",
-      });
-    }
-
-    const numericChecks: Array<[string, string]> = [
-      [
-        form.embeddingDimensions,
-        t("settings.codebaseValidationDimensionsPositive", {
-          defaultValue: "Embedding dimensions must be greater than 0.",
-        }),
-      ],
-      [
-        form.batchMaxLines,
-        t("settings.codebaseValidationMaxLinesPositive", {
-          defaultValue: "Batch max lines must be greater than 0.",
-        }),
-      ],
-      [
-        form.batchConcurrency,
-        t("settings.codebaseValidationConcurrencyPositive", {
-          defaultValue: "Batch concurrency must be greater than 0.",
-        }),
-      ],
-      [
-        form.chunkingMaxLinesPerChunk,
-        t("settings.codebaseValidationMaxLinesPerChunkPositive", {
-          defaultValue: "Max lines per chunk must be greater than 0.",
-        }),
-      ],
-      [
-        form.chunkingMinLinesPerChunk,
-        t("settings.codebaseValidationMinLinesPerChunkPositive", {
-          defaultValue: "Min lines per chunk must be greater than 0.",
-        }),
-      ],
-      [
-        form.chunkingMinCharsPerChunk,
-        t("settings.codebaseValidationMinCharsPerChunkPositive", {
-          defaultValue: "Min chars per chunk must be greater than 0.",
-        }),
-      ],
-    ];
-
-    for (const [value, message] of numericChecks) {
-      const validationError = validatePositiveInteger(value, message);
-
-      if (validationError) {
-        return validationError;
-      }
-    }
-
-    const overlapLines = Number.parseInt(form.chunkingOverlapLines, 10);
-    const maxLinesPerChunk = Number.parseInt(form.chunkingMaxLinesPerChunk, 10);
-
-    if (!Number.isInteger(overlapLines) || overlapLines < 0) {
-      return t("settings.codebaseValidationOverlapLinesNonNegative", {
-        defaultValue: "Overlap lines must be 0 or greater.",
-      });
-    }
-
-    if (
-      Number.isInteger(maxLinesPerChunk) &&
-      overlapLines >= maxLinesPerChunk
-    ) {
-      return t("settings.codebaseValidationOverlapLessThanMaxLines", {
-        defaultValue: "Overlap lines must be less than max lines per chunk.",
-      });
-    }
-
-    if (form.rerankingModelName.trim() || form.rerankingBaseUrl.trim()) {
-      if (!form.rerankingModelName.trim()) {
-        return t("settings.codebaseValidationRerankingModelNameRequired", {
+  const validate = useCallback(
+    (currentForm: CodebaseSettingsFormValue): string | null => {
+      if (!currentForm.embeddingModelName.trim()) {
+        return t("settings.codebaseValidationModelNameRequired", {
           defaultValue:
-            "Reranking model name is required when reranking is enabled.",
+            "Embedding model name is required when codebase is enabled.",
         });
       }
 
-      if (!form.rerankingBaseUrl.trim()) {
-        return t("settings.codebaseValidationRerankingBaseUrlRequired", {
+      if (!currentForm.embeddingBaseUrl.trim()) {
+        return t("settings.codebaseValidationBaseUrlRequired", {
           defaultValue:
-            "Reranking base URL is required when reranking is enabled.",
+            "Embedding base URL is required when codebase is enabled.",
         });
       }
 
-      const contextLengthError = validatePositiveInteger(
-        form.rerankingContextLength,
-        t("settings.codebaseValidationRerankingContextLengthPositive", {
-          defaultValue: "Reranking context length must be greater than 0.",
-        })
-      );
+      const numericChecks: Array<[string, string]> = [
+        [
+          currentForm.embeddingDimensions,
+          t("settings.codebaseValidationDimensionsPositive", {
+            defaultValue: "Embedding dimensions must be greater than 0.",
+          }),
+        ],
+        [
+          currentForm.batchMaxLines,
+          t("settings.codebaseValidationMaxLinesPositive", {
+            defaultValue: "Batch max lines must be greater than 0.",
+          }),
+        ],
+        [
+          currentForm.batchConcurrency,
+          t("settings.codebaseValidationConcurrencyPositive", {
+            defaultValue: "Batch concurrency must be greater than 0.",
+          }),
+        ],
+        [
+          currentForm.chunkingMaxLinesPerChunk,
+          t("settings.codebaseValidationMaxLinesPerChunkPositive", {
+            defaultValue: "Max lines per chunk must be greater than 0.",
+          }),
+        ],
+        [
+          currentForm.chunkingMinLinesPerChunk,
+          t("settings.codebaseValidationMinLinesPerChunkPositive", {
+            defaultValue: "Min lines per chunk must be greater than 0.",
+          }),
+        ],
+        [
+          currentForm.chunkingMinCharsPerChunk,
+          t("settings.codebaseValidationMinCharsPerChunkPositive", {
+            defaultValue: "Min chars per chunk must be greater than 0.",
+          }),
+        ],
+      ];
 
-      if (contextLengthError) {
-        return contextLengthError;
+      for (const [value, message] of numericChecks) {
+        const validationError = validatePositiveInteger(value, message);
+
+        if (validationError) {
+          return validationError;
+        }
       }
 
-      const topNError = validatePositiveInteger(
-        form.rerankingTopN,
-        t("settings.codebaseValidationRerankingTopNPositive", {
-          defaultValue: "Reranking top N must be greater than 0.",
-        })
+      const overlapLines = Number.parseInt(currentForm.chunkingOverlapLines, 10);
+      const maxLinesPerChunk = Number.parseInt(
+        currentForm.chunkingMaxLinesPerChunk,
+        10
       );
 
-      if (topNError) {
-        return topNError;
+      if (!Number.isInteger(overlapLines) || overlapLines < 0) {
+        return t("settings.codebaseValidationOverlapLinesNonNegative", {
+          defaultValue: "Overlap lines must be 0 or greater.",
+        });
       }
+
+      if (
+        Number.isInteger(maxLinesPerChunk) &&
+        overlapLines >= maxLinesPerChunk
+      ) {
+        return t("settings.codebaseValidationOverlapLessThanMaxLines", {
+          defaultValue: "Overlap lines must be less than max lines per chunk.",
+        });
+      }
+
+      if (
+        currentForm.rerankingModelName.trim() ||
+        currentForm.rerankingBaseUrl.trim()
+      ) {
+        if (!currentForm.rerankingModelName.trim()) {
+          return t("settings.codebaseValidationRerankingModelNameRequired", {
+            defaultValue:
+              "Reranking model name is required when reranking is enabled.",
+          });
+        }
+
+        if (!currentForm.rerankingBaseUrl.trim()) {
+          return t("settings.codebaseValidationRerankingBaseUrlRequired", {
+            defaultValue:
+              "Reranking base URL is required when reranking is enabled.",
+          });
+        }
+
+        const contextLengthError = validatePositiveInteger(
+          currentForm.rerankingContextLength,
+          t("settings.codebaseValidationRerankingContextLengthPositive", {
+            defaultValue: "Reranking context length must be greater than 0.",
+          })
+        );
+
+        if (contextLengthError) {
+          return contextLengthError;
+        }
+
+        const topNError = validatePositiveInteger(
+          currentForm.rerankingTopN,
+          t("settings.codebaseValidationRerankingTopNPositive", {
+            defaultValue: "Reranking top N must be greater than 0.",
+          })
+        );
+
+        if (topNError) {
+          return topNError;
+        }
+      }
+
+      return null;
+    },
+    [t]
+  );
+
+  const saveSettings = useCallback(
+    async (settings: CodebaseSettings) => {
+      setIsSaving(true);
+      setError("");
+      try {
+        await window.snow.setSystemSetting(
+          CODEBASE_SETTING_NAME,
+          CODEBASE_SETTING_CODE,
+          JSON.stringify(settings)
+        );
+        const normalized = normalizeCodebaseSettings(settings);
+        if (isMountedRef.current) {
+          setForm(toCodebaseForm(normalized));
+          setLastSaved(normalized);
+          setStatus(
+            t("settings.codebaseSaveSuccess", {
+              defaultValue: "Saved codebase settings.",
+            })
+          );
+        }
+      } catch (e) {
+        if (isMountedRef.current) {
+          setError(
+            e instanceof Error
+              ? e.message
+              : t("settings.codebaseSaveError", {
+                  defaultValue: "Failed to save codebase settings",
+                })
+          );
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setIsSaving(false);
+        }
+      }
+    },
+    [t]
+  );
+
+  // 修改即保存：表单变化后 debounce 保存，验证失败则不保存。
+  useEffect(() => {
+    if (isLoading) {
+      return;
     }
-
-    return null;
-  };
-
-  const handleSave = async () => {
-    const validationError = validate();
-
+    const validationError = validate(form);
     if (validationError) {
-      setError(validationError);
-      setStatus("");
+      setError((prev) =>
+        prev === validationError ? prev : validationError
+      );
+      return;
+    }
+    setError((prev) => (prev === "" ? prev : ""));
+
+    const settings = toCodebaseSettings(form);
+    if (JSON.stringify(settings) === JSON.stringify(lastSaved)) {
       return;
     }
 
-    const settings = toCodebaseSettings(form);
-    setIsSaving(true);
-    setError("");
-    setStatus("");
-
-    try {
-      await window.snow.setSystemSetting(
-        CODEBASE_SETTING_NAME,
-        CODEBASE_SETTING_CODE,
-        JSON.stringify(settings)
-      );
-      const normalized = normalizeCodebaseSettings(settings);
-      setForm(toCodebaseForm(normalized));
-      setLastSaved(normalized);
-      setStatus(
-        t("settings.codebaseSaveSuccess", {
-          defaultValue: "Saved codebase settings.",
-        })
-      );
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : t("settings.codebaseSaveError", {
-              defaultValue: "Failed to save codebase settings",
-            })
-      );
-    } finally {
-      setIsSaving(false);
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
     }
-  };
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      void saveSettings(settings);
+    }, SAVE_DEBOUNCE_MS);
+  }, [form, isLoading, lastSaved, saveSettings, validate]);
 
   const handleImport = async () => {
     setIsLoading(true);
@@ -344,11 +400,9 @@ export function CodebaseSettingsPanel({
       <CodebaseSettingsForm
         form={form}
         isBusy={isBusy}
-        isSaving={isSaving}
         onUpdateField={updateField}
         onSetValue={setValue}
         onReset={() => setForm(toCodebaseForm(lastSaved))}
-        onSave={() => void handleSave()}
       />
     </div>
   );
