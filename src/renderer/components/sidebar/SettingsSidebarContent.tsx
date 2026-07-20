@@ -160,6 +160,7 @@ export function SettingsSidebarContent({
       activeMainView === "sensitive-command-settings" ||
       activeMainView === "hooks-settings" ||
       activeMainView === "terminal-settings" ||
+      activeMainView === "theme-settings" ||
       activeMainView === "privacy-settings"
     ) {
       onSelectMainView("chat");
@@ -211,6 +212,8 @@ export function SettingsSidebarContent({
                   ? "hooks-settings"
                   : item.id === "terminal"
                   ? "terminal-settings"
+                  : item.id === "theme"
+                  ? "theme-settings"
                   : item.id === "privacy"
                   ? "privacy-settings"
                   : null;

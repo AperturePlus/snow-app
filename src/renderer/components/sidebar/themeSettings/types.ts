@@ -1,0 +1,73 @@
+export type ThemeMode = "system" | "light" | "dark";
+
+export type ThemePalette = {
+  bgPrimary: string;
+  bgSecondary: string;
+  bgTertiary: string;
+  bgHover: string;
+  bgActive: string;
+  chromeBg: string;
+  appBg: string;
+  borderColor: string;
+  borderLight: string;
+  borderSubtle: string;
+  textPrimary: string;
+  textSecondary: string;
+  textTertiary: string;
+  textMuted: string;
+  accentGreen: string;
+  accentGreenBg: string;
+  accentGreenText: string;
+  accentRed: string;
+  accentRedBg: string;
+  accentRedText: string;
+  accentBlue: string;
+  accentBlueBg: string;
+  accentBlueText: string;
+  onSolid: string;
+  selectionBg: string;
+  focusRing: string;
+};
+
+export type CustomTheme = {
+  light: ThemePalette;
+  dark: ThemePalette;
+};
+
+export type ThemeBackground = {
+  enabled: boolean;
+  imagePath: string;
+  opacity: number;
+  blur: number;
+};
+
+export type ThemeSettings = {
+  mode: ThemeMode;
+  presetId: string;
+  custom: CustomTheme;
+  background: ThemeBackground;
+};
+
+export type ThemePreset = {
+  id: string;
+  nameKey: string;
+  defaultName: string;
+  light: ThemePalette;
+  dark: ThemePalette;
+};
+
+export type ThemeSettingsPanelProps = {
+  onClose?: () => void;
+};
+
+export type ColorGroup = {
+  titleKey: string;
+  defaultTitle: string;
+  roles: ColorRoleDefinition[];
+};
+
+export type ColorRoleDefinition = {
+  role: keyof ThemePalette;
+  labelKey: string;
+  defaultLabel: string;
+};

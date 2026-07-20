@@ -11,4 +11,5 @@ export type MainContentView =
   | "sensitive-command-settings"
   | "hooks-settings"
   | "terminal-settings"
+  | "theme-settings"
   | "privacy-settings";

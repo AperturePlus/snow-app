@@ -274,9 +274,6 @@ export function SubAgentSettingsPanel({
     <div className="api-settings-page" role="region">
       <div className="api-settings-page-header">
         <div className="api-settings-title-group">
-          <span className="api-settings-kicker">
-            {t("settings.subAgentKicker", { defaultValue: "Rust persisted" })}
-          </span>
           <strong>
             {t("settings.subAgentTitle", {
               defaultValue: "Sub-agent settings",

@@ -77,6 +77,26 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to write privacy settings")
         ),
+      getThemeSettings: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to read theme settings")
+        ),
+      setThemeSettings: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write theme settings")
+        ),
+      saveThemeBackgroundImage: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to save theme background image"
+          )
+        ),
+      deleteThemeBackgroundImage: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to delete theme background image"
+          )
+        ),
       listToolApprovalProjectApprovedTools: () =>
         Promise.reject(
           new Error("Rust native bridge is required to read tool approvals")

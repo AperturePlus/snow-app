@@ -197,9 +197,6 @@ export function PrivacySettingsPanel({
     <div className="api-settings-page" role="region">
       <div className="api-settings-page-header">
         <div className="api-settings-title-group">
-          <span className="api-settings-kicker">
-            {t("settings.privacyKicker", { defaultValue: "Privacy" })}
-          </span>
           <strong>
             {t("settings.privacyTitle", {
               defaultValue: "Privacy settings",

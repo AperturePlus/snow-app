@@ -154,11 +154,6 @@ export function SkillsSettingsPanel({
     <div className="api-settings-page skills-settings-page" role="region">
       <div className="api-settings-page-header">
         <div className="api-settings-title-group">
-          <span className="api-settings-kicker">
-            {t("settings.skillsKicker", {
-              defaultValue: "Snow CLI compatible",
-            })}
-          </span>
           <strong>
             {t("settings.skillsTitle", { defaultValue: "Skills settings" })}
           </strong>

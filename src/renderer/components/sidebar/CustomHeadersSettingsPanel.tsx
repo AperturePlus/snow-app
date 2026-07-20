@@ -274,11 +274,6 @@ export function CustomHeadersSettingsPanel({
     <div className="api-settings-page" role="region">
       <div className="api-settings-page-header">
         <div className="api-settings-title-group">
-          <span className="api-settings-kicker">
-            {t("settings.customHeadersKicker", {
-              defaultValue: "Snow CLI compatible",
-            })}
-          </span>
           <strong>
             {t("settings.customHeadersTitle", {
               defaultValue: "Custom headers",

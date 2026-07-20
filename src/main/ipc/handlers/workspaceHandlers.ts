@@ -262,4 +262,30 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
       return result.canceled ? null : result.filePaths[0] ?? null;
     }
   );
+  ipcMain.handle(
+    "theme:select-background-image",
+    async (event, dialogTitle: unknown) => {
+      const browserWindow = BrowserWindow.fromWebContents(event.sender);
+      const title =
+        typeof dialogTitle === "string" && dialogTitle.trim()
+          ? dialogTitle.trim()
+          : "Select background image";
+      const options: Electron.OpenDialogOptions = {
+        title,
+        properties: ["openFile"],
+        filters: [
+          {
+            name: "Images",
+            extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"],
+          },
+          { name: "All files", extensions: ["*"] },
+        ],
+      };
+      const result = browserWindow
+        ? await dialog.showOpenDialog(browserWindow, options)
+        : await dialog.showOpenDialog(options);
+
+      return result.canceled ? null : result.filePaths[0] ?? null;
+    }
+  );
 };

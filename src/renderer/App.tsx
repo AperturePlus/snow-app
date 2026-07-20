@@ -16,6 +16,7 @@ import type { MainContentView } from "./components/mainContent/types";
 import { SshConnectWizard } from "./components/sidebar/mainSidebar/SshConnectWizard";
 import { ConfirmDialog } from "./components/common/ConfirmDialog";
 import { useI18n } from "./i18n";
+import { useTheme } from "./hooks/useTheme";
 import type { WorkspaceDirectoryRecord } from "../preload";
 
 const SIDEBAR_MIN_WIDTH = 180;
@@ -56,6 +57,7 @@ export const App = (): React.JSX.Element => {
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const isWindows = navigator.userAgent.includes("Win");
   const { t } = useI18n();
+  useTheme();
 
   // 监听主进程的关闭请求：所有关闭路径（标题栏按钮、Alt+F4、任务栏）
   // 都会在主进程被拦截并回推 window:close-requested，此处弹出二次确认。

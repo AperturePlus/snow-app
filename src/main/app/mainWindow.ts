@@ -1,4 +1,4 @@
-import { BrowserWindow, nativeTheme, shell } from "electron";
+import { BrowserWindow, ipcMain, nativeTheme, shell } from "electron";
 import { is } from "@electron-toolkit/utils";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -20,8 +20,35 @@ export const markCloseConfirmed = (): void => {
 
 export const isCloseConfirmed = (): boolean => closeConfirmed;
 
-const getWindowBackgroundColor = (): string =>
-  nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff";
+// 缓存当前主题对应的主背景色，供窗口创建和 nativeTheme 变化时使用。
+// 由渲染进程保存主题设置后通过 IPC 同步，避免每次都异步读取 Rust 后端。
+let cachedThemeBgPrimary: string | null = null;
+
+const resolveThemeBackgroundColor = (): string => {
+  // 优先使用渲染进程同步过来的主题 bgPrimary；否则回退到 nativeTheme 判断。
+  if (cachedThemeBgPrimary) {
+    return cachedThemeBgPrimary;
+  }
+  return nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff";
+};
+
+const getWindowBackgroundColor = (): string => resolveThemeBackgroundColor();
+
+// 渲染进程保存主题后调用此 IPC，同步当前生效的 bgPrimary 到主进程，
+// 使窗口背景色与渲染层主题保持一致，消除启动/切换时的白闪。
+const registerThemeBackgroundSync = (): void => {
+  ipcMain.handle("theme:set-background-color", (_event, color: unknown) => {
+    if (typeof color === "string" && color.trim()) {
+      cachedThemeBgPrimary = color.trim();
+    } else {
+      cachedThemeBgPrimary = null;
+    }
+    return Promise.resolve();
+  });
+};
+
+// 在模块加载时注册一次主题背景色同步 IPC。
+registerThemeBackgroundSync();
 
 export const createWindow = (): void => {
   const mainWindow = new BrowserWindow({

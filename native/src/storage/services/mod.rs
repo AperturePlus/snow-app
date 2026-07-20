@@ -23,3 +23,4 @@ pub mod workspace_directories;
 pub mod yolo_settings;
 pub mod plan_settings;
 pub mod privacy_settings;
+pub mod theme_settings;

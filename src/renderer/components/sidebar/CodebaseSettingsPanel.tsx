@@ -287,11 +287,6 @@ export function CodebaseSettingsPanel({
     <div className="api-settings-page" role="region">
       <div className="api-settings-page-header">
         <div className="api-settings-title-group">
-          <span className="api-settings-kicker">
-            {t("settings.codebaseKicker", {
-              defaultValue: "Snow CLI compatible",
-            })}
-          </span>
           <strong>
             {t("settings.codebaseTitle", {
               defaultValue: "Codebase settings",

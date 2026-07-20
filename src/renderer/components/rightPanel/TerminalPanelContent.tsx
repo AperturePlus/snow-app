@@ -26,8 +26,8 @@ const lightTerminalTheme: ITheme = {
 
 const getTerminalTheme = (): ITheme => {
   if (
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-color-scheme: dark)").matches
+    typeof document !== "undefined" &&
+    document.documentElement.getAttribute("data-theme") === "dark"
   ) {
     return darkTerminalTheme;
   }
@@ -63,8 +63,7 @@ export const TerminalPanelContent = ({
     let disposeExit: (() => void) | null = null;
     let exited = false;
 
-    const fontFamily =
-      settings.fontFamily.trim() || DEFAULT_FONT_FAMILY;
+    const fontFamily = settings.fontFamily.trim() || DEFAULT_FONT_FAMILY;
 
     const term = new Terminal({
       fontFamily,
@@ -108,13 +107,15 @@ export const TerminalPanelContent = ({
     });
     resizeObserver.observe(containerRef.current);
 
-    const darkModeMedia = window.matchMedia("(prefers-color-scheme: dark)");
-    const handleThemeChange = (): void => {
+    const themeObserver = new MutationObserver(() => {
       if (!disposed) {
         term.options.theme = getTerminalTheme();
       }
-    };
-    darkModeMedia.addEventListener("change", handleThemeChange);
+    });
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
 
     const initPty = async () => {
       try {
@@ -175,7 +176,7 @@ export const TerminalPanelContent = ({
     cleanupRef.current = () => {
       disposed = true;
       resizeObserver?.disconnect();
-      darkModeMedia.removeEventListener("change", handleThemeChange);
+      themeObserver?.disconnect();
       disposeOutput?.();
       disposeExit?.();
       if (ptyIdRef.current) {
@@ -200,8 +201,7 @@ export const TerminalPanelContent = ({
     if (!term) {
       return;
     }
-    term.options.fontFamily =
-      settings.fontFamily.trim() || DEFAULT_FONT_FAMILY;
+    term.options.fontFamily = settings.fontFamily.trim() || DEFAULT_FONT_FAMILY;
     term.options.fontSize = settings.fontSize;
     term.options.fontWeight = settings.fontWeight as "normal" | "bold" | number;
     term.options.lineHeight = settings.lineHeight;

@@ -65,6 +65,33 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       return native.setPrivacySettings(settings as never);
     }
   );
+  ipcMain.handle("settings:get-theme-settings", () =>
+    native.getThemeSettings()
+  );
+  ipcMain.handle("settings:set-theme-settings", (_event, settings: unknown) => {
+    if (!settings || typeof settings !== "object") {
+      throw new Error("Theme settings must be an object");
+    }
+    return native.setThemeSettings(settings as never);
+  });
+  ipcMain.handle(
+    "theme:save-background-image",
+    (_event, sourcePath: unknown) => {
+      if (typeof sourcePath !== "string" || !sourcePath.trim()) {
+        throw new Error("Background image source path is required");
+      }
+      return native.saveThemeBackgroundImage(sourcePath);
+    }
+  );
+  ipcMain.handle(
+    "theme:delete-background-image",
+    (_event, imagePath: unknown) => {
+      if (typeof imagePath !== "string") {
+        throw new Error("Background image path must be a string");
+      }
+      return native.deleteThemeBackgroundImage(imagePath);
+    }
+  );
   ipcMain.handle("codebase:get-project-scope", (_event, projectId: unknown) => {
     if (typeof projectId !== "string" || !projectId.trim()) {
       throw new Error("Project id is required");

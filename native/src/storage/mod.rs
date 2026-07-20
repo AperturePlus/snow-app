@@ -426,6 +426,113 @@ pub fn set_privacy_settings(
     services::privacy_settings::set_privacy_settings(&database_path, &settings)
 }
 
+pub fn get_theme_settings() -> Result<services::system_settings::ThemeSettings> {
+    let database_path = ensure_database_file()?;
+    services::theme_settings::get_theme_settings(&database_path)
+}
+
+pub fn set_theme_settings(
+    settings: services::system_settings::ThemeSettings,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::theme_settings::set_theme_settings(&database_path, &settings)
+}
+
+/// 将用户选择的背景图文件复制到 ~/.snowapp/backgrounds/ 目录下，
+/// 返回复制后的目标文件绝对路径。文件名使用时间戳 + 原始扩展名，
+/// 避免覆盖已有文件。所有文件 I/O 均在调用方的 spawn_blocking 中执行。
+pub fn save_theme_background_image(source_path: String) -> Result<String> {
+    let trimmed_source = source_path.trim();
+    if trimmed_source.is_empty() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Background image source path is required".to_string(),
+        ));
+    }
+
+    let source = std::path::Path::new(trimmed_source);
+    if !source.exists() {
+        return Err(Error::new(
+            Status::GenericFailure,
+            format!("Background image source file does not exist: {trimmed_source}"),
+        ));
+    }
+
+    let storage_dir = ensure_storage_dir()?;
+    let backgrounds_dir = storage_dir.join("backgrounds");
+    fs::create_dir_all(&backgrounds_dir).map_err(|error| {
+        Error::from_reason(format!(
+            "Failed to create backgrounds directory at '{}': {error}",
+            backgrounds_dir.display()
+        ))
+    })?;
+
+    let extension = source
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_lowercase())
+        .filter(|ext| {
+            matches!(
+                ext.as_str(),
+                "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg"
+            )
+        })
+        .unwrap_or_else(|| "png".to_string());
+
+    let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S").to_string();
+    let random_suffix = uuid::Uuid::new_v4().simple().to_string();
+    let dest_file_name = format!("bg-{timestamp}-{random_suffix}.{extension}");
+    let dest_path = backgrounds_dir.join(&dest_file_name);
+
+    fs::copy(source, &dest_path).map_err(|error| {
+        Error::from_reason(format!(
+            "Failed to copy background image to '{}': {error}",
+            dest_path.display()
+        ))
+    })?;
+
+    Ok(dest_path.to_string_lossy().into_owned())
+}
+
+/// 删除指定的背景图文件。传入空字符串时静默返回 Ok。
+pub fn delete_theme_background_image(image_path: String) -> Result<()> {
+    let trimmed = image_path.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+
+    let path = std::path::Path::new(trimmed);
+    if !path.exists() {
+        return Ok(());
+    }
+
+    // 安全检查：只允许删除 ~/.snowapp/backgrounds/ 目录下的文件，
+    // 防止误删用户其他位置的文件。
+    let storage_dir = paths::app_storage_dir()?;
+    let backgrounds_dir = storage_dir.join("backgrounds");
+    let canonical_backgrounds = backgrounds_dir.canonicalize().map_err(|error| {
+        Error::from_reason(format!(
+            "Failed to resolve backgrounds directory: {error}"
+        ))
+    })?;
+    let canonical_target = path.canonicalize().map_err(|error| {
+        Error::from_reason(format!("Failed to resolve target image path: {error}"))
+    })?;
+
+    if !canonical_target.starts_with(&canonical_backgrounds) {
+        return Err(Error::new(
+            Status::GenericFailure,
+            "Refused to delete a file outside the backgrounds directory".to_string(),
+        ));
+    }
+
+    fs::remove_file(&canonical_target).map_err(|error| {
+        Error::from_reason(format!("Failed to delete background image: {error}"))
+    })?;
+
+    Ok(())
+}
+
 pub fn get_codebase_project_scope_settings(
     project_id: String,
 ) -> Result<CodebaseProjectScopeSettings> {

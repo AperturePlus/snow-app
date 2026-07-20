@@ -438,11 +438,6 @@ export function HooksSettingsPanel({
     <div className="api-settings-page" role="region">
       <div className="api-settings-page-header">
         <div className="api-settings-title-group">
-          <span className="api-settings-kicker">
-            {t("settings.hooksKicker", {
-              defaultValue: "Snow CLI compatible",
-            })}
-          </span>
           <strong>
             {t("settings.hooksTitle", {
               defaultValue: "Hooks settings",

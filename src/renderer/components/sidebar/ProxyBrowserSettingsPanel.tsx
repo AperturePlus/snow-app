@@ -214,11 +214,6 @@ export function ProxyBrowserSettingsPanel({
     <div className="api-settings-page" role="region">
       <div className="api-settings-page-header">
         <div className="api-settings-title-group">
-          <span className="api-settings-kicker">
-            {t("settings.proxyBrowserKicker", {
-              defaultValue: "Snow CLI compatible",
-            })}
-          </span>
           <strong>
             {t("settings.proxyBrowserTitle", {
               defaultValue: "Proxy and browser settings",

@@ -12,6 +12,7 @@ import type {
   ResponsesApiRequest,
   ResponsesApiResult,
   ResponsesApiStreamChunk,
+  ThemeSettings,
 } from "../types";
 
 const CHAT_CREATE_RESPONSE_CHUNK_CHANNEL = "chat:create-response:chunk";
@@ -72,6 +73,18 @@ export const apiConfigApi = {
     ipcRenderer.invoke("settings:get-privacy-settings"),
   setPrivacySettings: (settings: PrivacySettings): Promise<void> =>
     ipcRenderer.invoke("settings:set-privacy-settings", settings),
+  getThemeSettings: (): Promise<ThemeSettings> =>
+    ipcRenderer.invoke("settings:get-theme-settings"),
+  setThemeSettings: (settings: ThemeSettings): Promise<void> =>
+    ipcRenderer.invoke("settings:set-theme-settings", settings),
+  selectThemeBackgroundImage: (dialogTitle?: string): Promise<string | null> =>
+    ipcRenderer.invoke("theme:select-background-image", dialogTitle),
+  saveThemeBackgroundImage: (sourcePath: string): Promise<string> =>
+    ipcRenderer.invoke("theme:save-background-image", sourcePath),
+  deleteThemeBackgroundImage: (imagePath: string): Promise<void> =>
+    ipcRenderer.invoke("theme:delete-background-image", imagePath),
+  setThemeBackgroundColor: (color: string): Promise<void> =>
+    ipcRenderer.invoke("theme:set-background-color", color),
   listToolApprovalProjectApprovedTools: (
     projectId: string
   ): Promise<string[]> =>

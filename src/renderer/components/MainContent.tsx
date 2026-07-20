@@ -10,6 +10,7 @@ import { SkillsSettingsPanel } from "./sidebar/SkillsSettingsPanel";
 import { SubAgentSettingsPanel } from "./sidebar/SubAgentSettingsPanel";
 import { SystemPromptSettingsPanel } from "./sidebar/SystemPromptSettingsPanel";
 import { TerminalSettingsPanel } from "./sidebar/TerminalSettingsPanel";
+import { ThemeSettingsPanel } from "./sidebar/ThemeSettingsPanel";
 import { ChatContent } from "./mainContent/ChatContent";
 import type { MainContentView } from "./mainContent/types";
 import type { WorkspaceDirectoryRecord } from "../../preload";
@@ -64,6 +65,8 @@ export const MainContent = ({
         />
       ) : activeView === "terminal-settings" ? (
         <TerminalSettingsPanel onClose={() => onSelectView("chat")} />
+      ) : activeView === "theme-settings" ? (
+        <ThemeSettingsPanel onClose={() => onSelectView("chat")} />
       ) : activeView === "privacy-settings" ? (
         <PrivacySettingsPanel onClose={() => onSelectView("chat")} />
       ) : (

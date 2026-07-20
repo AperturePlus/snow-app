@@ -35,6 +35,11 @@ const DEFAULT_PRIVACY_SETTING_NAME: &str = "Privacy settings";
 const DEFAULT_PRIVACY_SETTING_CODE: &str = "privacy_settings";
 const DEFAULT_PRIVACY_SETTING_VALUE: &str = "{\"enabled\":false,\"mode\":\"local\",\"api\":{\"url\":\"\",\"apiKey\":\"\",\"model\":\"openai/privacy-filter\"},\"toolResults\":{\"tools\":[\"mcp__filesystem__read\",\"mcp__grep__search\",\"mcp__bash__terminal-execute\"]}}";
 
+const DEFAULT_THEME_SETTING_NAME: &str = "Theme settings";
+const DEFAULT_THEME_SETTING_CODE: &str = "theme_settings";
+// 默认主题：跟随系统 + snow 预设 + 无背景图 + 100% 不透明
+const DEFAULT_THEME_SETTING_VALUE: &str = "{\"mode\":\"system\",\"presetId\":\"snow\",\"custom\":{\"light\":{\"bgPrimary\":\"#ffffff\",\"bgSecondary\":\"#f9fafb\",\"bgTertiary\":\"#f3f4f6\",\"bgHover\":\"#f3f4f6\",\"bgActive\":\"#e5e7eb\",\"chromeBg\":\"#f8fafc\",\"appBg\":\"#eef2f7\",\"borderColor\":\"#e5e7eb\",\"borderLight\":\"#f3f4f6\",\"borderSubtle\":\"#d1d5db\",\"textPrimary\":\"#111827\",\"textSecondary\":\"#374151\",\"textTertiary\":\"#6b7280\",\"textMuted\":\"#9ca3af\",\"accentGreen\":\"#22c55e\",\"accentGreenBg\":\"#dcfce7\",\"accentGreenText\":\"#166534\",\"accentRed\":\"#ef4444\",\"accentRedBg\":\"#fee2e2\",\"accentRedText\":\"#991b1b\",\"accentBlue\":\"#3b82f6\",\"accentBlueBg\":\"#dbeafe\",\"accentBlueText\":\"#1d4ed8\",\"onSolid\":\"#ffffff\",\"selectionBg\":\"rgba(59, 130, 246, 0.2)\",\"focusRing\":\"rgba(17, 24, 39, 0.06)\"},\"dark\":{\"bgPrimary\":\"#0a0a0a\",\"bgSecondary\":\"#111111\",\"bgTertiary\":\"#1a1a1a\",\"bgHover\":\"#1f1f1f\",\"bgActive\":\"#2a2a2a\",\"chromeBg\":\"#141414\",\"appBg\":\"#050505\",\"borderColor\":\"#2b2b2b\",\"borderLight\":\"#202020\",\"borderSubtle\":\"#3a3a3a\",\"textPrimary\":\"#f5f5f5\",\"textSecondary\":\"#d4d4d4\",\"textTertiary\":\"#a3a3a3\",\"textMuted\":\"#737373\",\"accentGreen\":\"#4ade80\",\"accentGreenBg\":\"rgba(34, 197, 94, 0.18)\",\"accentGreenText\":\"#86efac\",\"accentRed\":\"#f87171\",\"accentRedBg\":\"rgba(239, 68, 68, 0.18)\",\"accentRedText\":\"#fca5a5\",\"accentBlue\":\"#58a6ff\",\"accentBlueBg\":\"rgba(59, 130, 246, 0.18)\",\"accentBlueText\":\"#93c5fd\",\"onSolid\":\"#0a0a0a\",\"selectionBg\":\"rgba(88, 166, 255, 0.28)\",\"focusRing\":\"rgba(212, 212, 212, 0.14)\"}},\"background\":{\"enabled\":false,\"imagePath\":\"\",\"opacity\":1.0,\"blur\":0}}";
+
 const PROJECT_MCP_SETTING_NAME: &str = "Project MCP scope";
 const PROJECT_MCP_SETTING_CODE_PREFIX: &str = "project_mcp_scope_";
 const PROJECT_SKILLS_SETTING_NAME: &str = "Project Skills scope";
@@ -319,6 +324,186 @@ pub fn set_privacy_settings(database_path: &Path, settings: &PrivacySettings) ->
         database_path,
         DEFAULT_PRIVACY_SETTING_NAME,
         DEFAULT_PRIVACY_SETTING_CODE,
+        &setting_value,
+    )
+}
+
+// ===== Theme settings =====
+
+/// 主题调色板，对应渲染层 CSS 变量。每个字段为合法 CSS 颜色字符串
+/// （hex 或 rgba()），serde default 使旧数据缺字段时仍可反序列化。
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ThemePalette {
+    pub bg_primary: String,
+    pub bg_secondary: String,
+    pub bg_tertiary: String,
+    pub bg_hover: String,
+    pub bg_active: String,
+    pub chrome_bg: String,
+    pub app_bg: String,
+    pub border_color: String,
+    pub border_light: String,
+    pub border_subtle: String,
+    pub text_primary: String,
+    pub text_secondary: String,
+    pub text_tertiary: String,
+    pub text_muted: String,
+    pub accent_green: String,
+    pub accent_green_bg: String,
+    pub accent_green_text: String,
+    pub accent_red: String,
+    pub accent_red_bg: String,
+    pub accent_red_text: String,
+    pub accent_blue: String,
+    pub accent_blue_bg: String,
+    pub accent_blue_text: String,
+    pub on_solid: String,
+    pub selection_bg: String,
+    pub focus_ring: String,
+}
+
+impl ThemePalette {
+    /// 将空字符串字段填充为占位透明色，避免渲染层 var() 回退为 initial。
+    fn normalize(&mut self) {
+        let placeholder = "transparent";
+        macro_rules! fill {
+            ($field:ident) => {
+                if self.$field.trim().is_empty() {
+                    self.$field = placeholder.to_string();
+                } else {
+                    self.$field = self.$field.trim().to_string();
+                }
+            };
+        }
+        fill!(bg_primary);
+        fill!(bg_secondary);
+        fill!(bg_tertiary);
+        fill!(bg_hover);
+        fill!(bg_active);
+        fill!(chrome_bg);
+        fill!(app_bg);
+        fill!(border_color);
+        fill!(border_light);
+        fill!(border_subtle);
+        fill!(text_primary);
+        fill!(text_secondary);
+        fill!(text_tertiary);
+        fill!(text_muted);
+        fill!(accent_green);
+        fill!(accent_green_bg);
+        fill!(accent_green_text);
+        fill!(accent_red);
+        fill!(accent_red_bg);
+        fill!(accent_red_text);
+        fill!(accent_blue);
+        fill!(accent_blue_bg);
+        fill!(accent_blue_text);
+        fill!(on_solid);
+        fill!(selection_bg);
+        fill!(focus_ring);
+    }
+}
+
+/// 自定义主题：亮色 + 暗色两套调色板。
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct CustomTheme {
+    pub light: ThemePalette,
+    pub dark: ThemePalette,
+}
+
+impl CustomTheme {
+    fn normalize(&mut self) {
+        self.light.normalize();
+        self.dark.normalize();
+    }
+}
+
+/// 背景图配置。image_path 为空字符串表示未设置；opacity 范围 0.0~1.0；
+/// blur 为高斯模糊像素值（0 表示不模糊）。
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ThemeBackground {
+    pub enabled: bool,
+    pub image_path: String,
+    pub opacity: f64,
+    pub blur: f64,
+}
+
+impl ThemeBackground {
+    fn normalize(&mut self) {
+        self.image_path = self.image_path.trim().to_string();
+        if !self.opacity.is_finite() || self.opacity < 0.0 {
+            self.opacity = 1.0;
+        } else if self.opacity > 1.0 {
+            self.opacity = 1.0;
+        }
+        if !self.blur.is_finite() || self.blur < 0.0 {
+            self.blur = 0.0;
+        } else if self.blur > 100.0 {
+            self.blur = 100.0;
+        }
+        if self.image_path.is_empty() {
+            self.enabled = false;
+        }
+    }
+}
+
+/// 完整主题设置：模式 + 预设 ID + 自定义调色板 + 背景图。
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ThemeSettings {
+    pub mode: String,
+    pub preset_id: String,
+    pub custom: CustomTheme,
+    pub background: ThemeBackground,
+}
+
+impl ThemeSettings {
+    fn normalize(&mut self) {
+        self.mode = self.mode.trim().to_string();
+        if !matches!(self.mode.as_str(), "system" | "light" | "dark") {
+            self.mode = "system".to_string();
+        }
+        self.preset_id = self.preset_id.trim().to_string();
+        if self.preset_id.is_empty() {
+            self.preset_id = "snow".to_string();
+        }
+        self.custom.normalize();
+        self.background.normalize();
+    }
+}
+
+pub fn get_theme_settings(database_path: &Path) -> Result<ThemeSettings> {
+    let Some(raw_value) = get_system_setting_value(database_path, DEFAULT_THEME_SETTING_CODE)?
+    else {
+        return Ok(ThemeSettings::default());
+    };
+
+    let mut settings = serde_json::from_str::<ThemeSettings>(&raw_value).map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to parse theme settings: {error}"),
+        )
+    })?;
+    settings.normalize();
+    Ok(settings)
+}
+
+pub fn set_theme_settings(database_path: &Path, settings: &ThemeSettings) -> Result<()> {
+    let mut normalized = settings.clone();
+    normalized.normalize();
+    let setting_value = serde_json::to_string(&normalized).map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to serialize theme settings: {error}"),
+        )
+    })?;
+    set_system_setting(
+        database_path,
+        DEFAULT_THEME_SETTING_NAME,
+        DEFAULT_THEME_SETTING_CODE,
         &setting_value,
     )
 }
@@ -764,6 +949,12 @@ fn seed_default_settings_with_connection(connection: &Connection) -> rusqlite::R
         DEFAULT_PRIVACY_SETTING_NAME,
         DEFAULT_PRIVACY_SETTING_CODE,
         DEFAULT_PRIVACY_SETTING_VALUE,
+    )?;
+    insert_default_setting(
+        connection,
+        DEFAULT_THEME_SETTING_NAME,
+        DEFAULT_THEME_SETTING_CODE,
+        DEFAULT_THEME_SETTING_VALUE,
     )?;
 
     Ok(())

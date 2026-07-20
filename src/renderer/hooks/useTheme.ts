@@ -1,0 +1,115 @@
+import { useCallback, useEffect, useState } from "react";
+import {
+  applyPaletteToDocument,
+  applyThemeModeToDocument,
+  DEFAULT_THEME_SETTINGS,
+  normalizeThemeSettings,
+  resolveActivePalette,
+} from "../components/sidebar/themeSettings/themeSettingsUtils";
+import type { ThemeSettings } from "../components/sidebar/themeSettings/types";
+import { themeBgUrl } from "../utils/themeBgUrl";
+
+/**
+ * 全局主题应用 Hook。
+ *
+ * 职责：
+ * 1. 启动时从 Rust 后端读取持久化的 ThemeSettings。
+ * 2. 根据 mode + presetId/custom 解析当前生效的调色板（亮/暗）。
+ * 3. 将调色板注入到 document.documentElement 的 CSS 变量上。
+ * 4. 监听系统 prefers-color-scheme 变化（mode === "system" 时）。
+ * 5. 将当前生效的 bgPrimary 同步到主进程，使窗口背景色一致。
+ * 6. 暴露 reloadTheme 方法，供设置面板保存后调用以即时刷新。
+ */
+export const useTheme = (): {
+  themeSettings: ThemeSettings;
+  reloadTheme: () => Promise<void>;
+} => {
+  const [themeSettings, setThemeSettings] = useState<ThemeSettings>(
+    DEFAULT_THEME_SETTINGS
+  );
+
+  const applyTheme = useCallback(
+    (settings: ThemeSettings, systemDark: boolean): void => {
+      const isDark =
+        settings.mode === "system" ? systemDark : settings.mode === "dark";
+      applyThemeModeToDocument(settings.mode);
+      const palette = resolveActivePalette(settings, isDark);
+      applyPaletteToDocument(palette);
+
+      // 同步窗口背景色到主进程，消除切换时的白闪。
+      const bg = palette.bgPrimary;
+      if (bg && typeof window !== "undefined" && window.snow) {
+        void window.snow.setThemeBackgroundColor(bg).catch(() => {
+          // 忽略同步失败，不影响主题应用。
+        });
+      }
+
+      // 应用背景图层 CSS 变量。
+      const bg2 = settings.background;
+      const root = document.documentElement;
+      if (bg2.enabled && bg2.imagePath) {
+        const opacity = Math.max(0, Math.min(1, bg2.opacity));
+        const blur = Math.max(0, bg2.blur);
+        root.style.setProperty(
+          "--theme-bg-image",
+          `url("${themeBgUrl(bg2.imagePath)}")`
+        );
+        root.style.setProperty("--theme-bg-opacity", String(opacity));
+        root.style.setProperty("--theme-bg-blur", `${blur}px`);
+        root.setAttribute("data-theme-bg", "on");
+      } else {
+        root.style.removeProperty("--theme-bg-image");
+        root.style.removeProperty("--theme-bg-opacity");
+        root.style.removeProperty("--theme-bg-blur");
+        root.removeAttribute("data-theme-bg");
+      }
+    },
+    []
+  );
+
+  const reloadTheme = useCallback(async (): Promise<void> => {
+    try {
+      const raw = await window.snow.getThemeSettings();
+      const normalized = normalizeThemeSettings(raw);
+      setThemeSettings(normalized);
+      const systemDark = window.matchMedia(
+        "(prefers-color-scheme: dark)"
+      ).matches;
+      applyTheme(normalized, systemDark);
+    } catch (error) {
+      console.warn("Failed to load theme settings:", error);
+    }
+  }, [applyTheme]);
+
+  useEffect(() => {
+    void reloadTheme();
+  }, [reloadTheme]);
+
+  // 监听 ThemeSettingsPanel 保存后派发的 theme:changed 事件，
+  // 使全局状态与持久化数据同步，避免 Panel 卸载后旧状态被系统暗色变化覆盖。
+  useEffect(() => {
+    const handleThemeChanged = (): void => {
+      void reloadTheme();
+    };
+    window.addEventListener("theme:changed", handleThemeChanged);
+    return () => {
+      window.removeEventListener("theme:changed", handleThemeChanged);
+    };
+  }, [reloadTheme]);
+
+  // 监听系统暗色模式变化（仅 mode === "system" 时需要重新应用）。
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = (event: MediaQueryListEvent): void => {
+      if (themeSettings.mode === "system") {
+        applyTheme(themeSettings, event.matches);
+      }
+    };
+    mediaQuery.addEventListener("change", handleChange);
+    return () => {
+      mediaQuery.removeEventListener("change", handleChange);
+    };
+  }, [themeSettings, applyTheme]);
+
+  return { themeSettings, reloadTheme };
+};

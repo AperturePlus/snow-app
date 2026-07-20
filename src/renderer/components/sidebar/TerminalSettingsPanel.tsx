@@ -181,9 +181,6 @@ export function TerminalSettingsPanel({
     <div className="api-settings-page" role="region">
       <div className="api-settings-page-header">
         <div className="api-settings-title-group">
-          <span className="api-settings-kicker">
-            {t("settings.terminalKicker", { defaultValue: "Terminal" })}
-          </span>
           <strong>
             {t("settings.terminalTitle", {
               defaultValue: "Terminal settings",

@@ -499,11 +499,6 @@ export function SensitiveCommandsPanel({
     <div className="api-settings-page" role="region">
       <div className="api-settings-page-header">
         <div className="api-settings-title-group">
-          <span className="api-settings-kicker">
-            {t("settings.sensitiveCommandKicker", {
-              defaultValue: "Snow CLI compatible",
-            })}
-          </span>
           <strong>
             {t("settings.sensitiveCommandTitle", {
               defaultValue: "Sensitive commands",
