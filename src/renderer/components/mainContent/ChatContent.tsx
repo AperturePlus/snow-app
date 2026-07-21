@@ -175,8 +175,13 @@ const ChatContentBody = ({
     let lastScrollHeight = container.scrollHeight;
     const observedChildren = new Set<Element>();
 
-    const keepAtBottomAfterResize = (): void => {
-      resizeRafId = 0;
+    // Keep the viewport pinned to the latest content synchronously, within
+    // the same frame and before paint. The ResizeObserver notification step
+    // runs before requestAnimationFrame and before paint, so adjusting
+    // scrollTop here ensures grown streaming content is never painted at a
+    // stale scroll position — which was the source of the jitter when this
+    // work was deferred to requestAnimationFrame.
+    const keepAtBottomSync = (): void => {
       if (
         scrollRef.current !== container ||
         activeConversationIdRef.current !== activeConversationId
@@ -206,13 +211,20 @@ const ChatContentBody = ({
       }
     };
 
+    // Coalesce bulk DOM mutations (child list changes, image loads) into a
+    // single check per animation frame. These events can fire in bursts and a
+    // one-frame delay is acceptable here, unlike the per-frame streaming
+    // growth handled synchronously by the ResizeObserver above.
     const scheduleResizeCheck = (): void => {
       if (resizeRafId === 0) {
-        resizeRafId = requestAnimationFrame(keepAtBottomAfterResize);
+        resizeRafId = requestAnimationFrame(() => {
+          resizeRafId = 0;
+          keepAtBottomSync();
+        });
       }
     };
 
-    const resizeObserver = new ResizeObserver(scheduleResizeCheck);
+    const resizeObserver = new ResizeObserver(keepAtBottomSync);
     const observeCurrentChildren = (): void => {
       for (const child of observedChildren) {
         if (!container.contains(child)) {

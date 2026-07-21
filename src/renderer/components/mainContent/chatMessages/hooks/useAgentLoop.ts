@@ -99,6 +99,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       };
 
       ctx.updateSessionField(sessionKey, "isStreaming", true);
+      // Reset the token probe immediately so the stale count from the
+      // previous streaming session does not briefly flash in StreamCursor
+      // before the first iteration resets it again.
+      ctx.updateSessionField(sessionKey, "streamTokenCount", 0);
       ctx.addStreamingId(sessionKey);
       ctx.updateSessionMessages(sessionKey, (currentMessages) => [
         ...currentMessages,

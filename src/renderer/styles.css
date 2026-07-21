@@ -5268,7 +5268,6 @@ input {
 }
 
 .ai-message .code-block-lang:hover {
-  background: var(--bg-hover);
   color: var(--text-primary);
 }
 
