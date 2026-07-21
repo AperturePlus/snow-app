@@ -68,6 +68,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       // must re-approve the plan for every new task.
       planApprovedRef.current = false;
 
+      // Sending a new message cancels any prior "new chat" intent — the
+      // user is now interacting with this session, so the UI should follow
+      // it normally (including auto-switching when the pending session
+      // migrates to a real conversation id).
+      ctx.setNewChatRequested(false);
+
       ctx.ensureSession(sessionKey, sessionDirId);
       const sessionRef = ctx.sessionsRefData.current.get(sessionKey);
       if (sessionRef) {
@@ -826,7 +832,14 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             // migrating from pending. Subsequent tool iterations must NOT
             // override the active conversation — the user may have switched
             // to a different conversation while tools are running.
-            if (ctx.activeConversationIdRef.current === undefined) {
+            // Additionally, if the user explicitly clicked "New chat" while
+            // this session was streaming, do NOT auto-switch back — let the
+            // conversation persist in the background and stay on the empty
+            // greeting.
+            if (
+              ctx.activeConversationIdRef.current === undefined &&
+              !ctx.newChatRequestedRef.current
+            ) {
               ctx.setActiveId(response.conversationId);
             }
           }
@@ -1761,6 +1774,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       ctx.addStreamingId,
       ctx.removeStreamingId,
       ctx.setActiveId,
+      ctx.setNewChatRequested,
       ctx.notifyAiComplete,
       requestToolAuthorizations,
     ]

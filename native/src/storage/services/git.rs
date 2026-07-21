@@ -580,6 +580,24 @@ pub fn checkout_branch(repo_path: &str, branch_name: &str) -> Result<GitCheckout
     }
 }
 
+/// Creates a new branch from the current HEAD and checks it out immediately.
+///
+/// Uses `git checkout -b <branch_name>` which fails if the branch already
+/// exists, preventing accidental overwrites. The caller is responsible for
+/// validating the branch name format before calling this function.
+pub fn create_branch(repo_path: &str, branch_name: &str) -> Result<GitCheckoutResult> {
+    match run_git(repo_path, &["checkout", "-b", branch_name]) {
+        Ok(_) => Ok(GitCheckoutResult {
+            success: true,
+            message: format!("Created and switched to {branch_name}"),
+        }),
+        Err(e) => Ok(GitCheckoutResult {
+            success: false,
+            message: format!("{e}"),
+        }),
+    }
+}
+
 pub fn discard_changes(repo_path: &str, file_paths: &[String]) -> Result<GitStageResult> {
     if file_paths.is_empty() {
         return Ok(GitStageResult {

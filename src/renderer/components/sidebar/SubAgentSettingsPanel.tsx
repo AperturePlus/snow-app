@@ -279,6 +279,11 @@ export function SubAgentSettingsPanel({
               defaultValue: "Sub-agent settings",
             })}
           </strong>
+          <span className="settings-item-description">
+            {t("settings.subAgentSettingsInfo", {
+              defaultValue: "Manage specialized AI sub-agents.",
+            })}
+          </span>
         </div>
         {onClose && (
           <button

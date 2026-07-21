@@ -1105,6 +1105,9 @@ export const en = {
   "chatCommand.mcpDescription":
     "Manage MCP services and tools for this project",
   "chatCommand.mcpNoProject": "Select a project before managing MCP services",
+  "chatCommand.roleDescription":
+    "Edit the ROLE.md role definition file for this project",
+  "chatCommand.roleNoProject": "Select a project before editing ROLE.md",
   "chatCommand.sensitiveCommandsDescription":
     "Manage sensitive command rules for this project",
   "chatCommand.sensitiveCommandsNoProject":
@@ -1197,6 +1200,20 @@ export const en = {
   "projectSkills.empty": "No Skills are available to this project",
   "projectSkills.enableForProject": "Enable for project",
   "projectSkills.disableForProject": "Disable for project",
+  "roleEditor.title": "Edit ROLE.md",
+  "roleEditor.description": "Edit the role definition file for {{project}}",
+  "roleEditor.noProject": "Select a project before editing ROLE.md.",
+  "roleEditor.loading": "Loading ROLE.md...",
+  "roleEditor.close": "Close ROLE.md editor",
+  "roleEditor.save": "Save",
+  "roleEditor.saved": "Saved",
+  "roleEditor.scopeNote":
+    "ROLE.md lives at the project root and customizes the AI assistant's role behavior.",
+  "roleEditor.placeholder": "Enter role definition content here...",
+  "roleEditor.hint":
+    "After saving, the new role definition takes effect on the next conversation.",
+  "roleEditor.sshCredentialMissing":
+    "Unable to retrieve SSH credentials. Please save them in the SSH connection wizard first.",
   "projectSkills.location.global": "Global",
   "projectSkills.location.project": "Project",
   "projectSkills.source.snow": "Snow",
@@ -1365,6 +1382,12 @@ export const en = {
   "git.localBranches": "Local",
   "git.remoteBranches": "Remote",
   "git.noBranches": "No branches found",
+  "git.createBranch": "Create Branch",
+  "git.createBranchPlaceholder": "New branch name",
+  "git.createBranchSubmit": "Create",
+  "git.createBranchInvalid": "Invalid branch name",
+  "git.createBranchExists": "Branch already exists",
+  "git.createBranchFailed": "Failed to create branch",
   "git.getStatusError": "Failed to get git status",
   "git.graph": "Git Graph",
   "git.graphLoading": "Loading commits...",

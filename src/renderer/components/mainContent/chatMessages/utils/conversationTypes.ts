@@ -168,6 +168,11 @@ export type ConversationContextValue = {
   isLoadingInitialHistory: boolean;
   draftToRestore: string | null;
   rollbackPreview: RollbackPreview | null;
+  /** True when the user explicitly clicked "New chat" while a pending or
+   *  active session was still streaming. The UI should show the empty
+   *  greeting instead of falling back to the pending session, and the
+   *  agent loop must NOT auto-switch back to the migrated conversation. */
+  newChatRequested: boolean;
   yoloMode: boolean;
   isUpdatingYoloMode: boolean;
   planMode: boolean;
@@ -184,6 +189,9 @@ export type ConversationContextValue = {
   selectionRequestIdRef: RefValue<number>;
   loadingOlderConversationIdsRef: RefValue<Set<string>>;
   sessionsRef: RefValue<Record<string, ConversationSessionState>>;
+  /** Ref mirror of newChatRequested for use inside async agent-loop closures
+   *  that cannot read the latest React state directly. */
+  newChatRequestedRef: RefValue<boolean>;
   pendingQueueRef: RefValue<Map<string, PendingQueueItem[]>>;
   handleSendMessageRef: RefValue<
     (message: string, options: ChatInputSendOptions) => void
@@ -220,6 +228,7 @@ export type ConversationContextValue = {
   setIsLoadingInitialHistory: Dispatch<SetStateAction<boolean>>;
   setDraftToRestore: Dispatch<SetStateAction<string | null>>;
   setRollbackPreview: Dispatch<SetStateAction<RollbackPreview | null>>;
+  setNewChatRequested: Dispatch<SetStateAction<boolean>>;
   setYoloModeState: Dispatch<SetStateAction<boolean>>;
   setIsUpdatingYoloMode: Dispatch<SetStateAction<boolean>>;
   setPlanModeState: Dispatch<SetStateAction<boolean>>;

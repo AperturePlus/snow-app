@@ -1,4 +1,7 @@
-import { getFileTypeIconHtml } from "../../../utils/fileIcons";
+import {
+  getCommitIconHtml,
+  getFileTypeIconHtml,
+} from "../../../utils/fileIcons";
 
 export type FileTag = {
   path: string;
@@ -11,10 +14,20 @@ export type ImageTag = {
   dataUrl: string;
 };
 
+export type CommitTag = {
+  hash: string;
+  shortHash: string;
+  author: string;
+  date: string;
+  message: string;
+  repoPath: string;
+};
+
 export type ContentSegment =
   | { type: "text"; content: string }
   | { type: "file"; tag: FileTag }
-  | { type: "image"; tag: ImageTag };
+  | { type: "image"; tag: ImageTag }
+  | { type: "commit"; tag: CommitTag };
 
 export const encodeFileTag = (tag: FileTag): string =>
   `@@${tag.isDirectory ? "dir" : "file"}:${tag.path}@@`;
@@ -22,9 +35,19 @@ export const encodeFileTag = (tag: FileTag): string =>
 export const encodeImageTag = (tag: ImageTag): string =>
   `@@image:${tag.dataUrl}@@`;
 
+export const encodeCommitTag = (tag: CommitTag): string =>
+  `@@commit:${JSON.stringify({
+    hash: tag.hash,
+    shortHash: tag.shortHash,
+    author: tag.author,
+    date: tag.date,
+    message: tag.message,
+    repoPath: tag.repoPath,
+  })}@@`;
+
 export const parseContentSegments = (content: string): ContentSegment[] => {
   const segments: ContentSegment[] = [];
-  const regex = /@@(file|dir|image):(.+?)@@/g;
+  const regex = /@@(file|dir|image|commit):(.+?)@@/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -38,7 +61,24 @@ export const parseContentSegments = (content: string): ContentSegment[] => {
     const kind = match[1];
     const value = match[2];
 
-    if (kind === "image") {
+    if (kind === "commit") {
+      try {
+        const data = JSON.parse(value) as Partial<CommitTag>;
+        segments.push({
+          type: "commit",
+          tag: {
+            hash: data.hash ?? "",
+            shortHash: data.shortHash ?? "",
+            author: data.author ?? "",
+            date: data.date ?? "",
+            message: data.message ?? "",
+            repoPath: data.repoPath ?? "",
+          },
+        });
+      } catch {
+        segments.push({ type: "text", content: match[0] });
+      }
+    } else if (kind === "image") {
       if (value.startsWith("data:image/")) {
         const mimeMatch = value.match(/^data:image\/([a-z]+);/);
         const ext = mimeMatch ? mimeMatch[1] : "png";
@@ -98,6 +138,26 @@ export const createImageChipHtml = (tag: ImageTag): string => {
   )}</span><span class="file-chip-remove" data-chip-remove="true">${CLOSE_ICON_SVG}</span></span>`;
 };
 
+export const createCommitChipHtml = (tag: CommitTag): string => {
+  const icon = getCommitIconHtml(12);
+  const chipTitle = `${tag.shortHash} ${tag.message} (${tag.author}, ${tag.date})`;
+  const commitData = escapeHtml(
+    JSON.stringify({
+      hash: tag.hash,
+      shortHash: tag.shortHash,
+      author: tag.author,
+      date: tag.date,
+      message: tag.message,
+      repoPath: tag.repoPath,
+    })
+  );
+  return `<span class="file-chip commit-chip" contenteditable="false" data-commit-tag="true" data-commit-data="${commitData}" title="${escapeHtml(
+    chipTitle
+  )}"><span class="file-chip-icon">${icon}</span><span class="file-chip-name">${escapeHtml(
+    tag.shortHash
+  )}</span><span class="file-chip-remove" data-chip-remove="true">${CLOSE_ICON_SVG}</span></span>`;
+};
+
 export const readEditableContent = (el: HTMLElement): string => {
   let result = "";
   const walk = (node: Node): void => {
@@ -117,6 +177,22 @@ export const readEditableContent = (el: HTMLElement): string => {
             elem.querySelector(".file-chip-name")?.textContent || "image.png",
           dataUrl: elem.dataset.imageDataUrl || "",
         });
+      } else if (elem.dataset.commitTag === "true") {
+        try {
+          const data = JSON.parse(
+            elem.dataset.commitData || "{}"
+          ) as Partial<CommitTag>;
+          result += encodeCommitTag({
+            hash: data.hash ?? "",
+            shortHash: data.shortHash ?? "",
+            author: data.author ?? "",
+            date: data.date ?? "",
+            message: data.message ?? "",
+            repoPath: data.repoPath ?? "",
+          });
+        } catch {
+          // Ignore malformed commit data
+        }
       } else if (elem.tagName === "BR") {
         result += "\n";
       } else {

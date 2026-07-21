@@ -14,6 +14,7 @@ import {
   Folder,
   FolderOpen,
   File,
+  GitCommitHorizontal,
   type LucideProps,
 } from "lucide-react";
 import {
@@ -449,6 +450,12 @@ export const getFileTypeIconHtml = (
 
   return renderToStaticMarkup(
     <IconComponent size={size} style={style} />
+  ).replace(/class="/g, 'class="file-chip-icon-inner ');
+};
+
+export const getCommitIconHtml = (size: number = 12): string => {
+  return renderToStaticMarkup(
+    <GitCommitHorizontal size={size} style={{ color: "#f05032" }} />
   ).replace(/class="/g, 'class="file-chip-icon-inner ');
 };
 

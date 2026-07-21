@@ -70,6 +70,9 @@ export const useConversationManagement = (
 
       ctx.setIsLoadingInitialHistory(true);
       ctx.setActiveId(trimmedId);
+      // Selecting an existing conversation cancels any prior "new chat"
+      // intent so the UI follows the active conversation normally.
+      ctx.setNewChatRequested(false);
 
       if (hasLoadedCachedHistory) {
         ctx.updateSessionField(trimmedId, "hasNewContent", false);
@@ -151,7 +154,7 @@ export const useConversationManagement = (
         }
       }
     },
-    [ctx.setActiveId, ctx.updateSessionField]
+    [ctx.setActiveId, ctx.updateSessionField, ctx.setNewChatRequested]
   );
 
   const loadOlderMessages = useCallback(async (): Promise<void> => {
@@ -243,7 +246,17 @@ export const useConversationManagement = (
   const handleNewChat = useCallback((): void => {
     ctx.selectionRequestIdRef.current += 1;
     ctx.setIsLoadingInitialHistory(false);
-    // Clear stale pending session if not actively streaming
+
+    // Mark that the user explicitly requested a new chat. This prevents the
+    // UI from falling back to the pending session (which may still be
+    // streaming in the background) and prevents the agent loop from
+    // auto-switching back to the migrated conversation once it finishes.
+    ctx.setNewChatRequested(true);
+
+    // Clear stale pending session only if it is NOT actively streaming.
+    // When the pending session is streaming, we keep it alive so the AI
+    // loop continues in the background and eventually persists the
+    // conversation. The user sees the empty greeting instead.
     const pendingRef = ctx.sessionsRefData.current.get(PENDING_SESSION_KEY);
     if (pendingRef && !pendingRef.isSending) {
       deleteCheckpoints(pendingRef.checkpointIds);
@@ -254,8 +267,9 @@ export const useConversationManagement = (
         return next;
       });
     }
+
     ctx.setActiveId(undefined);
-  }, [ctx.setActiveId]);
+  }, [ctx.setActiveId, ctx.setNewChatRequested]);
 
   const handleAbort = useCallback((): void => {
     const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;

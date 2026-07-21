@@ -177,7 +177,10 @@ export function CodebaseSettingsPanel({
         }
       }
 
-      const overlapLines = Number.parseInt(currentForm.chunkingOverlapLines, 10);
+      const overlapLines = Number.parseInt(
+        currentForm.chunkingOverlapLines,
+        10
+      );
       const maxLinesPerChunk = Number.parseInt(
         currentForm.chunkingMaxLinesPerChunk,
         10
@@ -290,9 +293,7 @@ export function CodebaseSettingsPanel({
     }
     const validationError = validate(form);
     if (validationError) {
-      setError((prev) =>
-        prev === validationError ? prev : validationError
-      );
+      setError((prev) => (prev === validationError ? prev : validationError));
       return;
     }
     setError((prev) => (prev === "" ? prev : ""));
@@ -348,6 +349,11 @@ export function CodebaseSettingsPanel({
               defaultValue: "Codebase settings",
             })}
           </strong>
+          <span className="settings-item-description">
+            {t("settings.codebaseSettingsInfo", {
+              defaultValue: "Manage indexing and workspace code search.",
+            })}
+          </span>
         </div>
         {onClose && (
           <button

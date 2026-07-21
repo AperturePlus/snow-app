@@ -173,9 +173,7 @@ export function TerminalSettingsPanel({
     }
     const validationError = validate(form);
     if (validationError) {
-      setError((prev) =>
-        prev === validationError ? prev : validationError
-      );
+      setError((prev) => (prev === validationError ? prev : validationError));
       return;
     }
     setError((prev) => (prev === "" ? prev : ""));
@@ -231,6 +229,11 @@ export function TerminalSettingsPanel({
               defaultValue: "Terminal settings",
             })}
           </strong>
+          <span className="settings-item-description">
+            {t("settings.terminalSettingsInfo", {
+              defaultValue: "Configure terminal shell, font, and appearance.",
+            })}
+          </span>
         </div>
         {onClose && (
           <button

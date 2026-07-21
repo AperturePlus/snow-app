@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { GitCommitHorizontal } from "lucide-react";
 import { UserMessageActions } from "./UserMessageActions";
 import type { UserMessageProps } from "../utils/types";
 import { parseContentSegments } from "../../chatInput/fileTagUtils";
@@ -34,6 +35,26 @@ export const UserMessage = memo(
                     })}
                     <span className="user-message-file-chip-name">
                       {segment.tag.name}
+                    </span>
+                  </span>
+                );
+              }
+
+              if (segment.type === "commit") {
+                const chipTitle = `${segment.tag.shortHash} ${segment.tag.message} (${segment.tag.author}, ${segment.tag.date})`;
+                return (
+                  <span
+                    className="user-message-file-chip commit-chip"
+                    key={index}
+                    title={chipTitle}
+                  >
+                    <GitCommitHorizontal
+                      size={12}
+                      className="user-message-file-chip-icon"
+                      style={{ color: "#f05032" }}
+                    />
+                    <span className="user-message-file-chip-name">
+                      {segment.tag.shortHash}
                     </span>
                   </span>
                 );

@@ -808,6 +808,11 @@ export function McpSettingsPanel({
           <strong>
             {t("settings.mcpTitle", { defaultValue: "MCP settings" })}
           </strong>
+          <span className="settings-item-description">
+            {t("settings.mcpSettingsInfo", {
+              defaultValue: "Configure MCP servers and tools.",
+            })}
+          </span>
         </div>
         {onClose && (
           <button

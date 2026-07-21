@@ -120,6 +120,19 @@ export const registerGitHandlers = (native: NativeBridge): void => {
   );
 
   ipcMain.handle(
+    "git:create-branch",
+    async (_event, repoPath: unknown, branchName: unknown) => {
+      if (typeof repoPath !== "string" || !repoPath.trim()) {
+        throw new Error("Repository path is required");
+      }
+      if (typeof branchName !== "string" || !branchName.trim()) {
+        throw new Error("Branch name is required");
+      }
+      return native.gitCreateBranch(repoPath.trim(), branchName.trim());
+    }
+  );
+
+  ipcMain.handle(
     "git:file-diff",
     async (_event, repoPath: unknown, filePath: unknown, staged: unknown) => {
       if (typeof repoPath !== "string" || !repoPath.trim()) {

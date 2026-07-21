@@ -745,3 +745,26 @@ pub fn read_file_content(file_path: &str) -> Result<FileContentResult> {
 
     Ok(process_file_content(file_path, buffer))
 }
+
+/// Write text content to a file, creating it (and parent directories) if missing.
+pub fn write_file_content(file_path: &str, content: &str) -> Result<()> {
+    let path = Path::new(file_path);
+
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            fs::create_dir_all(parent).map_err(|e| {
+                Error::from_reason(format!(
+                    "Failed to create parent directories for '{}': {}",
+                    file_path, e
+                ))
+            })?;
+        }
+    }
+
+    fs::write(path, content.as_bytes()).map_err(|e| {
+        Error::from_reason(format!(
+            "Failed to write file '{}': {}",
+            file_path, e
+        ))
+    })
+}

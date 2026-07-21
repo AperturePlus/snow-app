@@ -737,6 +737,7 @@ export type NativeBridge = {
   ) => Promise<void>;
   deleteWorkspaceEntry: (rootPath: string, entryPath: string) => Promise<void>;
   readFileContent: (filePath: string) => Promise<FileContentResult>;
+  writeFileContent: (filePath: string, content: string) => Promise<void>;
   searchFiles: (rootDir: string, query: string) => Promise<FileSearchResult[]>;
   listMcpServerConfigs: () => Promise<McpServerConfigRecord[]>;
   upsertMcpServerConfig: (item: McpServerConfigInput) => Promise<void>;
@@ -919,6 +920,10 @@ export type NativeBridge = {
   gitPush: (repoPath: string) => Promise<GitPushPullResult>;
   gitPull: (repoPath: string) => Promise<GitPushPullResult>;
   gitCheckout: (
+    repoPath: string,
+    branchName: string
+  ) => Promise<GitCheckoutResult>;
+  gitCreateBranch: (
     repoPath: string,
     branchName: string
   ) => Promise<GitCheckoutResult>;

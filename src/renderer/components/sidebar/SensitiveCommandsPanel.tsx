@@ -504,6 +504,11 @@ export function SensitiveCommandsPanel({
               defaultValue: "Sensitive commands",
             })}
           </strong>
+          <span className="settings-item-description">
+            {t("settings.sensitiveCommandsInfo", {
+              defaultValue: "Review command approval rules.",
+            })}
+          </span>
         </div>
         {onClose && (
           <button

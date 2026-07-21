@@ -443,6 +443,11 @@ export function HooksSettingsPanel({
               defaultValue: "Hooks settings",
             })}
           </strong>
+          <span className="settings-item-description">
+            {t("settings.hooksSettingsInfo", {
+              defaultValue: "Configure lifecycle hooks and automation.",
+            })}
+          </span>
         </div>
         {onClose && (
           <button

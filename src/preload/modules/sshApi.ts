@@ -21,6 +21,12 @@ export const sshApi = {
     remotePath: string
   ): Promise<FileContentResult> =>
     ipcRenderer.invoke("ssh:read-file", sessionId, remotePath),
+  sshWriteFile: (
+    sessionId: string,
+    remotePath: string,
+    content: string
+  ): Promise<void> =>
+    ipcRenderer.invoke("ssh:write-file", sessionId, remotePath, content),
   sshDisconnect: (sessionId: string): Promise<void> =>
     ipcRenderer.invoke("ssh:disconnect", sessionId),
   sshSaveCredential: (params: {

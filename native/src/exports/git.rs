@@ -59,6 +59,14 @@ pub async fn git_checkout(repo_path: String, branch_name: String) -> napi::Resul
 }
 
 #[napi]
+pub async fn git_create_branch(
+    repo_path: String,
+    branch_name: String,
+) -> napi::Result<GitCheckoutResult> {
+    crate::storage::services::git::create_branch(&repo_path, &branch_name)
+}
+
+#[napi]
 pub async fn git_file_diff(
     repo_path: String,
     file_path: String,

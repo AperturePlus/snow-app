@@ -157,6 +157,11 @@ export function SkillsSettingsPanel({
           <strong>
             {t("settings.skillsTitle", { defaultValue: "Skills settings" })}
           </strong>
+          <span className="settings-item-description">
+            {t("settings.skillsSettingsInfo", {
+              defaultValue: "View effective project and global Skills.",
+            })}
+          </span>
         </div>
         {onClose && (
           <button

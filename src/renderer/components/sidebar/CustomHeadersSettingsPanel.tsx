@@ -279,6 +279,11 @@ export function CustomHeadersSettingsPanel({
               defaultValue: "Custom headers",
             })}
           </strong>
+          <span className="settings-item-description">
+            {t("settings.customHeadersSettingsInfo", {
+              defaultValue: "Add headers for API requests.",
+            })}
+          </span>
         </div>
         {onClose && (
           <button

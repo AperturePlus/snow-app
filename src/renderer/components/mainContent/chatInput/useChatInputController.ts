@@ -24,6 +24,7 @@ import {
 import type { ChatInputActions, ChatInputState } from "./types";
 import {
   createChipHtml,
+  createCommitChipHtml,
   createImageChipHtml,
   parseContentSegments,
 } from "./fileTagUtils";
@@ -296,6 +297,9 @@ export const useChatInputController = ({
           }
           if (segment.type === "image") {
             return createImageChipHtml(segment.tag);
+          }
+          if (segment.type === "commit") {
+            return createCommitChipHtml(segment.tag);
           }
           return createChipHtml(segment.tag);
         })

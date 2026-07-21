@@ -111,7 +111,10 @@ export function ProxyBrowserSettingsPanel({
   const validate = useCallback(
     (currentForm: ProxyBrowserSettingsFormValue): string | null => {
       const proxyPort = Number.parseInt(currentForm.port, 10);
-      const browserDebugPort = Number.parseInt(currentForm.browserDebugPort, 10);
+      const browserDebugPort = Number.parseInt(
+        currentForm.browserDebugPort,
+        10
+      );
 
       if (!Number.isInteger(proxyPort) || proxyPort < 1 || proxyPort > 65535) {
         return t("settings.proxyPortValidationError", {
@@ -178,9 +181,7 @@ export function ProxyBrowserSettingsPanel({
     }
     const validationError = validate(form);
     if (validationError) {
-      setError((prev) =>
-        prev === validationError ? prev : validationError
-      );
+      setError((prev) => (prev === validationError ? prev : validationError));
       return;
     }
     setError((prev) => (prev === "" ? prev : ""));
@@ -264,6 +265,11 @@ export function ProxyBrowserSettingsPanel({
               defaultValue: "Proxy and browser settings",
             })}
           </strong>
+          <span className="settings-item-description">
+            {t("settings.proxySettingsInfo", {
+              defaultValue: "Configure HTTP proxy and network access.",
+            })}
+          </span>
         </div>
         {onClose && (
           <button

@@ -10,7 +10,7 @@ import type { WorkspaceDirectoryRecord } from "../../../preload";
 import { useAutoScrollPreference } from "../../hooks/useAutoScrollPreference";
 import { useI18n } from "../../i18n";
 import { ChatInput } from "./ChatInput";
-import { EmptyGreeting } from "./EmptyGreeting";
+import { PixelLogo } from "../common/PixelLogo";
 import { ChatMessageList, useChatConversationContext } from "./chatMessages";
 import { RollbackConfirmDialog } from "./chatMessages/dialogs/RollbackConfirmDialog";
 import { CompactionStream } from "./chatMessages/components/CompactionStream";
@@ -551,7 +551,21 @@ const ChatContentBody = ({
             />
           </>
         ) : (
-          <EmptyGreeting activeDirectory={activeDirectory} />
+          <div className="chat-empty-greeting">
+            <div className="chat-empty-greeting-brand">
+              <PixelLogo className="chat-empty-greeting-logo" />
+            </div>
+            <p className="chat-empty-greeting-title">
+              {activeDirectory
+                ? t("chat.greetingWithProject", {
+                    defaultValue: "What would you like to work on in {{name}}?",
+                    values: { name: activeDirectory.name },
+                  })
+                : t("chat.greetingNoProject", {
+                    defaultValue: "Select a workspace project to get started.",
+                  })}
+            </p>
+          </div>
         )}
       </div>
 

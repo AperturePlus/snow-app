@@ -42,6 +42,7 @@ export const useChatConversation = (
   const [draftToRestore, setDraftToRestore] = useState<string | null>(null);
   const [rollbackPreview, setRollbackPreview] =
     useState<ConversationContextValue["rollbackPreview"]>(null);
+  const [newChatRequested, setNewChatRequested] = useState(false);
   const [yoloMode, setYoloModeState] = useState(false);
   const [isUpdatingYoloMode, setIsUpdatingYoloMode] = useState(false);
   const [planMode, setPlanModeState] = useState(false);
@@ -67,6 +68,8 @@ export const useChatConversation = (
     ConversationContextValue["sessionsRef"]["current"]
   >({});
   sessionsRef.current = sessions;
+  const newChatRequestedRef = useRef(false);
+  newChatRequestedRef.current = newChatRequested;
 
   const pendingQueueRef = useRef<
     ConversationContextValue["pendingQueueRef"]["current"]
@@ -155,6 +158,7 @@ export const useChatConversation = (
     isLoadingInitialHistory,
     draftToRestore,
     rollbackPreview,
+    newChatRequested,
     yoloMode,
     isUpdatingYoloMode,
     planMode,
@@ -170,6 +174,7 @@ export const useChatConversation = (
     selectionRequestIdRef,
     loadingOlderConversationIdsRef,
     sessionsRef,
+    newChatRequestedRef,
     pendingQueueRef,
     handleSendMessageRef,
     performCompactionRef,
@@ -191,6 +196,7 @@ export const useChatConversation = (
     setIsLoadingInitialHistory,
     setDraftToRestore,
     setRollbackPreview,
+    setNewChatRequested,
     setYoloModeState,
     setIsUpdatingYoloMode,
     setPlanModeState,
@@ -257,8 +263,15 @@ export const useChatConversation = (
   const rollbackApi = useRollback(ctx);
 
   // --- Compute active session ---
-  const activeKey = activeConversationId ?? PENDING_SESSION_KEY;
-  const activeSession = sessions[activeKey];
+  // When the user explicitly requested a new chat (clicked "New chat" while
+  // a session was still streaming), do NOT fall back to the pending session.
+  // This keeps the empty greeting visible while the background AI loop
+  // continues running and eventually migrates to a real conversation id.
+  const activeKey =
+    newChatRequested || activeConversationId
+      ? activeConversationId
+      : PENDING_SESSION_KEY;
+  const activeSession = activeKey ? sessions[activeKey] : undefined;
 
   // --- Approve/reject tool authorization wrappers ---
   const approveToolAuthorization = useCallback(

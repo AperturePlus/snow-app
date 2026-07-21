@@ -339,6 +339,11 @@ export function ApiSettingsTreePanel({
           <strong>
             {t("settings.apiTreeTitle", { defaultValue: "API configuration" })}
           </strong>
+          <span className="settings-item-description">
+            {t("settings.apiSettingsInfo", {
+              defaultValue: "Configure providers, models, and credentials.",
+            })}
+          </span>
         </div>
         {onClose && (
           <button

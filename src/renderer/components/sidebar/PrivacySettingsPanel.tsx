@@ -244,6 +244,11 @@ export function PrivacySettingsPanel({
               defaultValue: "Privacy settings",
             })}
           </strong>
+          <span className="settings-item-description">
+            {t("settings.privacySettingsInfo", {
+              defaultValue: "Redact sensitive data from tool results.",
+            })}
+          </span>
         </div>
         {onClose && (
           <button
@@ -431,9 +436,7 @@ export function PrivacySettingsPanel({
             </span>
             <div className="api-settings-form-grid">
               {TOOL_OPTIONS.map((option) => {
-                const checked = form.toolResults.tools.includes(
-                  option.value
-                );
+                const checked = form.toolResults.tools.includes(option.value);
                 return (
                   <label key={option.value} className="toggle-switch">
                     <input

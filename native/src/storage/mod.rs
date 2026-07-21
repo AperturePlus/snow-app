@@ -713,6 +713,10 @@ pub fn read_file_content(file_path: String) -> Result<services::fs_explorer::Fil
     services::fs_explorer::read_file_content(&file_path)
 }
 
+pub fn write_file_content(file_path: String, content: String) -> Result<()> {
+    services::fs_explorer::write_file_content(&file_path, &content)
+}
+
 pub fn list_mcp_server_configs() -> Result<Vec<McpServerConfigRecord>> {
     let database_path = ensure_database_file()?;
     services::mcp_server_configs::list_mcp_server_configs(&database_path)

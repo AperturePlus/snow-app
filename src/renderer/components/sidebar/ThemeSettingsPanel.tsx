@@ -449,6 +449,11 @@ export function ThemeSettingsPanel({
               defaultValue: "Theme settings",
             })}
           </strong>
+          <span className="settings-item-description">
+            {t("settings.themeSettingsInfo", {
+              defaultValue: "Adjust appearance and color theme.",
+            })}
+          </span>
         </div>
         {onClose && (
           <button

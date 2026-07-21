@@ -311,6 +311,22 @@ export const GitGraph = ({ repoPath }: GitGraphProps): React.JSX.Element => {
     });
   };
 
+  const handleRowDragStart = useCallback(
+    (event: React.DragEvent<HTMLDivElement>, commit: GitLogEntry) => {
+      const tag = {
+        hash: commit.hash,
+        shortHash: commit.shortHash,
+        author: commit.author,
+        date: commit.date,
+        message: commit.message,
+        repoPath,
+      };
+      event.dataTransfer.setData("application/json", JSON.stringify(tag));
+      event.dataTransfer.effectAllowed = "copy";
+    },
+    [repoPath]
+  );
+
   if (isLoading) {
     return (
       <div className="git-graph" ref={containerRef}>
@@ -345,6 +361,8 @@ export const GitGraph = ({ repoPath }: GitGraphProps): React.JSX.Element => {
             <div
               className={`git-graph-row${isSelected ? " selected" : ""}`}
               onClick={() => handleRowClick(row.commit.hash)}
+              draggable
+              onDragStart={(event) => handleRowDragStart(event, row.commit)}
             >
               <svg
                 className="git-graph-svg"

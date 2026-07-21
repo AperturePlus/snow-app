@@ -202,6 +202,32 @@ export const readSshFile = (
   });
 };
 
+export const writeSshFile = (
+  sessionId: string,
+  remotePath: string,
+  content: string
+): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    const session = sessions.get(sessionId);
+    if (!session) {
+      reject(new Error("SSH session not found. Please reconnect."));
+      return;
+    }
+
+    const stream = session.sftp.createWriteStream(remotePath);
+
+    stream.on("error", (err: Error) => {
+      reject(new Error(`Failed to write remote file: ${err.message}`));
+    });
+
+    stream.on("close", () => {
+      resolve();
+    });
+
+    stream.end(Buffer.from(content, "utf-8"));
+  });
+};
+
 export const disconnectSsh = (sessionId: string): void => {
   const session = sessions.get(sessionId);
   if (!session) {

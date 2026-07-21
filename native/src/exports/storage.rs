@@ -583,6 +583,18 @@ pub async fn read_file_content(file_path: String) -> napi::Result<FileContentRes
 }
 
 #[napi]
+pub async fn write_file_content(
+    file_path: String,
+    content: String,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::write_file_content(file_path, content)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn list_mcp_server_configs() -> napi::Result<Vec<McpServerConfigRecord>> {
     tokio::task::spawn_blocking(crate::storage::list_mcp_server_configs)
         .await

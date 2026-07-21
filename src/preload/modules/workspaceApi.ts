@@ -52,6 +52,8 @@ export const workspaceApi = {
     ),
   readFileContent: (filePath: string): Promise<FileContentResult> =>
     ipcRenderer.invoke("workspace-directories:read-file", filePath),
+  writeFileContent: (filePath: string, content: string): Promise<void> =>
+    ipcRenderer.invoke("workspace-directories:write-file", filePath, content),
   startDirectoryWatch: (dirPath: string): Promise<void> =>
     ipcRenderer.invoke("workspace-directories:start-watch", dirPath),
   stopDirectoryWatch: (dirPath: string): Promise<void> =>

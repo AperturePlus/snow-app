@@ -219,6 +219,11 @@ export function SystemPromptSettingsPanel({
               defaultValue: "System prompt",
             })}
           </strong>
+          <span className="settings-item-description">
+            {t("settings.systemPromptSettingsInfo", {
+              defaultValue: "Customize the assistant system prompt.",
+            })}
+          </span>
         </div>
         {onClose && (
           <button

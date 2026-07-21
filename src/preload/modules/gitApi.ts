@@ -86,6 +86,11 @@ export const gitApi = {
     branchName: string
   ): Promise<GitCheckoutResult> =>
     ipcRenderer.invoke("git:checkout", repoPath, branchName),
+  gitCreateBranch: (
+    repoPath: string,
+    branchName: string
+  ): Promise<GitCheckoutResult> =>
+    ipcRenderer.invoke("git:create-branch", repoPath, branchName),
   gitFileDiff: (
     repoPath: string,
     filePath: string,

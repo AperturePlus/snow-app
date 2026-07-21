@@ -138,6 +138,19 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
   );
 
   ipcMain.handle(
+    "workspace-directories:write-file",
+    (_event, filePath: unknown, content: unknown) => {
+      if (typeof filePath !== "string" || !filePath.trim()) {
+        throw new Error("File path is required");
+      }
+      if (typeof content !== "string") {
+        throw new Error("File content must be a string");
+      }
+      return native.writeFileContent(filePath.trim(), content);
+    }
+  );
+
+  ipcMain.handle(
     "workspace-directories:start-watch",
     (_event, dirPath: unknown) => {
       if (typeof dirPath !== "string" || !dirPath.trim()) {

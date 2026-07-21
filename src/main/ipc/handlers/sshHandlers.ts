@@ -8,6 +8,7 @@ import {
   parseSshUrl,
   isSshPath,
   readSshFile,
+  writeSshFile,
   type SshConnectParams,
 } from "../../ssh/sshManager";
 import { processFileContent } from "../../utils/fileReader";
@@ -85,6 +86,27 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
       }
       const buffer = await readSshFile(sessionId.trim(), remotePath.trim());
       return processFileContent(remotePath.trim(), buffer);
+    }
+  );
+
+  ipcMain.handle(
+    "ssh:write-file",
+    async (
+      _event,
+      sessionId: unknown,
+      remotePath: unknown,
+      content: unknown
+    ) => {
+      if (typeof sessionId !== "string" || !sessionId.trim()) {
+        throw new Error("SSH session ID is required");
+      }
+      if (typeof remotePath !== "string" || !remotePath.trim()) {
+        throw new Error("Remote file path is required");
+      }
+      if (typeof content !== "string") {
+        throw new Error("File content must be a string");
+      }
+      return writeSshFile(sessionId.trim(), remotePath.trim(), content);
     }
   );
 

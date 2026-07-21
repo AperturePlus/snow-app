@@ -197,6 +197,10 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to read file content")
         ),
+      writeFileContent: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write file content")
+        ),
       searchFiles: () =>
         Promise.reject(
           new Error("Rust native bridge is required to search files")
@@ -465,6 +469,9 @@ export const loadNativeBridge = (): NativeBridge => {
       },
       gitCheckout: () => {
         throw new Error("Rust native bridge is required for git checkout");
+      },
+      gitCreateBranch: () => {
+        throw new Error("Rust native bridge is required for git create branch");
       },
       gitFileDiff: () => {
         throw new Error("Rust native bridge is required for git file diff");

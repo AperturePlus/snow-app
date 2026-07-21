@@ -21,9 +21,11 @@ import type { ChatInputViewProps } from "./types";
 import { TokenUsageRing } from "./TokenUsageRing";
 import {
   createChipHtml,
+  createCommitChipHtml,
   createImageChipHtml,
   insertHtmlAtSelection,
   readEditableContent,
+  type CommitTag,
   type FileTag,
   type ImageTag,
 } from "./fileTagUtils";
@@ -38,6 +40,7 @@ import { ProjectMcpPanel } from "./ProjectMcpPanel";
 import { ProjectCodebasePanel } from "./ProjectCodebasePanel";
 import { ProjectSensitiveCommandsPanel } from "./ProjectSensitiveCommandsPanel";
 import { ProjectSkillsPanel } from "./ProjectSkillsPanel";
+import { RoleEditorPanel } from "./RoleEditorPanel";
 import { useChatConversationContext } from "../chatMessages";
 import { CommandPanel, type CommandPanelHandle } from "./commands/CommandPanel";
 import { createChatCommands } from "./commands/commandRegistry";
@@ -117,6 +120,7 @@ export const ChatInputView = ({
     useState(false);
   const [isProjectSkillsOpen, setIsProjectSkillsOpen] = useState(false);
   const [isProjectCodebaseOpen, setIsProjectCodebaseOpen] = useState(false);
+  const [isRoleEditorOpen, setIsRoleEditorOpen] = useState(false);
   const [isCustomThinkingMode, setIsCustomThinkingMode] = useState(false);
   const [customThinkingValue, setCustomThinkingValue] = useState("");
   const [modelMenuView, setModelMenuView] = useState<
@@ -139,29 +143,41 @@ export const ChatInputView = ({
           setIsProjectSensitiveCommandsOpen(false);
           setIsProjectSkillsOpen(false);
           setIsProjectCodebaseOpen(false);
+          setIsRoleEditorOpen(false);
           setIsProjectMcpOpen(true);
+        },
+        onOpenRolePanel: () => {
+          setIsProjectMcpOpen(false);
+          setIsProjectSensitiveCommandsOpen(false);
+          setIsProjectSkillsOpen(false);
+          setIsProjectCodebaseOpen(false);
+          setIsRoleEditorOpen(true);
         },
         onOpenSensitiveCommandsPanel: () => {
           setIsProjectMcpOpen(false);
           setIsProjectSkillsOpen(false);
           setIsProjectCodebaseOpen(false);
+          setIsRoleEditorOpen(false);
           setIsProjectSensitiveCommandsOpen(true);
         },
         onOpenSkillsPanel: () => {
           setIsProjectMcpOpen(false);
           setIsProjectSensitiveCommandsOpen(false);
           setIsProjectCodebaseOpen(false);
+          setIsRoleEditorOpen(false);
           setIsProjectSkillsOpen(true);
         },
         onOpenCodebasePanel: () => {
           setIsProjectMcpOpen(false);
           setIsProjectSensitiveCommandsOpen(false);
           setIsProjectSkillsOpen(false);
+          setIsRoleEditorOpen(false);
           setIsProjectCodebaseOpen(true);
         },
         model: selectedModel || undefined,
         compactDisabled: messages.length === 0 || isStreaming || isCompacting,
         mcpDisabled: !projectId,
+        roleDisabled: !projectId,
         sensitiveCommandsDisabled: !projectId,
         skillsDisabled: !projectId,
         codebaseDisabled: !projectId,
@@ -171,6 +187,8 @@ export const ChatInputView = ({
           mcpDescription: projectId
             ? t("chatCommand.mcpDescription")
             : t("chatCommand.mcpNoProject"),
+          roleDescription: t("chatCommand.roleDescription"),
+          roleNoProject: t("chatCommand.roleNoProject"),
           sensitiveCommandsDescription: projectId
             ? t("chatCommand.sensitiveCommandsDescription")
             : t("chatCommand.sensitiveCommandsNoProject"),
@@ -369,23 +387,50 @@ export const ChatInputView = ({
       }
 
       try {
-        const parsed = JSON.parse(jsonData) as Partial<FileTag>;
-        if (!parsed.path || !parsed.name) {
+        const parsed = JSON.parse(jsonData) as Record<string, unknown>;
+
+        // Commit tag: has "hash" and "repoPath" fields
+        if (
+          typeof parsed.hash === "string" &&
+          typeof parsed.repoPath === "string" &&
+          typeof parsed.shortHash === "string"
+        ) {
+          const tag: CommitTag = {
+            hash: parsed.hash,
+            shortHash: parsed.shortHash,
+            author: typeof parsed.author === "string" ? parsed.author : "",
+            date: typeof parsed.date === "string" ? parsed.date : "",
+            message: typeof parsed.message === "string" ? parsed.message : "",
+            repoPath: parsed.repoPath,
+          };
+
+          if (textareaRef.current) {
+            textareaRef.current.focus();
+          }
+
+          insertHtmlAtSelection(createCommitChipHtml(tag));
+          syncContent();
           return;
         }
 
-        const tag: FileTag = {
-          path: parsed.path,
-          name: parsed.name,
-          isDirectory: parsed.isDirectory ?? false,
-        };
+        // File tag: has "path" and "name" fields
+        if (
+          typeof parsed.path === "string" &&
+          typeof parsed.name === "string"
+        ) {
+          const tag: FileTag = {
+            path: parsed.path,
+            name: parsed.name,
+            isDirectory: parsed.isDirectory === true,
+          };
 
-        if (textareaRef.current) {
-          textareaRef.current.focus();
+          if (textareaRef.current) {
+            textareaRef.current.focus();
+          }
+
+          insertHtmlAtSelection(createChipHtml(tag));
+          syncContent();
         }
-
-        insertHtmlAtSelection(createChipHtml(tag));
-        syncContent();
       } catch {
         // Ignore invalid drag data
       }
@@ -747,6 +792,12 @@ export const ChatInputView = ({
         projectId={projectId}
         projectName={projectName}
         onClose={() => setIsProjectCodebaseOpen(false)}
+      />
+      <RoleEditorPanel
+        open={isRoleEditorOpen}
+        projectId={projectId}
+        projectName={projectName}
+        onClose={() => setIsRoleEditorOpen(false)}
       />
       <div className="input-content" ref={mentionAnchorRef}>
         <FileMentionPopup
