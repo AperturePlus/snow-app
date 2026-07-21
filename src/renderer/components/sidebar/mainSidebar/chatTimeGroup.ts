@@ -10,7 +10,7 @@ export type TimeGroup = {
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Parse a SQLite datetime string ("YYYY-MM-DD HH:MM:SS" in UTC)
+ * Parse a SQLite datetime string ("YYYY-MM-DD HH:MM:SS" in local time)
  * into a JavaScript Date object.
  */
 export const parseDbTimestamp = (dateStr: string): Date => {
@@ -23,7 +23,7 @@ export const parseDbTimestamp = (dateStr: string): Date => {
     : dateStr.replace(" ", "T");
   const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized);
 
-  return new Date(hasTimezone ? normalized : `${normalized}Z`);
+  return new Date(hasTimezone ? normalized : normalized);
 };
 
 /**

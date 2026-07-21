@@ -134,7 +134,7 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                    created_at,
                    updated_at
                  ) VALUES (
-                   ?1, ?2, ?3, ?3, '', 0, ?4, ?5, 'active', ?6, '', 0, datetime('now'), datetime('now')
+                   ?1, ?2, ?3, ?3, '', 0, ?4, ?5, 'active', ?6, '', 0, datetime('now', 'localtime'), datetime('now', 'localtime')
                  )
                  ON CONFLICT(conversation_id) DO NOTHING",
                 params![
@@ -229,7 +229,7 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                         output_tokens = COALESCE(?7, output_tokens),
                         cache_creation_input_tokens = COALESCE(?8, cache_creation_input_tokens),
                         cache_read_input_tokens = COALESCE(?9, cache_read_input_tokens),
-                        updated_at = datetime('now')
+                        updated_at = datetime('now', 'localtime')
                   WHERE conversation_id = ?1",
                 params![
                     input.conversation_id,
@@ -346,7 +346,7 @@ pub fn append_tool_message(
                             FROM chat_messages
                            WHERE conversation_id = ?1
                         ),
-                        updated_at = datetime('now')
+                        updated_at = datetime('now', 'localtime')
                   WHERE conversation_id = ?1",
                 params![conversation_id],
             )?;
@@ -370,7 +370,7 @@ pub fn update_conversation_summary(
             connection.execute(
                 "UPDATE chat_conversations
                     SET summary = ?2,
-                        updated_at = datetime('now')
+                        updated_at = datetime('now', 'localtime')
                   WHERE conversation_id = ?1",
                 params![conversation_id, trimmed_summary],
             )
@@ -666,7 +666,7 @@ pub fn create_sub_agent_session(
                    created_at,
                    updated_at
                  ) VALUES (
-                   ?1, ?2, ?3, ?3, '', 0, ?4, '', 'active', ?5, '', 0, datetime('now'), datetime('now')
+                   ?1, ?2, ?3, ?3, '', 0, ?4, '', 'active', ?5, '', 0, datetime('now', 'localtime'), datetime('now', 'localtime')
                  )",
                 params![
                     database::create_snowflake_id(),
@@ -688,7 +688,7 @@ pub fn create_sub_agent_session(
                    created_at,
                    updated_at
                  ) VALUES (
-                   ?1, ?2, ?3, ?4, ?5, 'running', '', datetime('now'), datetime('now')
+                   ?1, ?2, ?3, ?4, ?5, 'running', '', datetime('now', 'localtime'), datetime('now', 'localtime')
                  )",
                 params![
                     database::create_snowflake_id(),
@@ -722,7 +722,7 @@ pub fn update_sub_agent_session_status(
                 "UPDATE sub_agent_sessions
                     SET run_status = ?2,
                         error_message = ?3,
-                        updated_at = datetime('now')
+                        updated_at = datetime('now', 'localtime')
                   WHERE conversation_id = ?1",
                 params![conversation_id, normalized_status, error_message.trim()],
             )
@@ -740,7 +740,7 @@ pub fn cancel_running_sub_agent_sessions(database_path: &Path) -> Result<usize> 
                 "UPDATE sub_agent_sessions
                     SET run_status = 'cancelled',
                         error_message = '',
-                        updated_at = datetime('now')
+                        updated_at = datetime('now', 'localtime')
                   WHERE run_status = 'running'",
                 [],
             )
@@ -770,7 +770,7 @@ pub fn update_conversation_status(
             connection.execute(
                 "UPDATE chat_conversations
                     SET status = ?2,
-                        updated_at = datetime('now')
+                        updated_at = datetime('now', 'localtime')
                   WHERE conversation_id = ?1",
                 params![conversation_id, normalized_status],
             )
@@ -797,7 +797,7 @@ pub fn rename_conversation(
                 "UPDATE chat_conversations
                     SET title = ?2,
                         summary = ?2,
-                        updated_at = datetime('now')
+                        updated_at = datetime('now', 'localtime')
                   WHERE conversation_id = ?1",
                 params![conversation_id, trimmed_title],
             )
@@ -1040,7 +1040,7 @@ pub fn fork_conversation(
            created_at,
            updated_at
          ) VALUES (
-           ?1, ?2, ?3, ?4, ?8, 0, ?5, '', 'active', ?6, ?7, 0, datetime('now'), datetime('now')
+           ?1, ?2, ?3, ?4, ?8, 0, ?5, '', 'active', ?6, ?7, 0, datetime('now', 'localtime'), datetime('now', 'localtime')
          )",
         params![
             new_id,
@@ -1109,7 +1109,7 @@ pub fn fork_conversation(
                tool_calls_json,
                created_at
              ) VALUES (
-               ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, datetime('now')
+               ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, datetime('now', 'localtime')
              )",
             params![
                 database::create_snowflake_id(),
@@ -1142,7 +1142,7 @@ pub fn fork_conversation(
             last_message_preview = (
                 SELECT content FROM chat_messages WHERE conversation_id = ?1 ORDER BY id DESC LIMIT 1
             ),
-            updated_at = datetime('now')
+            updated_at = datetime('now', 'localtime')
           WHERE conversation_id = ?1",
         params![new_conversation_id],
     )
@@ -1259,7 +1259,7 @@ pub fn truncate_conversation_from_response(
                     output_tokens = 0,
                     cache_creation_input_tokens = 0,
                     cache_read_input_tokens = 0,
-                    updated_at = datetime('now')
+                    updated_at = datetime('now', 'localtime')
               WHERE conversation_id = ?1",
             params![conversation_id],
         )
@@ -1339,7 +1339,7 @@ fn insert_message(
            tool_calls_json,
            created_at
          ) VALUES (
-           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, datetime('now')
+           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, datetime('now', 'localtime')
          )",
         params![
             database::create_snowflake_id(),

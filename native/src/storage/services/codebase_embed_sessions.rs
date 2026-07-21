@@ -52,8 +52,8 @@ pub fn ensure_sessions_table(connection: &Connection) -> rusqlite::Result<()> {
            processed_chunks INTEGER NOT NULL DEFAULT 0,
            current_file TEXT NOT NULL DEFAULT '',
            error TEXT NOT NULL DEFAULT '',
-           created_at TEXT NOT NULL DEFAULT (datetime('now')),
-           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
          CREATE INDEX IF NOT EXISTS idx_codebase_embed_sessions_project
            ON codebase_embed_sessions(project_id);
@@ -79,8 +79,8 @@ pub fn upsert_session(database_path: &Path, record: &EmbedSessionRecord) -> Resu
                    total_chunks = excluded.total_chunks,
                    processed_chunks = excluded.processed_chunks,
                    current_file = excluded.current_file,
-                   error = excluded.error,
-                   updated_at = datetime('now')",
+                    error = excluded.error,
+                    updated_at = datetime('now', 'localtime')",
                 params![
                     &record.session_id,
                     &record.project_id,
@@ -122,7 +122,7 @@ pub fn update_session_progress(
                      total_chunks = ?4,
                      processed_chunks = ?5,
                      current_file = ?6,
-                     updated_at = datetime('now')
+                     updated_at = datetime('now', 'localtime')
                  WHERE session_id = ?1",
                 params![
                     session_id,
@@ -154,7 +154,7 @@ pub fn update_session_status(
                 "UPDATE codebase_embed_sessions
                  SET status = ?2,
                      error = ?3,
-                     updated_at = datetime('now')
+                     updated_at = datetime('now', 'localtime')
                  WHERE session_id = ?1",
                 params![session_id, status, error_value],
             )
@@ -234,7 +234,7 @@ pub fn mark_interrupted_sessions(database_path: &Path) -> Result<u32> {
             connection.execute(
                 "UPDATE codebase_embed_sessions
                  SET status = 'interrupted',
-                     updated_at = datetime('now')
+                     updated_at = datetime('now', 'localtime')
                  WHERE status IN ('running', 'paused')",
                 [],
             )

@@ -110,7 +110,7 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                 transaction.execute(
                     "UPDATE api_configs
                         SET is_active = 0,
-                            updated_at = datetime('now')
+                            updated_at = datetime('now', 'localtime')
                       WHERE is_active = 1",
                     [],
                 )?;
@@ -151,7 +151,7 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
                    ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
                    ?21, ?22, ?23, ?24, ?25, ?26, ?27,
-                   datetime('now'), datetime('now')
+                   datetime('now', 'localtime'), datetime('now', 'localtime')
                  )
                  ON CONFLICT(profile_name) DO UPDATE SET
                    display_name = excluded.display_name,
@@ -185,7 +185,7 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                    custom_header_scheme_id = excluded.custom_header_scheme_id,
                    config_json = excluded.config_json,
                    source = excluded.source,
-                   updated_at = datetime('now')",
+                   updated_at = datetime('now', 'localtime')",
                 params![
                     database::create_snowflake_id(),
                     config.profile_name,
@@ -273,7 +273,7 @@ fn seed_default_api_config_with_connection(connection: &Connection) -> rusqlite:
          )
          SELECT
            ?1, ?2, ?3, 1, ?4, 'auto', '', ?5, ?6, ?7, 1,
-           '', 'auto', '', ?5, '', ?9, '', '', ?8, 'default', datetime('now'), datetime('now')
+           '', 'auto', '', ?5, '', ?9, '', '', ?8, 'default', datetime('now', 'localtime'), datetime('now', 'localtime')
          WHERE NOT EXISTS (SELECT 1 FROM api_configs)",
         params![
             database::create_snowflake_id(),
@@ -295,7 +295,7 @@ fn ensure_one_active_config(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute(
         "UPDATE api_configs
             SET is_active = 1,
-                updated_at = datetime('now')
+                updated_at = datetime('now', 'localtime')
           WHERE id = (
             SELECT id
               FROM api_configs

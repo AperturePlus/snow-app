@@ -100,14 +100,25 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   });
   ipcMain.handle(
     "codebase:set-project-enabled",
-    (_event, projectId: unknown, enabled: unknown) => {
+    (event, projectId: unknown, enabled: unknown) => {
       if (typeof projectId !== "string" || !projectId.trim()) {
         throw new Error("Project id is required");
       }
       if (typeof enabled !== "boolean") {
         throw new Error("Codebase enabled state must be a boolean");
       }
-      return native.setCodebaseProjectEnabled(projectId.trim(), enabled);
+      const normalizedProjectId = projectId.trim();
+      return native
+        .setCodebaseProjectEnabled(normalizedProjectId, enabled)
+        .then(() => {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send("codebase:scope-changed", {
+              projectId: normalizedProjectId,
+              key: "enabled",
+              enabled,
+            });
+          }
+        });
     }
   );
   ipcMain.handle(

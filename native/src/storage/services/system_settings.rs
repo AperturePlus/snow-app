@@ -871,11 +871,11 @@ fn set_system_setting_with_connection(
 ) -> rusqlite::Result<()> {
     connection.execute(
         "INSERT INTO system_settings (id, setting_name, setting_code, setting_value, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, datetime('now'), datetime('now'))
+         VALUES (?1, ?2, ?3, ?4, datetime('now', 'localtime'), datetime('now', 'localtime'))
          ON CONFLICT(setting_code) DO UPDATE SET
            setting_name = excluded.setting_name,
            setting_value = excluded.setting_value,
-           updated_at = datetime('now')",
+           updated_at = datetime('now', 'localtime')",
         (
             database::create_snowflake_id(),
             setting_name,
@@ -895,7 +895,7 @@ fn insert_default_setting(
 ) -> rusqlite::Result<()> {
     connection.execute(
         "INSERT OR IGNORE INTO system_settings (id, setting_name, setting_code, setting_value, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, datetime('now'), datetime('now'))",
+         VALUES (?1, ?2, ?3, ?4, datetime('now', 'localtime'), datetime('now', 'localtime'))",
         (
             database::create_snowflake_id(),
             setting_name,

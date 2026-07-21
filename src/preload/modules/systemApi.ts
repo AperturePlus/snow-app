@@ -241,7 +241,7 @@ export const systemApi = {
     };
   },
   onCodebaseSyncProgress: (
-    callback: (progress: CodebaseSyncProgress) => void
+    callback: (progress: CodebaseSyncProgress, projectId: string) => void
   ): (() => void) => {
     const handler = (_event: IpcRendererEvent, payload: unknown): void => {
       if (!isRecord(payload)) {
@@ -251,28 +251,73 @@ export const systemApi = {
       if (!isRecord(progress)) {
         return;
       }
-      callback({
-        phase: typeof progress.phase === "string" ? progress.phase : "",
-        filesToEmbed:
-          typeof progress.filesToEmbed === "number" ? progress.filesToEmbed : 0,
-        processedFiles:
-          typeof progress.processedFiles === "number"
-            ? progress.processedFiles
-            : 0,
-        deletedFiles:
-          typeof progress.deletedFiles === "number" ? progress.deletedFiles : 0,
-        skippedFiles:
-          typeof progress.skippedFiles === "number" ? progress.skippedFiles : 0,
-        currentFile:
-          typeof progress.currentFile === "string" ? progress.currentFile : "",
-        error: typeof progress.error === "string" ? progress.error : "",
-      });
+      const projectId =
+        typeof payload.projectId === "string" ? payload.projectId : "";
+      callback(
+        {
+          phase: typeof progress.phase === "string" ? progress.phase : "",
+          filesToEmbed:
+            typeof progress.filesToEmbed === "number"
+              ? progress.filesToEmbed
+              : 0,
+          processedFiles:
+            typeof progress.processedFiles === "number"
+              ? progress.processedFiles
+              : 0,
+          deletedFiles:
+            typeof progress.deletedFiles === "number"
+              ? progress.deletedFiles
+              : 0,
+          skippedFiles:
+            typeof progress.skippedFiles === "number"
+              ? progress.skippedFiles
+              : 0,
+          currentFile:
+            typeof progress.currentFile === "string"
+              ? progress.currentFile
+              : "",
+          error: typeof progress.error === "string" ? progress.error : "",
+        },
+        projectId
+      );
     };
 
     ipcRenderer.on("codebase:sync:progress", handler);
 
     return () => {
       ipcRenderer.removeListener("codebase:sync:progress", handler);
+    };
+  },
+  onCodebaseScopeChanged: (
+    callback: (payload: {
+      projectId: string;
+      key: "enabled" | "enableAgentReview" | "enableReranking";
+      enabled: boolean;
+    }) => void
+  ): (() => void) => {
+    const handler = (_event: IpcRendererEvent, payload: unknown): void => {
+      if (!isRecord(payload)) {
+        return;
+      }
+      const projectId = payload.projectId;
+      const key = payload.key;
+      const enabled = payload.enabled;
+      if (
+        typeof projectId !== "string" ||
+        (key !== "enabled" &&
+          key !== "enableAgentReview" &&
+          key !== "enableReranking") ||
+        typeof enabled !== "boolean"
+      ) {
+        return;
+      }
+      callback({ projectId, key, enabled });
+    };
+
+    ipcRenderer.on("codebase:scope-changed", handler);
+
+    return () => {
+      ipcRenderer.removeListener("codebase:scope-changed", handler);
     };
   },
   previewCodebaseScan: (projectId: string): Promise<CodebaseScanPreview> =>

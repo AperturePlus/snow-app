@@ -86,14 +86,14 @@ fn upsert_system_prompt_with_connection(
            created_at,
            updated_at
          ) VALUES (
-           ?1, ?2, ?3, ?4, ?5, ?6, datetime('now'), datetime('now')
+           ?1, ?2, ?3, ?4, ?5, ?6, datetime('now', 'localtime'), datetime('now', 'localtime')
          )
          ON CONFLICT(prompt_id) DO UPDATE SET
            name = excluded.name,
            content = excluded.content,
            is_active = excluded.is_active,
            sort_order = excluded.sort_order,
-           updated_at = datetime('now')",
+           updated_at = datetime('now', 'localtime')",
         params![
             database::create_snowflake_id(),
             item.prompt_id,

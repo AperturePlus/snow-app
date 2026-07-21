@@ -26,7 +26,7 @@ pub fn upsert_workspace_directory(
                 transaction.execute(
                     "UPDATE workspace_directories
                         SET is_active = 0,
-                            updated_at = datetime('now')
+                            updated_at = datetime('now', 'localtime')
                       WHERE is_active = 1",
                     [],
                 )?;
@@ -73,14 +73,14 @@ pub fn activate_workspace_directory(database_path: &Path, directory_id: &str) ->
             transaction.execute(
                 "UPDATE workspace_directories
                     SET is_active = 0,
-                        updated_at = datetime('now')
+                        updated_at = datetime('now', 'localtime')
                   WHERE is_active = 1",
                 [],
             )?;
             transaction.execute(
                 "UPDATE workspace_directories
                     SET is_active = 1,
-                        updated_at = datetime('now')
+                        updated_at = datetime('now', 'localtime')
                   WHERE directory_id = ?1",
                 [directory_id],
             )?;
@@ -103,7 +103,7 @@ pub fn reorder_workspace_directories(
                 transaction.execute(
                     "UPDATE workspace_directories
                         SET sort_order = ?1,
-                            updated_at = datetime('now')
+                            updated_at = datetime('now', 'localtime')
                       WHERE directory_id = ?2",
                     params![index as i32, &item.directory_id],
                 )?;
@@ -147,7 +147,7 @@ fn normalize_workspace_directory_state(connection: &Connection) -> rusqlite::Res
         connection.execute(
             "UPDATE workspace_directories
                 SET sort_order = ?1,
-                    updated_at = datetime('now')
+                    updated_at = datetime('now', 'localtime')
               WHERE directory_id = ?2",
             params![index as i32, directory_id],
         )?;
@@ -163,9 +163,9 @@ fn normalize_workspace_directory_state(connection: &Connection) -> rusqlite::Res
         if let Some(first_directory_id) = directory_ids.first() {
             connection.execute(
                 "UPDATE workspace_directories
-                    SET is_active = 1,
-                        updated_at = datetime('now')
-                  WHERE directory_id = ?1",
+                SET is_active = 1,
+                    updated_at = datetime('now', 'localtime')
+              WHERE directory_id = ?1",
                 [first_directory_id],
             )?;
         }
@@ -227,7 +227,7 @@ fn upsert_workspace_directory_with_connection(
            created_at,
            updated_at
          ) VALUES (
-           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, datetime('now'), datetime('now')
+           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, datetime('now', 'localtime'), datetime('now', 'localtime')
          )
          ON CONFLICT(directory_id) DO UPDATE SET
            name = excluded.name,
@@ -236,7 +236,7 @@ fn upsert_workspace_directory_with_connection(
            is_active = excluded.is_active,
            sort_order = excluded.sort_order,
            source = excluded.source,
-           updated_at = datetime('now')",
+           updated_at = datetime('now', 'localtime')",
         params![
             database::create_snowflake_id(),
             item.directory_id,

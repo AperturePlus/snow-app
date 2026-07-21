@@ -107,7 +107,7 @@ fn seed_defaults_with_connection(connection: &Connection) -> rusqlite::Result<()
                source,
                created_at,
                updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, 'preset', datetime('now'), datetime('now'))",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, 'preset', datetime('now', 'localtime'), datetime('now', 'localtime'))",
             params![
                 database::create_snowflake_id(),
                 command.command_id,
@@ -175,7 +175,7 @@ fn upsert_sensitive_command_config_with_connection(
            source,
            created_at,
            updated_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, datetime('now'), datetime('now'))
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, datetime('now', 'localtime'), datetime('now', 'localtime'))
          ON CONFLICT(command_id) DO UPDATE SET
            pattern = excluded.pattern,
            description = excluded.description,
@@ -183,7 +183,7 @@ fn upsert_sensitive_command_config_with_connection(
            is_preset = excluded.is_preset,
            sort_order = excluded.sort_order,
            source = excluded.source,
-           updated_at = datetime('now')",
+           updated_at = datetime('now', 'localtime')",
         params![
             database::create_snowflake_id(),
             item.command_id,

@@ -47,6 +47,13 @@ export const TopBar = ({
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
   const [isTodoPanelOpen, setIsTodoPanelOpen] = useState(false);
   const [codebaseEnabled, setCodebaseEnabled] = useState(false);
+  // Track which projectId the codebaseEnabled state corresponds to. This is
+  // used to detect stale enabled values during project switches — when the
+  // active project changes, codebaseEnabled may still hold the previous
+  // project's value for one render cycle (React state updates are async).
+  // By comparing enabledProjectIdRef with activeProjectId, we can force
+  // enabled=false until the new project's scope is confirmed.
+  const enabledProjectIdRef = useRef<string | undefined>(undefined);
   const plusMenuRef = useRef<HTMLDivElement>(null);
 
   // Resolve the active project id / path for the codebase watcher. Prefer the
@@ -58,22 +65,37 @@ export const TopBar = ({
 
   // Load the codebase scope settings for the active project to determine
   // whether the watcher should be active.
+  //
+  // When the active project changes, we immediately reset codebaseEnabled to
+  // false and clear enabledProjectIdRef BEFORE the async fetch resolves. This
+  // prevents the useCodebaseWatcher from briefly starting a watcher for the
+  // new project using the stale `true` value from the previous project.
   useEffect(() => {
     if (!activeProjectId) {
       setCodebaseEnabled(false);
+      enabledProjectIdRef.current = undefined;
       return;
     }
+
+    // Reset to false immediately so the watcher stops while we fetch the
+    // new project's scope. Also clear the ref so that even if the state
+    // update hasn't flushed yet, the derived `effectiveEnabled` below
+    // will be false.
+    setCodebaseEnabled(false);
+    enabledProjectIdRef.current = undefined;
 
     let cancelled = false;
     void window.snow
       .getCodebaseProjectScopeSettings(activeProjectId)
       .then((scope) => {
         if (!cancelled) {
+          enabledProjectIdRef.current = activeProjectId;
           setCodebaseEnabled(scope.enabled ?? false);
         }
       })
       .catch(() => {
         if (!cancelled) {
+          enabledProjectIdRef.current = activeProjectId;
           setCodebaseEnabled(false);
         }
       });
@@ -83,10 +105,32 @@ export const TopBar = ({
     };
   }, [activeProjectId]);
 
+  // Listen for codebase scope changes broadcast by the backend (e.g. when
+  // the user toggles the enabled switch in ProjectCodebasePanel). This keeps
+  // the TopBar indicator in sync without requiring a manual refresh.
+  useEffect(() => {
+    const dispose = window.snow.onCodebaseScopeChanged((payload) => {
+      if (payload.key === "enabled" && payload.projectId === activeProjectId) {
+        enabledProjectIdRef.current = activeProjectId;
+        setCodebaseEnabled(payload.enabled);
+      }
+    });
+    return () => {
+      dispose();
+    };
+  }, [activeProjectId]);
+
+  // Derive the effective enabled state: only treat codebaseEnabled as true
+  // if it was confirmed for the currently active project. This guards against
+  // the React state batch-update race where activeProjectId changes but
+  // codebaseEnabled still holds the previous project's value.
+  const effectiveEnabled =
+    codebaseEnabled && enabledProjectIdRef.current === activeProjectId;
+
   const { syncStatus, watchedProjectId } = useCodebaseWatcher({
     projectId: activeProjectId,
     projectPath: activeProjectPath,
-    enabled: codebaseEnabled,
+    enabled: effectiveEnabled,
   });
 
   useEffect(() => {

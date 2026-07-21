@@ -272,7 +272,7 @@ pub fn seed_default_sub_agent_configs(database_path: &Path) -> Result<()> {
                    created_at,
                    updated_at
                  ) VALUES (
-                   ?1, 'agent_general', 'General Purpose Agent', ?2, ?3, ?4, '', 1, 0, 'builtin', datetime('now'), datetime('now')
+                   ?1, 'agent_general', 'General Purpose Agent', ?2, ?3, ?4, '', 1, 0, 'builtin', datetime('now', 'localtime'), datetime('now', 'localtime')
                  )",
                 params![
                     database::create_snowflake_id(),
@@ -344,7 +344,7 @@ fn upsert_sub_agent_config_with_connection(
            created_at,
            updated_at
          ) VALUES (
-           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, datetime('now'), datetime('now')
+           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, datetime('now', 'localtime'), datetime('now', 'localtime')
          )
          ON CONFLICT(agent_id) DO UPDATE SET
            name = excluded.name,
@@ -355,7 +355,7 @@ fn upsert_sub_agent_config_with_connection(
            builtin = excluded.builtin,
            sort_order = excluded.sort_order,
            source = excluded.source,
-           updated_at = datetime('now')",
+           updated_at = datetime('now', 'localtime')",
         params![
             database::create_snowflake_id(),
             item.agent_id,

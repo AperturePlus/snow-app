@@ -85,7 +85,7 @@ const getPresetRange = (
 
 const formatDateTime = (value: string): string => {
   if (!value) return "";
-  const date = new Date(value.replace(" ", "T") + "Z");
+  const date = new Date(value.replace(" ", "T"));
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
 };
@@ -655,7 +655,7 @@ export function UsageSettingsPanel({
                     <td className="usage-cell-number usage-cell-total">
                       {formatTokens(record.totalTokens)}
                     </td>
-                    <td>
+                    <td className="usage-cell-status">
                       <span
                         className={`usage-status-badge ${
                           record.status === "error"

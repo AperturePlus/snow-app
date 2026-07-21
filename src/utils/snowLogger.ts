@@ -25,7 +25,6 @@ export interface LogEntry {
 
 function formatLogEntry(level: LogLevel, entry: LogEntry): string {
   const timestamp = new Date().toISOString();
-  const date = timestamp.slice(0, 10);
   const location =
     entry.module +
     ":" +

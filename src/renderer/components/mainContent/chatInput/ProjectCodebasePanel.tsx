@@ -251,30 +251,37 @@ export const ProjectCodebasePanel = ({
       return;
     }
 
-    const dispose = window.snow.onCodebaseSyncProgress((progress) => {
-      // Don't show sync progress while embedding — the index is being
-      // rebuilt by the user's explicit embedding action.
-      if (embedState === "running" || embedState === "paused") {
-        return;
-      }
-
-      // Terminal phases clear the progress display.
-      if (
-        progress.phase === "done" ||
-        progress.phase === "no_changes" ||
-        progress.phase === "error"
-      ) {
-        setSyncProgress(null);
-        // Refresh index stats after sync completes to reflect changes.
-        if (progress.phase === "done" || progress.phase === "no_changes") {
-          void loadIndexStats();
+    const dispose = window.snow.onCodebaseSyncProgress(
+      (progress, changedProjectId) => {
+        // Only show progress for the currently active project.
+        if (changedProjectId !== projectId) {
+          return;
         }
-        return;
-      }
 
-      // Non-terminal phases (scanning/deleting/embedding) update the display.
-      setSyncProgress(progress);
-    });
+        // Don't show sync progress while embedding — the index is being
+        // rebuilt by the user's explicit embedding action.
+        if (embedState === "running" || embedState === "paused") {
+          return;
+        }
+
+        // Terminal phases clear the progress display.
+        if (
+          progress.phase === "done" ||
+          progress.phase === "no_changes" ||
+          progress.phase === "error"
+        ) {
+          setSyncProgress(null);
+          // Refresh index stats after sync completes to reflect changes.
+          if (progress.phase === "done" || progress.phase === "no_changes") {
+            void loadIndexStats();
+          }
+          return;
+        }
+
+        // Non-terminal phases (scanning/deleting/embedding) update the display.
+        setSyncProgress(progress);
+      }
+    );
 
     return () => {
       dispose();
@@ -290,6 +297,8 @@ export const ProjectCodebasePanel = ({
 
   useEffect(() => {
     if (open) {
+      // Clear any stale sync progress from a previous session when reopening.
+      setSyncProgress(null);
       setIndexStatsLoaded(false);
       void loadScope();
       void loadIndexStats();
@@ -297,11 +306,12 @@ export const ProjectCodebasePanel = ({
       return;
     }
 
-    // When closing the panel, only reset scope-loading state.
+    // When closing the panel, reset scope-loading state and sync progress.
     // Embedding state (embedState, embedProgress, sessionIdRef) is preserved
     // so that the background embedding continues and progress callbacks keep
     // updating the UI. When the user reopens the panel, they see the current
     // embedding status instead of a stale "idle" state.
+    setSyncProgress(null);
     loadGenerationRef.current += 1;
     pendingGenerationRef.current = loadGenerationRef.current;
     setPendingKey(null);

@@ -1358,7 +1358,7 @@ export const zhTW = {
   "settings.usageColTotal": "總計",
   "settings.usageColStatus": "狀態",
   "settings.usageLoading": "載入中...",
-  "settings.usageNoRecords": "暫無用量記錄。",
+  "settings.usageNoRecords": "暫無用量記錄",
   "settings.usagePrevPage": "上一頁",
   "settings.usageNextPage": "下一頁",
   "settings.usagePageInfo": "第 {current} 頁，共 {total} 頁",

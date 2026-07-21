@@ -1437,7 +1437,7 @@ export const en = {
   "settings.usageColTotal": "Total",
   "settings.usageColStatus": "Status",
   "settings.usageLoading": "Loading...",
-  "settings.usageNoRecords": "No usage records found.",
+  "settings.usageNoRecords": "No usage records found",
   "settings.usagePrevPage": "Previous page",
   "settings.usageNextPage": "Next page",
   "settings.usagePageInfo": "Page {current} of {total}",

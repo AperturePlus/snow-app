@@ -35,7 +35,7 @@ pub fn ensure_vector_table(database_path: &Path, project_id: &str) -> Result<Str
                    embedding_json TEXT NOT NULL,
                    embedding_model TEXT NOT NULL DEFAULT '',
                    file_hash TEXT NOT NULL DEFAULT '',
-                   created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                   created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
                  );
                  CREATE INDEX IF NOT EXISTS idx_{table_name}_file
                    ON {table_name}(relative_path);

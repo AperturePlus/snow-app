@@ -31,7 +31,7 @@ export const registerPtyHandlers = (): void => {
 
   ipcMain.handle(
     "pty:write",
-    (event: IpcMainInvokeEvent, id: unknown, data: unknown) => {
+    (_event: IpcMainInvokeEvent, id: unknown, data: unknown) => {
       if (typeof id !== "string" || typeof data !== "string") {
         throw new Error("Invalid PTY write arguments");
       }
@@ -42,7 +42,7 @@ export const registerPtyHandlers = (): void => {
 
   ipcMain.handle(
     "pty:resize",
-    (event: IpcMainInvokeEvent, id: unknown, cols: unknown, rows: unknown) => {
+    (_event: IpcMainInvokeEvent, id: unknown, cols: unknown, rows: unknown) => {
       if (
         typeof id !== "string" ||
         typeof cols !== "number" ||
@@ -55,7 +55,7 @@ export const registerPtyHandlers = (): void => {
     }
   );
 
-  ipcMain.handle("pty:kill", (event: IpcMainInvokeEvent, id: unknown) => {
+  ipcMain.handle("pty:kill", (_event: IpcMainInvokeEvent, id: unknown) => {
     if (typeof id !== "string") {
       throw new Error("Invalid PTY kill argument");
     }

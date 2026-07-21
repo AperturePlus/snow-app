@@ -1358,7 +1358,7 @@ export const zhCN = {
   "settings.usageColTotal": "总计",
   "settings.usageColStatus": "状态",
   "settings.usageLoading": "加载中...",
-  "settings.usageNoRecords": "暂无用记录。",
+  "settings.usageNoRecords": "暂无用记录",
   "settings.usagePrevPage": "上一页",
   "settings.usageNextPage": "下一页",
   "settings.usagePageInfo": "第 {current} 页，共 {total} 页",

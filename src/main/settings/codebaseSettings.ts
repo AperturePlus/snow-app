@@ -4,7 +4,7 @@ import {
   SNOW_CLI_PROJECT_SETTINGS_FILE,
 } from "../snowCli/paths";
 import { readJsonFile } from "../utils/jsonFile";
-import { isRecord, toBoolean, toPositiveInteger, toText } from "../utils/value";
+import { isRecord, toPositiveInteger, toText } from "../utils/value";
 
 const CODEBASE_SETTING_NAME = "Codebase settings";
 const CODEBASE_SETTING_CODE = "codebase_settings";

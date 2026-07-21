@@ -9,7 +9,7 @@
   --chrome-bg: #f8fafc;
   --app-bg: #eef2f7;
   --surface-island: rgba(255, 255, 255, 0.78);
-  --surface-island-strong: rgba(255, 255, 255, 0.88);
+  --surface-island-strong: rgba(255, 255, 255, 1);
   --surface-island-muted: rgba(248, 250, 252, 0.72);
   --island-shadow: 0 14px 34px rgba(15, 23, 42, 0.06),
     inset 0 1px 0 rgba(255, 255, 255, 0.72);
@@ -61,7 +61,7 @@
   --chrome-bg: #141414;
   --app-bg: #050505;
   --surface-island: rgba(17, 17, 17, 0.78);
-  --surface-island-strong: rgba(24, 24, 24, 0.86);
+  --surface-island-strong: rgba(24, 24, 24, 1);
   --surface-island-muted: rgba(20, 20, 20, 0.68);
   --island-shadow: 0 16px 40px rgba(0, 0, 0, 0.36),
     inset 0 1px 0 rgba(255, 255, 255, 0.035);
@@ -3892,14 +3892,15 @@ input {
   color: var(--accent-red);
 }
 
-/* Chat content wrapper - manages empty vs has-messages layout */
+/* Chat content wrapper - manages empty vs has-messages layout.
+   Background stays transparent: .main-content already paints the single
+   semi-transparent island layer, stacking it again here would darken it. */
 .chat-content {
   flex: 1;
   display: flex;
   flex-direction: column;
   justify-content: center;
   min-height: 0;
-  background-color: var(--surface-island-strong);
 }
 
 .chat-area {
@@ -3908,7 +3909,9 @@ input {
   flex-basis: auto;
   overflow-y: auto;
   scrollbar-gutter: stable;
-  padding: 16px 20px;
+  /* Bottom padding matches the mask fade height so the latest message rests
+     fully above the fade zone when stuck to the bottom. */
+  padding: 16px 20px 48px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -3986,6 +3989,36 @@ input {
 
 .chat-content.has-messages .chat-area {
   --chat-flex-grow: 1;
+  /* Mask layer at the input-area seam: messages fade to fully transparent as
+     they enter the bottom 48px, revealing the single island surface below.
+     A real transparency mask is used instead of backdrop-filter blur, which
+     smeared bright text into a visible halo in dark themes. The stops
+     approximate a smoothstep ease so the fade starts gently instead of
+     cutting in along a visible line. */
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black calc(100% - 48px),
+    rgba(0, 0, 0, 0.96) calc(100% - 42px),
+    rgba(0, 0, 0, 0.84) calc(100% - 36px),
+    rgba(0, 0, 0, 0.68) calc(100% - 30px),
+    rgba(0, 0, 0, 0.5) calc(100% - 24px),
+    rgba(0, 0, 0, 0.32) calc(100% - 18px),
+    rgba(0, 0, 0, 0.16) calc(100% - 12px),
+    rgba(0, 0, 0, 0.04) calc(100% - 6px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black calc(100% - 48px),
+    rgba(0, 0, 0, 0.96) calc(100% - 42px),
+    rgba(0, 0, 0, 0.84) calc(100% - 36px),
+    rgba(0, 0, 0, 0.68) calc(100% - 30px),
+    rgba(0, 0, 0, 0.5) calc(100% - 24px),
+    rgba(0, 0, 0, 0.32) calc(100% - 18px),
+    rgba(0, 0, 0, 0.16) calc(100% - 12px),
+    rgba(0, 0, 0, 0.04) calc(100% - 6px),
+    transparent 100%
+  );
 }
 
 .chat-area.is-loading-history {
@@ -7311,10 +7344,9 @@ input {
   font-size: 10px;
 }
 .input-area {
-  padding: 12px 20px 16px;
+  padding: 12px 12px 0;
   flex-shrink: 0;
   position: relative;
-  background: var(--surface-island-strong);
 }
 
 .input-content {
@@ -7323,22 +7355,6 @@ input {
   width: 100%;
   max-width: 1120px;
   margin: 0 auto;
-}
-
-.input-area::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 100%;
-  height: 32px;
-  background: var(--surface-island-strong);
-  -webkit-mask-image: linear-gradient(to top, black, transparent);
-  mask-image: linear-gradient(to top, black, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  pointer-events: none;
-  z-index: 0;
 }
 
 .pending-messages-area {
@@ -7470,7 +7486,6 @@ input {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   padding: 10px 14px;
-  background: var(--surface-island-strong);
   transition: border-color 0.12s, box-shadow 0.12s;
   isolation: isolate;
 }
@@ -14890,12 +14905,9 @@ input {
 }
 
 .usage-table-wrapper {
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-  max-height: 380px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
+  overflow: hidden;
 }
 
 .usage-table {
@@ -14905,39 +14917,62 @@ input {
   font-size: 12.5px;
 }
 
+.usage-table thead,
+.usage-table tbody tr {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+  box-sizing: border-box;
+}
+
+.usage-table thead {
+  border-right: 10px solid var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.usage-table tbody {
+  display: block;
+  max-height: 380px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
 .usage-table thead th {
   padding: 8px 10px;
   text-align: left;
   font-weight: 600;
   color: var(--text-secondary);
   background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-subtle);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  position: sticky;
-  top: 0;
-  z-index: 1;
 }
 
-.usage-table thead th:first-child {
-  width: 150px;
-}
-
-.usage-table thead th:nth-child(2) {
-  width: 16%;
+.usage-table thead th:first-child,
+.usage-table tbody td:first-child {
+  width: 160px;
 }
 
 .usage-table thead th:nth-child(4),
 .usage-table thead th:nth-child(5),
 .usage-table thead th:nth-child(6),
 .usage-table thead th:nth-child(7),
-.usage-table thead th:nth-child(8) {
-  width: 8%;
+.usage-table thead th:nth-child(8),
+.usage-table tbody td:nth-child(4),
+.usage-table tbody td:nth-child(5),
+.usage-table tbody td:nth-child(6),
+.usage-table tbody td:nth-child(7),
+.usage-table tbody td:nth-child(8) {
+  width: 72px;
 }
 
-.usage-table thead th:last-child {
-  width: 96px;
+.usage-table thead th:last-child,
+.usage-table tbody td:last-child {
+  width: 112px;
+}
+.usage-table tbody td.usage-cell-status {
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .usage-table tbody td {

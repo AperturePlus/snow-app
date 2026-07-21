@@ -35,8 +35,6 @@ type SnowCliMcpConfig = {
 const toServerId = (scope: string, name: string): string =>
   `${scope.trim() || DEFAULT_SCOPE}:${name.trim()}`;
 
-const normalizeScope = (_value: unknown): McpScope => "global";
-
 const normalizeTransportType = (
   value: unknown,
   server: Record<string, unknown>

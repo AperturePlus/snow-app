@@ -120,7 +120,7 @@ pub fn record_usage(database_path: &Path, input: &UsageRecordInput<'_>) -> Resul
                    directory_id,
                    created_at
                  ) VALUES (
-                   ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, datetime('now')
+                   ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, datetime('now', 'localtime')
                  )",
                 params![
                     database::create_snowflake_id(),
@@ -421,24 +421,6 @@ fn map_daily_row(row: &Row<'_>) -> rusqlite::Result<DailyUsageBreakdown> {
         total_cache_read_input_tokens: row.get(6)?,
         total_tokens: input + output,
     })
-}
-
-/// Delete usage records older than the given SQLite datetime string.
-/// Returns the number of deleted rows. Empty `before` deletes nothing.
-pub fn delete_usage_records_before(database_path: &Path, before: &str) -> Result<usize> {
-    let trimmed = before.trim();
-    if trimmed.is_empty() {
-        return Ok(0);
-    }
-
-    Connection::open(database_path)
-        .and_then(|connection| {
-            connection.execute(
-                "DELETE FROM usage_records WHERE created_at < ?1",
-                params![trimmed],
-            )
-        })
-        .map_err(|error| database::database_error(database_path, "delete usage records", error))
 }
 
 fn map_usage_row(row: &Row<'_>) -> rusqlite::Result<UsageRecord> {

@@ -142,7 +142,7 @@ pub fn upsert_project_mcp_server_config(
         ));
     }
 
-    let updated_at = chrono::Utc::now().to_rfc3339();
+    let updated_at = chrono::Local::now().to_rfc3339();
     if let Some(server) = settings
         .servers
         .iter_mut()
@@ -198,7 +198,7 @@ pub fn set_project_mcp_server_enabled(
         ));
     };
     server.enabled = enabled;
-    server.updated_at = chrono::Utc::now().to_rfc3339();
+    server.updated_at = chrono::Local::now().to_rfc3339();
     write_project_mcp_server_settings(database_path, &settings)
 }
 

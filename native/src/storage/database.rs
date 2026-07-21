@@ -102,8 +102,8 @@ fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
            setting_name TEXT NOT NULL,
            setting_code TEXT NOT NULL UNIQUE,
            setting_value TEXT NOT NULL,
-           created_at TEXT NOT NULL DEFAULT (datetime('now')),
-           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
 
          CREATE TABLE IF NOT EXISTS api_configs (
@@ -134,8 +134,8 @@ fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
            custom_header_scheme_id TEXT NOT NULL DEFAULT '',
            config_json TEXT NOT NULL DEFAULT '{}',
            source TEXT NOT NULL DEFAULT 'manual',
-           created_at TEXT NOT NULL DEFAULT (datetime('now')),
-           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
 
 CREATE INDEX IF NOT EXISTS idx_api_configs_active
@@ -150,8 +150,8 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            content TEXT NOT NULL DEFAULT '',
            is_active INTEGER NOT NULL DEFAULT 0,
            sort_order INTEGER NOT NULL DEFAULT 0,
-           created_at TEXT NOT NULL DEFAULT (datetime('now')),
-           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
          CREATE INDEX IF NOT EXISTS idx_system_prompts_active
            ON system_prompts(is_active);
@@ -163,8 +163,8 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            headers_json TEXT NOT NULL DEFAULT '{}',
            is_active INTEGER NOT NULL DEFAULT 0,
            sort_order INTEGER NOT NULL DEFAULT 0,
-           created_at TEXT NOT NULL DEFAULT (datetime('now')),
-           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
          CREATE INDEX IF NOT EXISTS idx_custom_header_schemes_active
            ON custom_header_schemes(is_active);
@@ -178,8 +178,8 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            is_active INTEGER NOT NULL DEFAULT 0,
            sort_order INTEGER NOT NULL DEFAULT 0,
            source TEXT NOT NULL DEFAULT 'manual',
-           created_at TEXT NOT NULL DEFAULT (datetime('now')),
-           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
          CREATE INDEX IF NOT EXISTS idx_workspace_directories_active
            ON workspace_directories(is_active);
@@ -200,8 +200,8 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            timeout_ms INTEGER,
            sort_order INTEGER NOT NULL DEFAULT 0,
            source TEXT NOT NULL DEFAULT 'manual',
-           created_at TEXT NOT NULL DEFAULT (datetime('now')),
-           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
          CREATE INDEX IF NOT EXISTS idx_mcp_server_configs_enabled
            ON mcp_server_configs(enabled);
@@ -219,8 +219,8 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            builtin INTEGER NOT NULL DEFAULT 0,
            sort_order INTEGER NOT NULL DEFAULT 0,
            source TEXT NOT NULL DEFAULT 'manual',
-           created_at TEXT NOT NULL DEFAULT (datetime('now')),
-           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
          CREATE INDEX IF NOT EXISTS idx_sub_agent_configs_builtin
            ON sub_agent_configs(builtin);
@@ -236,8 +236,8 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            is_preset INTEGER NOT NULL DEFAULT 0,
            sort_order INTEGER NOT NULL DEFAULT 0,
            source TEXT NOT NULL DEFAULT 'manual',
-           created_at TEXT NOT NULL DEFAULT (datetime('now')),
-           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
          CREATE INDEX IF NOT EXISTS idx_sensitive_command_configs_enabled
            ON sensitive_command_configs(enabled);
@@ -261,8 +261,8 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            directory_id TEXT NOT NULL DEFAULT '',
            forked_from_conversation_id TEXT NOT NULL DEFAULT '',
            fork_message_count INTEGER NOT NULL DEFAULT 0,
-           created_at TEXT NOT NULL DEFAULT (datetime('now')),
-           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
          CREATE INDEX IF NOT EXISTS idx_chat_conversations_updated_at
            ON chat_conversations(updated_at DESC, id DESC);
@@ -277,8 +277,8 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            agent_name TEXT NOT NULL DEFAULT '',
            run_status TEXT NOT NULL DEFAULT 'running',
            error_message TEXT NOT NULL DEFAULT '',
-           created_at TEXT NOT NULL DEFAULT (datetime('now')),
-           updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
            FOREIGN KEY(conversation_id) REFERENCES chat_conversations(conversation_id) ON DELETE CASCADE,
            FOREIGN KEY(parent_conversation_id) REFERENCES chat_conversations(conversation_id) ON DELETE CASCADE
          );
@@ -300,7 +300,7 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            raw_json TEXT NOT NULL DEFAULT '{}',
            thinking TEXT NOT NULL DEFAULT '',
            tool_calls_json TEXT NOT NULL DEFAULT '[]',
-           created_at TEXT NOT NULL DEFAULT (datetime('now')),
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
            FOREIGN KEY(conversation_id) REFERENCES chat_conversations(conversation_id) ON DELETE CASCADE
          );
          CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation_id
@@ -336,7 +336,7 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            status TEXT NOT NULL DEFAULT '',
            is_sub_agent INTEGER NOT NULL DEFAULT 0,
            directory_id TEXT NOT NULL DEFAULT '',
-           created_at TEXT NOT NULL DEFAULT (datetime('now'))
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
          CREATE INDEX IF NOT EXISTS idx_usage_records_created_at
            ON usage_records(created_at DESC, id DESC);

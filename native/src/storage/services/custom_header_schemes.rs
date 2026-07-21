@@ -28,7 +28,7 @@ pub fn upsert_custom_header_scheme(
                 transaction.execute(
                     "UPDATE custom_header_schemes
                         SET is_active = 0,
-                            updated_at = datetime('now')
+                            updated_at = datetime('now', 'localtime')
                       WHERE is_active = 1",
                     [],
                 )?;
@@ -103,14 +103,14 @@ fn upsert_custom_header_scheme_with_connection(
            created_at,
            updated_at
          ) VALUES (
-           ?1, ?2, ?3, ?4, ?5, ?6, datetime('now'), datetime('now')
+           ?1, ?2, ?3, ?4, ?5, ?6, datetime('now', 'localtime'), datetime('now', 'localtime')
          )
          ON CONFLICT(scheme_id) DO UPDATE SET
            name = excluded.name,
            headers_json = excluded.headers_json,
            is_active = excluded.is_active,
            sort_order = excluded.sort_order,
-           updated_at = datetime('now')",
+           updated_at = datetime('now', 'localtime')",
         params![
             database::create_snowflake_id(),
             item.scheme_id,

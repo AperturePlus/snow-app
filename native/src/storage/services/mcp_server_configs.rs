@@ -95,7 +95,7 @@ fn upsert_mcp_server_config_with_connection(
            created_at,
            updated_at
          ) VALUES (
-           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, datetime('now'), datetime('now')
+           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, datetime('now', 'localtime'), datetime('now', 'localtime')
          )
          ON CONFLICT(server_id) DO UPDATE SET
            name = excluded.name,
@@ -109,7 +109,7 @@ fn upsert_mcp_server_config_with_connection(
            timeout_ms = excluded.timeout_ms,
            sort_order = excluded.sort_order,
            source = excluded.source,
-           updated_at = datetime('now')",
+           updated_at = datetime('now', 'localtime')",
         params![
             database::create_snowflake_id(),
             item.server_id,

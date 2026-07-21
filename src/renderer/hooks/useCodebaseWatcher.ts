@@ -59,8 +59,7 @@ export const useCodebaseWatcher = ({
   projectPath,
   enabled,
 }: UseCodebaseWatcherParams): UseCodebaseWatcherResult => {
-  const [syncStatus, setSyncStatus] =
-    useState<CodebaseSyncStatus>("idle");
+  const [syncStatus, setSyncStatus] = useState<CodebaseSyncStatus>("idle");
   const [watchedProjectId, setWatchedProjectId] = useState<string | undefined>(
     undefined
   );
@@ -103,16 +102,26 @@ export const useCodebaseWatcher = ({
       })
       .finally(() => {
         syncInProgressRef.current = false;
-        setSyncStatus("watching");
+
+        // Only transition to "watching" if we're still actively watching
+        // the same project. If the project changed or the watcher was
+        // disabled while the sync was running, the lifecycle effect will
+        // have already set the status to "idle" — don't overwrite it.
+        if (
+          currentWatchIdRef.current === targetProjectId &&
+          syncProjectIdRef.current === targetProjectId
+        ) {
+          setSyncStatus("watching");
+        }
 
         // If another change arrived during sync, trigger another sync.
-        if (syncPendingRef.current) {
+        // Only do this if we're still watching the same project.
+        if (
+          syncPendingRef.current &&
+          syncProjectIdRef.current === targetProjectId
+        ) {
           syncPendingRef.current = false;
-          // Use the latest project id (may have changed).
-          const nextId = syncProjectIdRef.current;
-          if (nextId) {
-            triggerSync(nextId);
-          }
+          triggerSync(targetProjectId);
         }
       });
   }, []);
@@ -137,10 +146,7 @@ export const useCodebaseWatcher = ({
     }
 
     // If the project changed, stop the previous watcher first.
-    if (
-      currentWatchIdRef.current &&
-      currentWatchIdRef.current !== projectId
-    ) {
+    if (currentWatchIdRef.current && currentWatchIdRef.current !== projectId) {
       const prevId = currentWatchIdRef.current;
       void window.snow.stopCodebaseWatch(prevId).catch(() => {
         // Silent fail
