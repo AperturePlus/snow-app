@@ -666,6 +666,20 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to discard resumable codebase session"
           )
         ),
+      listUsageRecords: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to list usage records")
+        ),
+      getUsageSummary: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to get usage summary")
+        ),
+      getUsageDailyBreakdown: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to get usage daily breakdown"
+          )
+        ),
     };
   }
 };

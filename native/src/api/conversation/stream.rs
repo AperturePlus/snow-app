@@ -11,6 +11,7 @@ use crate::api::responses::{
     ResponsesApiStreamCallback,
 };
 use crate::storage::services::chat_conversations::{store_failed_chat_exchange, ChatContextMessage};
+use crate::storage::services::usage_records::{record_usage, UsageRecordInput};
 
 pub async fn create_response_stream(
     mut request: ResponsesApiRequest,
@@ -72,6 +73,15 @@ pub async fn create_response_stream(
     let failure_directory_id = request.directory_id.clone().unwrap_or_default();
     let failure_context_compaction = request.context_compaction.unwrap_or(false);
     let failure_database_path = context.database_path.clone();
+
+    // Capture API config metadata for usage accounting. These are cloned
+    // before `context` is moved into the provider call so they remain
+    // available after the response returns.
+    let usage_api_profile_name = context.api_config.profile_name.clone();
+    let usage_api_config_id = context.api_config.id.clone();
+    let usage_request_method = context.api_config.request_method.clone();
+    let usage_database_path = context.database_path.clone();
+
     let cancel_token = crate::api::cancel::create_and_register(&stream_id);
 
     let result = match context.api_config.request_method.as_str() {
@@ -127,7 +137,51 @@ pub async fn create_response_stream(
 
     crate::api::cancel::unregister_stream(&stream_id);
     match result {
-        Ok(response) => Ok(response),
+        Ok(response) => {
+            // Record token usage for every successful API call. Context
+            // compaction requests also consume tokens and must be accounted
+            // for. Errors here are non-fatal: we log and continue so the
+            // chat response still reaches the user.
+            let usage_response_id = response.id.clone();
+            let usage_conversation_id = response.conversation_id.clone();
+            let usage_model = response.model.clone();
+            let usage_status = response.status.clone();
+            let usage_input_tokens = response.token_usage.input_tokens;
+            let usage_output_tokens = response.token_usage.output_tokens;
+            let usage_cache_creation = response.token_usage.cache_creation_input_tokens;
+            let usage_cache_read = response.token_usage.cache_read_input_tokens;
+            let usage_is_sub_agent = is_sub_agent;
+            let usage_dir_id = failure_directory_id.clone();
+            let usage_api_profile = usage_api_profile_name.clone();
+            let usage_api_config_id = usage_api_config_id.clone();
+            let usage_req_method = usage_request_method.clone();
+            let usage_db_path = usage_database_path.clone();
+            if let Err(record_error) = tokio::task::spawn_blocking(move || {
+                record_usage(
+                    &usage_db_path,
+                    &UsageRecordInput {
+                        conversation_id: &usage_conversation_id,
+                        response_id: &usage_response_id,
+                        model: &usage_model,
+                        api_profile_name: &usage_api_profile,
+                        api_config_id: &usage_api_config_id,
+                        request_method: &usage_req_method,
+                        input_tokens: usage_input_tokens,
+                        output_tokens: usage_output_tokens,
+                        cache_creation_input_tokens: usage_cache_creation,
+                        cache_read_input_tokens: usage_cache_read,
+                        status: &usage_status,
+                        is_sub_agent: usage_is_sub_agent,
+                        directory_id: &usage_dir_id,
+                    },
+                )
+            })
+            .await
+            {
+                eprintln!("Failed to record usage: {record_error}");
+            }
+            Ok(response)
+        }
         Err(error) => {
             if failure_context_compaction {
                 return Err(error);
@@ -135,6 +189,7 @@ pub async fn create_response_stream(
             let error_message = error.to_string();
             let persisted_error_message = error_message.clone();
             let persisted_failure_model = failure_model.clone();
+            let failure_dir_id = failure_directory_id.clone();
             let conversation_id = tokio::task::spawn_blocking(move || {
                 store_failed_chat_exchange(
                     &failure_database_path,
@@ -154,6 +209,40 @@ pub async fn create_response_stream(
                     join_error
                 ))
             })??;
+
+            // Record the failed API call with zero token usage so the usage
+            // history reflects every attempt, not just successful ones.
+            let usage_conversation_id = conversation_id.clone();
+            let usage_model = failure_model.clone();
+            let usage_api_profile = usage_api_profile_name.clone();
+            let usage_api_config_id = usage_api_config_id.clone();
+            let usage_req_method = usage_request_method.clone();
+            let usage_db_path = usage_database_path.clone();
+            let usage_is_sub_agent = is_sub_agent;
+            if let Err(record_error) = tokio::task::spawn_blocking(move || {
+                record_usage(
+                    &usage_db_path,
+                    &UsageRecordInput {
+                        conversation_id: &usage_conversation_id,
+                        response_id: "",
+                        model: &usage_model,
+                        api_profile_name: &usage_api_profile,
+                        api_config_id: &usage_api_config_id,
+                        request_method: &usage_req_method,
+                        input_tokens: 0,
+                        output_tokens: 0,
+                        cache_creation_input_tokens: 0,
+                        cache_read_input_tokens: 0,
+                        status: "error",
+                        is_sub_agent: usage_is_sub_agent,
+                        directory_id: &failure_dir_id,
+                    },
+                )
+            })
+            .await
+            {
+                eprintln!("Failed to record failed usage: {record_error}");
+            }
 
             Ok(ResponsesApiResult {
                 id: String::new(),

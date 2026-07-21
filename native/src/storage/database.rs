@@ -29,6 +29,7 @@ const PRIMARY_KEY_TABLES: &[&str] = &[
     "chat_conversations",
     "sub_agent_sessions",
     "chat_messages",
+    "usage_records",
 ];
 
 #[derive(Debug, Default)]
@@ -319,6 +320,32 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
          );
          CREATE INDEX IF NOT EXISTS idx_todo_items_session
            ON todo_items(session_id);
+
+         CREATE TABLE IF NOT EXISTS usage_records (
+           id TEXT PRIMARY KEY NOT NULL,
+           conversation_id TEXT NOT NULL DEFAULT '',
+           response_id TEXT NOT NULL DEFAULT '',
+           model TEXT NOT NULL DEFAULT '',
+           api_profile_name TEXT NOT NULL DEFAULT '',
+           api_config_id TEXT NOT NULL DEFAULT '',
+           request_method TEXT NOT NULL DEFAULT '',
+           input_tokens INTEGER NOT NULL DEFAULT 0,
+           output_tokens INTEGER NOT NULL DEFAULT 0,
+           cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+           cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
+           status TEXT NOT NULL DEFAULT '',
+           is_sub_agent INTEGER NOT NULL DEFAULT 0,
+           directory_id TEXT NOT NULL DEFAULT '',
+           created_at TEXT NOT NULL DEFAULT (datetime('now'))
+         );
+         CREATE INDEX IF NOT EXISTS idx_usage_records_created_at
+           ON usage_records(created_at DESC, id DESC);
+         CREATE INDEX IF NOT EXISTS idx_usage_records_conversation_id
+           ON usage_records(conversation_id, id DESC);
+         CREATE INDEX IF NOT EXISTS idx_usage_records_model
+           ON usage_records(model);
+         CREATE INDEX IF NOT EXISTS idx_usage_records_api_profile_name
+           ON usage_records(api_profile_name);
     ",
     )?;
 
@@ -326,7 +353,7 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
     // module so the schema lives next to its CRUD functions.
     services::codebase_embed_sessions::ensure_sessions_table(connection)?;
 
-    connection.pragma_update(None, "user_version", 17)?;
+    connection.pragma_update(None, "user_version", 18)?;
 
     Ok(())
 }

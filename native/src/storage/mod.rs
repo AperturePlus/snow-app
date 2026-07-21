@@ -1099,6 +1099,35 @@ pub fn truncate_conversation_from_response(
     )
 }
 
+pub fn list_usage_records(
+    conversation_id: String,
+    directory_id: String,
+    limit: i32,
+    offset: i32,
+) -> Result<services::usage_records::UsageRecordPage> {
+    let database_path = ensure_database_file()?;
+    services::usage_records::list_usage_records(
+        &database_path,
+        &conversation_id,
+        &directory_id,
+        limit,
+        offset,
+    )
+}
+
+pub fn get_usage_summary(since: String, until: String) -> Result<services::usage_records::UsageSummary> {
+    let database_path = ensure_database_file()?;
+    services::usage_records::get_usage_summary(&database_path, &since, &until)
+}
+
+pub fn get_usage_daily_breakdown(
+    since: String,
+    until: String,
+) -> Result<Vec<services::usage_records::DailyUsageBreakdown>> {
+    let database_path = ensure_database_file()?;
+    services::usage_records::get_usage_daily_breakdown(&database_path, &since, &until)
+}
+
 pub fn ensure_database_file() -> Result<PathBuf> {
     let storage_dir = ensure_storage_dir()?;
     let database_path = paths::database_file_path(&storage_dir);

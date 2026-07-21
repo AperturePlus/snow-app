@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  ChartColumn,
   EyeOff,
   Globe,
   Link,
@@ -107,6 +108,12 @@ const SETTINGS_ITEMS: SettingsItem[] = [
     labelKey: "settings.privacySettings",
     defaultLabel: "Privacy settings",
   },
+  {
+    id: "usage",
+    icon: ChartColumn,
+    labelKey: "settings.usageSettings",
+    defaultLabel: "Usage statistics",
+  },
 ];
 
 export function SettingsSidebarContent({
@@ -132,7 +139,8 @@ export function SettingsSidebarContent({
       activeMainView === "hooks-settings" ||
       activeMainView === "terminal-settings" ||
       activeMainView === "theme-settings" ||
-      activeMainView === "privacy-settings"
+      activeMainView === "privacy-settings" ||
+      activeMainView === "usage-settings"
     ) {
       onSelectMainView("chat");
     }
@@ -187,6 +195,8 @@ export function SettingsSidebarContent({
                   ? "theme-settings"
                   : item.id === "privacy"
                   ? "privacy-settings"
+                  : item.id === "usage"
+                  ? "usage-settings"
                   : null;
               const isActive = targetView === activeMainView;
 

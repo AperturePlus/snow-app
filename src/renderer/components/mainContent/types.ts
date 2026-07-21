@@ -12,4 +12,5 @@ export type MainContentView =
   | "hooks-settings"
   | "terminal-settings"
   | "theme-settings"
-  | "privacy-settings";
+  | "privacy-settings"
+  | "usage-settings";

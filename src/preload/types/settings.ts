@@ -117,6 +117,55 @@ export type CodebaseProjectScopeSettings = {
   enableReranking?: boolean;
 };
 
+export type UsageRecord = {
+  id: string;
+  conversationId: string;
+  responseId: string;
+  model: string;
+  apiProfileName: string;
+  apiConfigId: string;
+  requestMethod: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+  status: string;
+  isSubAgent: boolean;
+  directoryId: string;
+  createdAt: string;
+  totalTokens: number;
+  effectiveCacheReadTokens: number;
+  nonCachedInputTokens: number;
+};
+
+export type UsageRecordPage = {
+  items: UsageRecord[];
+  total: number;
+};
+
+export type UsageSummary = {
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheCreationInputTokens: number;
+  totalCacheReadInputTokens: number;
+  totalRequests: number;
+  errorRequests: number;
+  totalTokens: number;
+  effectiveCacheReadTokens: number;
+  nonCachedInputTokens: number;
+};
+
+export type DailyUsageBreakdown = {
+  date: string;
+  totalRequests: number;
+  errorRequests: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheCreationInputTokens: number;
+  totalCacheReadInputTokens: number;
+  totalTokens: number;
+};
+
 export type CodebaseEmbedProgress = {
   phase: string;
   totalFiles: number;

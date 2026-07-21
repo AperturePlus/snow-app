@@ -621,4 +621,40 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       return native.listCheckpointDiffs(checkpointId.trim(), workDir);
     }
   );
+
+  ipcMain.handle(
+    "usage:list-records",
+    (
+      _event,
+      conversationId: unknown,
+      directoryId: unknown,
+      limit: unknown,
+      offset: unknown
+    ) => {
+      const convId =
+        typeof conversationId === "string" ? conversationId.trim() : "";
+      const dirId = typeof directoryId === "string" ? directoryId.trim() : "";
+      const safeLimit = typeof limit === "number" && limit > 0 ? limit : 50;
+      const safeOffset = typeof offset === "number" && offset > 0 ? offset : 0;
+      return native.listUsageRecords(convId, dirId, safeLimit, safeOffset);
+    }
+  );
+
+  ipcMain.handle(
+    "usage:get-summary",
+    (_event, since: unknown, until: unknown) => {
+      const sinceStr = typeof since === "string" ? since.trim() : "";
+      const untilStr = typeof until === "string" ? until.trim() : "";
+      return native.getUsageSummary(sinceStr, untilStr);
+    }
+  );
+
+  ipcMain.handle(
+    "usage:get-daily-breakdown",
+    (_event, since: unknown, until: unknown) => {
+      const sinceStr = typeof since === "string" ? since.trim() : "";
+      const untilStr = typeof until === "string" ? until.trim() : "";
+      return native.getUsageDailyBreakdown(sinceStr, untilStr);
+    }
+  );
 };

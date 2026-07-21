@@ -4,6 +4,7 @@ import type {
   ApiConfigRecord,
   ApiModelsConfig,
   CodebaseSettingsInput,
+  DailyUsageBreakdown,
   DetectedTerminal,
   ImportSnowCliApiConfigsResult,
   Model,
@@ -13,6 +14,8 @@ import type {
   ResponsesApiResult,
   ResponsesApiStreamChunk,
   ThemeSettings,
+  UsageRecordPage,
+  UsageSummary,
 } from "../types";
 
 const CHAT_CREATE_RESPONSE_CHUNK_CHANNEL = "chat:create-response:chunk";
@@ -184,12 +187,29 @@ export const apiConfigApi = {
     return ipcRenderer
       .invoke("theme:generate-palette", imagePath, profileName, streamId)
       .finally(() => {
-        ipcRenderer.removeListener(
-          "theme:generate-palette:chunk",
-          handleChunk
-        );
+        ipcRenderer.removeListener("theme:generate-palette:chunk", handleChunk);
       });
   },
   abortThemePalette: (streamId: string): Promise<boolean> =>
     ipcRenderer.invoke("chat:abort-response-stream", streamId),
+  listUsageRecords: (
+    conversationId: string,
+    directoryId: string,
+    limit: number,
+    offset: number
+  ): Promise<UsageRecordPage> =>
+    ipcRenderer.invoke(
+      "usage:list-records",
+      conversationId,
+      directoryId,
+      limit,
+      offset
+    ),
+  getUsageSummary: (since: string, until: string): Promise<UsageSummary> =>
+    ipcRenderer.invoke("usage:get-summary", since, until),
+  getUsageDailyBreakdown: (
+    since: string,
+    until: string
+  ): Promise<DailyUsageBreakdown[]> =>
+    ipcRenderer.invoke("usage:get-daily-breakdown", since, until),
 };

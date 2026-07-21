@@ -1002,6 +1002,42 @@ pub async fn list_todos_for_rollback(
     .map_err(map_spawn_error)?
 }
 
+// ===== Usage records NAPI 导出 =====
+
+#[napi]
+pub async fn list_usage_records(
+    conversation_id: String,
+    directory_id: String,
+    limit: i32,
+    offset: i32,
+) -> napi::Result<crate::storage::services::usage_records::UsageRecordPage> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::list_usage_records(conversation_id, directory_id, limit, offset)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn get_usage_summary(
+    since: String,
+    until: String,
+) -> napi::Result<crate::storage::services::usage_records::UsageSummary> {
+    tokio::task::spawn_blocking(move || crate::storage::get_usage_summary(since, until))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn get_usage_daily_breakdown(
+    since: String,
+    until: String,
+) -> napi::Result<Vec<crate::storage::services::usage_records::DailyUsageBreakdown>> {
+    tokio::task::spawn_blocking(move || crate::storage::get_usage_daily_breakdown(since, until))
+        .await
+        .map_err(map_spawn_error)?
+}
+
 /// 将 tokio JoinError 转换为 napi Error
 fn map_spawn_error(e: tokio::task::JoinError) -> Error {
     Error::new(
