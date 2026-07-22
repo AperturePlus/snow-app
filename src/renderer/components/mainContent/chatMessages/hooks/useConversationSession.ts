@@ -47,6 +47,8 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
             directoryId: dirId,
             hasNewContent: false,
             streamTokenCount: 0,
+            streamElapsedMs: 0,
+            streamTtftMs: 0,
           },
         };
       });

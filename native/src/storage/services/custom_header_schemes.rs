@@ -9,7 +9,7 @@ use super::super::{CustomHeaderSchemeInput, CustomHeaderSchemeRecord};
 pub fn list_custom_header_schemes(
     database_path: &Path,
 ) -> Result<Vec<CustomHeaderSchemeRecord>> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| query_custom_header_schemes(&connection))
         .map_err(|error| {
             database::database_error(database_path, "list custom header schemes", error)
@@ -20,7 +20,7 @@ pub fn upsert_custom_header_scheme(
     database_path: &Path,
     item: &CustomHeaderSchemeInput,
 ) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|mut connection| {
             let transaction = connection.transaction()?;
 
@@ -43,7 +43,7 @@ pub fn upsert_custom_header_scheme(
 }
 
 pub fn delete_custom_header_scheme(database_path: &Path, scheme_id: &str) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "DELETE FROM custom_header_schemes WHERE scheme_id = ?1",

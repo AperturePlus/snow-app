@@ -1200,14 +1200,6 @@ input {
   text-overflow: ellipsis;
 }
 
-.chat-item-preview {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .chat-item-actions-wrapper {
   position: relative;
   flex-shrink: 0;
@@ -2258,6 +2250,13 @@ input {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
+}
+
+.api-settings-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .api-settings-title-group {
@@ -4491,12 +4490,34 @@ input {
 .stream-cursor-tokens {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 1px 5px;
+  gap: 6px;
+  padding: 2px 8px;
   border-radius: var(--radius-sm);
   background: var(--surface-island);
   font-weight: 500;
   white-space: nowrap;
+}
+
+.stream-cursor-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.stream-cursor-metric-icon {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  display: inline-flex;
+}
+
+.stream-cursor-metric-value {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.stream-cursor-metric-label {
+  color: var(--text-tertiary);
+  font-weight: 400;
 }
 
 .stream-cursor-tokens-icon {
@@ -7429,6 +7450,72 @@ input {
 
 .pending-message-withdraw:focus-visible {
   outline: none;
+}
+
+.stream-metrics-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
+  margin-bottom: 2px;
+}
+
+.stream-metrics {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-island);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.stream-metrics-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stream-metrics-icon {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  display: inline-flex;
+}
+.stream-metrics-value {
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.stream-metrics-elapsed .stream-metrics-value {
+  min-width: 5ch;
+}
+
+.stream-metrics-ttft .stream-metrics-value {
+  min-width: 3ch;
+}
+
+.stream-metrics-tokens .stream-metrics-value {
+  min-width: 4ch;
+}
+
+.stream-metrics-tps .stream-metrics-value {
+  min-width: 4ch;
+}
+
+.stream-metrics-label {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.stream-metrics-sep {
+  width: 1px;
+  height: 10px;
+  background: var(--border-color);
+  flex-shrink: 0;
 }
 
 .input-box {

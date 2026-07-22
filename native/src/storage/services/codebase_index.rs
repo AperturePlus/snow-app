@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use napi::bindgen_prelude::*;
-use rusqlite::{params, Connection};
+use rusqlite::params;
 
 use super::super::database;
 
@@ -20,7 +20,7 @@ pub fn vector_table_name(project_id: &str) -> String {
 /// its own table to keep vector data isolated and allow per-project cleanup.
 pub fn ensure_vector_table(database_path: &Path, project_id: &str) -> Result<String> {
     let table_name = vector_table_name(project_id);
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute_batch(&format!(
                 "CREATE TABLE IF NOT EXISTS {table_name} (
@@ -54,7 +54,7 @@ pub fn ensure_vector_table(database_path: &Path, project_id: &str) -> Result<Str
 /// or re-indexing from scratch).
 pub fn drop_vector_table(database_path: &Path, project_id: &str) -> Result<()> {
     let table_name = vector_table_name(project_id);
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute_batch(&format!("DROP TABLE IF EXISTS {table_name};"))
         })
@@ -84,7 +84,7 @@ pub fn insert_vectors(
     vectors: &[VectorInsert],
 ) -> Result<()> {
     let table_name = vector_table_name(project_id);
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|mut connection| {
             let transaction = connection.transaction()?;
             // Clear existing vectors for the files being updated (by file_path)
@@ -139,7 +139,7 @@ pub struct IndexStats {
 
 pub fn get_index_stats(database_path: &Path, project_id: &str) -> Result<IndexStats> {
     let table_name = vector_table_name(project_id);
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             let total_chunks: i64 = connection.query_row(
                 &format!("SELECT COUNT(*) FROM {table_name}"),
@@ -175,7 +175,7 @@ pub fn get_index_stats(database_path: &Path, project_id: &str) -> Result<IndexSt
 /// Returns an empty map if the vector table doesn't exist yet.
 pub fn get_indexed_file_hashes(database_path: &Path, project_id: &str) -> Result<std::collections::HashMap<String, String>> {
     let table_name = vector_table_name(project_id);
-    let map = Connection::open(database_path)
+    let map = database::open_connection(database_path)
         .and_then(|connection| {
             let mut statement = connection.prepare(&format!(
                 "SELECT file_path, file_hash FROM {table_name} WHERE file_hash != ''"
@@ -206,7 +206,7 @@ pub fn delete_vectors_for_file(
     file_path: &str,
 ) -> Result<i64> {
     let table_name = vector_table_name(project_id);
-    let deleted = Connection::open(database_path)
+    let deleted = database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 &format!("DELETE FROM {table_name} WHERE file_path = ?1"),
@@ -224,7 +224,7 @@ pub fn delete_vectors_for_file(
 /// Returns an empty set if the vector table doesn't exist yet.
 pub fn get_indexed_file_paths(database_path: &Path, project_id: &str) -> Result<std::collections::HashSet<String>> {
     let table_name = vector_table_name(project_id);
-    let set = Connection::open(database_path)
+    let set = database::open_connection(database_path)
         .and_then(|connection| {
             let mut statement = connection.prepare(&format!(
                 "SELECT DISTINCT file_path FROM {table_name}"
@@ -277,7 +277,7 @@ pub fn search_vectors(
         return Ok(Vec::new());
     }
 
-    let results = Connection::open(database_path)
+    let results = database::open_connection(database_path)
         .and_then(|connection| {
             let mut statement = connection.prepare(&format!(
                 "SELECT file_path, relative_path, chunk_index, start_line, end_line,

@@ -91,6 +91,12 @@ export type ConversationSessionState = {
    *  chunk (content, thinking, and tool-call arguments) by the Rust
    *  backend via `ResponsesApiStreamChunk.streamTokenCount`. */
   streamTokenCount: number;
+  /** Elapsed milliseconds since the streaming request started.
+   *  Updated on every streaming chunk by the Rust backend. */
+  streamElapsedMs: number;
+  /** Time to first token in milliseconds. 0 until the first content
+   *  or thinking delta arrives, then frozen for the iteration. */
+  streamTtftMs: number;
 };
 
 export type ConversationSessionRef = {
@@ -278,6 +284,10 @@ export type UseChatConversationResult = {
    *  Updated on every streaming chunk by the Rust backend; reset to 0
    *  when a new iteration starts. */
   streamTokenCount: number;
+  /** Elapsed milliseconds since the streaming request started. */
+  streamElapsedMs: number;
+  /** Time to first token in milliseconds. */
+  streamTtftMs: number;
   forkedFromConversationId: string | undefined;
   forkMessageCount: number | undefined;
   streamingConversationIds: Set<string>;

@@ -238,11 +238,6 @@ export function ChatItem({
               )}
               <span className="chat-item-time">{timeLabel}</span>
             </div>
-            {conversation.lastMessagePreview ? (
-              <span className="chat-item-preview">
-                {conversation.lastMessagePreview}
-              </span>
-            ) : null}
           </>
         )}
       </div>

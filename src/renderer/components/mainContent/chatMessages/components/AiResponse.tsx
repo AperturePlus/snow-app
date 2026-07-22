@@ -21,7 +21,6 @@ export const AiResponse = memo(
     isRetrying = false,
     retryAttempt,
     retryError,
-    streamTokenCount,
     showActions = true,
     toolCalls = [],
     pendingToolAuthorizations = [],
@@ -143,7 +142,7 @@ export const AiResponse = memo(
               ) : null}
             </span>
           ) : isStreaming ? (
-            <StreamCursor tokenCount={streamTokenCount} />
+            <StreamCursor />
           ) : null}
         </div>
 

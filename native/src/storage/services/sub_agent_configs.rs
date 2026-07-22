@@ -208,7 +208,7 @@ You are a versatile task execution agent with full tool access, capable of handl
 const DEFAULT_GENERAL_AGENT_TOOLS_JSON: &str = r#"["*"]"#;
 
 pub fn list_sub_agent_configs(database_path: &Path) -> Result<Vec<SubAgentConfigRecord>> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| query_sub_agent_configs(&connection))
         .map_err(|error| database::database_error(database_path, "list sub-agent configs", error))
 }
@@ -222,7 +222,7 @@ pub fn get_sub_agent_config(
         return Err(Error::from_reason("Sub-agent id is required"));
     }
 
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             let mut configs = query_sub_agent_configs(&connection)?;
             let found = configs
@@ -237,13 +237,13 @@ pub fn upsert_sub_agent_config(
     database_path: &Path,
     item: &SubAgentConfigInput,
 ) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| upsert_sub_agent_config_with_connection(&connection, item))
         .map_err(|error| database::database_error(database_path, "upsert sub-agent config", error))
 }
 
 pub fn delete_sub_agent_config(database_path: &Path, agent_id: &str) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "DELETE FROM sub_agent_configs WHERE agent_id = ?1 AND builtin = 0",
@@ -255,7 +255,7 @@ pub fn delete_sub_agent_config(database_path: &Path, agent_id: &str) -> Result<(
 }
 
 pub fn seed_default_sub_agent_configs(database_path: &Path) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "INSERT OR IGNORE INTO sub_agent_configs (

@@ -499,6 +499,7 @@ export type ChatConversationRecord = {
   outputTokens: number;
   cacheCreationInputTokens: number;
   cacheReadInputTokens: number;
+  totalDurationMs: number;
 };
 
 export type ChatConversationPage = {
@@ -570,6 +571,8 @@ export type ResponsesApiStreamChunk = {
   retryAttempt?: number | null;
   retryError?: string | null;
   streamTokenCount: number;
+  elapsedMs: number;
+  ttftMs: number;
 };
 
 export type McpToolDefinition = {

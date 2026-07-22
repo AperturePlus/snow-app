@@ -2,7 +2,7 @@ use std::path::Path;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use rusqlite::{params, Connection, Row};
+use rusqlite::{params, Row};
 
 use super::super::database;
 
@@ -100,7 +100,7 @@ pub struct UsageSummary {
 /// decide whether to log-and-continue or abort. The insertion runs in its
 /// own short-lived connection, matching the pattern used by other services.
 pub fn record_usage(database_path: &Path, input: &UsageRecordInput<'_>) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "INSERT INTO usage_records (
@@ -160,7 +160,7 @@ pub fn list_usage_records(
     let filter_conversation = !conversation_id.trim().is_empty();
     let filter_directory = !directory_id.trim().is_empty();
 
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             let mut where_clauses: Vec<String> = Vec::new();
             let mut param_index = 1usize;
@@ -261,7 +261,7 @@ pub fn get_usage_summary(
     let filter_since = !since.trim().is_empty();
     let filter_until = !until.trim().is_empty();
 
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             let mut where_clauses: Vec<String> = Vec::new();
             if filter_since {
@@ -363,7 +363,7 @@ pub fn get_usage_daily_breakdown(
     let filter_since = !since.trim().is_empty();
     let filter_until = !until.trim().is_empty();
 
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             let mut where_clauses: Vec<String> = Vec::new();
             if filter_since {

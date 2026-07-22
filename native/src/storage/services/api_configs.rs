@@ -16,13 +16,13 @@ const DEFAULT_MAX_CONTEXT_TOKENS: i32 = 256000;
 const DEFAULT_CONFIG_JSON: &str = "{\"snowcfg\":{\"baseUrl\":\"https://api.deepseek.com/v1\",\"baseUrlMode\":\"auto\",\"requestMethod\":\"chat\",\"advancedModel\":\"deepseek-v4-pro\",\"basicModel\":\"deepseek-v4-flash\",\"supportsVision\":false}}";
 
 pub fn seed_default_api_config(database_path: &Path) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| seed_default_api_config_with_connection(&connection))
         .map_err(|error| database::database_error(database_path, "seed default API config", error))
 }
 
 pub fn list_api_configs(database_path: &Path) -> Result<Vec<ApiConfigRecord>> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             let mut statement = connection.prepare(
                 "SELECT id,
@@ -102,7 +102,7 @@ pub fn list_api_configs(database_path: &Path) -> Result<Vec<ApiConfigRecord>> {
 }
 
 pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|mut connection| {
             let transaction = connection.transaction()?;
 
@@ -227,7 +227,7 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
 }
 
 pub fn delete_api_config(database_path: &Path, profile_name: &str) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|mut connection| {
             let transaction = connection.transaction()?;
 

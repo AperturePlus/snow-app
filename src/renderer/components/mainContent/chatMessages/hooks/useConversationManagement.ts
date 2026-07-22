@@ -144,6 +144,8 @@ export const useConversationManagement = (
               conversationRecord?.forkedFromConversationId || undefined,
             forkMessageCount: conversationRecord?.forkMessageCount || undefined,
             streamTokenCount: 0,
+            streamElapsedMs: 0,
+            streamTtftMs: 0,
           },
         }));
       } catch {

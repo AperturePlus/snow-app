@@ -322,6 +322,7 @@ export function ChatsSection({
         outputTokens: 0,
         cacheCreationInputTokens: 0,
         cacheReadInputTokens: 0,
+        totalDurationMs: 0,
       };
 
       if (existingIndex >= 0) {

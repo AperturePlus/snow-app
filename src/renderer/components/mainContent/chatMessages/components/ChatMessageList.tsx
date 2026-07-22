@@ -31,6 +31,8 @@ export const ChatMessageList = ({
     approveToolAuthorizationAlways,
     rejectToolAuthorization,
     streamTokenCount,
+    streamElapsedMs,
+    streamTtftMs,
   } = useChatConversationContext();
 
   const lastAssistantMessageId = useMemo(() => {
@@ -163,6 +165,12 @@ export const ChatMessageList = ({
           retryError={message.retryError}
           streamTokenCount={
             isLastAssistant && isStreaming ? streamTokenCount : undefined
+          }
+          streamElapsedMs={
+            isLastAssistant && isStreaming ? streamElapsedMs : undefined
+          }
+          streamTtftMs={
+            isLastAssistant && isStreaming ? streamTtftMs : undefined
           }
           summary={message.content}
           thinking={message.thinking}

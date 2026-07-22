@@ -26,6 +26,10 @@ export type AiResponseProps = {
    * is visible at the tail of the streaming AI response.
    */
   streamTokenCount?: number;
+  /** Elapsed milliseconds since the streaming request started. */
+  streamElapsedMs?: number;
+  /** Time to first token in milliseconds. */
+  streamTtftMs?: number;
   showActions?: boolean;
   toolCalls?: ToolCallInfo[];
   pendingToolAuthorizations?: ToolCallInfo[];

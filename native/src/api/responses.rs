@@ -89,6 +89,13 @@ pub struct ResponsesApiStreamChunk {
     /// iteration starts and ignores it for non-streaming chunks (retry
     /// events), where the field stays at the previously-accumulated value.
     pub stream_token_count: i64,
+    /// Elapsed milliseconds since the streaming request started. Updated
+    /// on every chunk so the renderer can display a live timer.
+    pub elapsed_ms: i64,
+    /// Time to first token in milliseconds. Zero until the first content
+    /// or thinking delta arrives, then frozen at that value for the
+    /// remainder of the streaming iteration.
+    pub ttft_ms: i64,
 }
 
 /// ThreadsafeFunction variant of the streaming callback.
@@ -268,6 +275,7 @@ async fn create_response_async(
                 tool_calls_json: &streamed_response.tool_calls_json,
                 directory_id: request.directory_id.as_deref().unwrap_or(""),
                 context_compaction: request.context_compaction.unwrap_or(false),
+                total_duration_ms: streamed_response.total_duration_ms,
             },
         )?;
     }
@@ -537,6 +545,7 @@ struct StreamingResponseResult {
     tool_calls_json: String,
     raw_events: Vec<Value>,
     tool_parse_errors: Vec<String>,
+    total_duration_ms: i64,
 }
 
 async fn collect_streaming_response(
@@ -553,6 +562,8 @@ async fn collect_streaming_response(
     // the current cumulative value. The counter is mutated by
     // `emit_stream_chunk` and the tool-argument probe below.
     let mut stream_token_count: usize = 0;
+    let stream_start = std::time::Instant::now();
+    let mut ttft_ms: i64 = 0;
     let mut stream: ResponseValueStream = loop {
         if cancel_token.is_cancelled() {
             return Ok(StreamingResponseResult {
@@ -570,6 +581,7 @@ async fn collect_streaming_response(
                 tool_calls_json: "[]".to_string(),
                 raw_events: Vec::new(),
                 tool_parse_errors: Vec::new(),
+                total_duration_ms: stream_start.elapsed().as_millis() as i64,
             });
         }
 
@@ -593,6 +605,7 @@ async fn collect_streaming_response(
                     tool_calls_json: "[]".to_string(),
                     raw_events: Vec::new(),
                     tool_parse_errors: Vec::new(),
+                    total_duration_ms: stream_start.elapsed().as_millis() as i64,
                 });
             }
             result = create_stream_future => {
@@ -618,6 +631,8 @@ async fn collect_streaming_response(
                         retry_attempt: Some((attempt + 1) as i32),
                         retry_error: Some(error.reason.clone()),
                         stream_token_count: stream_token_count as i64,
+                        elapsed_ms: stream_start.elapsed().as_millis() as i64,
+                        ttft_ms,
                     },
                     ThreadsafeFunctionCallMode::NonBlocking,
                 );
@@ -694,11 +709,16 @@ async fn collect_streaming_response(
                         let content_delta = read_stream_text_delta(event.get("delta"));
                         if !content_delta.is_empty() {
                             content_chunks.push(content_delta.clone());
+                            if ttft_ms == 0 {
+                                ttft_ms = stream_start.elapsed().as_millis() as i64;
+                            }
                             emit_stream_chunk(
                                 on_chunk,
                                 content_delta,
                                 String::new(),
                                 &mut stream_token_count,
+                                stream_start.elapsed().as_millis() as i64,
+                                ttft_ms,
                             );
                         }
                     }
@@ -706,11 +726,16 @@ async fn collect_streaming_response(
                         let thinking_delta = read_stream_text_delta(event.get("delta"));
                         if !thinking_delta.is_empty() {
                             thinking_chunks.push(thinking_delta.clone());
+                            if ttft_ms == 0 {
+                                ttft_ms = stream_start.elapsed().as_millis() as i64;
+                            }
                             emit_stream_chunk(
                                 on_chunk,
                                 String::new(),
                                 thinking_delta,
                                 &mut stream_token_count,
+                                stream_start.elapsed().as_millis() as i64,
+                                ttft_ms,
                             );
                         }
                     }
@@ -721,11 +746,16 @@ async fn collect_streaming_response(
                             let thinking_delta = delta_chunks.join("");
                             if !thinking_delta.is_empty() {
                                 thinking_chunks.push(thinking_delta.clone());
+                                if ttft_ms == 0 {
+                                    ttft_ms = stream_start.elapsed().as_millis() as i64;
+                                }
                                 emit_stream_chunk(
                                     on_chunk,
                                     String::new(),
                                     thinking_delta,
                                     &mut stream_token_count,
+                                    stream_start.elapsed().as_millis() as i64,
+                                    ttft_ms,
                                 );
                             }
                         }
@@ -752,6 +782,9 @@ async fn collect_streaming_response(
                             let delta_tokens =
                                 crate::api::token_counter::count_tokens(&args_delta);
                             stream_token_count += delta_tokens;
+                            if ttft_ms == 0 {
+                                ttft_ms = stream_start.elapsed().as_millis() as i64;
+                            }
                             on_chunk.call(
                                 ResponsesApiStreamChunk {
                                     content_delta: String::new(),
@@ -762,6 +795,8 @@ async fn collect_streaming_response(
                                     retry_attempt: None,
                                     retry_error: None,
                                     stream_token_count: stream_token_count as i64,
+                                    elapsed_ms: stream_start.elapsed().as_millis() as i64,
+                                    ttft_ms,
                                 },
                                 ThreadsafeFunctionCallMode::NonBlocking,
                             );
@@ -930,6 +965,7 @@ async fn collect_streaming_response(
         tool_calls_json,
         raw_events,
         tool_parse_errors,
+        total_duration_ms: stream_start.elapsed().as_millis() as i64,
     })
 }
 
@@ -960,6 +996,8 @@ fn emit_stream_chunk(
     content_delta: String,
     thinking_delta: String,
     stream_token_count: &mut usize,
+    elapsed_ms: i64,
+    ttft_ms: i64,
 ) {
     if content_delta.is_empty() && thinking_delta.is_empty() {
         return;
@@ -990,6 +1028,8 @@ fn emit_stream_chunk(
                 retry_attempt: None,
                 retry_error: None,
                 stream_token_count: *stream_token_count as i64,
+                elapsed_ms,
+                ttft_ms,
             },
             ThreadsafeFunctionCallMode::NonBlocking,
         );
@@ -1009,6 +1049,8 @@ fn emit_stream_chunk(
             retry_attempt: None,
             retry_error: None,
             stream_token_count: *stream_token_count as i64,
+            elapsed_ms,
+            ttft_ms,
         },
         ThreadsafeFunctionCallMode::NonBlocking,
     );

@@ -7,7 +7,7 @@ use super::super::database;
 use super::super::{WorkspaceDirectoryInput, WorkspaceDirectoryRecord};
 
 pub fn list_workspace_directories(database_path: &Path) -> Result<Vec<WorkspaceDirectoryRecord>> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| query_workspace_directories(&connection))
         .map_err(|error| {
             database::database_error(database_path, "list workspace directories", error)
@@ -18,7 +18,7 @@ pub fn upsert_workspace_directory(
     database_path: &Path,
     item: &WorkspaceDirectoryInput,
 ) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|mut connection| {
             let transaction = connection.transaction()?;
 
@@ -51,7 +51,7 @@ pub fn get_workspace_directory_path(
         return Ok(None);
     }
 
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection
                 .query_row(
@@ -67,7 +67,7 @@ pub fn get_workspace_directory_path(
 }
 
 pub fn activate_workspace_directory(database_path: &Path, directory_id: &str) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|mut connection| {
             let transaction = connection.transaction()?;
             transaction.execute(
@@ -95,7 +95,7 @@ pub fn reorder_workspace_directories(
     database_path: &Path,
     items: &[WorkspaceDirectoryInput],
 ) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|mut connection| {
             let transaction = connection.transaction()?;
 
@@ -117,7 +117,7 @@ pub fn reorder_workspace_directories(
 }
 
 pub fn delete_workspace_directory(database_path: &Path, directory_id: &str) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|mut connection| {
             let transaction = connection.transaction()?;
             transaction.execute(

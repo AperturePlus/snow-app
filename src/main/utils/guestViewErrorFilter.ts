@@ -1,3 +1,5 @@
+import { snowLog } from "../../utils/snowLogger";
+
 /**
  * Filters out expected navigation-error logs from Electron's internal
  * GUEST_VIEW_MANAGER_CALL IPC handler.
@@ -12,7 +14,9 @@
  *
  * These errors are expected and harmless — the redirect target loads
  * normally afterward. This module wraps console.error to suppress only
- * these specific messages, leaving all other error logging intact.
+ * these specific messages from the terminal output while still recording
+ * them to the app log database for diagnostic purposes, leaving all other
+ * error logging intact.
  *
  * Call {@link installGuestViewErrorFilter} once at startup, before any
  * webview is created.
@@ -45,11 +49,7 @@ const isSuppressedError = (arg: unknown): boolean => {
 
   // Fallback: the error might be stringified into the message.
   const str =
-    typeof arg === "string"
-      ? arg
-      : arg instanceof Error
-        ? arg.message
-        : "";
+    typeof arg === "string" ? arg : arg instanceof Error ? arg.message : "";
   return SUPPRESSED_ERROR_CODES.some((c) => str.includes(c));
 };
 
@@ -76,9 +76,34 @@ export const installGuestViewErrorFilter = (): void => {
       originalConsoleError(...args);
       return;
     }
-
     // Suppress only if any argument carries a suppressed error code.
     if (args.some(isSuppressedError)) {
+      // Record the suppressed error to the app log database for diagnostics.
+      // The error is still expected/harmless, but having it in the log helps
+      // trace navigation issues without flooding the terminal output.
+      const errorDetails = args
+        .map((arg) =>
+          arg instanceof Error
+            ? arg.message
+            : typeof arg === "string"
+            ? arg
+            : (() => {
+                try {
+                  return JSON.stringify(arg);
+                } catch {
+                  return String(arg);
+                }
+              })()
+        )
+        .join(" ");
+
+      snowLog.warn({
+        module: "electron/guest-view",
+        func: "GUEST_VIEW_MANAGER_CALL",
+        message: "Suppressed navigation error (expected redirect abort)",
+        context: errorDetails.slice(0, 2000),
+      });
+
       return;
     }
 

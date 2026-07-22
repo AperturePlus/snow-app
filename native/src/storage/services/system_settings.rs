@@ -166,7 +166,7 @@ impl ToolApprovalProjectScopeSettings {
 }
 
 pub fn seed_default_settings(database_path: &Path) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| seed_default_settings_with_connection(&connection))
         .map_err(|error| database::database_error(database_path, "seed default settings", error))
 }
@@ -175,7 +175,7 @@ pub fn get_system_setting_value(
     database_path: &Path,
     setting_code: &str,
 ) -> Result<Option<String>> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection
                 .query_row(
@@ -194,7 +194,7 @@ pub fn set_system_setting(
     setting_code: &str,
     setting_value: &str,
 ) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             set_system_setting_with_connection(
                 &connection,

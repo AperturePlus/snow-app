@@ -50,6 +50,8 @@ const normalizeResponseStreamChunk = (
     retryError: typeof value.retryError === "string" ? value.retryError : null,
     streamTokenCount:
       typeof value.streamTokenCount === "number" ? value.streamTokenCount : 0,
+    elapsedMs: typeof value.elapsedMs === "number" ? value.elapsedMs : 0,
+    ttftMs: typeof value.ttftMs === "number" ? value.ttftMs : 0,
   };
 };
 

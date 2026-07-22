@@ -2,7 +2,7 @@ use std::path::Path;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use rusqlite::{params, Connection, Row};
+use rusqlite::{params, Row};
 
 use super::super::database;
 
@@ -45,7 +45,7 @@ pub struct AppLogPage {
 }
 
 pub fn insert_app_log(database_path: &Path, input: &AppLogInput) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "INSERT INTO app_logs (
@@ -92,7 +92,7 @@ pub fn list_app_logs(
     let filter_since = !since.trim().is_empty();
     let filter_until = !until.trim().is_empty();
 
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             let mut where_clauses: Vec<String> = Vec::new();
             if filter_level {
@@ -153,7 +153,7 @@ pub fn list_app_logs(
 }
 
 pub fn clear_app_logs(database_path: &Path) -> Result<u32> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| connection.execute("DELETE FROM app_logs", []))
         .map_err(|error| database::database_error(database_path, "clear app logs", error))
         .map(|count| count as u32)

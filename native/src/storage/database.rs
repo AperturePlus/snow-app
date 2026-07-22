@@ -1,6 +1,7 @@
 use std::{
     path::Path,
     sync::{Mutex, OnceLock},
+    time::Duration,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -87,8 +88,27 @@ fn wait_next_millis(last_timestamp_ms: u64) -> u64 {
     }
 }
 
+/// Opens a SQLite connection with WAL mode and a busy timeout to prevent
+/// "database is locked" errors under concurrent access from multiple
+/// `spawn_blocking` tasks.
+///
+/// WAL (Write-Ahead Logging) allows readers and a writer to operate
+/// simultaneously, eliminating most reader-writer contention. The busy
+/// timeout (5 seconds) makes writers wait instead of failing immediately
+/// when another writer holds the lock.
+///
+/// Every service function should call this instead of `Connection::open`
+/// to ensure consistent concurrency behaviour across the codebase.
+pub fn open_connection(database_path: impl AsRef<Path>) -> rusqlite::Result<Connection> {
+    let connection = Connection::open(database_path)?;
+    connection.pragma_update(None, "journal_mode", "WAL")?;
+    connection.pragma_update(None, "synchronous", "NORMAL")?;
+    connection.busy_timeout(Duration::from_secs(5))?;
+    Ok(connection)
+}
+
 pub fn ensure_database(database_path: &Path) -> Result<()> {
-    Connection::open(database_path)
+    open_connection(database_path)
         .and_then(|connection| create_schema(&connection))
         .map_err(|error| database_error(database_path, "initialize", error))
 }
@@ -258,6 +278,7 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            output_tokens INTEGER NOT NULL DEFAULT 0,
            cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
            cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
+           total_duration_ms INTEGER NOT NULL DEFAULT 0,
            directory_id TEXT NOT NULL DEFAULT '',
            forked_from_conversation_id TEXT NOT NULL DEFAULT '',
            fork_message_count INTEGER NOT NULL DEFAULT 0,
@@ -375,7 +396,15 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
     // module so the schema lives next to its CRUD functions.
     services::codebase_embed_sessions::ensure_sessions_table(connection)?;
 
-    connection.pragma_update(None, "user_version", 18)?;
+    // Migration: add total_duration_ms column to chat_conversations for
+    // databases created before user_version 19. Safe to ignore "duplicate
+    // column" errors when the column already exists.
+    let _ = connection.execute(
+        "ALTER TABLE chat_conversations ADD COLUMN total_duration_ms INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
+
+    connection.pragma_update(None, "user_version", 19)?;
 
     Ok(())
 }

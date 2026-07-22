@@ -98,4 +98,6 @@ export type ResponsesApiStreamChunk = {
   retryAttempt?: number | null;
   retryError?: string | null;
   streamTokenCount: number;
+  elapsedMs: number;
+  ttftMs: number;
 };

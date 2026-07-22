@@ -13,7 +13,7 @@ use super::super::{SystemPromptItemInput, SystemPromptItemRecord};
 const DISABLED_SENTINEL: &str = "__DISABLED__";
 
 pub fn list_system_prompts(database_path: &Path) -> Result<Vec<SystemPromptItemRecord>> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| query_system_prompts(&connection))
         .map_err(|error| database::database_error(database_path, "list system prompts", error))
 }
@@ -22,13 +22,13 @@ pub fn upsert_system_prompt(
     database_path: &Path,
     item: &SystemPromptItemInput,
 ) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| upsert_system_prompt_with_connection(&connection, item))
         .map_err(|error| database::database_error(database_path, "upsert system prompt", error))
 }
 
 pub fn delete_system_prompt(database_path: &Path, prompt_id: &str) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "DELETE FROM system_prompts WHERE prompt_id = ?1",

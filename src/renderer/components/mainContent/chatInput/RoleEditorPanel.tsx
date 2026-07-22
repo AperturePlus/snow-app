@@ -2,6 +2,7 @@ import { AlertCircle, Loader2, Save } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SshConnectParams } from "../../../../preload";
 import { useI18n } from "../../../i18n";
+import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { Modal } from "../../common/Modal";
 
 const ROLE_FILE_NAME = "ROLE.md";
@@ -220,9 +221,7 @@ export const RoleEditorPanel = ({
     try {
       if (directoryInfo.isSsh) {
         if (!sshSessionIdRef.current) {
-          const connectParams = await buildSshConnectParams(
-            directoryInfo.path
-          );
+          const connectParams = await buildSshConnectParams(directoryInfo.path);
           if (!connectParams) {
             setError(t("roleEditor.sshCredentialMissing"));
             setIsSaving(false);
@@ -314,7 +313,11 @@ export const RoleEditorPanel = ({
           ) : null}
 
           {saveSuccess ? (
-            <div className="role-editor-success">{t("roleEditor.saved")}</div>
+            <AutoDismissNotice
+              message={t("roleEditor.saved")}
+              tone="success"
+              onDismiss={() => setSaveSuccess(false)}
+            />
           ) : null}
 
           <textarea

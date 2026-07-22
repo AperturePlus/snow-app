@@ -61,7 +61,7 @@ impl TodoService {
     }
 
     fn get_connection(&self) -> napi::Result<Connection> {
-        let conn = Connection::open(&self.db_path).map_err(|e| {
+        let conn = crate::storage::database::open_connection(&self.db_path).map_err(|e| {
             Error::new(
                 Status::GenericFailure,
                 format!("Failed to open database: {e}"),
@@ -83,7 +83,7 @@ impl TodoService {
                 format!("Failed to initialize app storage: {e}"),
             )
         })?;
-        let conn = Connection::open(&storage_info.database_path).map_err(|e| {
+        let conn = crate::storage::database::open_connection(&storage_info.database_path).map_err(|e| {
             Error::new(
                 Status::GenericFailure,
                 format!("Failed to open database: {e}"),

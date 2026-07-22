@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, X } from "lucide-react";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { UsageDateFilter } from "./UsageDateFilter";
 import { useI18n } from "../../../i18n";
@@ -215,6 +215,11 @@ export function UsageSettingsPanel({
     }
   }, [sinceDateTime, untilDateTime, now, t]);
 
+  const handleRefresh = useCallback(() => {
+    void loadRecords(offset);
+    void loadSummaryAndHeatmap();
+  }, [loadRecords, loadSummaryAndHeatmap, offset]);
+
   useEffect(() => {
     void loadRecords(0);
   }, [loadRecords]);
@@ -357,21 +362,41 @@ export function UsageSettingsPanel({
             })}
           </span>
         </div>
-        {onClose && (
+        <div className="api-settings-header-actions">
           <button
             className="icon-btn ghost"
-            onClick={onClose}
+            onClick={handleRefresh}
             type="button"
-            aria-label={t("settings.usageClosePanel", {
-              defaultValue: "Close usage statistics",
+            disabled={isLoading}
+            aria-label={t("settings.usageRefresh", {
+              defaultValue: "Refresh usage data",
             })}
-            title={t("settings.usageClosePanel", {
-              defaultValue: "Close usage statistics",
+            title={t("settings.usageRefresh", {
+              defaultValue: "Refresh usage data",
             })}
           >
-            <X size={15} strokeWidth={1.8} />
+            <RefreshCw
+              size={15}
+              strokeWidth={1.8}
+              className={isLoading ? "spin" : ""}
+            />
           </button>
-        )}
+          {onClose && (
+            <button
+              className="icon-btn ghost"
+              onClick={onClose}
+              type="button"
+              aria-label={t("settings.usageClosePanel", {
+                defaultValue: "Close usage statistics",
+              })}
+              title={t("settings.usageClosePanel", {
+                defaultValue: "Close usage statistics",
+              })}
+            >
+              <X size={15} strokeWidth={1.8} />
+            </button>
+          )}
+        </div>
       </div>
 
       <AutoDismissNotice

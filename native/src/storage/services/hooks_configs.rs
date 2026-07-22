@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use napi::bindgen_prelude::*;
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::OptionalExtension;
 use serde_json::Value;
 
 use super::super::database;
@@ -283,7 +283,7 @@ fn read_hooks_setting(
     database_path: &Path,
     setting_code: &str,
 ) -> Result<(Option<String>, Option<String>)> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection
                 .query_row(

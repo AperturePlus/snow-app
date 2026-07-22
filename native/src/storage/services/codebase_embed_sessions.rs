@@ -64,7 +64,7 @@ pub fn ensure_sessions_table(connection: &Connection) -> rusqlite::Result<()> {
 
 /// Insert or replace a session record (used when starting a new embedding).
 pub fn upsert_session(database_path: &Path, record: &EmbedSessionRecord) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "INSERT INTO codebase_embed_sessions
@@ -113,7 +113,7 @@ pub fn update_session_progress(
     processed_chunks: i32,
     current_file: &str,
 ) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "UPDATE codebase_embed_sessions
@@ -148,7 +148,7 @@ pub fn update_session_status(
     error: Option<&str>,
 ) -> Result<()> {
     let error_value = error.unwrap_or("");
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "UPDATE codebase_embed_sessions
@@ -168,7 +168,7 @@ pub fn update_session_status(
 /// Delete a session record (used when embedding completes/cancels and the
 /// record is no longer needed).
 pub fn delete_session(database_path: &Path, session_id: &str) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "DELETE FROM codebase_embed_sessions WHERE session_id = ?1",
@@ -187,7 +187,7 @@ pub fn list_resumable_sessions(
     database_path: &Path,
     project_id: &str,
 ) -> Result<Vec<EmbedSessionRecord>> {
-    let records = Connection::open(database_path)
+    let records = database::open_connection(database_path)
         .and_then(|connection| {
             let mut statement = connection.prepare(
                 "SELECT session_id, project_id, status, total_files, processed_files,
@@ -229,7 +229,7 @@ pub fn list_resumable_sessions(
 /// shutdown (crash, power loss, task kill). After this call, those sessions
 /// become resumable via `list_resumable_sessions`.
 pub fn mark_interrupted_sessions(database_path: &Path) -> Result<u32> {
-    let updated = Connection::open(database_path)
+    let updated = database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "UPDATE codebase_embed_sessions
@@ -252,7 +252,7 @@ pub fn mark_interrupted_sessions(database_path: &Path) -> Result<u32> {
 
 /// Delete all session records for a project (used when clearing the index).
 pub fn delete_sessions_for_project(database_path: &Path, project_id: &str) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "DELETE FROM codebase_embed_sessions WHERE project_id = ?1",

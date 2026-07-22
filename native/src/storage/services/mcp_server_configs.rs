@@ -7,19 +7,19 @@ use super::super::database;
 use super::super::{McpServerConfigInput, McpServerConfigRecord};
 
 pub fn list_mcp_server_configs(database_path: &Path) -> Result<Vec<McpServerConfigRecord>> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| query_mcp_server_configs(&connection))
         .map_err(|error| database::database_error(database_path, "list MCP server configs", error))
 }
 
 pub fn upsert_mcp_server_config(database_path: &Path, item: &McpServerConfigInput) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| upsert_mcp_server_config_with_connection(&connection, item))
         .map_err(|error| database::database_error(database_path, "upsert MCP server config", error))
 }
 
 pub fn delete_mcp_server_config(database_path: &Path, server_id: &str) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute("DELETE FROM mcp_server_configs WHERE server_id = ?1", [server_id])?;
             Ok(())

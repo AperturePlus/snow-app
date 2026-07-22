@@ -37,6 +37,7 @@ pub struct StoreChatExchangeInput<'a> {
     pub tool_calls_json: &'a str,
     pub directory_id: &'a str,
     pub context_compaction: bool,
+    pub total_duration_ms: i64,
 }
 
 pub fn resolve_conversation_id(
@@ -68,7 +69,7 @@ pub fn load_context_messages(
     database_path: &Path,
     conversation_id: &str,
 ) -> Result<Vec<ChatContextMessage>> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             let mut statement = connection.prepare(
                 "SELECT role, content
@@ -101,7 +102,7 @@ pub fn load_context_messages(
 }
 
 pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<'_>) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|mut connection| {
             let transaction = connection.transaction()?;
             let title = create_title(input.request_messages);
@@ -229,6 +230,7 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                         output_tokens = COALESCE(?7, output_tokens),
                         cache_creation_input_tokens = COALESCE(?8, cache_creation_input_tokens),
                         cache_read_input_tokens = COALESCE(?9, cache_read_input_tokens),
+                        total_duration_ms = total_duration_ms + ?11,
                         updated_at = datetime('now', 'localtime')
                   WHERE conversation_id = ?1",
                 params![
@@ -246,6 +248,7 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                         .as_ref()
                         .map(|usage| usage.cache_read_input_tokens),
                     input.directory_id,
+                    input.total_duration_ms,
                 ],
             )?;
 
@@ -306,6 +309,7 @@ pub fn store_failed_chat_exchange(
             tool_calls_json: "[]",
             directory_id,
             context_compaction: false,
+            total_duration_ms: 0,
         },
     )?;
 
@@ -322,7 +326,7 @@ pub fn append_tool_message(
         return Ok(());
     }
 
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|mut connection| {
             let transaction = connection.transaction()?;
             insert_message(
@@ -365,7 +369,7 @@ pub fn update_conversation_summary(
         return Ok(());
     }
 
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "UPDATE chat_conversations
@@ -385,7 +389,7 @@ pub fn list_chat_conversations(
     database_path: &Path,
     directory_id: &str,
 ) -> Result<Vec<ChatConversationRecord>> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             let mut statement = connection.prepare(
                 "SELECT conversation_id,
@@ -404,21 +408,22 @@ pub fn list_chat_conversations(
                         output_tokens,
                         cache_creation_input_tokens,
                         cache_read_input_tokens,
-                        'main',
-                        '',
-                        '',
-                        '',
-                        '',
-                        ''
-                   FROM chat_conversations AS conversation
-                  WHERE directory_id = ?1
-                    AND status = 'active'
-                    AND NOT EXISTS (
-                      SELECT 1
-                        FROM sub_agent_sessions AS sub_agent
-                       WHERE sub_agent.conversation_id = conversation.conversation_id
-                    )
-                  ORDER BY updated_at DESC, id DESC",
+                       'main',
+                       '',
+                       '',
+                       '',
+                       '',
+                       '',
+                       0
+                  FROM chat_conversations AS conversation
+                 WHERE directory_id = ?1
+                   AND status = 'active'
+                   AND NOT EXISTS (
+                     SELECT 1
+                       FROM sub_agent_sessions AS sub_agent
+                      WHERE sub_agent.conversation_id = conversation.conversation_id
+                   )
+                 ORDER BY updated_at DESC, id DESC",
             )?;
 
             let rows = statement.query_map(params![directory_id], map_chat_conversation_row)?;
@@ -433,7 +438,7 @@ pub fn list_chat_conversations_paginated(
     limit: i32,
     offset: i32,
 ) -> Result<ChatConversationPage> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             let total: i32 = connection.query_row(
                 "SELECT COUNT(*)
@@ -469,22 +474,23 @@ pub fn list_chat_conversations_paginated(
                         output_tokens,
                         cache_creation_input_tokens,
                         cache_read_input_tokens,
-                        'main',
-                        '',
-                        '',
-                        '',
-                        '',
-                        ''
-                   FROM chat_conversations AS conversation
-                  WHERE directory_id = ?1
-                    AND status = 'active'
-                    AND NOT EXISTS (
-                      SELECT 1
-                        FROM sub_agent_sessions AS sub_agent
-                       WHERE sub_agent.conversation_id = conversation.conversation_id
-                    )
-                  ORDER BY updated_at DESC, id DESC
-                  LIMIT ?2 OFFSET ?3",
+                       'main',
+                       '',
+                       '',
+                       '',
+                       '',
+                       '',
+                       0
+                  FROM chat_conversations AS conversation
+                 WHERE directory_id = ?1
+                   AND status = 'active'
+                   AND NOT EXISTS (
+                     SELECT 1
+                       FROM sub_agent_sessions AS sub_agent
+                      WHERE sub_agent.conversation_id = conversation.conversation_id
+                   )
+                 ORDER BY updated_at DESC, id DESC
+                 LIMIT ?2 OFFSET ?3",
             )?;
 
             let rows = statement.query_map(
@@ -504,7 +510,7 @@ pub fn list_pinned_conversations(
     database_path: &Path,
     directory_id: &str,
 ) -> Result<Vec<ChatConversationRecord>> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             let mut statement = connection.prepare(
                 "SELECT conversation_id,
@@ -523,16 +529,17 @@ pub fn list_pinned_conversations(
                         output_tokens,
                         cache_creation_input_tokens,
                         cache_read_input_tokens,
-                        'main',
-                        '',
-                        '',
-                        '',
-                        '',
-                        ''
-                   FROM chat_conversations AS conversation
-                  WHERE directory_id = ?1
-                    AND status = 'pin'
-                    AND NOT EXISTS (
+                       'main',
+                       '',
+                       '',
+                       '',
+                       '',
+                       '',
+                       0
+                  FROM chat_conversations AS conversation
+                 WHERE directory_id = ?1
+                   AND status = 'pin'
+                   AND NOT EXISTS (
                       SELECT 1
                         FROM sub_agent_sessions AS sub_agent
                        WHERE sub_agent.conversation_id = conversation.conversation_id
@@ -550,7 +557,7 @@ pub fn get_chat_conversation(
     database_path: &Path,
     conversation_id: &str,
 ) -> Result<Option<ChatConversationRecord>> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection
                 .query_row(
@@ -575,7 +582,8 @@ pub fn get_chat_conversation(
                             COALESCE(sub_agent.agent_id, ''),
                             COALESCE(sub_agent.agent_name, ''),
                             COALESCE(sub_agent.run_status, ''),
-                            COALESCE(sub_agent.error_message, '')
+                            COALESCE(sub_agent.error_message, ''),
+                            COALESCE(conversation.total_duration_ms, 0)
                        FROM chat_conversations AS conversation
                        LEFT JOIN sub_agent_sessions AS sub_agent
                          ON sub_agent.conversation_id = conversation.conversation_id
@@ -593,7 +601,7 @@ pub fn list_sub_agent_conversations(
     database_path: &Path,
     parent_conversation_id: &str,
 ) -> Result<Vec<ChatConversationRecord>> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             let mut statement = connection.prepare(
                 "SELECT conversation.conversation_id,
@@ -617,7 +625,8 @@ pub fn list_sub_agent_conversations(
                         sub_agent.agent_id,
                         sub_agent.agent_name,
                         sub_agent.run_status,
-                        sub_agent.error_message
+                        sub_agent.error_message,
+                        COALESCE(conversation.total_duration_ms, 0)
                    FROM sub_agent_sessions AS sub_agent
                    JOIN chat_conversations AS conversation
                      ON conversation.conversation_id = sub_agent.conversation_id
@@ -646,7 +655,7 @@ pub fn create_sub_agent_session(
     model: &str,
     title: &str,
 ) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|mut connection| {
             let transaction = connection.transaction()?;
             transaction.execute(
@@ -716,7 +725,7 @@ pub fn update_sub_agent_session_status(
         _ => "running",
     };
 
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "UPDATE sub_agent_sessions
@@ -734,7 +743,7 @@ pub fn update_sub_agent_session_status(
 }
 
 pub fn cancel_running_sub_agent_sessions(database_path: &Path) -> Result<usize> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "UPDATE sub_agent_sessions
@@ -765,7 +774,7 @@ pub fn update_conversation_status(
         _ => "active",
     };
 
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "UPDATE chat_conversations
@@ -791,7 +800,7 @@ pub fn rename_conversation(
         return Ok(());
     }
 
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "UPDATE chat_conversations
@@ -810,7 +819,7 @@ pub fn delete_conversation(
     database_path: &Path,
     conversation_id: &str,
 ) -> Result<()> {
-    let mut connection = Connection::open(database_path)
+    let mut connection = database::open_connection(database_path)
         .map_err(|error| database::database_error(database_path, "delete conversation", error))?;
 
     let transaction = connection
@@ -876,7 +885,7 @@ pub fn list_chat_messages(
     database_path: &Path,
     conversation_id: &str,
 ) -> Result<Vec<ChatMessageRecord>> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             let mut statement = connection.prepare(
                 "SELECT id,
@@ -920,7 +929,7 @@ pub fn list_chat_messages_paginated(
     before_message_id: &str,
     limit: i32,
 ) -> Result<ChatMessagePage> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             let total: i32 = connection.query_row(
                 "SELECT COUNT(*)
@@ -991,7 +1000,7 @@ pub fn fork_conversation(
     source_conversation_id: &str,
     up_to_response_id: &str,
 ) -> Result<ChatConversationRecord> {
-    let mut connection = Connection::open(database_path)
+    let mut connection = database::open_connection(database_path)
         .map_err(|error| database::database_error(database_path, "fork conversation", error))?;
 
     let transaction = connection
@@ -1168,7 +1177,7 @@ pub fn truncate_conversation_from_response(
     conversation_id: &str,
     response_id: &str,
 ) -> Result<()> {
-    let mut connection = Connection::open(database_path)
+    let mut connection = database::open_connection(database_path)
         .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
     let transaction = connection
         .transaction()
@@ -1276,7 +1285,7 @@ fn find_conversation_id_by_response_id(
     database_path: &Path,
     response_id: &str,
 ) -> Result<Option<String>> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection
                 .query_row(
@@ -1295,7 +1304,7 @@ fn find_conversation_id_by_response_id(
 }
 
 fn conversation_exists(database_path: &Path, conversation_id: &str) -> Result<bool> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection
                 .query_row(
@@ -1394,6 +1403,7 @@ fn map_chat_conversation_row(row: &Row<'_>) -> rusqlite::Result<ChatConversation
         sub_agent_name: row.get(19)?,
         sub_agent_status: row.get(20)?,
         sub_agent_error: row.get(21)?,
+        total_duration_ms: row.get(22)?,
     })
 }
 

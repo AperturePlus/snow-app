@@ -103,6 +103,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       // previous streaming session does not briefly flash in StreamCursor
       // before the first iteration resets it again.
       ctx.updateSessionField(sessionKey, "streamTokenCount", 0);
+      ctx.updateSessionField(sessionKey, "streamElapsedMs", 1);
+      ctx.updateSessionField(sessionKey, "streamTtftMs", 0);
       ctx.addStreamingId(sessionKey);
       ctx.updateSessionMessages(sessionKey, (currentMessages) => [
         ...currentMessages,
@@ -140,6 +142,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             outputTokens: 0,
             cacheCreationInputTokens: 0,
             cacheReadInputTokens: 0,
+            totalDurationMs: 0,
           },
           timestamp: Date.now(),
         });
@@ -293,6 +296,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                   "streamTokenCount",
                   chunk.streamTokenCount
                 );
+                ctx.updateSessionField(
+                  subConvId,
+                  "streamElapsedMs",
+                  chunk.elapsedMs
+                );
+                ctx.updateSessionField(subConvId, "streamTtftMs", chunk.ttftMs);
 
                 ctx.updateSessionMessages(subConvId, (currentMessages) =>
                   currentMessages.map((currentMessage) => {
@@ -749,6 +758,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         // every `collect_streaming_response` call, so the frontend probe
         // must also start from zero to stay in sync.
         ctx.updateSessionField(effectiveKey, "streamTokenCount", 0);
+        ctx.updateSessionField(effectiveKey, "streamElapsedMs", 1);
+        ctx.updateSessionField(effectiveKey, "streamTtftMs", 0);
 
         const response = await window.snow.createResponseStream(
           {
@@ -776,6 +787,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               "streamTokenCount",
               chunk.streamTokenCount
             );
+            ctx.updateSessionField(
+              effectiveKey,
+              "streamElapsedMs",
+              chunk.elapsedMs
+            );
+            ctx.updateSessionField(effectiveKey, "streamTtftMs", chunk.ttftMs);
 
             ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
               currentMessages.map((currentMessage) => {

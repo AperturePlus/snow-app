@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  RefreshCw,
   Trash2,
   X,
 } from "lucide-react";
@@ -235,6 +236,10 @@ export function SystemLogsPanel({
     setLevelFilter(level);
   }, []);
 
+  const handleRefresh = useCallback(() => {
+    void loadLogs(offset, levelFilter);
+  }, [loadLogs, offset, levelFilter]);
+
   const toggleExpand = useCallback((id: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
@@ -338,6 +343,24 @@ export function SystemLogsPanel({
           </span>
         </div>
         <div className="system-logs-header-actions">
+          <button
+            className="icon-btn ghost"
+            onClick={handleRefresh}
+            type="button"
+            disabled={isLoading}
+            aria-label={t("settings.systemLogsRefresh", {
+              defaultValue: "Refresh logs",
+            })}
+            title={t("settings.systemLogsRefresh", {
+              defaultValue: "Refresh logs",
+            })}
+          >
+            <RefreshCw
+              size={15}
+              strokeWidth={1.8}
+              className={isLoading ? "spin" : ""}
+            />
+          </button>
           <button
             className={`system-logs-clear-btn${
               confirmingClear ? " confirming" : ""

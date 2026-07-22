@@ -57,13 +57,13 @@ const PRESET_SENSITIVE_COMMANDS: &[PresetSensitiveCommand] = &[
 ];
 
 pub fn seed_default_sensitive_command_configs(database_path: &Path) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| seed_defaults_with_connection(&connection))
         .map_err(|error| database::database_error(database_path, "seed sensitive command configs", error))
 }
 
 pub fn list_sensitive_command_configs(database_path: &Path) -> Result<Vec<SensitiveCommandConfigRecord>> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| query_sensitive_command_configs(&connection))
         .map_err(|error| database::database_error(database_path, "list sensitive command configs", error))
 }
@@ -72,7 +72,7 @@ pub fn upsert_sensitive_command_config(
     database_path: &Path,
     item: &SensitiveCommandConfigInput,
 ) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| upsert_sensitive_command_config_with_connection(&connection, item))
         .map_err(|error| database::database_error(database_path, "upsert sensitive command config", error))
 }
@@ -81,7 +81,7 @@ pub fn delete_sensitive_command_config(
     database_path: &Path,
     command_id: &str,
 ) -> Result<()> {
-    Connection::open(database_path)
+    database::open_connection(database_path)
         .and_then(|connection| {
             connection.execute(
                 "DELETE FROM sensitive_command_configs

@@ -195,6 +195,7 @@ async fn create_gemini_response_async(
                 tool_calls_json: &streamed_response.tool_calls_json,
                 directory_id: request.directory_id.as_deref().unwrap_or(""),
                 context_compaction: request.context_compaction.unwrap_or(false),
+                total_duration_ms: streamed_response.total_duration_ms,
             },
         )?;
     }
@@ -408,6 +409,7 @@ struct GeminiStreamResult {
     token_usage: ChatTokenUsage,
     tool_calls_json: String,
     raw_events: Vec<Value>,
+    total_duration_ms: i64,
 }
 
 async fn collect_gemini_stream(
@@ -421,6 +423,8 @@ async fn collect_gemini_stream(
 ) -> Result<GeminiStreamResult> {
     let mut attempt: u32 = 0;
     let mut stream_token_count: usize = 0;
+    let stream_start = std::time::Instant::now();
+    let mut ttft_ms: i64 = 0;
     let response = loop {
         if cancel_token.is_cancelled() {
             return Ok(GeminiStreamResult {
@@ -432,6 +436,7 @@ async fn collect_gemini_stream(
                 token_usage: ChatTokenUsage::default(),
                 tool_calls_json: "[]".to_string(),
                 raw_events: Vec::new(),
+                total_duration_ms: stream_start.elapsed().as_millis() as i64,
             });
         }
 
@@ -453,6 +458,7 @@ async fn collect_gemini_stream(
                     token_usage: ChatTokenUsage::default(),
                     tool_calls_json: "[]".to_string(),
                     raw_events: Vec::new(),
+                    total_duration_ms: stream_start.elapsed().as_millis() as i64,
                 });
             }
             result = send_future => {
@@ -485,6 +491,8 @@ async fn collect_gemini_stream(
                             retry_attempt: Some((attempt + 1) as i32),
                             retry_error: Some(error.reason.clone()),
                             stream_token_count: stream_token_count as i64,
+                            elapsed_ms: stream_start.elapsed().as_millis() as i64,
+                            ttft_ms,
                         },
                         ThreadsafeFunctionCallMode::NonBlocking,
                     );
@@ -512,6 +520,8 @@ async fn collect_gemini_stream(
                         retry_attempt: Some((attempt + 1) as i32),
                         retry_error: Some(error.reason.clone()),
                         stream_token_count: stream_token_count as i64,
+                        elapsed_ms: stream_start.elapsed().as_millis() as i64,
+                        ttft_ms,
                     },
                     ThreadsafeFunctionCallMode::NonBlocking,
                 );
@@ -604,16 +614,27 @@ async fn collect_gemini_stream(
                     }
                     let content_delta = content_chunks[content_start_index..].join("");
                     let thinking_delta = thinking_chunks[thinking_start_index..].join("");
+                    if ttft_ms == 0 {
+                        ttft_ms = stream_start.elapsed().as_millis() as i64;
+                    }
                     emit_stream_chunk(
                         on_chunk,
                         content_delta,
                         thinking_delta,
                         &mut stream_token_count,
+                        stream_start.elapsed().as_millis() as i64,
+                        ttft_ms,
                     );
                     // Tool-call argument deltas arrive separately from the
                     // content stream. Emit a probe-only chunk so the
                     // renderer reflects long tool arguments in real time.
-                    emit_tool_args_probe(on_chunk, &mut stream_token_count, &tool_args_delta);
+                    emit_tool_args_probe(
+                        on_chunk,
+                        &mut stream_token_count,
+                        &tool_args_delta,
+                        stream_start.elapsed().as_millis() as i64,
+                        ttft_ms,
+                    );
                 }
             }
         }
@@ -650,13 +671,24 @@ async fn collect_gemini_stream(
             }
             let content_delta = content_chunks[content_start_index..].join("");
             let thinking_delta = thinking_chunks[thinking_start_index..].join("");
+            if ttft_ms == 0 {
+                ttft_ms = stream_start.elapsed().as_millis() as i64;
+            }
             emit_stream_chunk(
                 on_chunk,
                 content_delta,
                 thinking_delta,
                 &mut stream_token_count,
+                stream_start.elapsed().as_millis() as i64,
+                ttft_ms,
             );
-            emit_tool_args_probe(on_chunk, &mut stream_token_count, &tool_args_delta);
+            emit_tool_args_probe(
+                on_chunk,
+                &mut stream_token_count,
+                &tool_args_delta,
+                stream_start.elapsed().as_millis() as i64,
+                ttft_ms,
+            );
         }
     }
 
@@ -673,6 +705,7 @@ async fn collect_gemini_stream(
         token_usage,
         tool_calls_json,
         raw_events,
+        total_duration_ms: stream_start.elapsed().as_millis() as i64,
     })
 }
 
@@ -829,6 +862,8 @@ fn emit_stream_chunk(
     content_delta: String,
     thinking_delta: String,
     stream_token_count: &mut usize,
+    elapsed_ms: i64,
+    ttft_ms: i64,
 ) {
     if content_delta.is_empty() && thinking_delta.is_empty() {
         return;
@@ -852,6 +887,8 @@ fn emit_stream_chunk(
                 retry_attempt: None,
                 retry_error: None,
                 stream_token_count: *stream_token_count as i64,
+                elapsed_ms,
+                ttft_ms,
             },
             ThreadsafeFunctionCallMode::NonBlocking,
         );
@@ -871,6 +908,8 @@ fn emit_stream_chunk(
             retry_attempt: None,
             retry_error: None,
             stream_token_count: *stream_token_count as i64,
+            elapsed_ms,
+            ttft_ms,
         },
         ThreadsafeFunctionCallMode::NonBlocking,
     );
@@ -885,6 +924,8 @@ fn emit_tool_args_probe(
     on_chunk: &ResponsesApiStreamCallback,
     stream_token_count: &mut usize,
     args_json: &str,
+    elapsed_ms: i64,
+    ttft_ms: i64,
 ) {
     if args_json.is_empty() {
         return;
@@ -901,6 +942,8 @@ fn emit_tool_args_probe(
             retry_attempt: None,
             retry_error: None,
             stream_token_count: *stream_token_count as i64,
+            elapsed_ms,
+            ttft_ms,
         },
         ThreadsafeFunctionCallMode::NonBlocking,
     );

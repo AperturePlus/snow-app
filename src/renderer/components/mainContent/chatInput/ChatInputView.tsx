@@ -41,6 +41,7 @@ import { ProjectCodebasePanel } from "./ProjectCodebasePanel";
 import { ProjectSensitiveCommandsPanel } from "./ProjectSensitiveCommandsPanel";
 import { ProjectSkillsPanel } from "./ProjectSkillsPanel";
 import { RoleEditorPanel } from "./RoleEditorPanel";
+import { StreamMetrics } from "./StreamMetrics";
 import { useChatConversationContext } from "../chatMessages";
 import { CommandPanel, type CommandPanelHandle } from "./commands/CommandPanel";
 import { createChatCommands } from "./commands/commandRegistry";
@@ -104,7 +105,13 @@ export const ChatInputView = ({
   restoreContent,
 }: ChatInputViewProps): React.JSX.Element => {
   const { t } = useI18n();
-  const { handleNewChat, messages } = useChatConversationContext();
+  const {
+    handleNewChat,
+    messages,
+    streamTokenCount,
+    streamElapsedMs,
+    streamTtftMs,
+  } = useChatConversationContext();
   const isDraggingOverRef = useRef(false);
   const [isMentionOpen, setIsMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
@@ -822,6 +829,15 @@ export const ChatInputView = ({
           messages={pendingMessages}
           onWithdraw={handleWithdrawPending}
         />
+        {isStreaming ? (
+          <div className="stream-metrics-bar">
+            <StreamMetrics
+              tokenCount={streamTokenCount}
+              elapsedMs={streamElapsedMs}
+              ttftMs={streamTtftMs}
+            />
+          </div>
+        ) : null}
         <div className="input-box">
           <div
             ref={textareaRef}

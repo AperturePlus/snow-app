@@ -21,6 +21,7 @@ export type ChatConversationRecord = {
   outputTokens: number;
   cacheCreationInputTokens: number;
   cacheReadInputTokens: number;
+  totalDurationMs: number;
 };
 
 export type ChatConversationPage = {
