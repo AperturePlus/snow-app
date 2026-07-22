@@ -17,6 +17,7 @@ import type {
 type TodoPanelButtonProps = {
   messages: ChatConversationMessage[];
   projectId?: string;
+  isRunning?: boolean;
   onOpenChange?: (open: boolean) => void;
 };
 
@@ -59,6 +60,7 @@ const parseTodos = (result: string): TodoItem[] | null => {
 export const TodoPanelButton = ({
   messages,
   projectId,
+  isRunning = false,
   onOpenChange,
 }: TodoPanelButtonProps): React.JSX.Element | null => {
   const { t } = useI18n();
@@ -142,6 +144,12 @@ export const TodoPanelButton = ({
     };
   }, [isOpen]);
 
+  useEffect(() => {
+    if (isRunning) {
+      setSelectedTodoIds(new Set());
+    }
+  }, [isRunning]);
+
   const handleDelete = useCallback(
     async (todoIds: string[]): Promise<void> => {
       if (!sessionId || todoIds.length === 0) {
@@ -221,37 +229,39 @@ export const TodoPanelButton = ({
               })}
             </span>
           </div>
-          <div className="top-bar-todo-selection-toolbar">
-            <label className="top-bar-todo-select-all">
-              <input
-                type="checkbox"
-                checked={allSelected}
-                onChange={toggleAllSelection}
-                aria-label={t("topBar.todo.selectAll")}
-              />
-              <span>{t("topBar.todo.selectAll")}</span>
-            </label>
-            {selectedCount > 0 ? (
-              <>
-                <span className="top-bar-todo-selected-count">
-                  {t("topBar.todo.selectedCount", {
-                    values: { count: selectedCount },
-                  })}
-                </span>
-                <button
-                  className="top-bar-todo-delete-selected"
-                  type="button"
-                  disabled={isDeleting || !sessionId}
-                  onClick={() =>
-                    setConfirmDeleteIds(Array.from(selectedTodoIds))
-                  }
-                >
-                  <Trash2 size={12} aria-hidden="true" />
-                  <span>{t("topBar.todo.deleteSelected")}</span>
-                </button>
-              </>
-            ) : null}
-          </div>
+          {!isRunning ? (
+            <div className="top-bar-todo-selection-toolbar">
+              <label className="top-bar-todo-select-all">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleAllSelection}
+                  aria-label={t("topBar.todo.selectAll")}
+                />
+                <span>{t("topBar.todo.selectAll")}</span>
+              </label>
+              {selectedCount > 0 ? (
+                <>
+                  <span className="top-bar-todo-selected-count">
+                    {t("topBar.todo.selectedCount", {
+                      values: { count: selectedCount },
+                    })}
+                  </span>
+                  <button
+                    className="top-bar-todo-delete-selected"
+                    type="button"
+                    disabled={isDeleting || !sessionId}
+                    onClick={() =>
+                      setConfirmDeleteIds(Array.from(selectedTodoIds))
+                    }
+                  >
+                    <Trash2 size={12} aria-hidden="true" />
+                    <span>{t("topBar.todo.deleteSelected")}</span>
+                  </button>
+                </>
+              ) : null}
+            </div>
+          ) : null}
           <ul className="top-bar-todo-list">
             {todos.map((todo) => {
               const StatusIcon = todoStatusIcon(todo.status);
@@ -261,14 +271,16 @@ export const TodoPanelButton = ({
                   key={todo.id}
                   className={`top-bar-todo-item top-bar-todo-item-${todo.status}`}
                 >
-                  <input
-                    className="top-bar-todo-item-select"
-                    type="checkbox"
-                    checked={isSelected}
-                    disabled={isDeleting || !sessionId}
-                    onChange={() => toggleTodoSelection(todo.id)}
-                    aria-label={t("topBar.todo.selectTodo")}
-                  />
+                  {!isRunning ? (
+                    <input
+                      className="top-bar-todo-item-select"
+                      type="checkbox"
+                      checked={isSelected}
+                      disabled={isDeleting || !sessionId}
+                      onChange={() => toggleTodoSelection(todo.id)}
+                      aria-label={t("topBar.todo.selectTodo")}
+                    />
+                  ) : null}
                   <StatusIcon
                     size={13}
                     className="top-bar-todo-item-icon"
@@ -277,16 +289,18 @@ export const TodoPanelButton = ({
                   <span className="top-bar-todo-item-content">
                     {todo.content}
                   </span>
-                  <button
-                    className="top-bar-todo-item-delete"
-                    type="button"
-                    aria-label={t("topBar.todo.confirmDelete")}
-                    title={t("topBar.todo.confirmDelete")}
-                    disabled={isDeleting || !sessionId}
-                    onClick={() => setConfirmDeleteIds([todo.id])}
-                  >
-                    <Trash2 size={12} />
-                  </button>
+                  {!isRunning ? (
+                    <button
+                      className="top-bar-todo-item-delete"
+                      type="button"
+                      aria-label={t("topBar.todo.confirmDelete")}
+                      title={t("topBar.todo.confirmDelete")}
+                      disabled={isDeleting || !sessionId}
+                      onClick={() => setConfirmDeleteIds([todo.id])}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  ) : null}
                 </li>
               );
             })}

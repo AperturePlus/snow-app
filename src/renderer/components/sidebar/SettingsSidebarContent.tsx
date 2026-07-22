@@ -3,12 +3,13 @@ import {
   ChartColumn,
   EyeOff,
   Globe,
-  Link,
+  FishingHook,
   List,
   MessageSquareText,
   Palette,
   Plug,
   Puzzle,
+  ScrollText,
   Search,
   Sparkles,
   ShieldAlert,
@@ -86,7 +87,7 @@ const SETTINGS_ITEMS: SettingsItem[] = [
   },
   {
     id: "hooks",
-    icon: Link,
+    icon: FishingHook,
     labelKey: "settings.hooksSettings",
     defaultLabel: "Hooks settings",
   },
@@ -114,6 +115,12 @@ const SETTINGS_ITEMS: SettingsItem[] = [
     labelKey: "settings.usageSettings",
     defaultLabel: "Usage statistics",
   },
+  {
+    id: "system-logs",
+    icon: ScrollText,
+    labelKey: "settings.systemLogs",
+    defaultLabel: "System logs",
+  },
 ];
 
 export function SettingsSidebarContent({
@@ -140,7 +147,8 @@ export function SettingsSidebarContent({
       activeMainView === "terminal-settings" ||
       activeMainView === "theme-settings" ||
       activeMainView === "privacy-settings" ||
-      activeMainView === "usage-settings"
+      activeMainView === "usage-settings" ||
+      activeMainView === "system-logs"
     ) {
       onSelectMainView("chat");
     }
@@ -197,6 +205,8 @@ export function SettingsSidebarContent({
                   ? "privacy-settings"
                   : item.id === "usage"
                   ? "usage-settings"
+                  : item.id === "system-logs"
+                  ? "system-logs"
                   : null;
               const isActive = targetView === activeMainView;
 

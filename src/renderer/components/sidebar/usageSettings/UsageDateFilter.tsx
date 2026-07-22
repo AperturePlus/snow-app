@@ -1,24 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { useI18n } from "../../i18n";
-
-export type UsageDatePreset =
-  | "today"
-  | "yesterday"
-  | "last7days"
-  | "last30days"
-  | "thisMonth"
-  | "lastMonth"
-  | "custom";
-
-type UsageDateFilterProps = {
-  preset: UsageDatePreset;
-  sinceDate: string;
-  untilDate: string;
-  onPresetChange: (preset: UsageDatePreset) => void;
-  onSinceDateChange: (value: string) => void;
-  onUntilDateChange: (value: string) => void;
-};
+import { useI18n } from "../../../i18n";
+import type { UsageDateFilterProps, UsageDatePreset } from "./types";
 
 type PresetOption = {
   value: UsageDatePreset;

@@ -1,5 +1,6 @@
 import { ipcMain } from "electron";
 import type { NativeBridge } from "../../native/types";
+import { snowLog } from "../../../utils/snowLogger";
 
 export const registerConversationHandlers = (native: NativeBridge): void => {
   ipcMain.handle("chat-conversations:list", (_event, directoryId: unknown) => {
@@ -118,6 +119,14 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
       const responseId =
         typeof upToResponseId === "string" ? upToResponseId.trim() : "";
 
+      snowLog.info({
+        module: "ipc/conversation",
+        func: "fork",
+        message: "Conversation forked",
+        context: `source=${sourceConversationId.trim()} response=${
+          responseId || "head"
+        }`,
+      });
       return native.forkConversation(sourceConversationId.trim(), responseId);
     }
   );
@@ -131,6 +140,12 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
         throw new Error("Response ID is required to truncate conversation");
       }
 
+      snowLog.info({
+        module: "ipc/conversation",
+        func: "truncate",
+        message: "Conversation truncated",
+        context: `conversation=${conversationId.trim()} response=${responseId.trim()}`,
+      });
       await native.truncateConversationFromResponse(
         conversationId.trim(),
         responseId.trim()
@@ -185,6 +200,12 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
         throw new Error("Conversation ID is required to delete");
       }
 
+      snowLog.warn({
+        module: "ipc/conversation",
+        func: "delete",
+        message: "Conversation deleted",
+        context: `conversation=${conversationId.trim()}`,
+      });
       await native.deleteConversation(conversationId.trim());
     }
   );
@@ -244,6 +265,12 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
         throw new Error("Title is required to create sub-agent session");
       }
 
+      snowLog.info({
+        module: "ipc/conversation",
+        func: "create-sub-agent-session",
+        message: "Sub-agent session created",
+        context: `agent=${agentName.trim()} conversation=${conversationId.trim()} parent=${parentConversationId.trim()}`,
+      });
       await native.createSubAgentSession(
         conversationId.trim(),
         parentConversationId.trim(),
@@ -274,10 +301,29 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
         );
       }
 
+      const normalizedStatus = runStatus.trim();
+      const normalizedError =
+        typeof errorMessage === "string" ? errorMessage : "";
+      if (normalizedStatus === "failed" || normalizedError) {
+        snowLog.error({
+          module: "ipc/conversation",
+          func: "update-sub-agent-status",
+          message: "Sub-agent session failed",
+          context: `conversation=${conversationId.trim()} status=${normalizedStatus}`,
+          error: normalizedError,
+        });
+      } else {
+        snowLog.info({
+          module: "ipc/conversation",
+          func: "update-sub-agent-status",
+          message: "Sub-agent session status updated",
+          context: `conversation=${conversationId.trim()} status=${normalizedStatus}`,
+        });
+      }
       await native.updateSubAgentSessionStatus(
         conversationId.trim(),
-        runStatus.trim(),
-        typeof errorMessage === "string" ? errorMessage : ""
+        normalizedStatus,
+        normalizedError
       );
     }
   );

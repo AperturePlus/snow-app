@@ -179,6 +179,7 @@
               />
             </g>
           </svg>
+          <p class="boot-slogan" aria-hidden="true"></p>
           <div class="boot-progress-track">
             <div class="boot-progress-bar"></div>
           </div>
@@ -250,14 +251,36 @@
           transform: translateX(350%);
         }
       }
+      .boot-slogan {
+        margin-top: 14px;
+        max-width: 320px;
+        font-size: 12px;
+        line-height: 1.6;
+        color: rgba(128, 128, 128, 0.65);
+        text-align: center;
+        letter-spacing: 0.01em;
+        animation: boot-slogan-fade 0.1s ease-out 0.1s both;
+      }
+      @keyframes boot-slogan-fade {
+        from {
+          opacity: 0;
+          transform: translateY(4px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
       @media (prefers-reduced-motion: reduce) {
         .boot-logo-svg,
         .boot-shimmer-bar,
-        .boot-progress-bar {
+        .boot-progress-bar,
+        .boot-slogan {
           animation: none;
         }
       }
     </style>
+    <script type="module" src="./boot-slogan.ts"></script>
     <script type="module" src="./main.tsx"></script>
   </body>
 </html>

@@ -4,6 +4,7 @@ import type {
   ResponsesApiRequest,
   ResponsesApiStreamChunk,
 } from "../../native/types";
+import { snowLog } from "../../../utils/snowLogger";
 
 const CHAT_CREATE_RESPONSE_CHUNK_CHANNEL = "chat:create-response:chunk";
 
@@ -97,25 +98,42 @@ export const registerChatHandlers = (native: NativeBridge): void => {
       const normalizedRequest = normalizeResponsesApiRequest(request);
       const normalizedStreamId = normalizeCreateResponseStreamId(streamId);
 
-      return await native.createResponseStream(
-        normalizedRequest,
-        (chunk: ResponsesApiStreamChunk) => {
-          if (event.sender.isDestroyed()) {
-            return;
-          }
+      try {
+        return await native.createResponseStream(
+          normalizedRequest,
+          (chunk: ResponsesApiStreamChunk) => {
+            if (event.sender.isDestroyed()) {
+              return;
+            }
 
-          event.sender.send(CHAT_CREATE_RESPONSE_CHUNK_CHANNEL, {
-            streamId: normalizedStreamId,
-            chunk,
-          });
-        },
-        normalizedStreamId
-      );
+            event.sender.send(CHAT_CREATE_RESPONSE_CHUNK_CHANNEL, {
+              streamId: normalizedStreamId,
+              chunk,
+            });
+          },
+          normalizedStreamId
+        );
+      } catch (error) {
+        snowLog.error({
+          module: "ipc/chat",
+          func: "create-response-stream",
+          message: "Response stream failed",
+          context: `model=${normalizedRequest.model ?? "default"}`,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
     }
   );
 
   ipcMain.handle("chat:abort-response-stream", (_event, streamId: unknown) => {
     const normalizedStreamId = normalizeCreateResponseStreamId(streamId);
+    snowLog.warn({
+      module: "ipc/chat",
+      func: "abort-response-stream",
+      message: "Response stream aborted",
+      context: `streamId=${normalizedStreamId}`,
+    });
     return native.abortResponseStream(normalizedStreamId);
   });
 };

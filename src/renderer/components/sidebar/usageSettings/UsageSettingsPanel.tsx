@@ -1,22 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
-import { AutoDismissNotice } from "../AutoDismissNotice";
-import { UsageDateFilter, type UsageDatePreset } from "./UsageDateFilter";
-import { useI18n } from "../../i18n";
+import { AutoDismissNotice } from "../../AutoDismissNotice";
+import { UsageDateFilter } from "./UsageDateFilter";
+import { useI18n } from "../../../i18n";
 import type {
   DailyUsageBreakdown,
   UsageRecord,
   UsageRecordPage,
   UsageSummary,
-} from "../../../preload";
+} from "../../../../preload";
+import type { UsageDatePreset, UsageSettingsPanelProps } from "./types";
 
 const PAGE_SIZE = 20;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
-
-type UsageSettingsPanelProps = {
-  onClose?: () => void;
-};
 
 const formatDateForInput = (date: Date): string => {
   const year = date.getFullYear();
@@ -691,7 +688,7 @@ export function UsageSettingsPanel({
             </button>
             <span className="usage-pagination-info">
               {t("settings.usagePageInfo", {
-                defaultValue: "Page {current} of {total}",
+                defaultValue: "Page {{current}} of {{total}}",
                 values: { current: currentPage, total: totalPages },
               })}
             </span>

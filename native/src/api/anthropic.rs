@@ -24,6 +24,8 @@ use crate::api::responses::{
     TokenUsage,
 };
 use crate::api::retry::{RetryOptions, should_retry, wait_before_retry};
+use crate::api::sse::find_sse_separator;
+use crate::storage::services::app_logs::{log_api_error, log_api_warning};
 use crate::storage::services::chat_conversations::{
     store_chat_exchange, ChatContextMessage, ChatTokenUsage, StoreChatExchangeInput,
 };
@@ -145,7 +147,7 @@ async fn create_anthropic_response_async(
         &prepared_request.user_system_prompts,
     )?;
     let retry_options = RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
-    let streamed_response = collect_anthropic_stream(
+    let streamed_response = match collect_anthropic_stream(
         &client,
         &endpoint,
         api_key,
@@ -155,9 +157,43 @@ async fn create_anthropic_response_async(
         &cancel_token,
         &retry_options,
     )
-    .await?;
+    .await
+    {
+        Ok(result) => result,
+        Err(error) => {
+            log_api_error(
+                &database_path,
+                "create_anthropic_response_stream",
+                "Anthropic API call failed",
+                &error.reason,
+            );
+            return Err(error);
+        }
+    };
     let raw_response_json = serde_json::to_string(&streamed_response.raw_events)
         .unwrap_or_else(|_| "[]".to_string());
+
+    for parse_error in &streamed_response.tool_parse_errors {
+        log_api_warning(
+            &database_path,
+            "create_anthropic_response_stream",
+            "Tool call JSON parse failed after streaming",
+            parse_error,
+        );
+    }
+
+    if streamed_response.status != "cancelled"
+        && streamed_response.content.is_empty()
+        && streamed_response.thinking.is_empty()
+        && streamed_response.tool_calls_json == "[]"
+    {
+        log_api_warning(
+            &database_path,
+            "create_anthropic_response_stream",
+            "AI returned empty response",
+            &format!("model={}, status={}", streamed_response.model, streamed_response.status),
+        );
+    }
 
     if !skip_context {
         store_chat_exchange(
@@ -469,6 +505,7 @@ struct AnthropicStreamResult {
     token_usage: ChatTokenUsage,
     tool_calls_json: String,
     raw_events: Vec<Value>,
+    tool_parse_errors: Vec<String>,
 }
 
 async fn collect_anthropic_stream(
@@ -494,6 +531,7 @@ async fn collect_anthropic_stream(
                 token_usage: ChatTokenUsage::default(),
                 tool_calls_json: "[]".to_string(),
                 raw_events: Vec::new(),
+                tool_parse_errors: Vec::new(),
             });
         }
 
@@ -515,6 +553,7 @@ async fn collect_anthropic_stream(
                     token_usage: ChatTokenUsage::default(),
                     tool_calls_json: "[]".to_string(),
                     raw_events: Vec::new(),
+                    tool_parse_errors: Vec::new(),
                 });
             }
             result = send_future => {
@@ -592,6 +631,7 @@ async fn collect_anthropic_stream(
     let mut tool_calls = Vec::new();
     let mut tool_call_positions_by_index: HashMap<usize, usize> = HashMap::new();
     let mut tool_input_json_by_index: HashMap<usize, String> = HashMap::new();
+    let mut tool_parse_errors: Vec<String> = Vec::new();
     let mut response_id = String::new();
     let mut response_model = String::new();
     let mut response_status = String::from("completed");
@@ -601,7 +641,7 @@ async fn collect_anthropic_stream(
     // contributes to this counter so the renderer can display a real-time
     // probe that updates on every chunk — including long tool arguments
     // that previously were only counted after the full call assembled.
-    let mut buffer = String::new();
+    let mut byte_buffer: Vec<u8> = Vec::new();
     let mut stream = response.bytes_stream();
     // Track whether the stream completed normally. If the loop exits because
     // of a read error or unexpected EOF (not via message_delta/message_stop
@@ -635,11 +675,14 @@ async fn collect_anthropic_stream(
                         break;
                     }
                 };
-                buffer.push_str(&String::from_utf8_lossy(&chunk));
+                byte_buffer.extend_from_slice(&chunk);
 
-                while let Some(separator_index) = buffer.find("\n\n") {
-                    let event_block = buffer[..separator_index].to_string();
-                    buffer = buffer[separator_index + 2..].to_string();
+                while let Some((separator_index, separator_len)) =
+                    find_sse_separator(&byte_buffer)
+                {
+                    let event_block =
+                        String::from_utf8_lossy(&byte_buffer[..separator_index]).to_string();
+                    byte_buffer = byte_buffer[separator_index + separator_len..].to_vec();
                     let content_start_index = content_chunks.len();
                     let thinking_start_index = thinking_chunks.len();
                     let mut tool_args_delta = String::new();
@@ -660,6 +703,7 @@ async fn collect_anthropic_stream(
                         &mut response_status,
                         &mut token_usage,
                         &mut tool_args_delta,
+                        &mut tool_parse_errors,
                     ) {
                         // Propagate "error" type events (server-sent errors)
                         // as actual errors, but skip malformed JSON events.
@@ -691,37 +735,41 @@ async fn collect_anthropic_stream(
         response_status = String::from("incomplete");
     }
 
-    if response_status != "cancelled" && !buffer.trim().is_empty() {
-        let content_start_index = content_chunks.len();
-        let thinking_start_index = thinking_chunks.len();
-        let mut tool_args_delta = String::new();
-        if let Err(parse_error) = process_anthropic_sse_event_block(
-            &buffer,
-            &mut raw_events,
-            &mut content_chunks,
-            &mut thinking_chunks,
-            &mut tool_calls,
-            &mut tool_call_positions_by_index,
-            &mut tool_input_json_by_index,
-            &mut response_id,
-            &mut response_model,
-            &mut response_status,
-            &mut token_usage,
-            &mut tool_args_delta,
-        ) {
-            eprintln!(
-                "Anthropic stream trailing event error (skipping event): {parse_error}"
+    if response_status != "cancelled" && !byte_buffer.is_empty() {
+        let trailing_buffer = String::from_utf8_lossy(&byte_buffer).to_string();
+        if !trailing_buffer.trim().is_empty() {
+            let content_start_index = content_chunks.len();
+            let thinking_start_index = thinking_chunks.len();
+            let mut tool_args_delta = String::new();
+            if let Err(parse_error) = process_anthropic_sse_event_block(
+                &trailing_buffer,
+                &mut raw_events,
+                &mut content_chunks,
+                &mut thinking_chunks,
+                &mut tool_calls,
+                &mut tool_call_positions_by_index,
+                &mut tool_input_json_by_index,
+                &mut response_id,
+                &mut response_model,
+                &mut response_status,
+                &mut token_usage,
+                &mut tool_args_delta,
+                &mut tool_parse_errors,
+            ) {
+                eprintln!(
+                    "Anthropic stream trailing event error (skipping event): {parse_error}"
+                );
+            }
+            let content_delta = content_chunks[content_start_index..].join("");
+            let thinking_delta = thinking_chunks[thinking_start_index..].join("");
+            emit_stream_chunk(
+                on_chunk,
+                content_delta,
+                thinking_delta,
+                &mut stream_token_count,
             );
+            emit_tool_args_probe(on_chunk, &mut stream_token_count, &tool_args_delta);
         }
-        let content_delta = content_chunks[content_start_index..].join("");
-        let thinking_delta = thinking_chunks[thinking_start_index..].join("");
-        emit_stream_chunk(
-            on_chunk,
-            content_delta,
-            thinking_delta,
-            &mut stream_token_count,
-        );
-        emit_tool_args_probe(on_chunk, &mut stream_token_count, &tool_args_delta);
     }
 
     let content = content_chunks.join("").trim().to_string();
@@ -744,6 +792,7 @@ async fn collect_anthropic_stream(
         token_usage,
         tool_calls_json,
         raw_events,
+        tool_parse_errors,
     })
 }
 
@@ -761,6 +810,7 @@ fn process_anthropic_sse_event_block(
     response_status: &mut String,
     token_usage: &mut ChatTokenUsage,
     tool_args_delta: &mut String,
+    tool_parse_errors: &mut Vec<String>,
 ) -> Result<()> {
     let data = event_block
         .lines()
@@ -788,6 +838,7 @@ fn process_anthropic_sse_event_block(
         response_status,
         token_usage,
         tool_args_delta,
+        tool_parse_errors,
     )?;
     raw_events.push(event);
 
@@ -807,6 +858,7 @@ fn process_anthropic_event(
     response_status: &mut String,
     token_usage: &mut ChatTokenUsage,
     tool_args_delta: &mut String,
+    tool_parse_errors: &mut Vec<String>,
 ) -> Result<()> {
     let event_type = event.get("type").and_then(Value::as_str).unwrap_or_default();
 
@@ -865,16 +917,33 @@ fn process_anthropic_event(
                 .and_then(|value| usize::try_from(value).ok())
             {
                 if let Some(accumulated) = tool_input_json_by_index.get(&index) {
-                    if let Ok(input) = serde_json::from_str::<Value>(accumulated.as_str()) {
-                        if let Some(position) =
-                            tool_call_positions_by_index.get(&index).copied()
-                        {
-                            if let Some(tool_call) = tool_calls
-                                .get_mut(position)
-                                .and_then(Value::as_object_mut)
+                    match serde_json::from_str::<Value>(accumulated.as_str()) {
+                        Ok(input) => {
+                            if let Some(position) =
+                                tool_call_positions_by_index.get(&index).copied()
                             {
-                                tool_call.insert("input".to_string(), input);
+                                if let Some(tool_call) = tool_calls
+                                    .get_mut(position)
+                                    .and_then(Value::as_object_mut)
+                                {
+                                    tool_call.insert("input".to_string(), input);
+                                }
                             }
+                        }
+                        Err(parse_err) => {
+                            let tool_name = tool_call_positions_by_index
+                                .get(&index)
+                                .and_then(|pos| tool_calls.get(*pos))
+                                .and_then(|tc| tc.get("name"))
+                                .and_then(Value::as_str)
+                                .unwrap_or("unknown");
+                            tool_parse_errors.push(format!(
+                                "tool={}, index={}, error={}, raw={}",
+                                tool_name,
+                                index,
+                                parse_err,
+                                &accumulated[..accumulated.len().min(200)]
+                            ));
                         }
                     }
                 }

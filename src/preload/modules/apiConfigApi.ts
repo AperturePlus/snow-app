@@ -3,6 +3,7 @@ import type {
   ApiConfigInput,
   ApiConfigRecord,
   ApiModelsConfig,
+  AppLogPage,
   CodebaseSettingsInput,
   DailyUsageBreakdown,
   DetectedTerminal,
@@ -212,4 +213,14 @@ export const apiConfigApi = {
     until: string
   ): Promise<DailyUsageBreakdown[]> =>
     ipcRenderer.invoke("usage:get-daily-breakdown", since, until),
+  listAppLogs: (
+    level: string,
+    module: string,
+    since: string,
+    until: string,
+    limit: number,
+    offset: number
+  ): Promise<AppLogPage> =>
+    ipcRenderer.invoke("logs:list", level, module, since, until, limit, offset),
+  clearAppLogs: (): Promise<number> => ipcRenderer.invoke("logs:clear"),
 };

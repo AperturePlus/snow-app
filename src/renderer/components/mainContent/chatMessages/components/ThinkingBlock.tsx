@@ -138,7 +138,7 @@ export const ThinkingBlock = ({
           <div
             className={`thinking-block-scroll${
               isExpanded ? " thinking-block-scroll--expanded" : ""
-            }${isStreaming ? " thinking-block-scroll--streaming" : ""}`}
+            }`}
             ref={scrollRef}
             onScroll={handleScroll}
           >
@@ -150,7 +150,7 @@ export const ThinkingBlock = ({
             </div>
           </div>
 
-          {isOverflow && !isExpanded && !isStreaming ? (
+          {isOverflow && !isExpanded ? (
             <div className="thinking-block-mask">
               <button
                 type="button"

@@ -346,6 +346,28 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            ON usage_records(model);
          CREATE INDEX IF NOT EXISTS idx_usage_records_api_profile_name
            ON usage_records(api_profile_name);
+
+         CREATE TABLE IF NOT EXISTS app_logs (
+           id TEXT PRIMARY KEY NOT NULL,
+           level TEXT NOT NULL DEFAULT 'INFO',
+           module TEXT NOT NULL DEFAULT '',
+           func TEXT NOT NULL DEFAULT '',
+           line INTEGER,
+           message TEXT NOT NULL DEFAULT '',
+           input TEXT NOT NULL DEFAULT '',
+           output TEXT NOT NULL DEFAULT '',
+           duration TEXT NOT NULL DEFAULT '',
+           context TEXT NOT NULL DEFAULT '',
+           error TEXT NOT NULL DEFAULT '',
+           source TEXT NOT NULL DEFAULT 'main',
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+         );
+         CREATE INDEX IF NOT EXISTS idx_app_logs_created_at
+           ON app_logs(created_at DESC, id DESC);
+         CREATE INDEX IF NOT EXISTS idx_app_logs_level
+           ON app_logs(level);
+         CREATE INDEX IF NOT EXISTS idx_app_logs_module
+           ON app_logs(module);
     ",
     )?;
 

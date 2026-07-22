@@ -19,6 +19,7 @@ use crate::api::conversation::{
     ConversationContextRequest,
 };
 use crate::api::retry::{RetryOptions, should_retry, wait_before_retry};
+use crate::storage::services::app_logs::{log_api_error, log_api_warning};
 use crate::storage::services::chat_conversations::{
     store_chat_exchange, ChatContextMessage, ChatTokenUsage, StoreChatExchangeInput,
 };
@@ -213,9 +214,42 @@ async fn create_response_async(
         &prepared_request.user_system_prompts,
     )?;
     let retry_options = RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
-    let streamed_response = collect_streaming_response(&client, payload, on_chunk, &cancel_token, &retry_options).await?;
+    let streamed_response = match collect_streaming_response(&client, payload, on_chunk, &cancel_token, &retry_options).await {
+        Ok(result) => result,
+        Err(error) => {
+            log_api_error(
+                &database_path,
+                "create_response_stream_with_context",
+                "Responses API call failed",
+                &error.reason,
+            );
+            return Err(error);
+        }
+    };
     let raw_response_json = serde_json::to_string(&streamed_response.raw_events)
         .unwrap_or_else(|_| "[]".to_string());
+
+    for parse_error in &streamed_response.tool_parse_errors {
+        log_api_warning(
+            &database_path,
+            "create_response_stream_with_context",
+            "Tool call JSON parse failed after streaming",
+            parse_error,
+        );
+    }
+
+    if streamed_response.status != "cancelled"
+        && streamed_response.content.is_empty()
+        && streamed_response.thinking.is_empty()
+        && streamed_response.tool_calls_json == "[]"
+    {
+        log_api_warning(
+            &database_path,
+            "create_response_stream_with_context",
+            "AI returned empty response",
+            &format!("model={}, status={}", streamed_response.model, streamed_response.status),
+        );
+    }
 
     if !skip_context {
         store_chat_exchange(
@@ -502,6 +536,7 @@ struct StreamingResponseResult {
     token_usage: ChatTokenUsage,
     tool_calls_json: String,
     raw_events: Vec<Value>,
+    tool_parse_errors: Vec<String>,
 }
 
 async fn collect_streaming_response(
@@ -534,6 +569,7 @@ async fn collect_streaming_response(
                 },
                 tool_calls_json: "[]".to_string(),
                 raw_events: Vec::new(),
+                tool_parse_errors: Vec::new(),
             });
         }
 
@@ -556,6 +592,7 @@ async fn collect_streaming_response(
                     },
                     tool_calls_json: "[]".to_string(),
                     raw_events: Vec::new(),
+                    tool_parse_errors: Vec::new(),
                 });
             }
             result = create_stream_future => {
@@ -597,6 +634,7 @@ async fn collect_streaming_response(
     let mut content_chunks = Vec::new();
     let mut thinking_chunks = Vec::new();
     let mut tool_calls = Vec::new();
+    let mut tool_parse_errors: Vec<String> = Vec::new();
     // Streaming tool-call accumulator: maps output_item index -> (item_json, accumulated_arguments).
     // When the stream ends abruptly (network error, server disconnect) before
     // `response.output_item.done` fires, we rebuild tool calls from these
@@ -845,6 +883,10 @@ async fn collect_streaming_response(
                         .as_object_mut()
                         .map(|obj| obj.insert("arguments".to_string(), parsed));
                 } else {
+                    tool_parse_errors.push(format!(
+                        "tool=reconstructed, error=invalid JSON, raw={}",
+                        &args[..args.len().min(200)]
+                    ));
                     reconstructed
                         .as_object_mut()
                         .map(|obj| obj.insert("arguments".to_string(), Value::String(args)));
@@ -887,6 +929,7 @@ async fn collect_streaming_response(
         token_usage,
         tool_calls_json,
         raw_events,
+        tool_parse_errors,
     })
 }
 

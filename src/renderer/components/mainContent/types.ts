@@ -13,4 +13,5 @@ export type MainContentView =
   | "terminal-settings"
   | "theme-settings"
   | "privacy-settings"
-  | "usage-settings";
+  | "usage-settings"
+  | "system-logs";

@@ -9,6 +9,13 @@ import {
   macTrafficLightPosition,
 } from "./constants";
 import { killAllPtyForWebContents } from "../pty/ptyManager";
+import {
+  DEFAULT_WINDOW_HEIGHT,
+  DEFAULT_WINDOW_WIDTH,
+  bindWindowStatePersistence,
+  isStatePositionVisible,
+  loadWindowState,
+} from "./windowState";
 
 // 模块级关闭确认标志：渲染进程确认关闭后置为 true，使 close 事件不再被拦截。
 // 这样可以统一覆盖所有关闭路径（自定义标题栏按钮、Alt+F4、任务栏关闭等）。
@@ -50,10 +57,18 @@ const registerThemeBackgroundSync = (): void => {
 // 在模块加载时注册一次主题背景色同步 IPC。
 registerThemeBackgroundSync();
 
-export const createWindow = (): void => {
+export const createWindow = async (): Promise<void> => {
+  // 启动时读取上次保存的窗口尺寸/位置；读取失败时回退到默认尺寸。
+  const savedState = await loadWindowState();
+  const restoredPosition =
+    savedState && isStatePositionVisible(savedState)
+      ? { x: savedState.x, y: savedState.y }
+      : {};
+
   const mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    width: savedState?.width ?? DEFAULT_WINDOW_WIDTH,
+    height: savedState?.height ?? DEFAULT_WINDOW_HEIGHT,
+    ...restoredPosition,
     minWidth: 960,
     minHeight: 600,
     title: "Snow App",
@@ -76,6 +91,14 @@ export const createWindow = (): void => {
   mainWindow.setMenu(null);
   mainWindow.setMenuBarVisibility(false);
   mainWindow.setAutoHideMenuBar(true);
+
+  // 恢复上次退出时的最大化状态。
+  if (savedState?.isMaximized) {
+    mainWindow.maximize();
+  }
+
+  // 监听尺寸/位置/最大化状态变化，防抖后持久化到 userData。
+  bindWindowStatePersistence(mainWindow);
 
   mainWindow.webContents.on("before-input-event", (event, input) => {
     if (is.dev && input.key === "F12") {

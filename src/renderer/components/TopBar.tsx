@@ -39,8 +39,13 @@ export const TopBar = ({
   onOpenTerminal,
   onOpenBrowser,
 }: TopBarProps): React.JSX.Element => {
-  const { handleNewChat, summary, conversationDirectoryId, messages } =
-    useChatConversationContext();
+  const {
+    handleNewChat,
+    summary,
+    conversationDirectoryId,
+    messages,
+    isStreaming,
+  } = useChatConversationContext();
   const [conversationDirectoryName, setConversationDirectoryName] = useState<
     string | undefined
   >(undefined);
@@ -261,6 +266,7 @@ export const TopBar = ({
         <TodoPanelButton
           messages={messages}
           projectId={conversationDirectoryId ?? activeDirectory?.directoryId}
+          isRunning={isStreaming}
           onOpenChange={setIsTodoPanelOpen}
         />
         <CodebaseSyncIndicator

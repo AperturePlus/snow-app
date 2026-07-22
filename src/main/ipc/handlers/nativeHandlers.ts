@@ -8,12 +8,8 @@ import type {
   NativeBridge,
   UserQuestionCommand,
   UserQuestionResponse,
+  AppLogInput,
 } from "../../native/types";
-import {
-  writeLog,
-  type LogEntry,
-  type LogLevel,
-} from "../../../utils/snowLogger";
 import {
   BROWSER_COMMAND_RESPONSE_CHANNEL,
   dispatchBrowserCommand,
@@ -315,7 +311,26 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   ipcMain.handle(
     "debug:write-log",
     (_event, level: unknown, entry: unknown) => {
-      writeLog(level as LogLevel, entry as LogEntry);
+      const logEntry = entry as Record<string, unknown>;
+      const input: AppLogInput = {
+        level: typeof level === "string" ? level : "INFO",
+        module: typeof logEntry?.module === "string" ? logEntry.module : "",
+        func: typeof logEntry?.func === "string" ? logEntry.func : "",
+        line: typeof logEntry?.line === "number" ? logEntry.line : undefined,
+        message: typeof logEntry?.message === "string" ? logEntry.message : "",
+        input: typeof logEntry?.input === "string" ? logEntry.input : undefined,
+        output:
+          typeof logEntry?.output === "string" ? logEntry.output : undefined,
+        duration:
+          typeof logEntry?.duration === "string"
+            ? logEntry.duration
+            : undefined,
+        context:
+          typeof logEntry?.context === "string" ? logEntry.context : undefined,
+        error: typeof logEntry?.error === "string" ? logEntry.error : undefined,
+        source: "renderer",
+      };
+      return native.writeAppLog(input);
     }
   );
 
@@ -668,4 +683,34 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       return native.getUsageDailyBreakdown(sinceStr, untilStr);
     }
   );
+
+  ipcMain.handle(
+    "logs:list",
+    (
+      _event,
+      level: unknown,
+      module: unknown,
+      since: unknown,
+      until: unknown,
+      limit: unknown,
+      offset: unknown
+    ) => {
+      const levelStr = typeof level === "string" ? level.trim() : "";
+      const moduleStr = typeof module === "string" ? module.trim() : "";
+      const sinceStr = typeof since === "string" ? since.trim() : "";
+      const untilStr = typeof until === "string" ? until.trim() : "";
+      const safeLimit = typeof limit === "number" && limit > 0 ? limit : 100;
+      const safeOffset = typeof offset === "number" && offset > 0 ? offset : 0;
+      return native.listAppLogs(
+        levelStr,
+        moduleStr,
+        sinceStr,
+        untilStr,
+        safeLimit,
+        safeOffset
+      );
+    }
+  );
+
+  ipcMain.handle("logs:clear", () => native.clearAppLogs());
 };

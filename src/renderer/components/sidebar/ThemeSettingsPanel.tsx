@@ -427,6 +427,9 @@ export function ThemeSettingsPanel({
     setForm(lastSaved);
     setError("");
     setStatus("");
+    // 重置主题时一并清除窗口尺寸缓存，下次启动回退到默认窗口尺寸。
+    // 清除失败不影响主题重置本身。
+    void window.snow.clearWindowState().catch(() => {});
   };
   const handleTabChange = (tab: EditorTab): void => {
     setEditorTab(tab);

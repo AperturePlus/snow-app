@@ -1,13 +1,5 @@
-import { existsSync, mkdirSync, appendFileSync } from "node:fs";
-import { join } from "node:path";
-
-const LOG_DIR = join(process.cwd(), ".snow", "log");
-
-function ensureLogDir(): void {
-  if (!existsSync(LOG_DIR)) {
-    mkdirSync(LOG_DIR, { recursive: true });
-  }
-}
+import type { AppLogInput } from "../main/native/types";
+import { native } from "../main/native/nativeBridge";
 
 export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR";
 
@@ -23,48 +15,23 @@ export interface LogEntry {
   error?: string;
 }
 
-function formatLogEntry(level: LogLevel, entry: LogEntry): string {
-  const timestamp = new Date().toISOString();
-  const location =
-    entry.module +
-    ":" +
-    entry.func +
-    (entry.line !== undefined ? ":" + entry.line : "");
-
-  let text = `[${timestamp}] [${level}] [${location}]\n`;
-  text += `  ├─ Message: ${entry.message}\n`;
-  if (entry.input !== undefined) {
-    text += `  ├─ Input: ${entry.input}\n`;
-  }
-  if (entry.output !== undefined) {
-    text += `  ├─ Output: ${entry.output}\n`;
-  }
-  if (entry.duration !== undefined) {
-    text += `  ├─ Duration: ${entry.duration}\n`;
-  }
-  if (entry.context !== undefined) {
-    text += `  ├─ Context: ${entry.context}\n`;
-  }
-  if (entry.error !== undefined) {
-    text += `  └─ Error: ${entry.error}\n`;
-  } else {
-    text += `  └─ (end)\n`;
-  }
-  text += "\n";
-
-  return text;
-}
-
 export function writeLog(level: LogLevel, entry: LogEntry): void {
-  try {
-    ensureLogDir();
-    const timestamp = new Date().toISOString();
-    const date = timestamp.slice(0, 10);
-    const file = join(LOG_DIR, `${entry.module}_${date}.txt`);
-    appendFileSync(file, formatLogEntry(level, entry), "utf-8");
-  } catch {
+  const input: AppLogInput = {
+    level,
+    module: entry.module,
+    func: entry.func,
+    line: entry.line,
+    message: entry.message,
+    input: entry.input,
+    output: entry.output,
+    duration: entry.duration,
+    context: entry.context,
+    error: entry.error,
+    source: "main",
+  };
+  native.writeAppLog(input).catch(() => {
     // Logging failures must not break application functionality.
-  }
+  });
 }
 
 export const snowLog = {

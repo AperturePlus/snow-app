@@ -115,6 +115,41 @@ export type DailyUsageBreakdown = {
   totalTokens: number;
 };
 
+export type AppLogInput = {
+  level: string;
+  module: string;
+  func: string;
+  line?: number;
+  message: string;
+  input?: string;
+  output?: string;
+  duration?: string;
+  context?: string;
+  error?: string;
+  source: string;
+};
+
+export type AppLogRecord = {
+  id: string;
+  level: string;
+  module: string;
+  func: string;
+  line?: number;
+  message: string;
+  input: string;
+  output: string;
+  duration: string;
+  context: string;
+  error: string;
+  source: string;
+  createdAt: string;
+};
+
+export type AppLogPage = {
+  items: AppLogRecord[];
+  total: number;
+};
+
 export type PrivacyApiConfig = {
   url: string;
   apiKey: string;
@@ -1040,4 +1075,14 @@ export type NativeBridge = {
     since: string,
     until: string
   ) => Promise<DailyUsageBreakdown[]>;
+  writeAppLog: (input: AppLogInput) => Promise<void>;
+  listAppLogs: (
+    level: string,
+    module: string,
+    since: string,
+    until: string,
+    limit: number,
+    offset: number
+  ) => Promise<AppLogPage>;
+  clearAppLogs: () => Promise<number>;
 };

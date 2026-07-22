@@ -3,6 +3,7 @@ import {
   useEffect,
   useImperativeHandle,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useI18n } from "../../../../i18n";
@@ -23,6 +24,7 @@ export const CommandPanel = forwardRef<CommandPanelHandle, CommandPanelProps>(
   function CommandPanel({ commands, query, visible, onClose, onSelect }, ref) {
     const { t } = useI18n();
     const [selectedIndex, setSelectedIndex] = useState(0);
+    const listRef = useRef<HTMLDivElement>(null);
 
     const filteredCommands = useMemo(() => {
       const normalizedQuery = query.trim().toLowerCase();
@@ -36,8 +38,18 @@ export const CommandPanel = forwardRef<CommandPanelHandle, CommandPanelProps>(
     }, [commands, query]);
 
     useEffect(() => {
-      setSelectedIndex(0);
-    }, [query, visible]);
+      const firstEnabled = filteredCommands.findIndex((c) => !c.disabled);
+      setSelectedIndex(firstEnabled === -1 ? 0 : firstEnabled);
+    }, [query, visible, filteredCommands]);
+
+    useEffect(() => {
+      const list = listRef.current;
+      if (!list) return;
+      const selectedEl = list.children[selectedIndex] as HTMLElement | undefined;
+      if (selectedEl) {
+        selectedEl.scrollIntoView({ block: "nearest" });
+      }
+    }, [selectedIndex]);
 
     useImperativeHandle(
       ref,
@@ -55,22 +67,34 @@ export const CommandPanel = forwardRef<CommandPanelHandle, CommandPanelProps>(
 
           if (event.key === "ArrowDown") {
             event.preventDefault();
-            setSelectedIndex((index) =>
-              index < filteredCommands.length - 1 ? index + 1 : index
-            );
+            setSelectedIndex((index) => {
+              const len = filteredCommands.length;
+              for (let i = 1; i <= len; i++) {
+                const next = (index + i) % len;
+                if (!filteredCommands[next].disabled) return next;
+              }
+              return index;
+            });
             return true;
           }
 
           if (event.key === "ArrowUp") {
             event.preventDefault();
-            setSelectedIndex((index) => (index > 0 ? index - 1 : 0));
+            setSelectedIndex((index) => {
+              const len = filteredCommands.length;
+              for (let i = 1; i <= len; i++) {
+                const prev = (index - i + len) % len;
+                if (!filteredCommands[prev].disabled) return prev;
+              }
+              return index;
+            });
             return true;
           }
 
           if (event.key === "Enter") {
             event.preventDefault();
             const command = filteredCommands[selectedIndex];
-            if (command) {
+            if (command && !command.disabled) {
               onSelect(command);
             }
             return true;
@@ -91,7 +115,7 @@ export const CommandPanel = forwardRef<CommandPanelHandle, CommandPanelProps>(
         role="listbox"
         aria-label={t("chatCommand.title")}
       >
-        <div className="chat-command-list">
+        <div className="chat-command-list" ref={listRef}>
           {filteredCommands.length > 0 ? (
             filteredCommands.map((command, index) => {
               const CommandIcon = command.icon;
@@ -107,7 +131,9 @@ export const CommandPanel = forwardRef<CommandPanelHandle, CommandPanelProps>(
                   role="option"
                   aria-selected={isSelected}
                   disabled={command.disabled}
-                  onMouseEnter={() => setSelectedIndex(index)}
+                  onMouseEnter={() => {
+                    if (!command.disabled) setSelectedIndex(index);
+                  }}
                   onClick={() => onSelect(command)}
                 >
                   <CommandIcon

@@ -583,6 +583,8 @@ export const windowApi = {
     ipcRenderer.invoke("window:confirm-close"),
   isWindowMaximized: (): Promise<boolean> =>
     ipcRenderer.invoke("window:is-maximized"),
+  clearWindowState: (): Promise<void> =>
+    ipcRenderer.invoke("window:clear-state"),
   startWindowDrag: (): Promise<void> => ipcRenderer.invoke("window:start-drag"),
   stopWindowDrag: (): Promise<void> => ipcRenderer.invoke("window:stop-drag"),
   writeImageToClipboard: (dataUrl: string): Promise<void> =>

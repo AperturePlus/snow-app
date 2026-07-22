@@ -5,12 +5,20 @@ import { createWindow } from "./mainWindow";
 import { registerIpcHandlers } from "../ipc/registerIpcHandlers";
 import { native, getRawNative } from "../native/nativeBridge";
 import { installGuestViewErrorFilter } from "../utils/guestViewErrorFilter";
+import { snowLog } from "../../utils/snowLogger";
 import {
   registerThemeBgProtocol,
   registerThemeBgSchemePrivilege,
 } from "./themeBgProtocol";
 
 export const bootstrapApplication = (): void => {
+  snowLog.info({
+    module: "app/bootstrap",
+    func: "bootstrapApplication",
+    message: "Application bootstrap started",
+    context: `platform=${process.platform} electron=${process.versions.electron}`,
+  });
+
   // registerSchemesAsPrivileged 必须在 app.whenReady() 之前调用，
   // 否则 Chromium 不会允许在 CSS url() / <img src> 中加载 theme-bg:// 资源。
   registerThemeBgSchemePrivilege();
@@ -23,6 +31,11 @@ export const bootstrapApplication = (): void => {
   }
 
   app.on("second-instance", () => {
+    snowLog.info({
+      module: "app/bootstrap",
+      func: "second-instance",
+      message: "Second instance detected, focusing existing window",
+    });
     const windows = BrowserWindow.getAllWindows();
     if (windows.length > 0) {
       const win = windows[0];
@@ -56,12 +69,25 @@ export const bootstrapApplication = (): void => {
     // method calls are auto-gated by the Proxy in nativeBridge.ts, which
     // awaits `storageReady` before forwarding any call.
     registerIpcHandlers(native);
-    createWindow();
+    // createWindow 内部会异步读取持久化的窗口尺寸，此处无需等待。
+    void createWindow();
+
+    snowLog.info({
+      module: "app/bootstrap",
+      func: "whenReady",
+      message: "Application ready, main window created",
+    });
 
     // Initialise storage in the background — does not block window display.
     // Use the raw (un-proxied) binding to avoid deadlocking on storageReady.
     initializeApplicationServices(getRawNative()).catch((error) => {
       console.error("Failed to initialize application storage:", error);
+      snowLog.error({
+        module: "app/bootstrap",
+        func: "initializeApplicationServices",
+        message: "Failed to initialize application storage",
+        error: error instanceof Error ? error.message : String(error),
+      });
     });
 
     // Apply persisted theme mode to nativeTheme as soon as storage is ready.
@@ -80,17 +106,28 @@ export const bootstrapApplication = (): void => {
       })
       .catch((error) => {
         console.warn("Failed to apply persisted theme mode:", error);
+        snowLog.warn({
+          module: "app/bootstrap",
+          func: "applyThemeSettings",
+          message: "Failed to apply persisted theme mode",
+          error: error instanceof Error ? error.message : String(error),
+        });
       });
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
-        createWindow();
+        void createWindow();
       }
     });
   });
 
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") {
+      snowLog.info({
+        module: "app/bootstrap",
+        func: "window-all-closed",
+        message: "All windows closed, quitting application",
+      });
       app.quit();
     }
   });

@@ -11,7 +11,8 @@ import { SubAgentSettingsPanel } from "./sidebar/SubAgentSettingsPanel";
 import { SystemPromptSettingsPanel } from "./sidebar/SystemPromptSettingsPanel";
 import { TerminalSettingsPanel } from "./sidebar/TerminalSettingsPanel";
 import { ThemeSettingsPanel } from "./sidebar/ThemeSettingsPanel";
-import { UsageSettingsPanel } from "./sidebar/UsageSettingsPanel";
+import { UsageSettingsPanel } from "./sidebar/usageSettings/UsageSettingsPanel";
+import { SystemLogsPanel } from "./sidebar/systemLogs/SystemLogsPanel";
 import { ChatContent } from "./mainContent/ChatContent";
 import type { MainContentView } from "./mainContent/types";
 import type { WorkspaceDirectoryRecord } from "../../preload";
@@ -72,6 +73,8 @@ export const MainContent = ({
         <PrivacySettingsPanel onClose={() => onSelectView("chat")} />
       ) : activeView === "usage-settings" ? (
         <UsageSettingsPanel onClose={() => onSelectView("chat")} />
+      ) : activeView === "system-logs" ? (
+        <SystemLogsPanel onClose={() => onSelectView("chat")} />
       ) : (
         <ChatContent activeDirectory={activeDirectory} />
       )}

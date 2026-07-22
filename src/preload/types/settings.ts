@@ -166,6 +166,27 @@ export type DailyUsageBreakdown = {
   totalTokens: number;
 };
 
+export type AppLogRecord = {
+  id: string;
+  level: string;
+  module: string;
+  func: string;
+  line?: number;
+  message: string;
+  input: string;
+  output: string;
+  duration: string;
+  context: string;
+  error: string;
+  source: string;
+  createdAt: string;
+};
+
+export type AppLogPage = {
+  items: AppLogRecord[];
+  total: number;
+};
+
 export type CodebaseEmbedProgress = {
   phase: string;
   totalFiles: number;

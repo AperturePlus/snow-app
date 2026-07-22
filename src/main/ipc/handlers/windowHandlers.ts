@@ -8,6 +8,7 @@ import {
 } from "electron";
 import type { NativeBridge } from "../../native/types";
 import { markCloseConfirmed } from "../../app/mainWindow";
+import { clearWindowState } from "../../app/windowState";
 
 export const registerWindowHandlers = (_native: NativeBridge): void => {
   // ===== Window Controls (Windows custom titlebar) =====
@@ -46,6 +47,12 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
   ipcMain.handle("window:is-maximized", (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     return win ? win.isMaximized() : false;
+  });
+
+  // 清除持久化的窗口尺寸/位置缓存（主题重置时一并调用），
+  // 下次启动回退到默认窗口尺寸。
+  ipcMain.handle("window:clear-state", async () => {
+    await clearWindowState();
   });
 
   // ===== Window Drag (macOS JS drag region) =====

@@ -680,6 +680,18 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to get usage daily breakdown"
           )
         ),
+      writeAppLog: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write app logs")
+        ),
+      listAppLogs: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to list app logs")
+        ),
+      clearAppLogs: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to clear app logs")
+        ),
     };
   }
 };

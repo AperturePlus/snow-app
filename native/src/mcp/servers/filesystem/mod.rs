@@ -9,6 +9,10 @@ use similar::TextDiff;
 use super::super::service::McpService;
 use super::super::tools::McpTool;
 
+mod office;
+
+use office::{extract_office_document_text, office_document_kind};
+
 /// 模糊匹配的最低相似度阈值（0.0 ~ 1.0）。
 /// 当 searchContent 与文件中某段内容相似度达到此值时，视为匹配成功。
 const FUZZY_MATCH_THRESHOLD: f64 = 0.75;
@@ -40,7 +44,7 @@ impl McpService for FilesystemService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "read".to_string(),
-                description: "Read file content with line numbers. Supports text files, images, Office documents, and directories.".to_string(),
+                description: "Read file content with line numbers. Supports text files, images, Office documents (pdf, docx, xlsx, xls, xlsb, xlsm, ods, csv, pptx), and directories. Office documents are extracted to plain text and can be very long - ALWAYS read them in chunks via startLine/endLine (e.g. read the first 100 lines first, then decide the next range based on the returned totalLines) instead of loading the whole document at once.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -69,11 +73,11 @@ impl McpService for FilesystemService {
                         },
                         "startLine": {
                             "type": "number",
-                            "description": "Optional starting line number (1-indexed)."
+                            "description": "Optional starting line number (1-indexed). Pair with endLine to page through large files and Office documents."
                         },
                         "endLine": {
                             "type": "number",
-                            "description": "Optional ending line number (1-indexed)."
+                            "description": "Optional ending line number (1-indexed). Pair with startLine to page through large files and Office documents."
                         }
                     },
                     "required": ["filePath"]
@@ -874,43 +878,18 @@ fn read_path(
         }));
     }
 
-    let content = fs::read_to_string(path).map_err(|error| {
-        Error::new(
-            Status::GenericFailure,
-            format!("Failed to read file: {} (path: {})", error, file_path),
-        )
-    })?;
+    let content = if let Some(kind) = office_document_kind(path) {
+        extract_office_document_text(path, kind)?
+    } else {
+        fs::read_to_string(path).map_err(|error| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to read file: {} (path: {})", error, file_path),
+            )
+        })?
+    };
 
-    let lines: Vec<&str> = content.lines().collect();
-    let total_lines = lines.len();
-    let start = start_line
-        .map(|line| line as usize)
-        .unwrap_or(1)
-        .saturating_sub(1);
-    let end = end_line
-        .map(|line| line as usize)
-        .unwrap_or(total_lines)
-        .min(total_lines);
-
-    if start >= total_lines {
-        return Ok(json!({
-            "content": "",
-            "totalLines": total_lines
-        }));
-    }
-
-    let selected: Vec<String> = lines[start..end]
-        .iter()
-        .enumerate()
-        .map(|(index, line)| format!("{:>6}: {}", start + index + 1, line))
-        .collect();
-
-    Ok(json!({
-        "content": selected.join("\n"),
-        "totalLines": total_lines,
-        "startLine": start + 1,
-        "endLine": end
-    }))
+    Ok(format_numbered_lines(&content, start_line, end_line))
 }
 
 fn is_image_file(path: &Path) -> bool {
@@ -964,4 +943,43 @@ fn read_image_as_data_url(path: &Path) -> napi::Result<String> {
     let media_type = image_media_type(path);
     let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
     Ok(format!("data:{};base64,{}", media_type, data))
+}
+
+/// 将文本内容按行号范围分页，返回带行号前缀的内容。
+/// 文本文件与 Office 文档提取出的文本共用该逻辑。
+fn format_numbered_lines(
+    content: &str,
+    start_line: Option<u64>,
+    end_line: Option<u64>,
+) -> Value {
+    let lines: Vec<&str> = content.lines().collect();
+    let total_lines = lines.len();
+    let start = start_line
+        .map(|line| line as usize)
+        .unwrap_or(1)
+        .saturating_sub(1);
+    let end = end_line
+        .map(|line| line as usize)
+        .unwrap_or(total_lines)
+        .min(total_lines);
+
+    if start >= total_lines {
+        return json!({
+            "content": "",
+            "totalLines": total_lines
+        });
+    }
+
+    let selected: Vec<String> = lines[start..end]
+        .iter()
+        .enumerate()
+        .map(|(index, line)| format!("{:>6}: {}", start + index + 1, line))
+        .collect();
+
+    json!({
+        "content": selected.join("\n"),
+        "totalLines": total_lines,
+        "startLine": start + 1,
+        "endLine": end
+    })
 }
