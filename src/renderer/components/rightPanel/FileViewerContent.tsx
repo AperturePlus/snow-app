@@ -160,15 +160,17 @@ export function FileViewerContent({
       "\n"
     );
     return (
-      <pre className="file-viewer-code">
-        <code className="file-viewer-line-numbers" aria-hidden="true">
-          {lineNumbers}
-        </code>
-        <code
-          className="hljs file-viewer-code-content"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      </pre>
+      <div className="file-viewer-code-scroll">
+        <pre className="file-viewer-code">
+          <code className="file-viewer-line-numbers" aria-hidden="true">
+            {lineNumbers}
+          </code>
+          <code
+            className="hljs file-viewer-code-content"
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        </pre>
+      </div>
     );
   };
 

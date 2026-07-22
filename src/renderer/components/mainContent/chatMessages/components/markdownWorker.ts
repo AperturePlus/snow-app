@@ -12,7 +12,9 @@
  */
 
 import hljs from "highlight.js";
+import katex from "katex";
 import MarkdownIt from "markdown-it";
+import texmath from "markdown-it-texmath";
 
 /**
  * Escape HTML special characters in a string so that when highlight.js
@@ -80,6 +82,19 @@ markdown.renderer.rules.fence = (tokens, idx, options): string => {
     (rendered || `<pre><code>${escapeHtml(token.content)}</code></pre>`) + "\n"
   );
 };
+
+/**
+ * KaTeX math rendering. texmath parses `$...$` inline and `$$...$$` display
+ * formulas and delegates to katex.renderToString, which is pure string work
+ * and therefore safe inside a Web Worker. throwOnError is disabled so that a
+ * half-typed formula during streaming renders as highlighted source instead
+ * of throwing and breaking the whole render pass.
+ */
+markdown.use(texmath, {
+  engine: katex,
+  delimiters: "dollars",
+  katexOptions: { throwOnError: false },
+});
 
 /**
  * Tiny LRU cache for rendered HTML. Keyed by content string. We cap the

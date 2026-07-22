@@ -255,7 +255,7 @@ impl TodoService {
         conn: &Connection,
         session_id: &str,
         ids: &[String],
-    ) -> napi::Result<()> {
+    ) -> napi::Result<usize> {
         let id_set: std::collections::HashSet<&str> =
             ids.iter().map(|s| s.as_str()).collect();
 
@@ -281,7 +281,7 @@ impl TodoService {
                 Error::new(Status::GenericFailure, format!("Delete failed: {e}"))
             })?;
         }
-        Ok(())
+        Ok(to_delete.len())
     }
 
     // ------------------------------------------------------------------
@@ -402,32 +402,7 @@ impl TodoService {
 
     fn execute_update(&self, args: &Value) -> napi::Result<Value> {
         let session_id = require_session_id(args)?;
-        let todo_id_raw = args.get("todoId").ok_or_else(|| {
-            Error::new(
-                Status::InvalidArg,
-                "todoId is required for action=update".to_string(),
-            )
-        })?;
-
-        let ids: Vec<String> = if let Some(s) = todo_id_raw.as_str() {
-            vec![s.to_string()]
-        } else if let Some(arr) = todo_id_raw.as_array() {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
-        } else {
-            return Err(Error::new(
-                Status::InvalidArg,
-                "todoId must be a string or array of strings".to_string(),
-            ));
-        };
-
-        if ids.is_empty() {
-            return Err(Error::new(
-                Status::InvalidArg,
-                "todoId must not be empty".to_string(),
-            ));
-        }
+        let ids = parse_todo_ids(args, "update")?;
 
         let status = args.get("status").and_then(|v| v.as_str());
         if let Some(s) = status {
@@ -454,11 +429,15 @@ impl TodoService {
         let conn = self.get_connection()?;
         let found = Self::update_todos(&conn, &session_id, &ids, status, content)?;
 
+        let items = Self::get_todos_for_session(&conn, &session_id)?;
         if !found {
-            return Ok(json!({ "message": "TODO item not found" }));
+            return Ok(json!({
+                "sessionId": session_id,
+                "message": "TODO item not found",
+                "todos": serde_json::to_value(&items).unwrap_or(json!([])),
+            }));
         }
 
-        let items = Self::get_todos_for_session(&conn, &session_id)?;
         Ok(json!({
             "sessionId": session_id,
             "todos": serde_json::to_value(&items).unwrap_or(json!([])),
@@ -467,39 +446,15 @@ impl TodoService {
 
     fn execute_delete(&self, args: &Value) -> napi::Result<Value> {
         let session_id = require_session_id(args)?;
-        let todo_id_raw = args.get("todoId").ok_or_else(|| {
-            Error::new(
-                Status::InvalidArg,
-                "todoId is required for action=delete".to_string(),
-            )
-        })?;
-
-        let ids: Vec<String> = if let Some(s) = todo_id_raw.as_str() {
-            vec![s.to_string()]
-        } else if let Some(arr) = todo_id_raw.as_array() {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
-        } else {
-            return Err(Error::new(
-                Status::InvalidArg,
-                "todoId must be a string or array of strings".to_string(),
-            ));
-        };
-
-        if ids.is_empty() {
-            return Err(Error::new(
-                Status::InvalidArg,
-                "todoId must not be empty".to_string(),
-            ));
-        }
+        let ids = parse_todo_ids(args, "delete")?;
 
         let conn = self.get_connection()?;
-        Self::delete_todos(&conn, &session_id, &ids)?;
+        let deleted_count = Self::delete_todos(&conn, &session_id, &ids)?;
 
         let items = Self::get_todos_for_session(&conn, &session_id)?;
         Ok(json!({
             "sessionId": session_id,
+            "deletedCount": deleted_count,
             "todos": serde_json::to_value(&items).unwrap_or(json!([])),
         }))
     }
@@ -514,7 +469,7 @@ impl McpService for TodoService {
         vec![McpTool {
             server_id: SERVER_ID.to_string(),
             name: "todo-manage".to_string(),
-            description: "Unified session TODO list for AI work planning: use required field \"action\" — one of get | add | update | delete. The \"sessionId\" and \"status\" fields are required for ALL actions (status is only used by update, ignored by others).\n\nACTIONS:\n- get: Current list with IDs, status, hierarchy. Use before add/update when you need existing IDs.\n- add: Create item(s). Use \"content\" (string or string[]). When content is an array, EACH element becomes a SEPARATE independent TODO item (they are NOT joined into one). Optional \"parentId\" for subtasks (valid parent id from get).\n- update: Required \"todoId\" (string or string[]). Use \"status\" (pending|inProgress|completed) and/or \"content\" (refined wording). Batch ids share the same updates.\n- delete: Required \"todoId\" (string or string[]). Deleting a parent cascades to children.\n\nIMPORTANT:\n- When you pass content as a JSON array like [\"task A\", \"task B\"], two separate TODO items are created — NOT one item with combined text.\n- Each array element must be a self-contained task description.\n\nBEST PRACTICES:\n- Mark \"completed\" only after the step is verified; update as you work.\n- Update each item immediately after it is done; do NOT finish all work first and batch-update at the end.\n- Delete obsolete or redundant items to keep the list focused.\n\nEXAMPLES:\n- {action:\"get\", sessionId:\"...\", status:\"pending\"}\n- {action:\"add\", sessionId:\"...\", status:\"pending\", content:[\"Step 1\",\"Step 2\"]}  // creates 2 separate TODOs\n- {action:\"update\", sessionId:\"...\", status:\"completed\", todoId:\"...\"}\n- {action:\"delete\", sessionId:\"...\", status:\"pending\", todoId:\"...\"}".to_string(),
+            description: "Unified session TODO list for AI work planning: use required field \"action\" — one of get | add | update | delete. The \"sessionId\" and \"status\" fields are required for ALL actions (status is only used by update, ignored by others).\n\nACTIONS:\n- get: Current list with IDs, status, hierarchy. MUST be called before update/delete to obtain real todo ids.\n- add: Create item(s). Use \"content\" (string or string[]). When content is an array, EACH element becomes a SEPARATE independent TODO item (they are NOT joined into one). Optional \"parentId\" for subtasks (valid parent id from get).\n- update: Required \"todoId\" (string or string[]). Use \"status\" (pending|inProgress|completed) and/or \"content\" (refined wording). Batch ids share the same updates.\n- delete: Required \"todoId\" (string or string[]). Deleting a parent cascades to children.\n\nRESULT:\n- EVERY action (get/add/update/delete) returns the FULL current todo list in the \"todos\" field of the result, with each item's id, content, status, createdAt, updatedAt and parentId. Always read the \"todos\" field from the latest tool result to know the current state — you do NOT need a separate get call right after a mutation.\n\nIMPORTANT:\n- MANDATORY: Before any update or delete, you MUST first know the real todo ids — either from a recent action=\"get\" result or from the \"todos\" field returned by your previous add/update/delete call in this conversation. NEVER guess ids or reuse ids from earlier turns — unknown ids are silently skipped and the tool reports success without effect.\n- For batch update/delete, pass todoId as a real JSON array like [\"id1\",\"id2\"], NOT as a single string containing an array.\n- When you pass content as a JSON array like [\"task A\", \"task B\"], two separate TODO items are created — NOT one item with combined text.\n- Each array element must be a self-contained task description.\n\nBEST PRACTICES:\n- Mark \"completed\" only after the step is verified; update as you work.\n- Update each item immediately after it is done; do NOT finish all work first and batch-update at the end.\n- Delete obsolete or redundant items to keep the list focused.\n\nEXAMPLES:\n- {action:\"get\", sessionId:\"...\", status:\"pending\"}\n- {action:\"add\", sessionId:\"...\", status:\"pending\", content:[\"Step 1\",\"Step 2\"]}  // creates 2 separate TODOs\n- {action:\"update\", sessionId:\"...\", status:\"completed\", todoId:\"...\"}\n- {action:\"delete\", sessionId:\"...\", status:\"pending\", todoId:\"...\"}".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -688,6 +643,50 @@ fn require_session_id(args: &Value) -> napi::Result<String> {
                 "sessionId is required for all todo-manage actions".to_string(),
             )
         })
+}
+
+/// Parse the `todoId` argument into a list of ids. Three cases are handled:
+/// 1. A JSON array value: ["a", "b"] -> multiple ids
+/// 2. A string that is itself a JSON array: "[\"a\",\"b\"]" -> multiple ids
+///    (some AI clients serialise arrays as strings)
+/// 3. A plain string: "todo-..." -> single id
+fn parse_todo_ids(args: &Value, action: &str) -> napi::Result<Vec<String>> {
+    let raw = args.get("todoId").ok_or_else(|| {
+        Error::new(
+            Status::InvalidArg,
+            format!("todoId is required for action={action}"),
+        )
+    })?;
+
+    let ids: Vec<String> = if let Some(s) = raw.as_str() {
+        let trimmed = s.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            match serde_json::from_str::<Vec<String>>(trimmed) {
+                Ok(parsed) if !parsed.is_empty() => parsed,
+                _ => vec![s.to_string()],
+            }
+        } else {
+            vec![s.to_string()]
+        }
+    } else if let Some(arr) = raw.as_array() {
+        arr.iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect()
+    } else {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "todoId must be a string or array of strings".to_string(),
+        ));
+    };
+
+    if ids.is_empty() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "todoId must not be empty".to_string(),
+        ));
+    }
+
+    Ok(ids)
 }
 
 fn create_id(prefix: &str) -> String {

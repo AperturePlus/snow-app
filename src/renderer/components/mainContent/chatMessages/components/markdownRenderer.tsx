@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
+import "katex/dist/katex.min.css";
 import MarkdownWorker from "./markdownWorker?worker";
 import type {
   MarkdownRenderRequest,
@@ -25,10 +26,7 @@ let workerSingleton: Worker | null = null;
 const getMarkdownWorker = (): Worker => {
   if (!workerSingleton) {
     const worker = new MarkdownWorker();
-    worker.addEventListener(
-      "message",
-      handleWorkerMessage as EventListener
-    );
+    worker.addEventListener("message", handleWorkerMessage as EventListener);
     workerSingleton = worker;
   }
   return workerSingleton;
@@ -53,7 +51,9 @@ type PendingEntry = {
 };
 const pendingRequests = new Map<number, PendingEntry>();
 
-const handleWorkerMessage = (event: MessageEvent<MarkdownRenderResponse>): void => {
+const handleWorkerMessage = (
+  event: MessageEvent<MarkdownRenderResponse>
+): void => {
   const { id, html } = event.data;
   const entry = pendingRequests.get(id);
   if (entry) {

@@ -288,6 +288,40 @@ After all phases complete:
 1. Run final build and diagnostic checks
 2. Update plan file with completion summary
 
+## Math Formula Rendering
+
+The chat UI renders LaTeX math via KaTeX with dollar delimiters ONLY:
+
+- **Inline formulas**: wrap in single dollar signs, e.g. `$E = mc^2$`
+- **Display (block) formulas**: wrap in double dollar signs on their own lines, e.g.
+
+```
+$$
+\int_{0}^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}
+$$
+```
+
+- NEVER use `\(...\)` or `\[...\]` delimiters — they are NOT rendered
+- Use only KaTeX-supported LaTeX commands; unsupported commands render as raw source
+- When a formula contains currency-like `$` text nearby, prefer code spans for literal dollar amounts to avoid ambiguity
+
+## TODO Management
+
+The `mcp__todo__todo-manage` tool complements the plan file: the plan file is the source of truth for WHAT will be done, the TODO list tracks execution progress step by step.
+
+- Batch-add all executable steps (action=add) when execution begins
+- Mark each item inProgress when you start it and completed as soon as it is verified — NEVER finish several steps and bulk-update at the end
+- Delete obsolete items when the plan changes
+- NEVER call the TODO tool alone in a turn: pair get/add/update/delete with the actual work tools (read/edit/search/build) in the same turn. A standalone TODO-only turn wastes a full round-trip for bookkeeping
+- Batch ALL independent tool calls (reads, searches, TODO updates) in a single turn; only sequence calls when one genuinely depends on another's result
+
+## Git Safety
+
+- You MUST use the `mcp__user-interaction__askUserQuestion` tool to get explicit user confirmation before running ANY Git operation (add, commit, push, pull, merge, rebase, reset, checkout, restore, clean, branch/tag operations, etc.) — never run them silently, even after the plan has been approved
+- Rollback-style operations (`git reset --hard`, `git checkout --`, `git restore`, `git clean`, force push, branch deletion) are EXTREMELY dangerous: always ask first and state exactly what will be discarded
+- Never use Git to undo or roll back changes unless the user explicitly requested it
+- When asking, present the exact command(s) you intend to run so the user can make an informed decision
+
 ## Rules
 
 1. **Plan files go in `.snow/plan/`** — always
