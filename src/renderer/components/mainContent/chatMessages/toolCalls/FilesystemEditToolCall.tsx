@@ -5,8 +5,8 @@ import type { ToolCallInfo } from "../utils/conversationTypes";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
 import { ToolNameBadge } from "./shared/ToolNameBadge";
 import { getFileName, getToolDisplayName } from "./shared/formatters";
-import { computeLineDiff } from "./shared/diffUtils";
 import { MiniDiffViewer } from "./shared/MiniDiffViewer";
+import { getCompareDiffStats } from "../../../common/GitDiffView";
 
 type FilesystemEditToolCallProps = {
   toolCall: ToolCallInfo;
@@ -101,15 +101,18 @@ export const FilesystemEditToolCall = ({
 
   const hasError = parsedResult.type === "error";
 
-  const diffLines = useMemo(() => {
-    if (hasError) {
-      return [];
-    }
-    if (!parsedArgs?.searchContent || !parsedArgs?.replaceContent) {
-      return [];
-    }
-    return computeLineDiff(parsedArgs.searchContent, parsedArgs.replaceContent);
-  }, [parsedArgs, hasError]);
+  const showDiff =
+    !hasError &&
+    Boolean(parsedArgs?.searchContent) &&
+    Boolean(parsedArgs?.replaceContent);
+
+  const stats = useMemo(() => {
+    if (!showDiff || !parsedArgs) return null;
+    return getCompareDiffStats(
+      parsedArgs.searchContent,
+      parsedArgs.replaceContent
+    );
+  }, [showDiff, parsedArgs]);
 
   const toolName = getToolDisplayName("edit");
   const filePath = parsedArgs?.filePath ?? "edit";
@@ -117,13 +120,6 @@ export const FilesystemEditToolCall = ({
 
   const effectiveStatus = hasError ? "error" : toolCall.status;
   const statusLabel = t(`toolCall.filesystem.status.${effectiveStatus}`);
-
-  const stats = useMemo(() => {
-    if (diffLines.length === 0) return null;
-    const additions = diffLines.filter((l) => l.type === "add").length;
-    const deletions = diffLines.filter((l) => l.type === "del").length;
-    return { additions, deletions };
-  }, [diffLines]);
 
   return (
     <details className="tool-call-item tool-call-filesystem-edit">
@@ -187,7 +183,13 @@ export const FilesystemEditToolCall = ({
           </div>
         ) : null}
 
-        {diffLines.length > 0 ? <MiniDiffViewer diffLines={diffLines} /> : null}
+        {showDiff && parsedArgs ? (
+          <MiniDiffViewer
+            fileName={fileName}
+            oldContent={parsedArgs.searchContent}
+            newContent={parsedArgs.replaceContent}
+          />
+        ) : null}
 
         {parsedResult.type === "raw" ? (
           <pre className="tool-call-section-pre">{parsedResult.text}</pre>

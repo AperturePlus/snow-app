@@ -11,13 +11,6 @@ export type RightPanelContentProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
 };
 
-export type DiffLine = {
-  type: "context" | "add" | "del" | "hunk";
-  content: string;
-  oldNum: string;
-  newNum: string;
-};
-
 export type DiffTabData = {
   filePath: string;
   selectedFile: GitFileStatus;

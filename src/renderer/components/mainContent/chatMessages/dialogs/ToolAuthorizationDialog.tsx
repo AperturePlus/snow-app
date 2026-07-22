@@ -2,13 +2,9 @@ import { FilePen, FilePlus, ShieldAlert } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useI18n } from "../../../../i18n";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
-import {
-  computeCreateDiff,
-  computeLineDiff,
-} from "../toolCalls/shared/diffUtils";
+import { getCompareDiffStats } from "../../../common/GitDiffView";
 import { getFileName } from "../toolCalls/shared/formatters";
 import { MiniDiffViewer } from "../toolCalls/shared/MiniDiffViewer";
-import type { DiffLine } from "../toolCalls/shared/types";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 
 type ToolAuthorizationDialogProps = {
@@ -24,7 +20,8 @@ type FileMutationPreview = {
   kind: FileMutationKind;
   filePath: string;
   fileName: string;
-  diffLines: DiffLine[];
+  oldContent: string;
+  newContent: string;
   additions: number;
   deletions: number;
   occurrence?: number;
@@ -66,15 +63,17 @@ const parseFileMutationPreview = (
         typeof parsed.replaceContent === "string" ? parsed.replaceContent : "";
       const occurrence =
         typeof parsed.occurrence === "number" ? parsed.occurrence : undefined;
-      const diffLines = computeLineDiff(searchContent, replaceContent);
-      const additions = diffLines.filter((line) => line.type === "add").length;
-      const deletions = diffLines.filter((line) => line.type === "del").length;
+      const { additions, deletions } = getCompareDiffStats(
+        searchContent,
+        replaceContent
+      );
 
       return {
         kind: "edit",
         filePath,
         fileName: getFileName(filePath),
-        diffLines,
+        oldContent: searchContent,
+        newContent: replaceContent,
         additions,
         deletions,
         occurrence,
@@ -84,14 +83,14 @@ const parseFileMutationPreview = (
     const content = typeof parsed.content === "string" ? parsed.content : "";
     const overwrite =
       typeof parsed.overwrite === "boolean" ? parsed.overwrite : undefined;
-    const diffLines = computeCreateDiff(content);
-    const additions = diffLines.length;
+    const additions = content ? content.split("\n").length : 0;
 
     return {
       kind: "create",
       filePath,
       fileName: getFileName(filePath),
-      diffLines,
+      oldContent: "",
+      newContent: content,
       additions,
       deletions: 0,
       overwrite,
@@ -162,8 +161,12 @@ const FileMutationAuthorizationPreview = ({
         ) : null}
       </div>
 
-      {preview.diffLines.length > 0 ? (
-        <MiniDiffViewer diffLines={preview.diffLines} maxLines={80} />
+      {preview.oldContent || preview.newContent ? (
+        <MiniDiffViewer
+          fileName={preview.fileName}
+          oldContent={preview.oldContent}
+          newContent={preview.newContent}
+        />
       ) : (
         <div className="tool-authorization-file-empty">
           {t("toolAuthorization.noDiff")}

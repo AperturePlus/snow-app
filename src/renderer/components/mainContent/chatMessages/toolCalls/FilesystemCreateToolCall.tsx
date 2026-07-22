@@ -5,7 +5,6 @@ import type { ToolCallInfo } from "../utils/conversationTypes";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
 import { ToolNameBadge } from "./shared/ToolNameBadge";
 import { getFileName, getToolDisplayName } from "./shared/formatters";
-import { computeCreateDiff } from "./shared/diffUtils";
 import { MiniDiffViewer } from "./shared/MiniDiffViewer";
 
 type FilesystemCreateToolCallProps = {
@@ -87,16 +86,6 @@ export const FilesystemCreateToolCall = ({
 
   const hasError = parsedResult.type === "error";
 
-  const diffLines = useMemo(() => {
-    if (hasError) {
-      return [];
-    }
-    if (!parsedArgs?.content) {
-      return [];
-    }
-    return computeCreateDiff(parsedArgs.content);
-  }, [parsedArgs, hasError]);
-
   const toolName = getToolDisplayName("create");
   const filePath = parsedArgs?.filePath ?? "create";
   const fileName = getFileName(filePath);
@@ -166,7 +155,13 @@ export const FilesystemCreateToolCall = ({
           </div>
         ) : null}
 
-        {diffLines.length > 0 ? <MiniDiffViewer diffLines={diffLines} /> : null}
+        {!hasError && parsedArgs?.content ? (
+          <MiniDiffViewer
+            fileName={fileName}
+            oldContent=""
+            newContent={parsedArgs.content}
+          />
+        ) : null}
 
         {parsedResult.type === "raw" ? (
           <pre className="tool-call-section-pre">{parsedResult.text}</pre>

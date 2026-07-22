@@ -1,61 +1,9 @@
 import { ExternalLink, X } from "lucide-react";
 
 import { useI18n } from "../../i18n";
+import { GitDiffView } from "../common/GitDiffView";
 import type { GitDiffResult, GitFileStatus } from "./git";
-import type { DiffLine, OpenDiffTabCallback } from "./types";
-
-export const parseDiffContent = (diffContent: string): DiffLine[] => {
-  const lines = diffContent.split("\n");
-  const result: DiffLine[] = [];
-  let oldLineNum = 0;
-  let newLineNum = 0;
-
-  for (const line of lines) {
-    if (line.startsWith("@@")) {
-      // Parse hunk header: @@ -oldStart,oldCount +newStart,newCount @@
-      const match = line.match(
-        /@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/
-      );
-      if (match) {
-        oldLineNum = parseInt(match[1], 10);
-        newLineNum = parseInt(match[3], 10);
-      }
-      result.push({
-        type: "hunk",
-        content: line,
-        oldNum: "",
-        newNum: "",
-      });
-    } else if (line.startsWith("+") && !line.startsWith("+++")) {
-      result.push({
-        type: "add",
-        content: line.slice(1),
-        oldNum: "",
-        newNum: String(newLineNum++),
-      });
-    } else if (line.startsWith("-") && !line.startsWith("---")) {
-      result.push({
-        type: "del",
-        content: line.slice(1),
-        oldNum: String(oldLineNum++),
-        newNum: "",
-      });
-    } else if (line.startsWith(" ")) {
-      result.push({
-        type: "context",
-        content: line.slice(1),
-        oldNum: String(oldLineNum++),
-        newNum: String(newLineNum++),
-      });
-    } else if (line.startsWith("\\") || line.includes("Binary files")) {
-      // Skip binary diff markers
-    } else {
-      // Diff header lines (diff --git, index, ---, +++), skip them
-    }
-  }
-
-  return result;
-};
+import type { OpenDiffTabCallback } from "./types";
 
 type DiffViewerProps = {
   selectedFile: GitFileStatus;
@@ -73,7 +21,6 @@ export function DiffViewer({
   onClose,
 }: DiffViewerProps): React.JSX.Element {
   const { t } = useI18n();
-  const diffLines = diffResult ? parseDiffContent(diffResult.content) : [];
 
   return (
     <div className="diff-viewer">
@@ -114,28 +61,12 @@ export function DiffViewer({
         <div className="diff-viewer-loading">{t("rightPanel.loadingDiff")}</div>
       ) : diffResult?.isBinary ? (
         <div className="diff-viewer-binary">{t("rightPanel.binaryFile")}</div>
-      ) : diffLines.length > 0 ? (
+      ) : diffResult?.content ? (
         <div className="diff-viewer-content">
-          {diffLines.map((line, i) => (
-            <div key={i} className={`diff-line ${line.type}`}>
-              {line.type === "hunk" ? (
-                <code className="diff-code hunk-header">{line.content}</code>
-              ) : (
-                <>
-                  <span className="diff-linenum old">{line.oldNum}</span>
-                  <span className="diff-linenum new">{line.newNum}</span>
-                  <span className="diff-marker">
-                    {line.type === "add"
-                      ? "+"
-                      : line.type === "del"
-                      ? "-"
-                      : " "}
-                  </span>
-                  <code className="diff-code">{line.content}</code>
-                </>
-              )}
-            </div>
-          ))}
+          <GitDiffView
+            fileName={selectedFile.path}
+            patch={diffResult.content}
+          />
         </div>
       ) : (
         <div className="diff-viewer-empty">

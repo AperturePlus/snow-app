@@ -6446,69 +6446,6 @@ input {
   line-height: 1.5;
 }
 
-.tool-call-diff-content .diff-line {
-  display: flex;
-  align-items: flex-start;
-  min-height: 18px;
-  padding: 0 6px;
-}
-
-.tool-call-diff-content .diff-linenum {
-  display: inline-block;
-  width: 26px;
-  padding: 0 4px 0 2px;
-  text-align: right;
-  flex-shrink: 0;
-  user-select: none;
-  color: var(--text-muted);
-  font-size: 10.5px;
-}
-
-.tool-call-diff-content .diff-marker {
-  display: inline-block;
-  width: 14px;
-  padding: 0 2px;
-  text-align: center;
-  flex-shrink: 0;
-  user-select: none;
-  color: var(--text-muted);
-}
-
-.tool-call-diff-content .diff-line.add .diff-marker {
-  color: var(--accent-green);
-}
-
-.tool-call-diff-content .diff-line.del .diff-marker {
-  color: var(--accent-red);
-}
-
-.tool-call-diff-content .diff-code {
-  flex: 1;
-  white-space: pre-wrap;
-  word-break: break-all;
-  padding: 0;
-  padding-right: 4px;
-  border-radius: 0;
-  background: transparent;
-  color: var(--text-secondary);
-}
-
-.tool-call-diff-content .diff-line.add .diff-code {
-  color: var(--accent-green-text);
-}
-
-.tool-call-diff-content .diff-line.del .diff-code {
-  color: var(--accent-red-text);
-}
-
-.tool-call-diff-more {
-  padding: 4px 8px;
-  font-size: 11px;
-  color: var(--text-muted);
-  text-align: center;
-  border-top: 1px solid var(--border-light);
-}
-
 .tool-call-meta-row {
   display: flex;
   align-items: center;
@@ -8971,73 +8908,6 @@ input {
 .diff-banner-icon {
   color: var(--text-muted);
   font-size: 10px;
-}
-
-/* Diff Content */
-.diff-content {
-  overflow-x: auto;
-  flex-shrink: 0;
-}
-
-.diff-line {
-  display: flex;
-  align-items: center;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  line-height: 1.6;
-  padding: 0 8px;
-  white-space: nowrap;
-}
-
-.diff-line.context {
-  background: var(--bg-primary);
-}
-
-.diff-line.add {
-  background: var(--accent-green-bg);
-}
-
-.diff-line.del {
-  background: var(--accent-red-bg);
-}
-
-.diff-linenum {
-  width: 32px;
-  text-align: right;
-  padding-right: 10px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-  user-select: none;
-}
-
-.diff-marker {
-  width: 14px;
-  text-align: center;
-  flex-shrink: 0;
-  user-select: none;
-}
-
-.diff-line.add .diff-marker {
-  color: var(--accent-green-text);
-}
-
-.diff-line.del .diff-marker {
-  color: var(--accent-red-text);
-}
-
-.diff-code {
-  flex: 1;
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.diff-line.add .diff-code {
-  color: var(--accent-green-text);
-}
-
-.diff-line.del .diff-code {
-  color: var(--accent-red-text);
 }
 
 /* ===== Selection ===== */
@@ -12628,74 +12498,31 @@ input {
 .diff-viewer-content {
   flex: 1;
   overflow: auto;
-  padding: 4px 0;
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.5;
 }
 
-.diff-line {
-  display: flex;
-  align-items: flex-start;
-  min-height: 18px;
+.git-diff-view {
+  width: 100%;
 }
 
-.diff-line.context {
-  color: var(--text-tertiary);
+/* @git-diff-view 使用 table 布局渲染,在 .ai-message 内需要抵消 markdown 表格样式,
+   使字号/内边距/背景完全由 diff 组件自身控制 */
+.ai-message .git-diff-view table {
+  margin: 0;
+  border: none;
+  font-size: inherit;
 }
 
-.diff-line.add {
-  background: var(--accent-green-bg);
+.ai-message .git-diff-view td {
+  padding: 0;
+  border-top: none;
 }
 
-.diff-line.del {
-  background: var(--accent-red-bg);
-}
-
-.diff-line.hunk {
-  color: var(--accent-blue);
-  padding: 2px 12px;
-  font-weight: 500;
-}
-
-.diff-linenum {
-  display: inline-block;
-  width: 26px;
-  padding: 0 4px 0 2px;
-  text-align: right;
-  flex-shrink: 0;
-  user-select: none;
-  color: var(--text-muted);
-  font-size: 10.5px;
-}
-
-.diff-marker {
-  display: inline-block;
-  width: 14px;
-  padding: 0 2px;
-  text-align: center;
-  flex-shrink: 0;
-  user-select: none;
-  color: var(--text-muted);
-}
-
-.diff-line.add .diff-marker {
-  color: var(--accent-green);
-}
-
-.diff-line.del .diff-marker {
-  color: var(--accent-red);
-}
-
-.diff-code {
-  flex: 1;
-  white-space: pre-wrap;
-  word-break: break-all;
-  padding-right: 4px;
-}
-.hunk-header {
-  display: block;
-  padding: 2px 12px;
+.ai-message .git-diff-view tbody tr:nth-child(odd),
+.ai-message .git-diff-view tbody tr:nth-child(even) {
+  background: transparent;
 }
 
 /* Right Panel Tabs */
