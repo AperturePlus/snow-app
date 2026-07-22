@@ -30,6 +30,7 @@
     "@napi-rs/triples": "^1.2.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "electron-updater": "^6.8.9",
     "highlight.js": "^11.11.1",
     "katex": "^0.18.1",
     "lucide-react": "^1.17.0",
@@ -86,6 +87,11 @@
     "directories": {
       "output": "release"
     },
+    "publish": {
+      "provider": "github",
+      "owner": "MayDay-wpf",
+      "repo": "snow-app"
+    },
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "resources/icon.icns",
@@ -107,7 +113,8 @@
       "allowElevation": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Snow App"
+      "shortcutName": "Snow App",
+      "deleteAppDataOnUninstall": false
     },
     "linux": {
       "icon": "resources/icon.png"

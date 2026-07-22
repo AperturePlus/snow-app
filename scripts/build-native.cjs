@@ -1,4 +1,4 @@
-const { copyFileSync, existsSync } = require("node:fs");
+const { copyFileSync, existsSync, readdirSync, unlinkSync, statSync } = require("node:fs");
 const { join } = require("node:path");
 const { spawnSync } = require("node:child_process");
 
@@ -44,17 +44,23 @@ const targetMap = {
   },
 };
 
-// macOS: build a universal (arm64 + x64) binary via lipo
+// macOS: build a universal (arm64 + x64) binary via lipo, unless
+// NATIVE_BUILD_ARCH is set (used by CI to build a single architecture).
 const darwinTargets = [
   targetMap["darwin-arm64"],
   targetMap["darwin-x64"],
 ];
 const darwinUniversalOutput = "snow_native.darwin-universal.node";
 
-const platformKey = `${process.platform}-${process.arch}`;
+// When NATIVE_BUILD_ARCH is set (e.g. "arm64" or "x64"), force that arch
+// even on macOS instead of building a universal binary.
+const forcedArch = process.env.NATIVE_BUILD_ARCH;
+const platformKey = forcedArch
+  ? `${process.platform}-${forcedArch}`
+  : `${process.platform}-${process.arch}`;
 const target = targetMap[platformKey];
 
-if (!target) {
+if (process.platform !== "darwin" && !target) {
   throw new Error(`Unsupported native build platform: ${platformKey}`);
 }
 
@@ -93,6 +99,24 @@ function copyNativeBinding(artifactPath, outputPath, platformName) {
       throw error;
     }
 
+    // 目标 .node 被运行中的 Electron 锁定，清除旧的带时间戳副本后写入新的
+    const staleFiles = readdirSync(nativeDir)
+      .filter(
+        (file) =>
+          file.startsWith(`snow_native.${platformName}.`) &&
+          file.endsWith(".node") &&
+          file !== `snow_native.${platformName}.node`
+      )
+      .map((file) => join(nativeDir, file));
+
+    for (const stale of staleFiles) {
+      try {
+        unlinkSync(stale);
+      } catch {
+        // 旧文件可能也被锁定，跳过
+      }
+    }
+
     const fallbackOutputPath = join(
       nativeDir,
       `snow_native.${platformName}.${Date.now()}.node`
@@ -104,7 +128,7 @@ function copyNativeBinding(artifactPath, outputPath, platformName) {
   }
 }
 
-if (process.platform === "darwin") {
+if (process.platform === "darwin" && !forcedArch) {
   // Build both arm64 and x64, then merge with lipo into a universal binary
   for (const t of darwinTargets) {
     console.log(`Building Rust native for ${t.triple}...`);
@@ -140,6 +164,7 @@ if (process.platform === "darwin") {
 
   console.log(`Universal native binding written to ${universalOutputPath}`);
 } else {
+  // Single-architecture build (non-macOS or macOS with NATIVE_BUILD_ARCH set)
   // Non-macOS: build single architecture as before
   runCargoBuild(target.triple);
 

@@ -17,6 +17,7 @@ import type {
   ProjectSkillDefinition,
   ResumableCodebaseSession,
   SkillDefinition,
+  UpdateStatus,
   UserQuestionRequest,
   UserQuestionResponse,
 } from "../types";
@@ -526,6 +527,26 @@ export const systemApi = {
     body: string;
     silent?: boolean;
   }): Promise<void> => ipcRenderer.invoke("notification:show", options),
+  getAppVersion: (): Promise<string> => ipcRenderer.invoke("app:get-version"),
+  downloadUpdate: (): Promise<UpdateStatus> =>
+    ipcRenderer.invoke("updater:download-update"),
+  installUpdate: (): Promise<void> =>
+    ipcRenderer.invoke("updater:install-update"),
+  getUpdateStatus: (): Promise<UpdateStatus> =>
+    ipcRenderer.invoke("updater:get-status"),
+  onUpdateStatusChanged: (
+    callback: (status: UpdateStatus) => void
+  ): (() => void) => {
+    const handler = (_event: IpcRendererEvent, status: UpdateStatus): void => {
+      callback(status);
+    };
+
+    ipcRenderer.on("updater:status-changed", handler);
+
+    return () => {
+      ipcRenderer.removeListener("updater:status-changed", handler);
+    };
+  },
 };
 
 export const ptyApi = {

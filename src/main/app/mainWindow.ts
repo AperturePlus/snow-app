@@ -9,6 +9,7 @@ import {
   macTrafficLightPosition,
 } from "./constants";
 import { killAllPtyForWebContents } from "../pty/ptyManager";
+import { initAutoUpdater } from "../updater/autoUpdater";
 import {
   DEFAULT_WINDOW_HEIGHT,
   DEFAULT_WINDOW_WIDTH,
@@ -173,4 +174,7 @@ export const createWindow = async (): Promise<void> => {
         console.error("Failed to load packaged renderer:", error);
       });
   }
+
+  // 初始化自动更新模块（注册 IPC + 启动后自动检查更新）
+  initAutoUpdater(mainWindow);
 };

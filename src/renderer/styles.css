@@ -3791,6 +3791,49 @@ input {
   padding: 8px 12px 12px;
 }
 
+.sidebar-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sidebar-footer-row .nav-item {
+  flex: 0 1 auto;
+}
+
+.sidebar-version-badge {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  background: var(--bg-hover);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+.update-ready-btn {
+  color: var(--accent, #2563eb);
+}
+
+.update-ready-btn:hover {
+  background: var(--bg-hover);
+}
+
+.update-ready-btn svg {
+  color: var(--accent, #2563eb);
+}
+
+.update-downloading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.update-downloading svg {
+  animation: spin 1.5s linear infinite;
+}
+
 .sidebar.collapsed .sidebar-content-wrapper {
   display: none;
 }

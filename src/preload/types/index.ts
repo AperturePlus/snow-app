@@ -7,3 +7,4 @@ export type * from "./ssh";
 export type * from "./git";
 export type * from "./chat";
 export type * from "./checkpoint";
+export type * from "./updater";
