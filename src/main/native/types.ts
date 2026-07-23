@@ -507,6 +507,26 @@ export type ChatConversationPage = {
   total: number;
 };
 
+export type ConversationSearchResult = {
+  conversationId: string;
+  title: string;
+  summary: string;
+  lastMessagePreview: string;
+  messageCount: number;
+  model: string;
+  status: string;
+  directoryId: string;
+  forkedFromConversationId: string;
+  forkMessageCount: number;
+  createdAt: string;
+  updatedAt: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+  matchedContent: string;
+};
+
 export type ChatMessageRecord = {
   id: string;
   role: string;
@@ -897,6 +917,9 @@ export type NativeBridge = {
   listPinnedConversations: (
     directoryId: string
   ) => Promise<ChatConversationRecord[]>;
+  searchChatConversations: (
+    query: string
+  ) => Promise<ConversationSearchResult[]>;
   getChatConversation: (
     conversationId: string
   ) => Promise<ChatConversationRecord | null>;

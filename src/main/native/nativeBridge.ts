@@ -337,6 +337,12 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to list pinned conversations"
           )
         ),
+      searchChatConversations: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to search chat conversations"
+          )
+        ),
       getChatConversation: () =>
         Promise.reject(
           new Error("Rust native bridge is required to get chat conversation")
@@ -391,9 +397,7 @@ export const loadNativeBridge = (): NativeBridge => {
         ),
       findLatestToolResult: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to find latest tool result"
-          )
+          new Error("Rust native bridge is required to find latest tool result")
         ),
       forkConversation: () =>
         Promise.reject(

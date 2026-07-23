@@ -7,6 +7,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use super::super::database;
 use super::super::{
     ChatConversationPage, ChatConversationRecord, ChatMessagePage, ChatMessageRecord,
+    ConversationSearchResult,
 };
 
 #[derive(Clone, Debug)]
@@ -503,6 +504,96 @@ pub fn list_chat_conversations_paginated(
         })
         .map_err(|error| {
             database::database_error(database_path, "list chat conversations paginated", error)
+        })
+}
+
+pub fn search_chat_conversations(
+    database_path: &Path,
+    query: &str,
+) -> Result<Vec<ConversationSearchResult>> {
+    let pattern = format!("%{}%", query.replace('%', "\\%").replace('_', "\\_"));
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            let mut statement = connection.prepare(
+                "SELECT conversation.conversation_id,
+                        conversation.title,
+                        conversation.summary,
+                        conversation.last_message_preview,
+                        conversation.message_count,
+                        conversation.model,
+                        conversation.status,
+                        conversation.directory_id,
+                        conversation.forked_from_conversation_id,
+                        conversation.fork_message_count,
+                        conversation.created_at,
+                        conversation.updated_at,
+                        conversation.input_tokens,
+                        conversation.output_tokens,
+                        conversation.cache_creation_input_tokens,
+                        conversation.cache_read_input_tokens,
+                        COALESCE((
+                            SELECT message.content
+                              FROM chat_messages AS message
+                             WHERE message.conversation_id = conversation.conversation_id
+                               AND message.content LIKE ?1 ESCAPE '\\'
+                             ORDER BY message.id DESC
+                             LIMIT 1
+                        ), '')
+                   FROM chat_conversations AS conversation
+                  WHERE conversation.status = 'active'
+                    AND NOT EXISTS (
+                      SELECT 1
+                        FROM sub_agent_sessions AS sub_agent
+                       WHERE sub_agent.conversation_id = conversation.conversation_id
+                    )
+                    AND (
+                         conversation.title LIKE ?1 ESCAPE '\\'
+                      OR conversation.summary LIKE ?1 ESCAPE '\\'
+                      OR conversation.last_message_preview LIKE ?1 ESCAPE '\\'
+                      OR EXISTS (
+                          SELECT 1
+                            FROM chat_messages AS message
+                           WHERE message.conversation_id = conversation.conversation_id
+                             AND message.content LIKE ?1 ESCAPE '\\'
+                      )
+                    )
+                  ORDER BY conversation.updated_at DESC, conversation.id DESC
+                  LIMIT 50",
+            )?;
+
+            let rows = statement.query_map(params![pattern], |row| {
+                let matched_content: String = row.get(16)?;
+                let preview = if matched_content.is_empty() {
+                    let last_preview: String = row.get(3)?;
+                    last_preview
+                } else {
+                    create_search_snippet(&matched_content, query)
+                };
+
+                Ok(ConversationSearchResult {
+                    conversation_id: row.get(0)?,
+                    title: row.get(1)?,
+                    summary: row.get(2)?,
+                    last_message_preview: row.get(3)?,
+                    message_count: row.get(4)?,
+                    model: row.get(5)?,
+                    status: row.get(6)?,
+                    directory_id: row.get(7)?,
+                    forked_from_conversation_id: row.get(8)?,
+                    fork_message_count: row.get(9)?,
+                    created_at: row.get(10)?,
+                    updated_at: row.get(11)?,
+                    input_tokens: row.get(12)?,
+                    output_tokens: row.get(13)?,
+                    cache_creation_input_tokens: row.get(14)?,
+                    cache_read_input_tokens: row.get(15)?,
+                    matched_content: preview,
+                })
+            })?;
+            rows.collect()
+        })
+        .map_err(|error| {
+            database::database_error(database_path, "search chat conversations", error)
         })
 }
 
@@ -1494,6 +1585,35 @@ fn create_snippet(content: &str, max_chars: usize) -> String {
     let mut snippet = chars.by_ref().take(max_chars).collect::<String>();
     if chars.next().is_some() {
         snippet.push('…');
+    }
+    snippet
+}
+
+fn create_search_snippet(content: &str, query: &str) -> String {
+    let query_lower = query.to_lowercase();
+    let content_lower = content.to_lowercase();
+    let max_chars: usize = 120;
+
+    let match_pos = content_lower.find(&query_lower).unwrap_or(0);
+
+    let half = max_chars.saturating_sub(query.chars().count()) / 2;
+    let start = match_pos.saturating_sub(half);
+
+    let start_char = content
+        .char_indices()
+        .nth(start)
+        .map(|(byte_pos, _)| byte_pos)
+        .unwrap_or(0);
+
+    let remaining: String = content[start_char..].split_whitespace().collect::<Vec<_>>().join(" ");
+
+    let mut chars = remaining.chars();
+    let mut snippet = chars.by_ref().take(max_chars).collect::<String>();
+    if chars.next().is_some() {
+        snippet.push('…');
+    }
+    if start > 0 {
+        snippet.insert(0, '…');
     }
     snippet
 }

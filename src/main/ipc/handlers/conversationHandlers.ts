@@ -62,6 +62,13 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
       return native.listPinnedConversations(directoryId.trim());
     }
   );
+  ipcMain.handle("chat-conversations:search", (_event, query: unknown) => {
+    if (typeof query !== "string" || !query.trim()) {
+      return Promise.resolve([]);
+    }
+
+    return native.searchChatConversations(query.trim());
+  });
   ipcMain.handle(
     "chat-conversations:get",
     (_event, conversationId: unknown) => {
@@ -383,15 +390,14 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
       format: unknown,
       defaultFileName: unknown
     ) => {
-      if (
-        typeof conversationId !== "string" ||
-        !conversationId.trim()
-      ) {
+      if (typeof conversationId !== "string" || !conversationId.trim()) {
         throw new Error("Conversation ID is required to export conversation");
       }
       if (typeof format !== "string" || !isExportFormat(format)) {
         throw new Error(
-          `Unsupported export format: ${String(format)}. Supported: ${EXPORT_FORMATS.join(", ")}`
+          `Unsupported export format: ${String(
+            format
+          )}. Supported: ${EXPORT_FORMATS.join(", ")}`
         );
       }
 
@@ -432,7 +438,9 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
         module: "ipc/conversation",
         func: "export",
         message: "Conversation exported",
-        context: `conversation=${conversationId.trim()} format=${normalizedFormat} file=${result.filePath}`,
+        context: `conversation=${conversationId.trim()} format=${normalizedFormat} file=${
+          result.filePath
+        }`,
       });
 
       return { success: true, canceled: false, filePath: result.filePath };

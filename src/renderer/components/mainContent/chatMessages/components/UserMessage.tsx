@@ -1,9 +1,11 @@
-import { memo } from "react";
-import { GitCommitHorizontal } from "lucide-react";
+import { memo, useEffect, useRef, useState } from "react";
+import { ChevronDown, ChevronUp, GitCommitHorizontal } from "lucide-react";
 import { UserMessageActions } from "./UserMessageActions";
 import type { UserMessageProps } from "../utils/types";
 import { parseContentSegments } from "../../chatInput/fileTagUtils";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
+
+const COLLAPSE_LINES = 6;
 
 export const UserMessage = memo(
   ({
@@ -12,11 +14,40 @@ export const UserMessage = memo(
     onRollback,
   }: UserMessageProps): React.JSX.Element => {
     const segments = parseContentSegments(content);
+    const [expanded, setExpanded] = useState(false);
+    const [collapsible, setCollapsible] = useState(false);
+    const pRef = useRef<HTMLParagraphElement>(null);
+
+    useEffect(() => {
+      const el = pRef.current;
+      if (!el) {
+        return;
+      }
+      const measure = () => {
+        const computedLineHeight = parseFloat(getComputedStyle(el).lineHeight);
+        const lineH =
+          Number.isFinite(computedLineHeight) && computedLineHeight > 0
+            ? computedLineHeight
+            : 21;
+        setCollapsible(el.scrollHeight > COLLAPSE_LINES * lineH + 2);
+      };
+      measure();
+      const ro = new ResizeObserver(measure);
+      ro.observe(el);
+      return () => {
+        ro.disconnect();
+      };
+    }, [content]);
+
+    const collapsed = collapsible && !expanded;
 
     return (
       <div className="user-message-row">
         <article className="user-message-bubble">
-          <p>
+          <p
+            ref={pRef}
+            className={collapsed ? "user-message-text-collapsed" : undefined}
+          >
             {segments.map((segment, index) => {
               if (segment.type === "text") {
                 return <span key={index}>{segment.content}</span>;
@@ -78,6 +109,16 @@ export const UserMessage = memo(
               );
             })}
           </p>
+          {collapsible && (
+            <button
+              type="button"
+              className="user-message-toggle"
+              onClick={() => setExpanded((prev) => !prev)}
+            >
+              {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              {expanded ? "收起" : "展开"}
+            </button>
+          )}
         </article>
         <UserMessageActions
           content={content}

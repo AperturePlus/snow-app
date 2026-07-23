@@ -4728,6 +4728,35 @@ input {
   margin: 0;
 }
 
+.user-message-text-collapsed {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+  line-clamp: 6;
+  overflow: hidden;
+}
+
+.user-message-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.user-message-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
 .user-message-actions {
   display: inline-flex;
   align-items: center;
@@ -4838,10 +4867,11 @@ input {
 
 .ai-response-copy-menu-label {
   flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 12px 0 4px;
+  line-height: 1.4;
+}
+
+.ai-response-copy-menu-item svg {
+  flex-shrink: 0;
 }
 
 .chat-fork-divider-line {
@@ -5538,7 +5568,8 @@ input {
      - `.mermaid-view-code` (highlighted source, visible during streaming)
      - `.mermaid-view-diagram` (SVG filled by mermaidRenderer once parsed)
    `data-mermaid-view` on the block controls which view is visible. */
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-block {
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-block {
   margin: 0 0 14px;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
@@ -5546,7 +5577,8 @@ input {
   background: var(--bg-tertiary);
 }
 
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-toolbar {
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -5555,7 +5587,8 @@ input {
   border-bottom: 1px solid var(--border-light);
 }
 
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-toolbar-label {
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-toolbar-label {
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 500;
@@ -5564,16 +5597,21 @@ input {
   user-select: none;
 }
 
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-toolbar-actions {
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-toolbar-actions {
   display: flex;
   align-items: center;
   gap: 2px;
 }
 
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-btn-copy,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-btn-download,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-btn-code,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-btn-diagram {
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-btn-copy,
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-btn-download,
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-btn-code,
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-btn-diagram {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5588,31 +5626,43 @@ input {
   transition: background 0.15s, color 0.15s;
 }
 
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-btn-copy:hover,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-btn-download:hover,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-btn-code:hover,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-btn-diagram:hover {
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-btn-copy:hover,
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-btn-download:hover,
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-btn-code:hover,
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-btn-diagram:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-btn-copy.copied {
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-btn-copy.copied {
   color: var(--accent-green);
 }
 
 /* Active view-toggle button (matches the current view). */
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-block[data-mermaid-view="code"] .mermaid-btn-code,
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-block[data-mermaid-view="diagram"] .mermaid-btn-diagram {
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-block[data-mermaid-view="code"]
+  .mermaid-btn-code,
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-block[data-mermaid-view="diagram"]
+  .mermaid-btn-diagram {
   color: var(--text-primary);
   background: var(--bg-hover);
 }
 
 /* Code view: visible by default (during streaming and when view=code). */
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-view-code {
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-view-code {
   display: block;
 }
 
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-view-code pre {
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-view-code
+  pre {
   margin: 0;
   padding: 12px 14px;
   overflow-x: auto;
@@ -5620,7 +5670,9 @@ input {
   background: transparent;
 }
 
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-view-code code {
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-view-code
+  code {
   padding: 0;
   background: transparent;
   font-family: var(--font-mono);
@@ -5629,30 +5681,41 @@ input {
 }
 
 /* Diagram view: hidden by default, shown when view=diagram. */
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-view-diagram {
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-view-diagram {
   display: none;
   padding: 16px;
   overflow: auto;
   text-align: center;
 }
 
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-block[data-mermaid-view="code"] .mermaid-view-code {
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-block[data-mermaid-view="code"]
+  .mermaid-view-code {
   display: block;
 }
 
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-block[data-mermaid-view="code"] .mermaid-view-diagram {
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-block[data-mermaid-view="code"]
+  .mermaid-view-diagram {
   display: none;
 }
 
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-block[data-mermaid-view="diagram"] .mermaid-view-code {
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-block[data-mermaid-view="diagram"]
+  .mermaid-view-code {
   display: none;
 }
 
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-block[data-mermaid-view="diagram"] .mermaid-view-diagram {
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-block[data-mermaid-view="diagram"]
+  .mermaid-view-diagram {
   display: block;
 }
 
-:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-view-diagram svg {
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-view-diagram
+  svg {
   max-width: 100%;
   height: auto;
 }
@@ -7378,8 +7441,159 @@ input {
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;
-  max-height: 120px;
+  max-height: 180px;
   overflow-y: auto;
+}
+
+/* ===== Sidebar Search ===== */
+.sidebar-search-bar {
+  padding: 8px 8px 4px;
+  flex-shrink: 0;
+}
+
+.sidebar-search-btn {
+  width: 100%;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.sidebar-search-btn:hover {
+  color: var(--text-secondary);
+}
+
+/* ===== Search Modal ===== */
+.search-modal {
+  height: min(560px, calc(100vh - 48px));
+}
+
+.search-modal .app-modal-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0;
+}
+
+.search-modal-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+
+.search-modal-input-icon {
+  position: absolute;
+  left: 28px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.search-modal-input {
+  width: 100%;
+  padding: 8px 12px 8px 34px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 13.5px;
+  outline: none;
+  transition: border-color 0.12s;
+}
+
+.search-modal-input:focus {
+  border-color: var(--accent-blue);
+}
+
+.search-modal-input::placeholder {
+  color: var(--text-muted);
+}
+
+.search-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 8px;
+}
+
+.search-modal-loading,
+.search-modal-hint,
+.search-modal-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.search-modal-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.search-result-item:hover,
+.search-result-item.active {
+  background: var(--bg-hover);
+}
+
+.search-result-item.active {
+  background: var(--bg-active);
+}
+
+.search-result-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.search-result-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.search-result-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-result-preview {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-result-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
 }
 
 .tool-call-sub-agent-activity {

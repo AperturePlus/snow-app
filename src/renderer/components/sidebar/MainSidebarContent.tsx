@@ -1,12 +1,14 @@
-import { Download, Settings } from "lucide-react";
+import { Download, Search, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { useI18n } from "../../i18n";
+import { useChatConversationContext } from "../mainContent/chatMessages";
 import { ChatsSection } from "./mainSidebar/ChatsSection";
 import { PinnedSection } from "./mainSidebar/PinnedSection";
 import { ProjectsSection } from "./mainSidebar/ProjectsSection";
+import { SearchModal } from "./SearchModal";
 import type { SidebarContentProps } from "./types";
-import type { UpdateStatus } from "../../../preload";
+import type { UpdateStatus, ConversationSearchResult } from "../../../preload";
 
 export function MainSidebarContent({
   activeDirectory,
@@ -16,8 +18,10 @@ export function MainSidebarContent({
   onOpenSshWizard,
 }: SidebarContentProps): React.JSX.Element {
   const { t } = useI18n();
+  const { handleSelectConversation } = useChatConversationContext();
   const [isSwitchingDirectory, setIsSwitchingDirectory] = useState(false);
   const [appVersion, setAppVersion] = useState<string>("");
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({
     available: false,
     version: null,
@@ -35,7 +39,10 @@ export function MainSidebarContent({
   }, []);
 
   useEffect(() => {
-    window.snow.getUpdateStatus().then(setUpdateStatus).catch(() => undefined);
+    window.snow
+      .getUpdateStatus()
+      .then(setUpdateStatus)
+      .catch(() => undefined);
     const unsubscribe = window.snow.onUpdateStatusChanged((status) => {
       setUpdateStatus(status);
     });
@@ -50,8 +57,36 @@ export function MainSidebarContent({
     void window.snow.installUpdate();
   };
 
+  const handleSearchSelect = (conversation: ConversationSearchResult): void => {
+    void handleSelectConversation(
+      conversation.conversationId,
+      conversation.summary || conversation.title,
+      {
+        inputTokens: conversation.inputTokens,
+        outputTokens: conversation.outputTokens,
+        cacheCreationInputTokens: conversation.cacheCreationInputTokens,
+        cacheReadInputTokens: conversation.cacheReadInputTokens,
+      },
+      conversation.directoryId
+    );
+  };
+
   return (
     <>
+      <div className="sidebar-search-bar">
+        <button
+          className="nav-item sidebar-search-btn"
+          onClick={() => setIsSearchOpen(true)}
+          type="button"
+        >
+          <Search size={15} strokeWidth={1.8} />
+          <span>
+            {t("search.placeholder", {
+              defaultValue: "Search conversations...",
+            })}
+          </span>
+        </button>
+      </div>
       <PinnedSection
         activeDirectory={activeDirectory}
         isSwitchingDirectory={isSwitchingDirectory}
@@ -122,6 +157,11 @@ export function MainSidebarContent({
           </button>
         )}
       </div>
+      <SearchModal
+        open={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        onSelect={handleSearchSelect}
+      />
     </>
   );
 }

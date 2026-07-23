@@ -331,6 +331,27 @@ pub struct ChatConversationPage {
 }
 
 #[napi(object)]
+pub struct ConversationSearchResult {
+    pub conversation_id: String,
+    pub title: String,
+    pub summary: String,
+    pub last_message_preview: String,
+    pub message_count: i32,
+    pub model: String,
+    pub status: String,
+    pub directory_id: String,
+    pub forked_from_conversation_id: String,
+    pub fork_message_count: i32,
+    pub created_at: String,
+    pub updated_at: String,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_creation_input_tokens: i64,
+    pub cache_read_input_tokens: i64,
+    pub matched_content: String,
+}
+
+#[napi(object)]
 pub struct ChatMessageRecord {
     pub id: String,
     pub role: String,
@@ -955,10 +976,17 @@ pub fn list_chat_conversations_paginated(
         offset,
     )
 }
+
 pub fn list_pinned_conversations(directory_id: String) -> Result<Vec<ChatConversationRecord>> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::list_pinned_conversations(&database_path, &directory_id)
 }
+
+pub fn search_chat_conversations(query: String) -> Result<Vec<ConversationSearchResult>> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::search_chat_conversations(&database_path, &query)
+}
+
 pub fn get_chat_conversation(
     conversation_id: String,
 ) -> Result<Option<ChatConversationRecord>> {

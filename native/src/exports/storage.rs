@@ -4,6 +4,7 @@ use napi_derive::napi;
 use crate::storage::{
     ApiConfigInput, ApiConfigRecord, AppStorageInfo, ChatConversationPage,
     ChatConversationRecord, ChatMessagePage, ChatMessageRecord, CodebaseProjectScopeSettings,
+    ConversationSearchResult,
     CustomHeaderSchemeInput, CustomHeaderSchemeRecord, HookConfigInput, HookConfigRecord,
     McpServerConfigInput, McpServerConfigRecord, ProjectMcpServerConfigRecord,
     ProjectSensitiveCommandConfigInput, ProjectSensitiveCommandConfigRecord,
@@ -828,6 +829,13 @@ pub async fn list_chat_conversations_paginated(
 #[napi]
 pub async fn list_pinned_conversations(directory_id: String) -> napi::Result<Vec<ChatConversationRecord>> {
     tokio::task::spawn_blocking(move || crate::storage::list_pinned_conversations(directory_id))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn search_chat_conversations(query: String) -> napi::Result<Vec<ConversationSearchResult>> {
+    tokio::task::spawn_blocking(move || crate::storage::search_chat_conversations(query))
         .await
         .map_err(map_spawn_error)?
 }

@@ -4,6 +4,7 @@ import type {
   ChatConversationRecord,
   ChatMessagePage,
   ChatMessageRecord,
+  ConversationSearchResult,
 } from "../types";
 
 export const conversationApi = {
@@ -26,6 +27,10 @@ export const conversationApi = {
     directoryId: string
   ): Promise<ChatConversationRecord[]> =>
     ipcRenderer.invoke("chat-conversations:list-pinned", directoryId),
+  searchChatConversations: (
+    query: string
+  ): Promise<ConversationSearchResult[]> =>
+    ipcRenderer.invoke("chat-conversations:search", query),
   getChatConversation: (
     conversationId: string
   ): Promise<ChatConversationRecord | null> =>
@@ -137,7 +142,11 @@ export const conversationApi = {
     conversationId: string,
     format: string,
     defaultFileName?: string
-  ): Promise<{ success: boolean; canceled: boolean; filePath: string | null }> =>
+  ): Promise<{
+    success: boolean;
+    canceled: boolean;
+    filePath: string | null;
+  }> =>
     ipcRenderer.invoke(
       "chat-conversations:export",
       conversationId,
