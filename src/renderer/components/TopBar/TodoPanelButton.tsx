@@ -3,6 +3,7 @@ import {
   Circle,
   CircleDot,
   ListChecks,
+  Pin,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -16,6 +17,7 @@ import type {
 } from "../mainContent/chatMessages/hooks/useTodoPanel";
 type TodoPanelButtonProps = {
   messages: ChatConversationMessage[];
+  conversationId?: string;
   projectId?: string;
   isRunning?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -59,12 +61,14 @@ const parseTodos = (result: string): TodoItem[] | null => {
 
 export const TodoPanelButton = ({
   messages,
+  conversationId,
   projectId,
   isRunning = false,
   onOpenChange,
 }: TodoPanelButtonProps): React.JSX.Element | null => {
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
+  const [isPinned, setIsPinned] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedTodoIds, setSelectedTodoIds] = useState<Set<string>>(
     () => new Set()
@@ -73,11 +77,65 @@ export const TodoPanelButton = ({
     null
   );
   const [localTodos, setLocalTodos] = useState<TodoItem[] | null>(null);
+  const [fallbackTodos, setFallbackTodos] = useState<TodoItem[] | null>(null);
+  const [fallbackSessionId, setFallbackSessionId] = useState<string | null>(
+    null
+  );
   const panelRef = useRef<HTMLDivElement>(null);
 
   const panel = useTodoPanel(messages);
-  const sessionId = panel.sessionId;
-  const todos = sessionId ? localTodos ?? [] : panel.todos;
+  const panelSessionId = panel.sessionId;
+  const panelTodos = panel.todos;
+
+  // When the paginated history loader hasn't loaded the messages containing
+  // the todo tool call (sessionId is null), fall back to a lightweight backend
+  // query that searches the entire conversation for the latest todo-manage
+  // tool result. This keeps the TopBar TODO button visible without forcing
+  // the user to scroll up and trigger pagination.
+  useEffect(() => {
+    if (panelSessionId || !conversationId) {
+      setFallbackTodos(null);
+      setFallbackSessionId(null);
+      return;
+    }
+
+    let cancelled = false;
+    void window.snow
+      .findLatestToolResult(conversationId, "mcp__todo__todo-manage")
+      .then((result) => {
+        if (cancelled || !result) {
+          return;
+        }
+        const parsed = parseTodos(result);
+        if (parsed) {
+          // Extract sessionId from the raw result for subsequent MCP calls.
+          try {
+            const raw = JSON.parse(result) as { sessionId?: unknown };
+            if (typeof raw.sessionId === "string") {
+              setFallbackSessionId(raw.sessionId);
+            }
+          } catch {
+            // Ignore parse errors — sessionId stays null
+          }
+          setFallbackTodos(parsed);
+        }
+      })
+      .catch(() => {
+        // Silent fail
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId, panelSessionId]);
+
+  const sessionId = panelSessionId ?? fallbackSessionId;
+  // Priority: user-initiated localTodos > panelTodos (from loaded messages)
+  // > fallbackTodos (from backend query). When sessionId exists, localTodos
+  // takes precedence so delete operations are reflected immediately.
+  const todos = sessionId
+    ? localTodos ?? (panelSessionId ? panelTodos : fallbackTodos ?? [])
+    : [];
   const totalCount = todos.length;
   const completedCount = todos.filter(
     (todo) => todo.status === "completed"
@@ -130,6 +188,9 @@ export const TodoPanelButton = ({
     }
 
     const handleClickOutside = (event: MouseEvent) => {
+      if (isPinned) {
+        return;
+      }
       if (
         panelRef.current &&
         !panelRef.current.contains(event.target as Node)
@@ -142,7 +203,7 @@ export const TodoPanelButton = ({
     return () => {
       document.removeEventListener("pointerdown", handleClickOutside, true);
     };
-  }, [isOpen]);
+  }, [isOpen, isPinned]);
 
   useEffect(() => {
     if (isRunning) {
@@ -223,11 +284,23 @@ export const TodoPanelButton = ({
             <span className="top-bar-todo-dropdown-title">
               {t("topBar.todo.title")}
             </span>
-            <span className="top-bar-todo-dropdown-count">
-              {t("topBar.todo.progress", {
-                values: { completed: completedCount, total: totalCount },
-              })}
-            </span>
+            <div className="top-bar-todo-dropdown-header-actions">
+              <span className="top-bar-todo-dropdown-count">
+                {t("topBar.todo.progress", {
+                  values: { completed: completedCount, total: totalCount },
+                })}
+              </span>
+              <button
+                className={`top-bar-todo-pin-btn${isPinned ? " active" : ""}`}
+                type="button"
+                aria-label={t("topBar.todo.pin")}
+                title={t("topBar.todo.pin")}
+                aria-pressed={isPinned}
+                onClick={() => setIsPinned((pinned) => !pinned)}
+              >
+                <Pin size={13} strokeWidth={1.8} />
+              </button>
+            </div>
           </div>
           {!isRunning ? (
             <div className="top-bar-todo-selection-toolbar">

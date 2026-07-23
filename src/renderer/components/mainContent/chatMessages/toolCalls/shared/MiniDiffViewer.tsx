@@ -6,6 +6,11 @@ type MiniDiffViewerProps = {
   fileName: string;
   oldContent: string;
   newContent: string;
+  /**
+   * 旧内容在真实源文件中的起始行号(1-based)。
+   * 用于编辑工具调用时,让 diff 显示正确的源文件行号而非始终从 1 开始。
+   */
+  startLine?: number;
 };
 
 /**
@@ -17,6 +22,7 @@ export const MiniDiffViewer = memo(
     fileName,
     oldContent,
     newContent,
+    startLine,
   }: MiniDiffViewerProps): React.JSX.Element => (
     <div className="tool-call-diff-content">
       <GitDiffView
@@ -24,6 +30,8 @@ export const MiniDiffViewer = memo(
         oldContent={oldContent}
         newContent={newContent}
         fontSize={11}
+        oldStartLine={startLine}
+        newStartLine={startLine}
       />
     </div>
   )

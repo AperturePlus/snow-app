@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useI18n } from "../../../i18n";
 import type { ChatConversationRecord } from "../../../../preload";
-import { ChatItemMenu } from "./ChatItemMenu";
+import { ChatItemMenu, type ExportFormat } from "./ChatItemMenu";
 import { formatTimeLabel, parseDbTimestamp } from "./chatTimeGroup";
 
 type ChatItemProps = {
@@ -24,6 +24,7 @@ type ChatItemProps = {
   onPin: () => void;
   onRename: (newTitle: string) => Promise<void>;
   onDelete: () => void;
+  onExport: (format: ExportFormat) => void;
   onSelect?: () => void;
   onSelectSubAgent?: (conversationId: string) => void;
 };
@@ -38,6 +39,7 @@ export function ChatItem({
   onPin,
   onRename,
   onDelete,
+  onExport,
   onSelect,
   onSelectSubAgent,
 }: ChatItemProps): React.JSX.Element {
@@ -252,6 +254,7 @@ export function ChatItem({
             onPin={onPin}
             onRename={handleRenameStart}
             onDelete={onDelete}
+            onExport={onExport}
             onOpenChange={setIsMenuOpen}
           />
         </span>

@@ -1,6 +1,27 @@
-import { ipcMain } from "electron";
+import { BrowserWindow, dialog, ipcMain } from "electron";
+import { writeFile } from "node:fs/promises";
 import type { NativeBridge } from "../../native/types";
 import { snowLog } from "../../../utils/snowLogger";
+
+const EXPORT_FORMATS = ["markdown", "html", "json", "csv"] as const;
+type ExportFormat = (typeof EXPORT_FORMATS)[number];
+
+const EXPORT_LABELS: Record<ExportFormat, string> = {
+  markdown: "Markdown",
+  html: "HTML",
+  json: "JSON",
+  csv: "CSV",
+};
+
+const EXPORT_EXTENSIONS: Record<ExportFormat, string> = {
+  markdown: "md",
+  html: "html",
+  json: "json",
+  csv: "csv",
+};
+
+const isExportFormat = (value: string): value is ExportFormat =>
+  (EXPORT_FORMATS as readonly string[]).includes(value);
 
 export const registerConversationHandlers = (native: NativeBridge): void => {
   ipcMain.handle("chat-conversations:list", (_event, directoryId: unknown) => {
@@ -103,6 +124,22 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
         conversationId.trim(),
         safeBeforeMessageId,
         safeLimit
+      );
+    }
+  );
+  ipcMain.handle(
+    "chat-conversations:find-latest-tool-result",
+    (_event, conversationId: unknown, toolName: unknown) => {
+      if (typeof conversationId !== "string" || !conversationId.trim()) {
+        throw new Error("Conversation ID is required to find tool result");
+      }
+      if (typeof toolName !== "string" || !toolName.trim()) {
+        throw new Error("Tool name is required to find tool result");
+      }
+
+      return native.findLatestToolResult(
+        conversationId.trim(),
+        toolName.trim()
       );
     }
   );
@@ -334,4 +371,71 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
 
     return native.getSubAgentConfig(agentId.trim());
   });
+
+  // ===== Conversation export =====
+  // Rust 端负责从 SQLite 读取会话与消息并格式化为目标格式文本，
+  // 主进程负责弹出保存对话框并将文本写入用户选择的文件路径。
+  ipcMain.handle(
+    "chat-conversations:export",
+    async (
+      event,
+      conversationId: unknown,
+      format: unknown,
+      defaultFileName: unknown
+    ) => {
+      if (
+        typeof conversationId !== "string" ||
+        !conversationId.trim()
+      ) {
+        throw new Error("Conversation ID is required to export conversation");
+      }
+      if (typeof format !== "string" || !isExportFormat(format)) {
+        throw new Error(
+          `Unsupported export format: ${String(format)}. Supported: ${EXPORT_FORMATS.join(", ")}`
+        );
+      }
+
+      const normalizedFormat = format as ExportFormat;
+      const extension = EXPORT_EXTENSIONS[normalizedFormat];
+
+      // 1) 让 Rust 在 spawn_blocking 中读取数据库并生成导出内容
+      const content = await native.exportConversation(
+        conversationId.trim(),
+        normalizedFormat
+      );
+
+      // 2) 弹出保存对话框，让用户选择保存路径
+      const baseName =
+        typeof defaultFileName === "string" && defaultFileName.trim()
+          ? defaultFileName.trim()
+          : "conversation";
+      const browserWindow = BrowserWindow.fromWebContents(event.sender);
+      const options: Electron.SaveDialogOptions = {
+        title: "Export conversation",
+        defaultPath: `${baseName}.${extension}`,
+        filters: [
+          { name: EXPORT_LABELS[normalizedFormat], extensions: [extension] },
+        ],
+      };
+      const result = browserWindow
+        ? await dialog.showSaveDialog(browserWindow, options)
+        : await dialog.showSaveDialog(options);
+
+      if (result.canceled || !result.filePath) {
+        return { success: false, canceled: true, filePath: null };
+      }
+
+      // 3) 将内容写入用户选择的文件
+      await writeFile(result.filePath, content, "utf-8");
+
+      snowLog.info({
+        module: "ipc/conversation",
+        func: "export",
+        message: "Conversation exported",
+        context: `conversation=${conversationId.trim()} format=${normalizedFormat} file=${result.filePath}`,
+      });
+
+      return { success: true, canceled: false, filePath: result.filePath };
+    }
+  );
 };

@@ -8,6 +8,7 @@ import type {
   WorkspaceDirectoryRecord,
 } from "../../../../preload";
 import { ChatItem } from "./ChatItem";
+import type { ExportFormat } from "./ChatItemMenu";
 import { groupConversationsByTime, type TimeGroupKey } from "./chatTimeGroup";
 
 const CHAT_PAGE_SIZE = 20;
@@ -240,6 +241,21 @@ export function ChatsSection({
     }
   };
 
+  const handleExport = async (
+    conversation: ChatConversationRecord,
+    format: ExportFormat
+  ): Promise<void> => {
+    const fileName =
+      conversation.summary ||
+      conversation.title ||
+      t("sidebar.untitledChat", { defaultValue: "Untitled" });
+    await window.snow.exportConversation(
+      conversation.conversationId,
+      format,
+      fileName
+    );
+  };
+
   const timeGroups = groupConversationsByTime(conversations);
 
   useEffect(() => {
@@ -417,6 +433,7 @@ export function ChatsSection({
                       handleRename(conversation, newTitle)
                     }
                     onDelete={() => void handleDelete(conversation)}
+                    onExport={(format) => handleExport(conversation, format)}
                     onSelect={() =>
                       void handleSelectConversation(
                         conversation.conversationId,

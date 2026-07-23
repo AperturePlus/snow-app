@@ -651,6 +651,11 @@ pub async fn call_mcp_tool(
     on_user_question: UserQuestionCallback,
     sub_agent_allowed_tools: Option<Vec<String>>,
 ) -> napi::Result<String> {
+    // Sanitize: AI may copy "[Tool: mcp__x__y#callId]" from conversation
+    // history or leak internal XML tags into the tool name. Normalize
+    // before any matching or whitelist check.
+    let tool_full_name = super::builtin::sanitize_tool_full_name(&tool_full_name);
+
     ensure_project_tool_enabled(project_id.as_deref(), &tool_full_name).await?;
 
     if let Some(ref allowed_tools) = sub_agent_allowed_tools {

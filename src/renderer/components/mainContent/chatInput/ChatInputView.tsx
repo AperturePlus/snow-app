@@ -182,12 +182,13 @@ export const ChatInputView = ({
           setIsProjectCodebaseOpen(true);
         },
         model: selectedModel || undefined,
-        compactDisabled: messages.length === 0 || isStreaming || isCompacting,
+        compactDisabled: messages.length === 0 || isCompacting,
         mcpDisabled: !projectId,
         roleDisabled: !projectId,
         sensitiveCommandsDisabled: !projectId,
         skillsDisabled: !projectId,
         codebaseDisabled: !projectId,
+        isRunning: isStreaming,
         labels: {
           clearDescription: t("chatCommand.clearDescription"),
           compactDescription: t("chatCommand.compactDescription"),
@@ -935,10 +936,11 @@ export const ChatInputView = ({
                 <button
                   className={`toolbar-btn model ${
                     modelError ? "model-error" : ""
-                  }`}
+                  }${isStreaming ? " is-disabled" : ""}`}
                   aria-label={labels.selectModel}
                   aria-expanded={isModelMenuOpen}
                   onClick={handleToggleModelMenu}
+                  disabled={isStreaming}
                   type="button"
                 >
                   {modelError ? (

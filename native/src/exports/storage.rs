@@ -962,6 +962,18 @@ pub async fn list_chat_messages_paginated(
 }
 
 #[napi]
+pub async fn find_latest_tool_result(
+    conversation_id: String,
+    tool_name: String,
+) -> napi::Result<Option<String>> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::find_latest_tool_result(conversation_id, tool_name)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn fork_conversation(
     source_conversation_id: String,
     up_to_response_id: String,
@@ -1070,6 +1082,18 @@ pub async fn clear_app_logs() -> napi::Result<u32> {
     tokio::task::spawn_blocking(crate::storage::clear_app_logs)
         .await
         .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn export_conversation(
+    conversation_id: String,
+    format: String,
+) -> napi::Result<String> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::export_conversation(conversation_id, format)
+    })
+    .await
+    .map_err(map_spawn_error)?
 }
 
 /// 将 tokio JoinError 转换为 napi Error

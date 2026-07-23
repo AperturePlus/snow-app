@@ -52,6 +52,7 @@ export const CompactionStream = ({
               <MarkdownBlock
                 className="context-compaction-markdown"
                 content={compactionPreview}
+                streaming={isCompacting}
               />
             ) : (
               <div className="context-compaction-placeholder">

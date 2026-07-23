@@ -238,6 +238,13 @@ export const useChatInputController = ({
   );
 
   useEffect(() => {
+    if (isStreaming && isModelMenuOpen) {
+      setIsModelMenuOpen(false);
+      setIsManualMode(false);
+    }
+  }, [isStreaming, isModelMenuOpen]);
+
+  useEffect(() => {
     if (!isModelMenuOpen) {
       return;
     }

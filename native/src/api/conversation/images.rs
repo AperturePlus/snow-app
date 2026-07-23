@@ -60,19 +60,25 @@ fn parse_image_tag_value(value: &str, database_path: &Path) -> Result<Option<Cha
         return Ok(parse_base64_image_data_url(value));
     }
 
+    // Reject obviously invalid paths that are not real file references.
+    // AI may output literal template strings like "{}" or placeholders
+    // after reading source code containing @@image:{}@@ format strings.
+    if value.is_empty() || value.contains('{') || !value.contains('/') {
+        return Ok(None);
+    }
+
     let relative_path = value;
     let file_path = database_path
         .parent()
         .unwrap_or_else(|| Path::new("."))
         .join(relative_path);
 
-    let bytes = fs::read(&file_path).map_err(|error| {
-        Error::from_reason(format!(
-            "Failed to read image file '{}': {}",
-            file_path.display(),
-            error
-        ))
-    })?;
+    // Silently skip unreadable files instead of failing the entire request.
+    // A stale or invalid image reference should not block the conversation.
+    let bytes = match fs::read(&file_path) {
+        Ok(bytes) => bytes,
+        Err(_) => return Ok(None),
+    };
     if bytes.is_empty() {
         return Ok(None);
     }

@@ -280,6 +280,7 @@ export function ThemeAiColorModal({
             <MarkdownBlock
               className="context-compaction-markdown theme-ai-color-markdown"
               content={streamingContent}
+              streaming={loading}
             />
           </div>
         ) : null}

@@ -122,15 +122,28 @@ export const isValidToolName = (name: string): boolean => {
 
 const normalizeToolCallName = (tc: Record<string, unknown>): string => {
   const directName = typeof tc.name === "string" ? tc.name.trim() : "";
-  if (directName) {
-    return directName;
+  let name = directName;
+  if (!name) {
+    const func = tc.function;
+    if (typeof func === "object" && func !== null && !Array.isArray(func)) {
+      const funcRecord = func as Record<string, unknown>;
+      name = typeof funcRecord.name === "string" ? funcRecord.name.trim() : "";
+    }
   }
-  const func = tc.function;
-  if (typeof func === "object" && func !== null && !Array.isArray(func)) {
-    const funcRecord = func as Record<string, unknown>;
-    return typeof funcRecord.name === "string" ? funcRecord.name.trim() : "";
+  if (!name) {
+    return "";
   }
-  return "";
+
+  // Sanitize: AI may copy the "[Tool: name#callId]" format from conversation
+  // history (used by useAgentLoop to label tool results) or leak internal XML
+  // tags (e.g. </arg_value>) into the tool name. Extract a valid
+  // mcp__{server}__{tool} pattern if one is buried in the polluted string.
+  const mcpMatch = name.match(/mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_-]+/);
+  if (mcpMatch) {
+    return mcpMatch[0];
+  }
+
+  return name;
 };
 
 const normalizeToolCallArgumentsFromTc = (

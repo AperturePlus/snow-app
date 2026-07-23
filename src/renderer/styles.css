@@ -540,6 +540,43 @@ input {
   flex-shrink: 0;
 }
 
+.top-bar-todo-dropdown-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.top-bar-todo-pin-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.top-bar-todo-pin-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.top-bar-todo-pin-btn.active {
+  color: var(--text-primary);
+  background: var(--bg-active);
+}
+
+.top-bar-todo-pin-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
 .top-bar-todo-selection-toolbar {
   display: flex;
   align-items: center;
@@ -1319,6 +1356,43 @@ input {
   opacity: 0.88;
 }
 
+.chat-item-menu-item.active {
+  background: var(--bg-hover);
+}
+
+.chat-item-menu-sub-arrow {
+  margin-left: auto;
+  color: var(--text-tertiary, var(--text-secondary));
+  flex-shrink: 0;
+}
+
+.chat-item-export-panel {
+  min-width: 120px;
+}
+
+.chat-item-export-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary, var(--text-secondary));
+  border-bottom: 1px solid var(--border-subtle, var(--border-light));
+  margin-bottom: 2px;
+}
+
+.chat-item-export-back-icon {
+  flex-shrink: 0;
+  color: var(--text-tertiary, var(--text-secondary));
+}
+
+.chat-item-export-format-label {
+  font-size: 12px;
+}
+
 .chat-item-rename-input {
   width: 100%;
   padding: 2px 4px;
@@ -1615,7 +1689,7 @@ input {
 
 .workspace-directory-menu {
   position: fixed;
-  min-width: 160px;
+  min-width: 140px;
   padding: 4px;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg, 8px);
@@ -4723,7 +4797,47 @@ input {
   color: var(--text-secondary);
 }
 
-.chat-fork-divider {
+.ai-response-action-btn.is-open {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+/* Copy submenu rendered via portal (document.body) so it is never clipped by
+   overflow: hidden ancestors. Follows the same pattern as BrowserMenu. */
+.ai-response-copy-menu {
+  position: fixed;
+  min-width: 160px;
+  padding: 4px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg, 8px);
+  background: var(--bg-secondary);
+  box-shadow: var(--island-shadow, 0 4px 16px rgba(0, 0, 0, 0.12));
+  z-index: 9999;
+}
+
+.ai-response-copy-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease;
+}
+
+.ai-response-copy-menu-item:hover {
+  background: var(--bg-hover);
+}
+
+.ai-response-copy-menu-label {
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -5416,6 +5530,165 @@ input {
 /* Keep KaTeX glyphs at the same size as surrounding text. */
 :is(.ai-message, .file-viewer-code, .context-compaction-markdown) .katex {
   font-size: 1em;
+}
+
+/* Mermaid diagrams (rendered on the main thread from worker-emitted placeholders).
+   The worker emits a `.mermaid-block` with:
+     - `.mermaid-toolbar` (copy + view-toggle buttons)
+     - `.mermaid-view-code` (highlighted source, visible during streaming)
+     - `.mermaid-view-diagram` (SVG filled by mermaidRenderer once parsed)
+   `data-mermaid-view` on the block controls which view is visible. */
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-block {
+  margin: 0 0 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-tertiary);
+}
+
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 4px 12px;
+  background: var(--bg-active);
+  border-bottom: 1px solid var(--border-light);
+}
+
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-toolbar-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+  user-select: none;
+}
+
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-btn-copy,
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-btn-download,
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-btn-code,
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-btn-diagram {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-btn-copy:hover,
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-btn-download:hover,
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-btn-code:hover,
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-btn-diagram:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-btn-copy.copied {
+  color: var(--accent-green);
+}
+
+/* Active view-toggle button (matches the current view). */
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-block[data-mermaid-view="code"] .mermaid-btn-code,
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-block[data-mermaid-view="diagram"] .mermaid-btn-diagram {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+/* Code view: visible by default (during streaming and when view=code). */
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-view-code {
+  display: block;
+}
+
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-view-code pre {
+  margin: 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  border: none;
+  background: transparent;
+}
+
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-view-code code {
+  padding: 0;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+/* Diagram view: hidden by default, shown when view=diagram. */
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-view-diagram {
+  display: none;
+  padding: 16px;
+  overflow: auto;
+  text-align: center;
+}
+
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-block[data-mermaid-view="code"] .mermaid-view-code {
+  display: block;
+}
+
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-block[data-mermaid-view="code"] .mermaid-view-diagram {
+  display: none;
+}
+
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-block[data-mermaid-view="diagram"] .mermaid-view-code {
+  display: none;
+}
+
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-block[data-mermaid-view="diagram"] .mermaid-view-diagram {
+  display: block;
+}
+
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown) .mermaid-view-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Export dropdown menu (created dynamically by mermaidRenderer.openExportMenu).
+   Rendered in document.body, so it is not nested under .ai-message. */
+.mermaid-export-menu {
+  z-index: 10000;
+  min-width: 88px;
+  padding: 4px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+.mermaid-export-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+
+.mermaid-export-menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 /* Fallback for pre/code not wrapped (e.g. plain code without language) */
@@ -6503,7 +6776,7 @@ input {
   max-height: 400px;
   overflow: auto;
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--bg-primary);
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -7930,6 +8203,13 @@ input {
 
 .toolbar-btn:focus-visible {
   outline: none;
+}
+
+.toolbar-btn:disabled,
+.toolbar-btn.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 .send-btn {
@@ -12766,6 +13046,15 @@ input {
 
 .terminal-container .xterm-viewport {
   overflow-y: auto;
+  /* xterm.css paints .xterm-viewport with a fixed dark background, but the
+     terminal theme only covers .xterm-screen. When the container height is
+     not an exact multiple of the line height, the leftover strip at the
+     bottom shows the viewport background, so match it to the terminal theme. */
+  background-color: #fbfcfd;
+}
+
+:root[data-theme="dark"] .terminal-container .xterm-viewport {
+  background-color: #0e0e0e;
 }
 .terminal-container .xterm-screen {
   padding: 0;

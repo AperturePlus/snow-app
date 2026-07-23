@@ -931,6 +931,10 @@ export type NativeBridge = {
     beforeMessageId: string,
     limit: number
   ) => Promise<ChatMessagePage>;
+  findLatestToolResult: (
+    conversationId: string,
+    toolName: string
+  ) => Promise<string | null>;
   forkConversation: (
     sourceConversationId: string,
     upToResponseId: string
@@ -1088,4 +1092,8 @@ export type NativeBridge = {
     offset: number
   ) => Promise<AppLogPage>;
   clearAppLogs: () => Promise<number>;
+  exportConversation: (
+    conversationId: string,
+    format: string
+  ) => Promise<string>;
 };

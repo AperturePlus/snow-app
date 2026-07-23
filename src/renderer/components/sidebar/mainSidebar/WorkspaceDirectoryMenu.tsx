@@ -1,5 +1,11 @@
 import { AlertTriangle, Ellipsis, FileSearch, Trash2 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 
 import { useI18n } from "../../../i18n";
@@ -16,6 +22,9 @@ type MenuPosition = {
   left: number;
 } | null;
 
+const MENU_GAP = 4;
+const VIEWPORT_MARGIN = 8;
+
 export function WorkspaceDirectoryMenu({
   disabled,
   onDelete,
@@ -29,10 +38,45 @@ export function WorkspaceDirectoryMenu({
   const containerRef = useRef<HTMLSpanElement>(null);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
+
+  const updateMenuPosition = useCallback((): void => {
+    const trigger = triggerRef.current;
+    const menu = menuRef.current;
+
+    if (!trigger || !menu) {
+      return;
+    }
+
+    const triggerRect = trigger.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const spaceAbove = triggerRect.top - VIEWPORT_MARGIN;
+    const spaceBelow =
+      window.innerHeight - triggerRect.bottom - VIEWPORT_MARGIN;
+    const shouldOpenUpward =
+      spaceBelow < menuRect.height + MENU_GAP && spaceAbove > spaceBelow;
+    const preferredTop = shouldOpenUpward
+      ? triggerRect.top - menuRect.height - MENU_GAP
+      : triggerRect.bottom + MENU_GAP;
+    const maxTop = Math.max(
+      VIEWPORT_MARGIN,
+      window.innerHeight - menuRect.height - VIEWPORT_MARGIN
+    );
+    const maxLeft = Math.max(
+      VIEWPORT_MARGIN,
+      window.innerWidth - menuRect.width - VIEWPORT_MARGIN
+    );
+
+    setMenuPosition({
+      top: Math.min(Math.max(preferredTop, VIEWPORT_MARGIN), maxTop),
+      left: Math.min(Math.max(triggerRect.left, VIEWPORT_MARGIN), maxLeft),
+    });
+  }, []);
 
   useEffect(() => {
-    onOpenChange?.(isOpen);
-  }, [isOpen, onOpenChange]);
+    onOpenChangeRef.current?.(isOpen);
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -60,27 +104,32 @@ export function WorkspaceDirectoryMenu({
   }, [isOpen]);
 
   useLayoutEffect(() => {
-    if (!isOpen || !triggerRef.current) {
+    if (!isOpen) {
       setMenuPosition(null);
       return;
     }
 
-    const rect = triggerRef.current.getBoundingClientRect();
-    const menuWidth = 160;
-    const menuGap = 4;
-    let left = rect.right - menuWidth;
-    let top = rect.bottom + menuGap;
+    updateMenuPosition();
+    const menu = menuRef.current;
+    const sidebar = triggerRef.current?.closest<HTMLElement>(".sidebar");
+    const layoutObserver = new ResizeObserver(updateMenuPosition);
 
-    if (left < 8) {
-      left = 8;
+    if (menu) {
+      layoutObserver.observe(menu);
+    }
+    if (sidebar) {
+      layoutObserver.observe(sidebar);
     }
 
-    if (top + 120 > window.innerHeight) {
-      top = rect.top - menuGap - 120;
-    }
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
 
-    setMenuPosition({ top, left });
-  }, [isOpen]);
+    return () => {
+      layoutObserver.disconnect();
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [isOpen, updateMenuPosition]);
 
   const handleToggle = (event: React.SyntheticEvent): void => {
     event.stopPropagation();
@@ -116,6 +165,8 @@ export function WorkspaceDirectoryMenu({
         ref={triggerRef}
         role="button"
         tabIndex={0}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
         onClick={handleToggle}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
@@ -125,12 +176,17 @@ export function WorkspaceDirectoryMenu({
       >
         <Ellipsis size={14} />
       </span>
-      {isOpen && menuPosition
+      {isOpen
         ? createPortal(
             <div
               ref={menuRef}
               className="workspace-directory-menu"
-              style={{ top: menuPosition.top, left: menuPosition.left }}
+              style={
+                menuPosition
+                  ? { top: menuPosition.top, left: menuPosition.left }
+                  : undefined
+              }
+              role="menu"
             >
               {showConfirm ? (
                 <>
@@ -169,6 +225,7 @@ export function WorkspaceDirectoryMenu({
                     type="button"
                     className="workspace-directory-menu-item"
                     onClick={handleShowDetailsClick}
+                    role="menuitem"
                   >
                     <FileSearch size={13} />
                     <span>
@@ -182,6 +239,7 @@ export function WorkspaceDirectoryMenu({
                     className="workspace-directory-menu-item danger"
                     disabled={disabled}
                     onClick={handleDeleteClick}
+                    role="menuitem"
                   >
                     <Trash2 size={13} />
                     <span>

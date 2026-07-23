@@ -43,6 +43,7 @@ export const TopBar = ({
     handleNewChat,
     summary,
     conversationDirectoryId,
+    activeConversationId,
     messages,
     isStreaming,
   } = useChatConversationContext();
@@ -265,6 +266,7 @@ export const TopBar = ({
         </div>
         <TodoPanelButton
           messages={messages}
+          conversationId={activeConversationId}
           projectId={conversationDirectoryId ?? activeDirectory?.directoryId}
           isRunning={isStreaming}
           onOpenChange={setIsTodoPanelOpen}

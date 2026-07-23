@@ -1190,6 +1190,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             );
           } else {
             const validationError = validateToolCall(toolCall);
+            const isValidationError = !!validationError;
             if (validationError) {
               result = validationError;
             } else {
@@ -1419,7 +1420,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                     ["pending", "running"],
                     (currentToolCall) => ({
                       ...currentToolCall,
-                      status: "completed" as const,
+                      status: isValidationError
+                        ? ("error" as const)
+                        : ("completed" as const),
                       result,
                     })
                   ),

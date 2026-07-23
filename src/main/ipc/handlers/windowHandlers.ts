@@ -1,4 +1,5 @@
 import {
+  app,
   BrowserWindow,
   clipboard,
   ipcMain,
@@ -34,14 +35,15 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
     BrowserWindow.fromWebContents(event.sender)?.close();
   });
 
-  // 渲染进程用户确认关闭后调用：标记已确认，再次触发 close 以真正退出。
+  // 渲染进程用户确认关闭后调用：标记已确认，直接退出整个应用进程。
+  // 所有平台统一使用 app.quit() 彻底退出，macOS 不再驻留 dock。
   ipcMain.handle("window:confirm-close", (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) {
       return;
     }
     markCloseConfirmed();
-    win.close();
+    app.quit();
   });
 
   ipcMain.handle("window:is-maximized", (event) => {

@@ -383,13 +383,7 @@ export const BashToolCall = ({
               isRunning ? "tool-call-bash-pending-running" : ""
             }`}
           >
-            {isRunning ? (
-              <Loader2
-                className="tool-call-icon-spinning"
-                size={14}
-                aria-hidden="true"
-              />
-            ) : toolCall.status === "error" ? (
+            {isRunning ? null : toolCall.status === "error" ? (
               <AlertCircle size={13} aria-hidden="true" />
             ) : (
               <Clock3 size={13} aria-hidden="true" />

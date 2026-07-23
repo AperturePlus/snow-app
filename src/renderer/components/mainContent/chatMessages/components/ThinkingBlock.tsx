@@ -146,6 +146,7 @@ export const ThinkingBlock = ({
               <MarkdownBlock
                 className="thinking-block-body"
                 content={content}
+                streaming={isStreaming}
               />
             </div>
           </div>

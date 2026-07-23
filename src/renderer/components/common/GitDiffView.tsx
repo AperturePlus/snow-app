@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DiffModeEnum, DiffView, getLang } from "@git-diff-view/react";
-import { generateDiffFile } from "@git-diff-view/file";
-import type { DiffFile } from "@git-diff-view/file";
+import { DiffFile, generateDiffFile } from "@git-diff-view/file";
+import { structuredPatch } from "diff";
 
 import "@git-diff-view/react/styles/diff-view.css";
 
@@ -87,6 +87,16 @@ type GitDiffViewProps = {
   newContent?: string;
   /** diff 内容字号,默认 12 */
   fontSize?: number;
+  /**
+   * 旧内容在真实文件中的起始行号(1-based)。
+   * 用于对比片段时显示正确的源文件行号,而非始终从 1 开始。
+   */
+  oldStartLine?: number;
+  /**
+   * 新内容在真实文件中的起始行号(1-based)。
+   * 用于对比片段时显示正确的源文件行号,而非始终从 1 开始。
+   */
+  newStartLine?: number;
 };
 
 /**
@@ -102,9 +112,81 @@ export const GitDiffView = ({
   oldContent,
   newContent,
   fontSize = 12,
+  oldStartLine,
+  newStartLine,
 }: GitDiffViewProps): React.JSX.Element => {
   const theme = useDiffViewTheme();
   const { containerRef, mode } = useAutoDiffMode();
+
+  /**
+   * 当提供了 oldStartLine/newStartLine 时,说明 oldContent/newContent 是文件片段而非完整文件。
+   * 此时用 structuredPatch 生成 unified diff,并调整 hunk header 中的起始行号,
+   * 使其反映在真实源文件中的位置(而非片段内的 1-based 行号)。
+   * 预构建 DiffFile 实例(与 compareDiffFile 一致),避免 data 模式的异步初始化导致渲染闪烁。
+   */
+  const offsetDiffFile = useMemo<DiffFile | null>(() => {
+    if (patch) {
+      return null;
+    }
+    const oldStr = oldContent ?? "";
+    const newStr = newContent ?? "";
+    if (
+      (oldStartLine == null || oldStartLine <= 1) &&
+      (newStartLine == null || newStartLine <= 1)
+    ) {
+      return null;
+    }
+
+    try {
+      const result = structuredPatch(
+        fileName,
+        fileName,
+        oldStr,
+        newStr,
+        undefined,
+        undefined,
+        { context: 3 }
+      );
+
+      if (!result.hunks || result.hunks.length === 0) {
+        return null;
+      }
+
+      const oldOffset = (oldStartLine ?? 1) - 1;
+      const newOffset = (newStartLine ?? 1) - 1;
+
+      // 构建完整的 unified diff 文本(包含 --- / +++ header),
+      // DiffFile 的 DiffParser 需要完整格式才能正确解析。
+      const patchLines: string[] = [`--- ${fileName}`, `+++ ${fileName}`];
+      for (const hunk of result.hunks) {
+        const oldStart = hunk.oldStart + oldOffset;
+        const newStart = hunk.newStart + newOffset;
+        patchLines.push(
+          `@@ -${oldStart},${hunk.oldLines} +${newStart},${hunk.newLines} @@`
+        );
+        patchLines.push(...hunk.lines);
+      }
+
+      const lang = getLang(fileName);
+      const diffFile = new DiffFile(
+        fileName,
+        "",
+        fileName,
+        "",
+        [patchLines.join("\n")],
+        lang,
+        lang
+      );
+      diffFile.initTheme(theme);
+      diffFile.initRaw();
+      diffFile.init();
+      diffFile.buildSplitDiffLines();
+      diffFile.buildUnifiedDiffLines();
+      return diffFile;
+    } catch {
+      return null;
+    }
+  }, [patch, fileName, oldContent, newContent, oldStartLine, newStartLine, theme]);
 
   const patchData = useMemo(
     () =>
@@ -119,7 +201,7 @@ export const GitDiffView = ({
   );
 
   const compareDiffFile = useMemo<DiffFile | null>(() => {
-    if (patch) {
+    if (patch || offsetDiffFile) {
       return null;
     }
     const lang = getLang(fileName);
@@ -136,7 +218,9 @@ export const GitDiffView = ({
     diffFile.buildSplitDiffLines();
     diffFile.buildUnifiedDiffLines();
     return diffFile;
-  }, [patch, fileName, oldContent, newContent, theme]);
+  }, [patch, offsetDiffFile, fileName, oldContent, newContent, theme]);
+
+  const renderDiffFile = patchData ? null : offsetDiffFile ?? compareDiffFile;
 
   return (
     <div className="git-diff-view" ref={containerRef}>
@@ -149,9 +233,9 @@ export const GitDiffView = ({
           diffViewWrap
           diffViewFontSize={fontSize}
         />
-      ) : compareDiffFile ? (
+      ) : renderDiffFile ? (
         <DiffView
-          diffFile={compareDiffFile}
+          diffFile={renderDiffFile}
           diffViewMode={mode}
           diffViewTheme={theme}
           diffViewHighlight

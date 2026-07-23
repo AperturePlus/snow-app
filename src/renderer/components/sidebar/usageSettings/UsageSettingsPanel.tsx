@@ -418,6 +418,22 @@ export function UsageSettingsPanel({
         <div className="usage-summary-cards">
           <div className="usage-summary-card">
             <span className="usage-summary-card-label">
+              {t("settings.usageCacheHitRate", {
+                defaultValue: "Cache hit rate",
+              })}
+            </span>
+            <span className="usage-summary-card-value">
+              {summary.totalInputTokens > 0
+                ? `${(
+                    (summary.totalCacheReadInputTokens /
+                      summary.totalInputTokens) *
+                    100
+                  ).toFixed(1)}%`
+                : "0%"}
+            </span>
+          </div>
+          <div className="usage-summary-card">
+            <span className="usage-summary-card-label">
               {t("settings.usageTotalTokens", { defaultValue: "Total tokens" })}
             </span>
             <span className="usage-summary-card-value">

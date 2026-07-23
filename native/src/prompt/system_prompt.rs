@@ -248,6 +248,26 @@ $$
 - Use only KaTeX-supported LaTeX commands; unsupported commands render as raw source
 - When a formula contains currency-like `$` text nearby, prefer code spans for literal dollar amounts to avoid ambiguity
 
+## Mermaid Diagram Rendering
+
+The chat UI auto-renders Mermaid diagrams from fenced code blocks. When a diagram is the best way to express structure, relationships, or flow, output it as a fenced `mermaid` code block and it will be rendered as an interactive SVG inline.
+
+- Use a fenced code block with the `mermaid` language tag, e.g.
+
+```
+```mermaid
+graph TD
+    A[Start] --> B{Decision}
+    B -->|Yes| C[Action]
+    B -->|No| D[End]
+```
+```
+
+- Supported diagram types: flowchart (`graph`/`flowchart`), sequence, class, state, ER, gantt, pie, journey, mindmap, and timeline.
+- Keep diagrams readable: prefer clear node labels and avoid crossing lines when possible. Use direction hints (`TD`, `LR`) that fit the available width.
+- Mermaid syntax must be valid; a parse error falls back to showing the raw source as a code block.
+- Mermaid does NOT support LaTeX inside node labels — keep node text plain.
+
 ## TODO Management
 
 The `mcp__todo__todo-manage` tool is the standard workflow for multi-step work — it is NOT optional overhead. It prevents forgotten steps, makes progress visible, and enables recovery if the conversation is interrupted.

@@ -100,7 +100,7 @@ export const FilesystemCreateToolCall = ({
   }, [parsedArgs, hasError]);
 
   return (
-    <details className="tool-call-item tool-call-filesystem-create">
+    <details className="tool-call-item tool-call-filesystem-create" open>
       <summary className="tool-call-header">
         <ChevronRight
           className="tool-call-chevron"
@@ -135,7 +135,13 @@ export const FilesystemCreateToolCall = ({
         </span>
       </summary>
       <div className="tool-call-body">
-        <div className="tool-call-file-path">{filePath}</div>
+        {parsedResult.type === "success" ? (
+          <div className="tool-call-success-row">
+            created {parsedResult.path || filePath}
+          </div>
+        ) : (
+          <div className="tool-call-file-path">{filePath}</div>
+        )}
         {hasError ? (
           <div className="tool-call-error">
             <span>{parsedResult.message}</span>
@@ -146,12 +152,6 @@ export const FilesystemCreateToolCall = ({
           <div className="tool-call-meta-row">
             <span className="tool-call-meta-label">overwrite</span>
             <span className="tool-call-meta-value">true</span>
-          </div>
-        ) : null}
-
-        {parsedResult.type === "success" ? (
-          <div className="tool-call-success-row">
-            created {parsedResult.path}
           </div>
         ) : null}
 

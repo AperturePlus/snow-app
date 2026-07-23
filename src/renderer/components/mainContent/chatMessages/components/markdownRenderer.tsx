@@ -1,10 +1,17 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import "katex/dist/katex.min.css";
 import MarkdownWorker from "./markdownWorker?worker";
 import type {
   MarkdownRenderRequest,
   MarkdownRenderResponse,
 } from "./markdownWorker";
+import {
+  injectCachedDiagrams,
+  openExportMenu,
+  renderMermaidBlocks,
+  setMermaidView,
+  watchThemeForMermaid,
+} from "./mermaidRenderer";
 
 /**
  * Singleton Web Worker that performs markdown-it + highlight.js rendering off
@@ -205,15 +212,91 @@ export const MarkdownBlock = memo(
   ({
     className,
     content,
+    streaming = false,
   }: {
     className: string;
     content: string;
+    streaming?: boolean;
   }): React.JSX.Element => {
     const html = useMarkdownRender(content);
+
+    const containerRef = useRef<HTMLDivElement | null>(null);
+
+    // During streaming, skip all mermaid operations entirely — only the code
+    // view is shown. Once streaming ends (`streaming` flips to false), both
+    // phases fire in a single pass to render every diagram at once. This
+    // avoids any flicker from repeatedly attempting to parse incomplete code.
+    //
+    // Phase 1 — synchronous cache injection (before browser paint) so that
+    // already-rendered diagrams appear instantly after innerHTML replacement.
+    useLayoutEffect(() => {
+      if (streaming) return;
+      const node = containerRef.current;
+      if (node && html) {
+        injectCachedDiagrams(node);
+      }
+    }, [html, streaming]);
+
+    // Phase 2 — async rendering of uncached diagrams, debounced via rAF.
+    useEffect(() => {
+      if (streaming) return;
+      const node = containerRef.current;
+      if (!node || !html) return;
+
+      const frame = requestAnimationFrame(() => {
+        void renderMermaidBlocks(node);
+      });
+      return () => cancelAnimationFrame(frame);
+    }, [html, streaming]);
+
+    // Attach the global theme-change observer once for the whole app so that
+    // diagrams re-render when the user switches between light/dark.
+    useEffect(() => watchThemeForMermaid(), []);
 
     const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
       const target = e.target as HTMLElement;
 
+      // --- Mermaid block interactions ---
+      const mermaidBlock = target.closest(
+        ".mermaid-block"
+      ) as HTMLElement | null;
+
+      // Copy mermaid source
+      if (mermaidBlock) {
+        const copyBtn = target.closest(
+          ".mermaid-btn-copy"
+        ) as HTMLElement | null;
+        if (copyBtn) {
+          const raw = copyBtn.dataset.code;
+          if (raw) {
+            const code = decodeURIComponent(raw);
+            navigator.clipboard.writeText(code).then(() => {
+              copyBtn.classList.add("copied");
+              window.setTimeout(
+                () => copyBtn.classList.remove("copied"),
+                2000
+              );
+            });
+          }
+          return;
+        }
+
+        // Toggle code / diagram view, or open export menu
+        const actionBtn = target.closest(
+          "[data-mermaid-action]"
+        ) as HTMLElement | null;
+        if (actionBtn) {
+          const action = actionBtn.dataset.mermaidAction;
+          if (action === "code" || action === "diagram") {
+            setMermaidView(mermaidBlock, action);
+          } else if (action === "download") {
+            openExportMenu(actionBtn, mermaidBlock);
+          }
+          return;
+        }
+      }
+
+      // --- Regular code block interactions ---
       // Handle collapse / expand toggle
       const langBtn = target.closest(".code-block-lang") as HTMLElement | null;
       if (langBtn) {
@@ -243,6 +326,7 @@ export const MarkdownBlock = memo(
         className={className}
         dangerouslySetInnerHTML={{ __html: html }}
         onClick={handleClick}
+        ref={containerRef}
       />
     );
   }

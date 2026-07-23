@@ -88,6 +88,7 @@ export const en = {
   "sidebar.chatActionUnpin": "Unpin",
   "sidebar.chatActionRename": "Rename",
   "sidebar.chatActionDelete": "Delete",
+  "sidebar.chatActionExport": "Export",
   "sidebar.chatDeleteConfirm":
     "Are you sure you want to delete this conversation?",
   "sidebar.chatDeleteConfirmTitle": "Confirm deletion",
@@ -117,6 +118,8 @@ export const en = {
   "chat.collapse": "Collapse",
   "chat.stopping": "Stopping...",
   "chat.copyResponse": "Copy",
+  "chat.copyAsText": "Copy as text",
+  "chat.copyAsMarkdown": "Copy as Markdown",
   "chat.copyUserMessage": "Copy",
   "chat.rollbackMessage": "Rollback",
   "chat.rollbackConfirmTitle": "Confirm rollback",
@@ -275,6 +278,7 @@ export const en = {
   "toolCall.filesystem.status.completed": "Completed",
   "toolCall.filesystem.status.error": "Failed",
   "topBar.todo.title": "TODO List",
+  "topBar.todo.pin": "Pin panel",
   "topBar.todo.progress": "{{completed}} / {{total}} completed",
   "topBar.todo.confirmDeleteTitle": "Delete TODO",
   "topBar.todo.confirmDeleteMessage":
@@ -1414,6 +1418,7 @@ export const en = {
   "settings.usageInputTokens": "Input tokens",
   "settings.usageOutputTokens": "Output tokens",
   "settings.usageCacheCreation": "Cache write",
+  "settings.usageCacheHitRate": "Cache hit rate",
   "settings.usageCacheRead": "Cache read",
   "settings.usageTotalRequests": "Total requests",
   "settings.usageErrorRequests": "Error requests",

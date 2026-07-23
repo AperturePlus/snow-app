@@ -62,6 +62,15 @@ export const conversationApi = {
       beforeMessageId,
       limit
     ),
+  findLatestToolResult: (
+    conversationId: string,
+    toolName: string
+  ): Promise<string | null> =>
+    ipcRenderer.invoke(
+      "chat-conversations:find-latest-tool-result",
+      conversationId,
+      toolName
+    ),
   forkConversation: (
     sourceConversationId: string,
     upToResponseId: string
@@ -124,4 +133,15 @@ export const conversationApi = {
     responseId: string
   ): Promise<string> =>
     ipcRenderer.invoke("chat-conversations:count-todos", sessionId, responseId),
+  exportConversation: (
+    conversationId: string,
+    format: string,
+    defaultFileName?: string
+  ): Promise<{ success: boolean; canceled: boolean; filePath: string | null }> =>
+    ipcRenderer.invoke(
+      "chat-conversations:export",
+      conversationId,
+      format,
+      defaultFileName
+    ),
 };

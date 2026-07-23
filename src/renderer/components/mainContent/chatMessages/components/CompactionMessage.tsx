@@ -77,6 +77,7 @@ export const CompactionMessage = memo(
             <MarkdownBlock
               className="context-compaction-markdown"
               content={content}
+              streaming={isStreaming}
             />
           </div>
         ) : null}

@@ -995,6 +995,67 @@ pub fn list_chat_messages_paginated(
         })
 }
 
+/// Extract the result payload for a given tool name from a tool message's
+/// content. Tool message content is formatted as:
+///   [Tool: <identifier>]\n<result>\n\n[Tool: <identifier2>]\n<result2>...
+/// The identifier may be `tool_name` or `tool_name#callId`.
+/// Returns the last matching segment's result, or None if no match is found.
+fn extract_tool_result(content: &str, tool_name: &str) -> Option<String> {
+    let prefix_marker = "[Tool:";
+    let suffix = format!("{}#", tool_name);
+    let mut last_match: Option<String> = None;
+
+    for segment in content.split("\n\n") {
+        let Some(rest) = segment.strip_prefix(prefix_marker) else {
+            continue;
+        };
+        let rest = rest.trim_start();
+        let Some(close_bracket) = rest.find("]\n") else {
+            continue;
+        };
+        let identifier = &rest[..close_bracket];
+        let result = &rest[close_bracket + 2..];
+
+        if identifier == tool_name || identifier.starts_with(&suffix) {
+            last_match = Some(result.to_string());
+        }
+    }
+
+    last_match
+}
+
+/// Find the latest tool result for a specific tool name within a conversation.
+/// This bypasses pagination by directly querying the database for tool messages
+/// whose content contains the tool name. Used as a fallback when the tool call
+/// is in messages that haven't been loaded by the paginated history loader.
+pub fn find_latest_tool_result(
+    database_path: &Path,
+    conversation_id: &str,
+    tool_name: &str,
+) -> Result<Option<String>> {
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            let like_pattern = format!("%{}%", tool_name);
+            connection
+                .query_row(
+                    "SELECT content
+                       FROM chat_messages
+                      WHERE conversation_id = ?1
+                        AND role = 'tool'
+                        AND content LIKE ?2
+                      ORDER BY id DESC
+                      LIMIT 1",
+                    params![conversation_id, like_pattern],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+        })
+        .map(|content| content.and_then(|c| extract_tool_result(&c, tool_name)))
+        .map_err(|error| {
+            database::database_error(database_path, "find latest tool result", error)
+        })
+}
+
 pub fn fork_conversation(
     database_path: &Path,
     source_conversation_id: &str,

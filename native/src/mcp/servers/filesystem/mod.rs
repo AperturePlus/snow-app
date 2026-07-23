@@ -283,12 +283,18 @@ impl FilesystemService {
                 target_idx + replace_content.len(),
             );
 
+            // 将字节偏移转换为可读行号（基于编辑前的文件内容）
+            let (matched_line_start, matched_line_end) =
+                byte_offset_to_line_range(&content, target_idx, target_idx + search_content.len());
+
             return Ok(json!({
                 "success": true,
                 "matchIndex": target_idx,
                 "totalMatches": matches.len(),
                 "occurrence": occurrence,
                 "matchType": "exact",
+                "matchedLineStart": matched_line_start,
+                "matchedLineEnd": matched_line_end,
                 "review": review
             }));
         }
@@ -335,12 +341,18 @@ impl FilesystemService {
                     target_idx + replace_content.len(),
                 );
 
+                // 将字节偏移转换为可读行号（基于编辑前的文件内容）
+                let (matched_line_start, matched_line_end) =
+                    byte_offset_to_line_range(&content, target_idx, target_idx + stripped.len());
+
                 return Ok(json!({
                     "success": true,
                     "matchIndex": target_idx,
                     "totalMatches": stripped_matches.len(),
                     "occurrence": occurrence,
                     "matchType": "exact_after_stripping_prefixes",
+                    "matchedLineStart": matched_line_start,
+                    "matchedLineEnd": matched_line_end,
                     "review": review
                 }));
             }
@@ -686,6 +698,21 @@ fn line_range_to_byte_range(content: &str, start_line: usize, end_line: usize) -
     (start_byte, end_byte)
 }
 
+/// 将字节偏移量转换为 1-based 行号范围（闭区间）。
+/// 用于把 replace_edit 的 matchIndex（字节偏移）转成可读的行号，
+/// 与 fuzzy 分支返回的 matchedLineStart/matchedLineEnd 语义一致。
+fn byte_offset_to_line_range(content: &str, start_byte: usize, end_byte: usize) -> (usize, usize) {
+    let start_byte = start_byte.min(content.len());
+    let end_byte = end_byte.min(content.len());
+    let start_line = content[..start_byte].matches('\n').count() + 1;
+    let end_line = if end_byte == 0 {
+        1
+    } else {
+        content[..end_byte].matches('\n').count() + 1
+    };
+    (start_line, end_line)
+}
+
 /// 构建编辑成功后的复核上下文：返回编辑区域前后各 EDIT_REVIEW_CONTEXT_LINES 行
 /// 的带行号代码块（编辑行以 ">>>" 标记），供 AI 复核编辑结果是否正确。
 ///
@@ -954,6 +981,14 @@ fn format_numbered_lines(
 ) -> Value {
     let lines: Vec<&str> = content.lines().collect();
     let total_lines = lines.len();
+
+    // 当 startLine 与 endLine 同时存在且 startLine > endLine 时自动交换两者，
+    // 纠正 AI 误传的逆序行号区间，避免后续切片 [start..end] 因 start > end 而 panic。
+    let (start_line, end_line) = match (start_line, end_line) {
+        (Some(s), Some(e)) if s > e => (Some(e), Some(s)),
+        other => other,
+    };
+
     let start = start_line
         .map(|line| line as usize)
         .unwrap_or(1)

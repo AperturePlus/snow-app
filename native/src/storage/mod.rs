@@ -1076,6 +1076,18 @@ pub fn list_chat_messages_paginated(
         limit,
     )
 }
+
+pub fn find_latest_tool_result(
+    conversation_id: String,
+    tool_name: String,
+) -> Result<Option<String>> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::find_latest_tool_result(
+        &database_path,
+        &conversation_id,
+        &tool_name,
+    )
+}
 pub fn fork_conversation(
     source_conversation_id: String,
     up_to_response_id: String,
@@ -1177,4 +1189,12 @@ fn ensure_storage_dir() -> Result<PathBuf> {
 pub fn get_storage_dir() -> Result<PathBuf> {
     let database_path = ensure_database_file()?;
     Ok(database_path)
+}
+
+/// 导出指定会话为 markdown / html / json / csv 格式文本。
+/// 文件路径选择与写入由 Electron 主进程 IPC handler 负责，
+/// Rust 端仅负责从 SQLite 读取数据并格式化，所有 I/O 在 spawn_blocking 中执行。
+pub fn export_conversation(conversation_id: String, format: String) -> Result<String> {
+    let database_path = ensure_database_file()?;
+    services::conversation_export::export_conversation(&database_path, &conversation_id, &format)
 }

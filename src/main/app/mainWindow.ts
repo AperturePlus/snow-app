@@ -59,6 +59,10 @@ const registerThemeBackgroundSync = (): void => {
 registerThemeBackgroundSync();
 
 export const createWindow = async (): Promise<void> => {
+  // macOS 关闭窗口后进程不退出，用户点击 dock 图标会重新 createWindow。
+  // 此时需重置 closeConfirmed，使新窗口关闭时仍弹出二次确认。
+  closeConfirmed = false;
+
   // 启动时读取上次保存的窗口尺寸/位置；读取失败时回退到默认尺寸。
   const savedState = await loadWindowState();
   const restoredPosition =
@@ -134,24 +138,16 @@ export const createWindow = async (): Promise<void> => {
   }
 
   // Clean up PTY sessions before window is fully destroyed.
-  // 关闭二次确认仅适用于关闭即退出的平台（Windows/Linux）。
-  // macOS 关闭按钮只是隐藏窗口，应用仍驻留程序坞，真正退出需 dock 右键退出
-  // 或 Cmd+Q，不应弹出"退出确认"打断用户。
-  if (!isMacOS) {
-    mainWindow.on("close", (event) => {
-      if (!isCloseConfirmed()) {
-        event.preventDefault();
-        mainWindow.webContents.send("window:close-requested");
-        return;
-      }
-      killAllPtyForWebContents(mainWindow.webContents);
-    });
-  } else {
-    // macOS: 关窗不退出，仍需清理 PTY 会话。
-    mainWindow.on("close", () => {
-      killAllPtyForWebContents(mainWindow.webContents);
-    });
-  }
+  // 所有平台关闭窗口时均需二次确认：Windows/Linux 关闭即退出进程，
+  // macOS 关闭虽不退出进程但会卸载活动页面，效果与关闭无异。
+  mainWindow.on("close", (event) => {
+    if (!isCloseConfirmed()) {
+      event.preventDefault();
+      mainWindow.webContents.send("window:close-requested");
+      return;
+    }
+    killAllPtyForWebContents(mainWindow.webContents);
+  });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url).catch((error) => {

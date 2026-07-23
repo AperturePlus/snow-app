@@ -73,6 +73,7 @@ export const AiResponse = memo(
             <MarkdownBlock
               className={summaryClassName}
               content={normalizedSummary}
+              streaming={isStreaming}
             />
           ) : null}
 
@@ -83,6 +84,7 @@ export const AiResponse = memo(
               <MarkdownBlock
                 className="ai-message-section-body"
                 content={section.body}
+                streaming={isStreaming}
               />
             </section>
           ))}

@@ -389,6 +389,12 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to list chat messages paginated"
           )
         ),
+      findLatestToolResult: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to find latest tool result"
+          )
+        ),
       forkConversation: () =>
         Promise.reject(
           new Error("Rust native bridge is required to fork conversation")
@@ -691,6 +697,10 @@ export const loadNativeBridge = (): NativeBridge => {
       clearAppLogs: () =>
         Promise.reject(
           new Error("Rust native bridge is required to clear app logs")
+        ),
+      exportConversation: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to export conversation")
         ),
     };
   }

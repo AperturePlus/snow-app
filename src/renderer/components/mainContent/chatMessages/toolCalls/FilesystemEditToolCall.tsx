@@ -25,6 +25,8 @@ type ParsedEditResult =
       matchIndex: number;
       totalMatches: number;
       occurrence: number;
+      matchedLineStart?: number;
+      matchedLineEnd?: number;
     }
   | { type: "error"; message: string }
   | { type: "raw"; text: string }
@@ -76,6 +78,14 @@ const parseResult = (result: string | undefined): ParsedEditResult => {
             typeof parsed.totalMatches === "number" ? parsed.totalMatches : 1,
           occurrence:
             typeof parsed.occurrence === "number" ? parsed.occurrence : 1,
+          matchedLineStart:
+            typeof parsed.matchedLineStart === "number"
+              ? parsed.matchedLineStart
+              : undefined,
+          matchedLineEnd:
+            typeof parsed.matchedLineEnd === "number"
+              ? parsed.matchedLineEnd
+              : undefined,
         };
       }
     }
@@ -122,7 +132,7 @@ export const FilesystemEditToolCall = ({
   const statusLabel = t(`toolCall.filesystem.status.${effectiveStatus}`);
 
   return (
-    <details className="tool-call-item tool-call-filesystem-edit">
+    <details className="tool-call-item tool-call-filesystem-edit" open>
       <summary className="tool-call-header">
         <ChevronRight
           className="tool-call-chevron"
@@ -176,7 +186,14 @@ export const FilesystemEditToolCall = ({
 
         {parsedResult.type === "success" ? (
           <div className="tool-call-success-row">
-            matched at index {parsedResult.matchIndex}
+            {parsedResult.matchedLineStart != null
+              ? `matched at line ${parsedResult.matchedLineStart}${
+                  parsedResult.matchedLineEnd != null &&
+                  parsedResult.matchedLineEnd !== parsedResult.matchedLineStart
+                    ? `-${parsedResult.matchedLineEnd}`
+                    : ""
+                }`
+              : `matched at index ${parsedResult.matchIndex}`}
             {parsedResult.totalMatches > 1
               ? ` (${parsedResult.occurrence}/${parsedResult.totalMatches})`
               : ""}
@@ -188,6 +205,7 @@ export const FilesystemEditToolCall = ({
             fileName={fileName}
             oldContent={parsedArgs.searchContent}
             newContent={parsedArgs.replaceContent}
+            startLine={parsedResult.type === "success" ? parsedResult.matchedLineStart : undefined}
           />
         ) : null}
 

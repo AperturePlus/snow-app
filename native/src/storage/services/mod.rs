@@ -1,6 +1,7 @@
 pub mod api_configs;
 pub mod app_logs;
 pub mod chat_conversations;
+pub mod conversation_export;
 pub mod checkpoint;
 pub mod code_chunker;
 pub mod codebase_embed_sessions;

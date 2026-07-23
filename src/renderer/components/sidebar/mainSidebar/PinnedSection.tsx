@@ -8,6 +8,7 @@ import type {
   WorkspaceDirectoryRecord,
 } from "../../../../preload";
 import { ChatItem } from "./ChatItem";
+import type { ExportFormat } from "./ChatItemMenu";
 
 type PinnedSectionProps = {
   isSwitchingDirectory: boolean;
@@ -148,6 +149,21 @@ export function PinnedSection({
     }
   };
 
+  const handleExport = async (
+    conversation: ChatConversationRecord,
+    format: ExportFormat
+  ): Promise<void> => {
+    const fileName =
+      conversation.summary ||
+      conversation.title ||
+      t("sidebar.untitledChat", { defaultValue: "Untitled" });
+    await window.snow.exportConversation(
+      conversation.conversationId,
+      format,
+      fileName
+    );
+  };
+
   return (
     <div className="sidebar-section">
       <div className="section-header">
@@ -188,6 +204,7 @@ export function PinnedSection({
               onPin={() => void handleUnpin(conversation)}
               onRename={(newTitle) => handleRename(conversation, newTitle)}
               onDelete={() => void handleDelete(conversation)}
+              onExport={(format) => handleExport(conversation, format)}
               onSelect={() =>
                 void handleSelectConversation(
                   conversation.conversationId,

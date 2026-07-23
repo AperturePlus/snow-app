@@ -63,7 +63,11 @@ pub fn get_builtin_tools() -> Vec<McpTool> {
 ///
 /// 格式: `mcp__{server_id}__{tool_name}`
 pub fn execute_builtin_tool(full_name: &str, args: &Value) -> napi::Result<Value> {
-    let parts: Vec<&str> = full_name.splitn(3, "__").collect();
+    // Sanitize: AI may copy "[Tool: mcp__x__y#callId]" from conversation history
+    // or leak internal XML tags into the tool name. Extract a valid
+    // mcp__{server}__{tool} pattern before splitting.
+    let sanitized = sanitize_tool_full_name(full_name);
+    let parts: Vec<&str> = sanitized.splitn(3, "__").collect();
     if parts.len() != 3 || parts[0] != "mcp" || parts[1].is_empty() || parts[2].is_empty() {
         // List available tools to help the AI self-correct
         let tools = get_builtin_tools();
@@ -95,4 +99,52 @@ pub fn execute_builtin_tool(full_name: &str, args: &Value) -> napi::Result<Value
     })?;
 
     service.execute(tool_name, args)
+}
+
+/// Extract a valid `mcp__{server}__{tool}` name from a possibly polluted
+/// string. AI may copy the "[Tool: mcp__x__y#callId]" format from conversation
+/// history or leak internal XML tags (e.g. `</arg_value>`) into the tool name.
+/// If a valid MCP pattern is found, return it; otherwise return the original
+/// string so the caller can produce a descriptive error.
+pub fn sanitize_tool_full_name(raw: &str) -> String {
+    // Fast path: already a clean name
+    if raw.starts_with("mcp__") && !raw.contains(['<', '>', '[', ']', '#']) {
+        return raw.to_string();
+    }
+
+    // Search for the pattern mcp__{server}__{tool} where server and tool
+    // consist of alphanumeric, underscore, and hyphen characters.
+    let bytes = raw.as_bytes();
+    let mut start = None;
+    let mut end = 0;
+
+    for i in 0..bytes.len() {
+        if raw[i..].starts_with("mcp__") {
+            // Scan forward to capture the full pattern
+            let mut j = i + 5; // skip "mcp__"
+            // server_id: [A-Za-z0-9_-]+
+            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_' || bytes[j] == b'-') {
+                j += 1;
+            }
+            // Expect "__"
+            if j + 2 <= bytes.len() && &raw[j..j + 2] == "__" {
+                j += 2;
+                // tool_name: [A-Za-z0-9_-]+
+                let tool_start = j;
+                while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_' || bytes[j] == b'-') {
+                    j += 1;
+                }
+                if j > tool_start {
+                    start = Some(i);
+                    end = j;
+                    break;
+                }
+            }
+        }
+    }
+
+    match start {
+        Some(s) => raw[s..end].to_string(),
+        None => raw.to_string(),
+    }
 }

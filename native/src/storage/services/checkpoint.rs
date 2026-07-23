@@ -275,9 +275,31 @@ fn resolve_checkpoint_path(root: &Path, file_path: &str) -> Result<(PathBuf, Pat
 fn checkpoint_dir(checkpoint_id: &str) -> Result<PathBuf> {
     Ok(checkpoint_root()?.join(checkpoint_id))
 }
-
 fn manifest_path(checkpoint_id: &str) -> Result<PathBuf> {
     Ok(checkpoint_dir(checkpoint_id)?.join("manifest.json"))
+}
+
+/// Check whether a checkpoint manifest file exists on disk.
+fn checkpoint_manifest_exists(checkpoint_id: &str) -> bool {
+    match manifest_path(checkpoint_id) {
+        Ok(path) => path.is_file(),
+        Err(_) => false,
+    }
+}
+
+/// Filter out checkpoint IDs whose manifest no longer exists on disk.
+///
+/// When a conversation is resumed from history, the frontend reconstructs the
+/// `checkpoint_ids` list from persisted message records. Some of those
+/// checkpoints may have been deleted (by rollback, compaction cleanup, or
+/// new-chat pruning), leaving dangling IDs that would cause `read_manifest`
+/// to fail. This helper silently drops them so tool execution can proceed
+/// against the still-valid checkpoints.
+fn filter_existing_checkpoints(checkpoint_ids: Vec<String>) -> Vec<String> {
+    checkpoint_ids
+        .into_iter()
+        .filter(|id| checkpoint_manifest_exists(id))
+        .collect()
 }
 
 fn read_manifest(checkpoint_id: &str) -> Result<CheckpointManifest> {
@@ -610,6 +632,7 @@ pub fn record_checkpoint_file(
     work_dir: String,
     file_path: String,
 ) -> Result<()> {
+    let checkpoint_ids = filter_existing_checkpoints(checkpoint_ids);
     if checkpoint_ids.is_empty() {
         return Ok(());
     }
@@ -643,6 +666,7 @@ pub fn record_checkpoint_file_after(
     work_dir: String,
     file_path: String,
 ) -> Result<()> {
+    let checkpoint_ids = filter_existing_checkpoints(checkpoint_ids);
     if checkpoint_ids.is_empty() {
         return Ok(());
     }
@@ -695,6 +719,7 @@ pub fn capture_checkpoint_worktree_before(
     checkpoint_ids: Vec<String>,
     work_dir: String,
 ) -> Result<Option<CheckpointWorktreeCapture>> {
+    let checkpoint_ids = filter_existing_checkpoints(checkpoint_ids);
     if checkpoint_ids.is_empty() {
         return Ok(None);
     }
@@ -735,6 +760,9 @@ pub fn record_checkpoint_worktree_after(capture: CheckpointWorktreeCapture) -> R
     let _guard = checkpoint_guard()?;
 
     for checkpoint_id in &capture.checkpoint_ids {
+        if !checkpoint_manifest_exists(checkpoint_id) {
+            continue;
+        }
         let mut manifest = read_manifest(checkpoint_id)?;
         let root = validate_manifest_work_dir(&manifest, &capture.work_dir)?;
         let after_paths = collect_worktree_file_paths(&root)?;

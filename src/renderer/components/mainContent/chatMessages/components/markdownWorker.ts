@@ -29,6 +29,43 @@ const markdown = new MarkdownIt({
   linkify: true,
   highlight(str: string, lang: string): string {
     const language = lang?.trim();
+
+    // Mermaid diagrams are rendered on the main thread (mermaid needs DOM
+    // access and cannot run inside a Web Worker). Emit a placeholder container
+    // carrying the escaped source. The structure includes:
+    //   - a toolbar with copy + view-toggle buttons (handled in the React layer)
+    //   - a code view (highlighted source, visible by default during streaming)
+    //   - an empty diagram view (filled with SVG by mermaidRenderer once parsed)
+    // `data-mermaid-view="code"` keeps the code visible until the diagram is
+    // ready, preventing flicker while incomplete code is streaming in.
+    if (language === "mermaid") {
+      const encoded = encodeURIComponent(str);
+      const highlighted = escapeHtml(str);
+      return (
+        `<div class="mermaid-block" data-mermaid="${encoded}" data-mermaid-view="code">` +
+        `<div class="mermaid-toolbar">` +
+        `<span class="mermaid-toolbar-label">mermaid</span>` +
+        `<div class="mermaid-toolbar-actions">` +
+        `<button class="mermaid-btn-copy" type="button" data-code="${encoded}" title="Copy">` +
+        `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>` +
+        `</button>` +
+        `<button class="mermaid-btn-download" type="button" data-mermaid-action="download" title="Save as image">` +
+        `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>` +
+        `</button>` +
+        `<button class="mermaid-btn-code" type="button" data-mermaid-action="code" title="Code view">` +
+        `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>` +
+        `</button>` +
+        `<button class="mermaid-btn-diagram" type="button" data-mermaid-action="diagram" title="Diagram view">` +
+        `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="M3 9h6"/></svg>` +
+        `</button>` +
+        `</div>` +
+        `</div>` +
+        `<div class="mermaid-view-code"><pre><code class="hljs language-mermaid">${highlighted}</code></pre></div>` +
+        `<div class="mermaid-view-diagram"></div>` +
+        `</div>`
+      );
+    }
+
     let highlighted: string;
 
     if (language && hljs.getLanguage(language)) {
