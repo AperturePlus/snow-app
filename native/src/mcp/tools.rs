@@ -23,6 +23,7 @@ use super::builtin::{
 use super::servers::bash::{BashService, BashStreamCallback};
 use super::servers::browser::{BrowserCommandCallback, BrowserService};
 use super::servers::codebase::CodebaseService;
+use super::servers::codelens::CodeLensService;
 use super::servers::grep::GrepService;
 use super::servers::skills::SkillsService;
 use super::servers::todo::TodoService;
@@ -465,6 +466,7 @@ fn builtin_server_name(server_id: &str) -> &str {
         "websearch" => "Web search",
         "browser" => "Browser",
         "user-interaction" => "User interaction",
+        "codelens" => "CodeLens",
         _ => server_id,
     }
 }
@@ -740,6 +742,22 @@ pub async fn call_mcp_tool(
         CodebaseService::new()
             .execute_search(&args, project_id.as_deref(), &on_chunk)
             .await?
+    } else if let Some(codelens_tool) = tool_full_name.strip_prefix("mcp__codelens__") {
+        let service = CodeLensService::new();
+        match codelens_tool {
+            "diagnose" => service.execute_diagnose(&args).await?,
+            "find_definition" => service.execute_find_definition(&args).await?,
+            "find_references" => service.execute_find_references(&args).await?,
+            "file_outline" => service.execute_file_outline(&args).await?,
+            _ => {
+                return Err(Error::new(
+                    Status::GenericFailure,
+                    format!(
+                        "Unknown codelens tool: \"{codelens_tool}\". Available tools: [diagnose, find_definition, find_references, file_outline]"
+                    ),
+                ));
+            }
+        }
     } else if let Some(result) =
         super::external::call_tool(project_id.as_deref(), &tool_full_name, &args).await?
     {

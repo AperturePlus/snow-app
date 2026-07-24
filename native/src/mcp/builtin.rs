@@ -8,6 +8,7 @@ use super::service::McpService;
 use super::servers::bash::BashService;
 use super::servers::browser::BrowserService;
 use super::servers::codebase::CodebaseService;
+use super::servers::codelens::CodeLensService;
 use super::servers::filesystem::FilesystemService;
 use super::servers::grep::GrepService;
 use super::servers::sub_agents::SubAgentsService;
@@ -32,6 +33,7 @@ fn builtin_services_in_order() -> Vec<Arc<dyn McpService>> {
         Arc::new(UserInteractionService::new()),
         Arc::new(SubAgentsService::new()),
         Arc::new(CodebaseService::new()),
+        Arc::new(CodeLensService::new()),
     ]
 }
 
