@@ -165,7 +165,7 @@ pub fn log_api_warning(database_path: &Path, func: &str, message: &str, context:
     let _ = insert_app_log(
         database_path,
         &AppLogInput {
-            level: "warning".to_string(),
+            level: "WARN".to_string(),
             module: "api".to_string(),
             func: func.to_string(),
             line: None,
@@ -186,7 +186,7 @@ pub fn log_api_error(database_path: &Path, func: &str, message: &str, error: &st
     let _ = insert_app_log(
         database_path,
         &AppLogInput {
-            level: "error".to_string(),
+            level: "ERROR".to_string(),
             module: "api".to_string(),
             func: func.to_string(),
             line: None,

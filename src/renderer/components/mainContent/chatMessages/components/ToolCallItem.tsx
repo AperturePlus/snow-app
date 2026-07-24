@@ -19,6 +19,7 @@ import {
   CodebaseToolCall,
 } from "../toolCalls";
 import { ToolNameBadge } from "../toolCalls/shared/ToolNameBadge";
+import { useI18n } from "../../../../i18n";
 
 type ToolCallItemProps = {
   toolCall: ToolCallInfo;
@@ -36,8 +37,33 @@ const formatArguments = (args: string): string => {
   }
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** Detect whether the tool result JSON carries an error, mirroring the
+ *  logic used by specialised renderers (Bash, Grep, Todo, etc.).  When the
+ *  agent loop catches an exception or a hook blocks the call, it still sets
+ *  `status: "completed"` but embeds `{ error: "..." }` (or
+ *  `{ success: false, error: "..." }`) in the result.  We need to surface
+ *  that as a failure in the UI. */
+const hasResultError = (result: string | undefined): boolean => {
+  if (!result) {
+    return false;
+  }
+  try {
+    const parsed: unknown = JSON.parse(result);
+    if (!isRecord(parsed)) {
+      return false;
+    }
+    return typeof parsed.error === "string";
+  } catch {
+    return false;
+  }
+};
+
 export const ToolCallItem = memo(
   ({ toolCall }: ToolCallItemProps): React.JSX.Element => {
+    const { t } = useI18n();
     // Delegate to specialized renderers based on tool name
     if (toolCall.name === "mcp__user-interaction__askUserQuestion") {
       return <AskUserQuestionToolCall toolCall={toolCall} />;
@@ -76,12 +102,15 @@ export const ToolCallItem = memo(
     }
 
     const iconName = toolCall.name.replace(/^mcp__.*__/, "");
+    const effectiveStatus = hasResultError(toolCall.result)
+      ? "error"
+      : toolCall.status;
     const StatusIcon =
-      toolCall.status === "completed"
+      effectiveStatus === "completed"
         ? CheckCircle
-        : toolCall.status === "running"
+        : effectiveStatus === "running"
         ? Loader2
-        : toolCall.status === "error"
+        : effectiveStatus === "error"
         ? AlertCircle
         : Wrench;
     const formattedArgs = formatArguments(toolCall.arguments);
@@ -98,28 +127,34 @@ export const ToolCallItem = memo(
           <StatusIcon
             size={14}
             className={
-              toolCall.status === "running" ? "tool-call-icon-spinning" : ""
+              effectiveStatus === "running" ? "tool-call-icon-spinning" : ""
             }
             aria-hidden="true"
           />
           <ToolNameBadge name={iconName} />
           <span
-            className={`tool-call-status tool-call-status-${toolCall.status}`}
+            className={`tool-call-status tool-call-status-${effectiveStatus}`}
           >
-            {toolCall.status}
+            {t(`toolCall.common.status.${effectiveStatus}`, {
+              defaultValue: effectiveStatus,
+            })}
           </span>
         </summary>
         {hasBody ? (
           <div className="tool-call-body">
             {formattedArgs ? (
               <div className="tool-call-section">
-                <span className="tool-call-section-label">Arguments</span>
+                <span className="tool-call-section-label">
+                  {t("toolCall.common.arguments")}
+                </span>
                 <pre className="tool-call-section-pre">{formattedArgs}</pre>
               </div>
             ) : null}
             {toolCall.result ? (
               <div className="tool-call-section">
-                <span className="tool-call-section-label">Result</span>
+                <span className="tool-call-section-label">
+                  {t("toolCall.common.result")}
+                </span>
                 <pre className="tool-call-section-pre">{toolCall.result}</pre>
               </div>
             ) : null}

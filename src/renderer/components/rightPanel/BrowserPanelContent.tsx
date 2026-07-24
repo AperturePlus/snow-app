@@ -25,8 +25,8 @@ const normalizeUrl = (input: string, homepage: string): string => {
   if (!trimmed) {
     return homepage || DEFAULT_BROWSER_HOMEPAGE;
   }
-  // Already has a protocol
-  if (/^https?:\/\//i.test(trimmed)) {
+  // Already has a protocol (http, https, or file)
+  if (/^(https?|file):\/\//i.test(trimmed)) {
     return trimmed;
   }
   // Looks like a domain (contains a dot, no spaces)

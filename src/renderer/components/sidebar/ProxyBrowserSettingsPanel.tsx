@@ -321,12 +321,15 @@ export function ProxyBrowserSettingsPanel({
 
       <ProxyBrowserSettingsForm
         form={form}
-        preview={preview}
         isBusy={isBusy}
         isSelectingBrowser={isSelectingBrowser}
         onUpdateField={updateField}
         onSetValue={setValue}
-        onReset={() => setForm(toProxyBrowserForm(lastSaved))}
+        onReset={() => {
+          const defaults = toProxyBrowserForm(DEFAULT_PROXY_BROWSER_SETTINGS);
+          setForm(defaults);
+          void saveSettings(DEFAULT_PROXY_BROWSER_SETTINGS);
+        }}
         onSelectBrowserExecutable={() => void handleSelectBrowserExecutable()}
       />
     </div>

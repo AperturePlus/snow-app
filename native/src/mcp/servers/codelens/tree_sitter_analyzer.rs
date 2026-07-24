@@ -13,6 +13,7 @@ use std::path::Path;
 use tree_sitter::{Language, Node, Parser, Point, Query, QueryCursor, StreamingIterator, Tree};
 
 use super::analyzer::LineIndex;
+use super::semantic_analyzer;
 use super::types::{
     AnalyzedFile, DiagnosticItem, DiagnosticSeverity, OutlineEntry, ReferenceInfo, SymbolInfo,
     SymbolLocation,
@@ -127,15 +128,21 @@ fn parse(file_path: &str, source: &str) -> Option<(TsLang, Tree)> {
 // Diagnostics
 // ---------------------------------------------------------------------------
 
-/// Analyze a file using tree-sitter: collect syntax errors.
+/// Analyze a file using tree-sitter: collect syntax errors and run
+/// lightweight semantic analysis (unresolved references, unused definitions).
 pub fn analyze_file(file_path: &str, source_text: &str) -> Option<AnalyzedFile> {
-    let (_lang, tree) = parse(file_path, source_text)?;
+    let (lang, tree) = parse(file_path, source_text)?;
     let line_index = LineIndex::new(source_text);
 
     let mut diagnostics = Vec::new();
 
     // Walk the tree to find ERROR and MISSING nodes
     collect_error_nodes(&tree.root_node(), source_text, &line_index, &mut diagnostics);
+
+    // Run semantic analysis (unresolved references, unused variables/imports)
+    let semantic_result =
+        semantic_analyzer::analyze_semantics(lang, &tree, source_text, &line_index);
+    diagnostics.extend(semantic_result.diagnostics);
 
     Some(AnalyzedFile {
         file_path: file_path.to_string(),
@@ -604,6 +611,51 @@ pub fn find_references_at_position(
     );
 
     Some((name, definition, references))
+}
+
+/// Find all references to a symbol by name within a single tree-sitter file.
+pub fn find_references_by_name(file_path: &str, source_text: &str, name: &str) -> Vec<ReferenceInfo> {
+    let (_lang, tree) = match parse(file_path, source_text) {
+        Some(v) => v,
+        None => return Vec::new(),
+    };
+    let line_index = LineIndex::new(source_text);
+
+    let mut references = Vec::new();
+    collect_matching_identifiers(
+        &tree.root_node(),
+        source_text,
+        &line_index,
+        name,
+        file_path,
+        &mut references,
+    );
+    references
+}
+
+/// Find the definition of a symbol by name within a single tree-sitter file.
+pub fn find_definition_by_name(file_path: &str, source_text: &str, name: &str) -> Option<SymbolInfo> {
+    let outline = build_file_outline(file_path, source_text);
+
+    for entry in outline {
+        if entry.name == name {
+            return Some(SymbolInfo {
+                name: entry.name,
+                kind: entry.kind,
+                location: SymbolLocation {
+                    file_path: file_path.to_string(),
+                    line: entry.line,
+                    column: entry.column,
+                    end_line: entry.end_line,
+                    end_column: entry.end_column,
+                },
+                container_name: entry.container_name,
+                is_exported: entry.is_exported,
+            });
+        }
+    }
+
+    None
 }
 
 fn collect_matching_identifiers(

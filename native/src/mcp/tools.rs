@@ -746,8 +746,8 @@ pub async fn call_mcp_tool(
         let service = CodeLensService::new();
         match codelens_tool {
             "diagnose" => service.execute_diagnose(&args).await?,
-            "find_definition" => service.execute_find_definition(&args).await?,
-            "find_references" => service.execute_find_references(&args).await?,
+            "find_definition" => service.execute_find_definition(&args, project_id.as_deref()).await?,
+            "find_references" => service.execute_find_references(&args, project_id.as_deref()).await?,
             "file_outline" => service.execute_file_outline(&args).await?,
             _ => {
                 return Err(Error::new(

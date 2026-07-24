@@ -1,16 +1,12 @@
-import { FolderOpen, Loader2, MonitorCog, RotateCcw } from "lucide-react";
+import { FolderOpen, Loader2, RotateCcw } from "lucide-react";
 import { type ChangeEvent } from "react";
 import { useI18n } from "../../../i18n";
 import { CustomSelect } from "../../common/CustomSelect";
 import { SEARCH_ENGINE_OPTIONS } from "./proxyBrowserSettingsConstants";
-import type {
-  ProxyBrowserSettingsForm as ProxyBrowserSettingsFormValue,
-  ProxyBrowserSettingsValue,
-} from "./types";
+import type { ProxyBrowserSettingsForm as ProxyBrowserSettingsFormValue } from "./types";
 
 type ProxyBrowserSettingsFormProps = {
   form: ProxyBrowserSettingsFormValue;
-  preview: ProxyBrowserSettingsValue;
   isBusy: boolean;
   isSelectingBrowser: boolean;
   onUpdateField: (
@@ -26,7 +22,6 @@ type ProxyBrowserSettingsFormProps = {
 
 export function ProxyBrowserSettingsForm({
   form,
-  preview,
   isBusy,
   isSelectingBrowser,
   onUpdateField,
@@ -35,9 +30,6 @@ export function ProxyBrowserSettingsForm({
   onSelectBrowserExecutable,
 }: ProxyBrowserSettingsFormProps): React.JSX.Element {
   const { t } = useI18n();
-  const browserLabel =
-    preview.browserPath ||
-    t("settings.autoDetectBrowser", { defaultValue: "Auto detect" });
 
   return (
     <div className="api-settings-manual-form">
@@ -168,15 +160,6 @@ export function ProxyBrowserSettingsForm({
                 disabled={isBusy}
               />
             </label>
-            <div className="api-settings-summary-card wide proxy-browser-preview-card">
-              <MonitorCog size={15} strokeWidth={1.8} />
-              <span>{browserLabel}</span>
-              <small>
-                {t("settings.browserLaunchMode", {
-                  defaultValue: "Browser path",
-                })}
-              </small>
-            </div>
           </div>
         </div>
       </div>

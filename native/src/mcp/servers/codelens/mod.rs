@@ -19,11 +19,12 @@
 #![allow(dead_code)]
 
 mod analyzer;
+mod semantic_analyzer;
 mod symbol_index;
 mod tree_sitter_analyzer;
 mod types;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use napi::bindgen_prelude::*;
 use serde_json::{json, Value};
@@ -65,7 +66,7 @@ impl McpService for CodeLensService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "diagnose".to_string(),
-                description: "Run code diagnostics on a source file. Supports TypeScript, JavaScript, Python, Rust, Go, C, C++, Java, C#, Ruby, PHP, CSS, HTML, JSON, YAML, Bash, SQL, Lua, Dockerfile, and Make. For TS/JS, detects syntax errors, semantic errors, and unresolved references (e.g. using a variable that is not defined or not imported). For other languages, detects syntax errors. Returns a list of diagnostics with severity, message, and location.".to_string(),
+                description: "Run code diagnostics on a source file. Supports TypeScript, JavaScript, Python, Rust, Go, C, C++, Java, C#, Ruby, PHP, CSS, HTML, JSON, YAML, Bash, SQL, Lua, Dockerfile, and Make. For TS/JS, detects syntax errors, semantic errors, and unresolved references via oxc. For other languages (Python, Rust, Go, C, Java, C#, Ruby, PHP, Lua, Bash), detects syntax errors via tree-sitter AND performs lightweight semantic analysis: unresolved reference detection (using a name that is not defined in the file and not a known built-in) and unused variable/import detection. Returns a list of diagnostics with severity, message, and location.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -237,41 +238,91 @@ impl CodeLensService {
     }
 
     /// Execute the find_definition tool asynchronously.
-    pub async fn execute_find_definition(&self, args: &Value) -> napi::Result<Value> {
+    ///
+    /// If `project_id` is provided, the search is performed across the entire
+    /// project: first the symbol at the cursor position is resolved in the
+    /// current file, then the definition is searched across all source files
+    /// in the project via `SymbolIndex`. When `project_id` is not available,
+    /// the search falls back to single-file mode.
+    pub async fn execute_find_definition(
+        &self,
+        args: &Value,
+        project_id: Option<&str>,
+    ) -> napi::Result<Value> {
         let file_path = require_string_arg(args, "filePath")?;
         let line = require_u32_arg(args, "line")?;
         let column = require_u32_arg(args, "column")?;
 
+        let project_id_owned = project_id.map(|s| s.to_string());
+
         let result = tokio::task::spawn_blocking(move || -> napi::Result<Value> {
             let (path_str, source_text) = read_source_file(&file_path)?;
 
+            // Step 1: find the symbol name at the cursor position in the current file
             let found = if is_js_ts(&path_str) {
                 analyzer::find_symbol_at_position(&path_str, &source_text, line, column)
             } else {
                 tree_sitter_analyzer::find_symbol_at_position(&path_str, &source_text, line, column)
             };
 
-            match found {
-                Some((name, symbol)) => {
-                    Ok(json!({
-                        "found": true,
-                        "name": name,
-                        "kind": symbol.kind,
-                        "location": {
-                            "filePath": symbol.location.file_path,
-                            "line": symbol.location.line,
-                            "column": symbol.location.column,
-                            "endLine": symbol.location.end_line,
-                            "endColumn": symbol.location.end_column,
-                        },
-                        "containerName": symbol.container_name,
-                        "isExported": symbol.is_exported,
-                    }))
+            let symbol_name = match &found {
+                Some((name, _)) => name.clone(),
+                None => {
+                    return Ok(json!({
+                        "found": false,
+                        "message": "No symbol found at the given position. The position may be on whitespace, a string literal, or a keyword."
+                    }));
                 }
-                None => Ok(json!({
+            };
+
+            // Step 2: if we have a project root, search across all files
+            if let Some(ref pid) = project_id_owned {
+                if let Some(project_root) = resolve_project_root(pid)? {
+                    let mut index = symbol_index::SymbolIndex::new();
+                    index.index_project(&project_root);
+
+                    if let Some(symbol) = index.find_definition_across_project(&symbol_name) {
+                        return Ok(json!({
+                            "found": true,
+                            "name": symbol.name,
+                            "kind": symbol.kind,
+                            "location": {
+                                "filePath": symbol.location.file_path,
+                                "line": symbol.location.line,
+                                "column": symbol.location.column,
+                                "endLine": symbol.location.end_line,
+                                "endColumn": symbol.location.end_column,
+                            },
+                            "containerName": symbol.container_name,
+                            "isExported": symbol.is_exported,
+                            "searchScope": "project"
+                        }));
+                    }
+                }
+            }
+
+            // Fallback: single-file result
+            if let Some((name, symbol)) = found {
+                Ok(json!({
+                    "found": true,
+                    "name": name,
+                    "kind": symbol.kind,
+                    "location": {
+                        "filePath": symbol.location.file_path,
+                        "line": symbol.location.line,
+                        "column": symbol.location.column,
+                        "endLine": symbol.location.end_line,
+                        "endColumn": symbol.location.end_column,
+                    },
+                    "containerName": symbol.container_name,
+                    "isExported": symbol.is_exported,
+                    "searchScope": "file"
+                }))
+            } else {
+                Ok(json!({
                     "found": false,
-                    "message": "No symbol definition found at the given position. The position may be on whitespace, a string literal, or a symbol that has no declaration in the file (e.g. a built-in or imported from an external module).",
-                })),
+                    "message": "No symbol definition found for the symbol at the given position."
+                }))
             }
         })
         .await
@@ -286,31 +337,59 @@ impl CodeLensService {
     }
 
     /// Execute the find_references tool asynchronously.
-    pub async fn execute_find_references(&self, args: &Value) -> napi::Result<Value> {
+    ///
+    /// If `project_id` is provided, references are searched across all source
+    /// files in the project. When `project_id` is not available, the search
+    /// is limited to the single file.
+    pub async fn execute_find_references(
+        &self,
+        args: &Value,
+        project_id: Option<&str>,
+    ) -> napi::Result<Value> {
         let file_path = require_string_arg(args, "filePath")?;
         let line = require_u32_arg(args, "line")?;
         let column = require_u32_arg(args, "column")?;
 
+        let project_id_owned = project_id.map(|s| s.to_string());
+
         let result = tokio::task::spawn_blocking(move || -> napi::Result<Value> {
             let (path_str, source_text) = read_source_file(&file_path)?;
 
+            // Step 1: find the symbol name at the cursor position in the current file
             let found = if is_js_ts(&path_str) {
                 analyzer::find_references_at_position(&path_str, &source_text, line, column)
             } else {
                 tree_sitter_analyzer::find_references_at_position(&path_str, &source_text, line, column)
             };
 
-            match found {
-                Some((name, definition, references)) => {
-                    let definition_json = definition.map(|d| {
-                        json!({
-                            "filePath": d.file_path,
-                            "line": d.line,
-                            "column": d.column,
-                            "endLine": d.end_line,
-                            "endColumn": d.end_column,
-                        })
-                    });
+            let (name, local_definition, local_references) = match found {
+                Some(t) => t,
+                None => {
+                    return Ok(json!({
+                        "found": false,
+                        "message": "No symbol found at the given position. The position may be on whitespace, a string literal, or a keyword."
+                    }));
+                }
+            };
+
+            // Step 2: if we have a project root, search across all files
+            if let Some(ref pid) = project_id_owned {
+                if let Some(project_root) = resolve_project_root(pid)? {
+                    let mut index = symbol_index::SymbolIndex::new();
+                    index.index_project(&project_root);
+
+                    let references = index.find_references_across_project(&name);
+                    let definition = index
+                        .find_definition_across_project(&name)
+                        .map(|s| {
+                            json!({
+                                "filePath": s.location.file_path,
+                                "line": s.location.line,
+                                "column": s.location.column,
+                                "endLine": s.location.end_line,
+                                "endColumn": s.location.end_column,
+                            })
+                        });
 
                     let refs_json: Vec<Value> = references
                         .iter()
@@ -326,19 +405,50 @@ impl CodeLensService {
                         })
                         .collect();
 
-                    Ok(json!({
+                    return Ok(json!({
                         "found": true,
                         "name": name,
-                        "definition": definition_json,
+                        "definition": definition,
                         "references": refs_json,
                         "totalReferences": references.len(),
-                    }))
+                        "searchScope": "project"
+                    }));
                 }
-                None => Ok(json!({
-                    "found": false,
-                    "message": "No symbol found at the given position. The position may be on whitespace, a string literal, or a keyword.",
-                })),
             }
+
+            // Fallback: single-file result
+            let definition_json = local_definition.map(|d| {
+                json!({
+                    "filePath": d.file_path,
+                    "line": d.line,
+                    "column": d.column,
+                    "endLine": d.end_line,
+                    "endColumn": d.end_column,
+                })
+            });
+
+            let refs_json: Vec<Value> = local_references
+                .iter()
+                .map(|r| {
+                    json!({
+                        "filePath": r.location.file_path,
+                        "line": r.location.line,
+                        "column": r.location.column,
+                        "endLine": r.location.end_line,
+                        "endColumn": r.location.end_column,
+                        "access": r.access,
+                    })
+                })
+                .collect();
+
+            Ok(json!({
+                "found": true,
+                "name": name,
+                "definition": definition_json,
+                "references": refs_json,
+                "totalReferences": local_references.len(),
+                "searchScope": "file"
+            }))
         })
         .await
         .map_err(|e| {
@@ -496,4 +606,18 @@ fn read_source_file(file_path: &str) -> napi::Result<(String, String)> {
         .unwrap_or_else(|_| file_path.to_string());
 
     Ok((canonical, source_text))
+}
+
+/// Resolve the project root directory from a project_id by looking up the
+/// workspace directory in the app database. Returns None if the project_id
+/// is not available or the directory cannot be resolved.
+fn resolve_project_root(project_id: &str) -> napi::Result<Option<PathBuf>> {
+    let storage_info = crate::storage::initialize_app_storage()?;
+    let database_path = PathBuf::from(storage_info.database_path);
+    let project_path =
+        crate::storage::services::workspace_directories::get_workspace_directory_path(
+            &database_path,
+            project_id,
+        )?;
+    Ok(project_path.map(PathBuf::from))
 }

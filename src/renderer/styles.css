@@ -2319,11 +2319,16 @@ input {
 }
 
 .api-settings-page-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
+  padding-bottom: 14px;
+  background: var(--surface-island-strong);
 }
 
 .api-settings-header-actions {
@@ -2400,9 +2405,8 @@ input {
   white-space: nowrap;
 }
 
-.proxy-browser-preview-card {
-  grid-column: 2 / -1;
-  min-height: 58px;
+.proxy-browser-settings-summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .api-settings-actions {
@@ -5183,7 +5187,6 @@ input {
 
 .context-compaction-markdown table {
   width: 100%;
-  margin: 0 0 14px;
   border-collapse: collapse;
   font-size: 13px;
 }
@@ -5393,14 +5396,19 @@ input {
   text-decoration: underline;
 }
 
-/* Table */
-.ai-message table {
+/* Table — wrapper provides scroll + border so wide tables scroll instead of clip */
+:is(.ai-message, .context-compaction-markdown) .table-wrapper {
   width: 100%;
   margin: 0 0 14px;
-  border-collapse: collapse;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
-  overflow: hidden;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ai-message table {
+  width: 100%;
+  border-collapse: collapse;
   font-size: 14px;
   line-height: 1.5;
 }
@@ -8015,6 +8023,13 @@ input {
   flex-shrink: 0;
   display: inline-flex;
 }
+
+.stream-metrics-elapsed.is-active .stream-metrics-icon,
+.stream-metrics-tokens.is-active .stream-metrics-icon,
+.stream-metrics-tps.is-active .stream-metrics-icon {
+  color: var(--accent-blue);
+}
+
 .stream-metrics-value {
   color: var(--text-secondary);
   text-align: right;

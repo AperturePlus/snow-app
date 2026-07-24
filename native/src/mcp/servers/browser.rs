@@ -85,7 +85,7 @@ impl McpService for BrowserService {
                     "properties": {
                         "url": {
                             "type": "string",
-                            "description": "Optional initial HTTP or HTTPS URL. If omitted, the configured browser homepage is used."
+                            "description": "Optional initial URL (http://, https://, or file://). If omitted, the configured browser homepage is used."
                         }
                     }
                 }),
@@ -93,7 +93,7 @@ impl McpService for BrowserService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "navigate".to_string(),
-                description: "Navigate an embedded browser instance to an HTTP or HTTPS URL and wait asynchronously for loading to finish. Omit instanceId to use the most recently focused browser tab, including a browser opened by the user.".to_string(),
+                description: "Navigate an embedded browser instance to a URL (http://, https://, or file://) and wait asynchronously for loading to finish. Omit instanceId to use the most recently focused browser tab, including a browser opened by the user.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -103,7 +103,7 @@ impl McpService for BrowserService {
                         },
                         "url": {
                             "type": "string",
-                            "description": "HTTP or HTTPS URL to visit."
+                            "description": "URL to visit (http://, https://, or file://)."
                         },
                         "timeoutMs": {
                             "type": "number",
@@ -368,12 +368,15 @@ fn bounded_u64(
 }
 
 fn validate_web_url(url: &str) -> napi::Result<()> {
-    if url.starts_with("https://") || url.starts_with("http://") {
+    if url.starts_with("https://")
+        || url.starts_with("http://")
+        || url.starts_with("file://")
+    {
         return Ok(());
     }
     Err(Error::new(
         Status::InvalidArg,
-        "Browser URLs must start with http:// or https://".to_string(),
+        "Browser URLs must start with http://, https://, or file://".to_string(),
     ))
 }
 

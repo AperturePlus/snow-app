@@ -1,4 +1,4 @@
-import { Globe, Route, Search } from "lucide-react";
+import { Globe, MonitorCog, Route, Search } from "lucide-react";
 import { useI18n } from "../../../i18n";
 import type { ProxyBrowserSettingsValue } from "./types";
 
@@ -11,9 +11,12 @@ export function ProxyBrowserSettingsSummary({
 }: ProxyBrowserSettingsSummaryProps): React.JSX.Element {
   const { t } = useI18n();
   const proxyUrl = preview.enabled ? `http://127.0.0.1:${preview.port}` : "-";
+  const browserLabel =
+    preview.browserPath ||
+    t("settings.autoDetectBrowser", { defaultValue: "Auto detect" });
 
   return (
-    <div className="api-settings-summary-grid">
+    <div className="api-settings-summary-grid proxy-browser-settings-summary-grid">
       <div className="api-settings-summary-card">
         <Globe size={15} strokeWidth={1.8} />
         <span>
@@ -23,7 +26,7 @@ export function ProxyBrowserSettingsSummary({
         </span>
         <small>{t("settings.proxyStatus", { defaultValue: "Proxy" })}</small>
       </div>
-      <div className="api-settings-summary-card wide">
+      <div className="api-settings-summary-card">
         <Route size={15} strokeWidth={1.8} />
         <span>{proxyUrl}</span>
         <small>
@@ -35,6 +38,15 @@ export function ProxyBrowserSettingsSummary({
         <span>{preview.searchEngine}</span>
         <small>
           {t("settings.searchEngine", { defaultValue: "Search engine" })}
+        </small>
+      </div>
+      <div className="api-settings-summary-card">
+        <MonitorCog size={15} strokeWidth={1.8} />
+        <span>{browserLabel}</span>
+        <small>
+          {t("settings.browserPath", {
+            defaultValue: "Browser executable path",
+          })}
         </small>
       </div>
     </div>

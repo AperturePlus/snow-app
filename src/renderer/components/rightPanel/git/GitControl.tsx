@@ -4,6 +4,7 @@ import {
   Diff,
   GitCommitHorizontal,
   GitGraph as GitGraphIcon,
+  Loader2,
   Sparkles,
   Square,
 } from "lucide-react";
@@ -33,7 +34,17 @@ export const GitControl = ({
   const { t } = useI18n();
   const { status, isLoading, error, refresh } = useGitStatus(repoPath);
   const [commitMessage, setCommitMessage] = useState("");
-  const [actionInProgress, setActionInProgress] = useState(false);
+  const [actionInProgress, setActionInProgress] = useState<
+    | "commit"
+    | "push"
+    | "pull"
+    | "stage"
+    | "unstage"
+    | "stageAll"
+    | "unstageAll"
+    | "discard"
+    | null
+  >(null);
   const [isGeneratingCommitMsg, setIsGeneratingCommitMsg] = useState(false);
   const commitMsgStreamIdRef = useRef<string | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
@@ -216,7 +227,7 @@ export const GitControl = ({
       const isStaged = section === "staged";
       const paths = files.map((f) => f.path);
 
-      setActionInProgress(true);
+      setActionInProgress(isStaged ? "unstage" : "stage");
       if (isStaged) {
         window.snow
           .gitUnstage(repoPath, paths)
@@ -226,7 +237,7 @@ export const GitControl = ({
               refresh();
             }
           })
-          .finally(() => setActionInProgress(false));
+          .finally(() => setActionInProgress(null));
       } else {
         window.snow
           .gitStage(repoPath, paths)
@@ -236,7 +247,7 @@ export const GitControl = ({
               refresh();
             }
           })
-          .finally(() => setActionInProgress(false));
+          .finally(() => setActionInProgress(null));
       }
     },
     [repoPath, refresh]
@@ -246,35 +257,35 @@ export const GitControl = ({
     if (!repoPath) {
       return;
     }
-    setActionInProgress(true);
+    setActionInProgress("stageAll");
     window.snow
       .gitStageAll(repoPath)
       .then(() => {
         setSelectedPaths(new Set());
         refresh();
       })
-      .finally(() => setActionInProgress(false));
+      .finally(() => setActionInProgress(null));
   }, [repoPath, refresh]);
 
   const handleUnstageAll = useCallback(() => {
     if (!repoPath) {
       return;
     }
-    setActionInProgress(true);
+    setActionInProgress("unstageAll");
     window.snow
       .gitUnstageAll(repoPath)
       .then(() => {
         setSelectedPaths(new Set());
         refresh();
       })
-      .finally(() => setActionInProgress(false));
+      .finally(() => setActionInProgress(null));
   }, [repoPath, refresh]);
 
   const handleCommit = useCallback(() => {
     if (!repoPath || !commitMessage.trim()) {
       return;
     }
-    setActionInProgress(true);
+    setActionInProgress("commit");
     window.snow
       .gitCommit(repoPath, commitMessage)
       .then(() => {
@@ -282,29 +293,29 @@ export const GitControl = ({
         commitPendingRef.current = true;
         refresh();
       })
-      .finally(() => setActionInProgress(false));
+      .finally(() => setActionInProgress(null));
   }, [repoPath, commitMessage, refresh]);
 
   const handlePush = useCallback(() => {
     if (!repoPath) {
       return;
     }
-    setActionInProgress(true);
+    setActionInProgress("push");
     window.snow
       .gitPush(repoPath)
       .then(() => refresh())
-      .finally(() => setActionInProgress(false));
+      .finally(() => setActionInProgress(null));
   }, [repoPath, refresh]);
 
   const handlePull = useCallback(() => {
     if (!repoPath) {
       return;
     }
-    setActionInProgress(true);
+    setActionInProgress("pull");
     window.snow
       .gitPull(repoPath)
       .then(() => refresh())
-      .finally(() => setActionInProgress(false));
+      .finally(() => setActionInProgress(null));
   }, [repoPath, refresh]);
 
   const handleDiscardRequest = useCallback((files: GitFileStatus[]) => {
@@ -320,14 +331,14 @@ export const GitControl = ({
     }
     const paths = discardTarget.map((f) => f.path);
     setDiscardTarget([]);
-    setActionInProgress(true);
+    setActionInProgress("discard");
     window.snow
       .gitDiscardChanges(repoPath, paths)
       .then(() => {
         setSelectedPaths(new Set());
         refresh();
       })
-      .finally(() => setActionInProgress(false));
+      .finally(() => setActionInProgress(null));
   }, [repoPath, discardTarget, refresh]);
 
   const handleDiscardCancel = useCallback(() => {
@@ -432,19 +443,27 @@ export const GitControl = ({
             type="button"
             className="icon-btn git-action-btn"
             onClick={handlePull}
-            disabled={actionInProgress}
+            disabled={actionInProgress !== null}
             title={t("git.pull")}
           >
-            <ArrowDownToLine size={14} strokeWidth={1.8} />
+            {actionInProgress === "pull" ? (
+              <Loader2 size={14} strokeWidth={1.8} className="spin" />
+            ) : (
+              <ArrowDownToLine size={14} strokeWidth={1.8} />
+            )}
           </button>
           <button
             type="button"
             className="icon-btn git-action-btn"
             onClick={handlePush}
-            disabled={actionInProgress}
+            disabled={actionInProgress !== null}
             title={t("git.push")}
           >
-            <ArrowUpFromLine size={14} strokeWidth={1.8} />
+            {actionInProgress === "push" ? (
+              <Loader2 size={14} strokeWidth={1.8} className="spin" />
+            ) : (
+              <ArrowUpFromLine size={14} strokeWidth={1.8} />
+            )}
           </button>
           <button
             type="button"
@@ -523,7 +542,7 @@ export const GitControl = ({
                   }
                   disabled={
                     !isGeneratingCommitMsg &&
-                    (actionInProgress || stagedFiles.length === 0)
+                    (actionInProgress !== null || stagedFiles.length === 0)
                   }
                 >
                   {isGeneratingCommitMsg ? (
@@ -540,13 +559,17 @@ export const GitControl = ({
                 className="git-commit-btn"
                 onClick={handleCommit}
                 disabled={
-                  actionInProgress ||
+                  actionInProgress !== null ||
                   isGeneratingCommitMsg ||
                   !commitMessage.trim() ||
                   stagedFiles.length === 0
                 }
               >
-                <GitCommitHorizontal size={14} strokeWidth={1.8} />
+                {actionInProgress === "commit" ? (
+                  <Loader2 size={14} strokeWidth={1.8} className="spin" />
+                ) : (
+                  <GitCommitHorizontal size={14} strokeWidth={1.8} />
+                )}
                 <span>{t("git.commit")}</span>
               </button>
             </div>

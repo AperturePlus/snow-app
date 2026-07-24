@@ -1,4 +1,4 @@
-import { Clock, Gauge, Timer } from "lucide-react";
+import { ArrowDown, Clock, Gauge, Timer } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 
 export type StreamMetricsProps = {
@@ -83,18 +83,23 @@ export const StreamMetrics = memo(
     }, [hasElapsed]);
 
     const displayElapsed = hasElapsed ? localElapsed : 0;
+    const elapsedDisplay = formatDuration(displayElapsed);
+    const hasTokens = tokenCount > 0;
     const tps =
       tokenCount > 0 && elapsedMs > 0
         ? formatTokPerSec(tokenCount, elapsedMs)
         : "--";
+    const hasTps = tps !== "--";
 
     return (
       <span className="stream-metrics">
-        <span className="stream-metrics-metric stream-metrics-elapsed">
+        <span
+          className={`stream-metrics-metric stream-metrics-elapsed${
+            hasElapsed ? " is-active" : ""
+          }`}
+        >
           <Timer size={11} className="stream-metrics-icon" />
-          <span className="stream-metrics-value">
-            {formatDuration(displayElapsed)}
-          </span>
+          <span className="stream-metrics-value">{elapsedDisplay}</span>
         </span>
         <span className="stream-metrics-sep" />
         <span className="stream-metrics-metric stream-metrics-ttft">
@@ -104,14 +109,23 @@ export const StreamMetrics = memo(
           </span>
         </span>
         <span className="stream-metrics-sep" />
-        <span className="stream-metrics-metric stream-metrics-tokens">
+        <span
+          className={`stream-metrics-metric stream-metrics-tokens${
+            hasTokens ? " is-active" : ""
+          }`}
+        >
+          <ArrowDown size={11} className="stream-metrics-icon" />
           <span className="stream-metrics-value">
             {formatTokenCount(tokenCount)}
           </span>
           <span className="stream-metrics-label">tokens</span>
         </span>
         <span className="stream-metrics-sep" />
-        <span className="stream-metrics-metric stream-metrics-tps">
+        <span
+          className={`stream-metrics-metric stream-metrics-tps${
+            hasTps ? " is-active" : ""
+          }`}
+        >
           <Gauge size={11} className="stream-metrics-icon" />
           <span className="stream-metrics-value">{tps}</span>
           <span className="stream-metrics-label">tok/s</span>

@@ -424,12 +424,14 @@ export function ThemeSettingsPanel({
   }, [form, isLoading, lastSaved, saveSettings]);
 
   const handleReset = (): void => {
-    setForm(lastSaved);
+    setForm(DEFAULT_THEME_SETTINGS);
     setError("");
     setStatus("");
     // 重置主题时一并清除窗口尺寸缓存，下次启动回退到默认窗口尺寸。
     // 清除失败不影响主题重置本身。
     void window.snow.clearWindowState().catch(() => {});
+    // 立即持久化默认主题，避免 debounce 窗口内退出导致保存丢失。
+    void saveSettings(DEFAULT_THEME_SETTINGS);
   };
   const handleTabChange = (tab: EditorTab): void => {
     setEditorTab(tab);

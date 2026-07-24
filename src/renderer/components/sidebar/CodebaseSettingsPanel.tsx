@@ -408,7 +408,11 @@ export function CodebaseSettingsPanel({
         isBusy={isBusy}
         onUpdateField={updateField}
         onSetValue={setValue}
-        onReset={() => setForm(toCodebaseForm(lastSaved))}
+        onReset={() => {
+          const defaults = toCodebaseForm(DEFAULT_CODEBASE_SETTINGS);
+          setForm(defaults);
+          void saveSettings(DEFAULT_CODEBASE_SETTINGS);
+        }}
       />
     </div>
   );

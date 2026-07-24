@@ -552,6 +552,45 @@ pub fn find_references_at_position(
     Some((name, definition, refs))
 }
 
+/// Find all references to a symbol by name within a single JS/TS file.
+/// Includes both resolved references, unresolved references, and the definition itself.
+pub fn find_references_by_name(file_path: &str, source_text: &str, name: &str) -> Vec<ReferenceInfo> {
+    let analyzed = analyze_file(file_path, source_text);
+    let mut refs = Vec::new();
+
+    // The definition itself
+    for symbol in &analyzed.symbols {
+        if symbol.name == name {
+            refs.push(ReferenceInfo {
+                location: symbol.location.clone(),
+                access: "definition".to_string(),
+            });
+        }
+    }
+
+    // Resolved references
+    for (n, r) in &analyzed.references {
+        if n == name {
+            refs.push(r.clone());
+        }
+    }
+
+    // Unresolved references (e.g. usage of imported symbols)
+    for (n, r) in &analyzed.unresolved_references {
+        if n == name {
+            refs.push(r.clone());
+        }
+    }
+
+    refs
+}
+
+/// Find the definition of a symbol by name within a single JS/TS file.
+pub fn find_definition_by_name(file_path: &str, source_text: &str, name: &str) -> Option<SymbolInfo> {
+    let analyzed = analyze_file(file_path, source_text);
+    analyzed.symbols.into_iter().find(|s| s.name == name)
+}
+
 fn byte_offset_from_line_col(line_index: &LineIndex, line: u32, col: u32) -> u32 {
     let line_idx = (line.saturating_sub(1)) as usize;
     if line_idx < line_index.line_starts.len() {

@@ -230,9 +230,11 @@ export function PrivacySettingsPanel({
   }, [form, isLoading, lastSaved, saveSettings]);
 
   const handleReset = (): void => {
-    setForm(lastSaved);
+    setForm(DEFAULT_PRIVACY_SETTINGS);
     setError("");
     setStatus("");
+    // 立即持久化默认隐私设置，避免 debounce 窗口内退出导致保存丢失。
+    void saveSettings(DEFAULT_PRIVACY_SETTINGS);
   };
 
   return (

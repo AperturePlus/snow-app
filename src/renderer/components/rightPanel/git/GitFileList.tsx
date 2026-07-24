@@ -16,7 +16,7 @@ type GitFileListProps = {
   files: GitFileStatus[];
   section: "staged" | "unstaged";
   selectedPaths: Set<string>;
-  actionInProgress: boolean;
+  actionInProgress: string | null;
   onFileSelect: (
     file: GitFileStatus,
     e: React.MouseEvent,
@@ -155,7 +155,7 @@ export const GitFileList = ({
                   type="button"
                   className="git-file-list-action"
                   onClick={onUnstageAll}
-                  disabled={actionInProgress}
+                  disabled={actionInProgress !== null}
                   title={t("git.unstageAll")}
                 >
                   <span>{"-"}</span>
@@ -166,7 +166,7 @@ export const GitFileList = ({
                   type="button"
                   className="git-file-list-action"
                   onClick={onStageAll}
-                  disabled={actionInProgress}
+                  disabled={actionInProgress !== null}
                   title={t("git.stageAll")}
                 >
                   <Plus size={13} strokeWidth={1.8} />
@@ -231,7 +231,7 @@ export const GitFileList = ({
                         : [file];
                       onStageToggle(filesToToggle, section);
                     }}
-                    disabled={actionInProgress}
+                    disabled={actionInProgress !== null}
                     title={isStaged ? t("git.unstageFile") : t("git.stageFile")}
                   >
                     <span>{isStaged ? "-" : "+"}</span>
@@ -249,7 +249,7 @@ export const GitFileList = ({
                           : [file];
                         onDiscard(filesToDiscard);
                       }}
-                      disabled={actionInProgress}
+                      disabled={actionInProgress !== null}
                       title={t("git.discardFile")}
                     >
                       <Undo2 size={12} strokeWidth={1.8} />

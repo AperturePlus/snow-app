@@ -120,6 +120,12 @@ markdown.renderer.rules.fence = (tokens, idx, options): string => {
   );
 };
 
+// Wrap tables in a scrollable container so that wide tables are horizontally
+// scrollable instead of being clipped by overflow:hidden on the table element.
+markdown.renderer.rules.table_open = (): string =>
+  '<div class="table-wrapper">\n<table>\n';
+markdown.renderer.rules.table_close = (): string => "</table>\n</div>\n";
+
 /**
  * KaTeX math rendering. texmath parses `$...$` inline and `$$...$$` display
  * formulas and delegates to katex.renderToString, which is pure string work

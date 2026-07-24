@@ -285,7 +285,11 @@ export function TerminalSettingsPanel({
             onShellPathChange={(path) =>
               setForm((previous) => ({ ...previous, shellPath: path }))
             }
-            onReset={() => setForm(toTerminalForm(lastSaved))}
+            onReset={() => {
+              const defaults = toTerminalForm(DEFAULT_TERMINAL_SETTINGS);
+              setForm(defaults);
+              void saveSettings(DEFAULT_TERMINAL_SETTINGS);
+            }}
             onSelectExecutable={() => void handleSelectExecutable()}
           />
         </>
