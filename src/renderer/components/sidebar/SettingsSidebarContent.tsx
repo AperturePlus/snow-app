@@ -1,127 +1,8 @@
-import {
-  ArrowLeft,
-  ChartColumn,
-  EyeOff,
-  Globe,
-  FishingHook,
-  List,
-  MessageSquareText,
-  Palette,
-  Plug,
-  Puzzle,
-  ScrollText,
-  Search,
-  Sparkles,
-  ShieldAlert,
-  Terminal,
-  Users,
-} from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { localeLabels, useI18n, type Locale } from "../../i18n";
+import { SETTINGS_ITEMS } from "./settingsItems";
+import { SETTINGS_VIEW_IDS } from "./settingsItems";
 import type { SidebarContentProps } from "./types";
-
-type SettingsItem = {
-  id: string;
-  icon: React.ComponentType<{
-    size?: number;
-    strokeWidth?: number;
-    className?: string;
-  }>;
-  labelKey: string;
-  defaultLabel: string;
-};
-
-const SETTINGS_ITEMS: SettingsItem[] = [
-  {
-    id: "api",
-    icon: Plug,
-    labelKey: "settings.apiSettings",
-    defaultLabel: "API settings",
-  },
-  {
-    id: "proxy",
-    icon: Globe,
-    labelKey: "settings.proxySettings",
-    defaultLabel: "Proxy settings",
-  },
-  {
-    id: "codebase",
-    icon: Search,
-    labelKey: "settings.codebaseSettings",
-    defaultLabel: "Codebase settings",
-  },
-  {
-    id: "systemprompt",
-    icon: MessageSquareText,
-    labelKey: "settings.systemPromptSettings",
-    defaultLabel: "System prompt",
-  },
-  {
-    id: "customheaders",
-    icon: List,
-    labelKey: "settings.customHeadersSettings",
-    defaultLabel: "Custom headers",
-  },
-  {
-    id: "mcp",
-    icon: Puzzle,
-    labelKey: "settings.mcpSettings",
-    defaultLabel: "MCP settings",
-  },
-  {
-    id: "skills",
-    icon: Sparkles,
-    labelKey: "settings.skillsSettings",
-    defaultLabel: "Skills settings",
-  },
-  {
-    id: "subagent",
-    icon: Users,
-    labelKey: "settings.subAgentSettings",
-    defaultLabel: "Sub-agent settings",
-  },
-  {
-    id: "sensitive-commands",
-    icon: ShieldAlert,
-    labelKey: "settings.sensitiveCommands",
-    defaultLabel: "Sensitive commands",
-  },
-  {
-    id: "hooks",
-    icon: FishingHook,
-    labelKey: "settings.hooksSettings",
-    defaultLabel: "Hooks settings",
-  },
-  {
-    id: "theme",
-    icon: Palette,
-    labelKey: "settings.themeSettings",
-    defaultLabel: "Theme settings",
-  },
-  {
-    id: "terminal",
-    icon: Terminal,
-    labelKey: "settings.terminalSettings",
-    defaultLabel: "Terminal settings",
-  },
-  {
-    id: "privacy",
-    icon: EyeOff,
-    labelKey: "settings.privacySettings",
-    defaultLabel: "Privacy settings",
-  },
-  {
-    id: "usage",
-    icon: ChartColumn,
-    labelKey: "settings.usageSettings",
-    defaultLabel: "Usage statistics",
-  },
-  {
-    id: "system-logs",
-    icon: ScrollText,
-    labelKey: "settings.systemLogs",
-    defaultLabel: "System logs",
-  },
-];
 
 export function SettingsSidebarContent({
   activeMainView,
@@ -133,23 +14,7 @@ export function SettingsSidebarContent({
   const handleExitSettings = (): void => {
     onSwitchContent("main");
 
-    if (
-      activeMainView === "api-settings" ||
-      activeMainView === "proxy-browser-settings" ||
-      activeMainView === "codebase-settings" ||
-      activeMainView === "system-prompt-settings" ||
-      activeMainView === "custom-headers-settings" ||
-      activeMainView === "mcp-settings" ||
-      activeMainView === "skills-settings" ||
-      activeMainView === "sub-agent-settings" ||
-      activeMainView === "sensitive-command-settings" ||
-      activeMainView === "hooks-settings" ||
-      activeMainView === "terminal-settings" ||
-      activeMainView === "theme-settings" ||
-      activeMainView === "privacy-settings" ||
-      activeMainView === "usage-settings" ||
-      activeMainView === "system-logs"
-    ) {
+    if (SETTINGS_VIEW_IDS.has(activeMainView)) {
       onSelectMainView("chat");
     }
   };
@@ -176,49 +41,13 @@ export function SettingsSidebarContent({
         <div className="sidebar-section settings-menu-section">
           <div className="settings-list">
             {SETTINGS_ITEMS.map((item) => {
-              const targetView =
-                item.id === "api"
-                  ? "api-settings"
-                  : item.id === "proxy"
-                  ? "proxy-browser-settings"
-                  : item.id === "codebase"
-                  ? "codebase-settings"
-                  : item.id === "systemprompt"
-                  ? "system-prompt-settings"
-                  : item.id === "customheaders"
-                  ? "custom-headers-settings"
-                  : item.id === "mcp"
-                  ? "mcp-settings"
-                  : item.id === "skills"
-                  ? "skills-settings"
-                  : item.id === "subagent"
-                  ? "sub-agent-settings"
-                  : item.id === "sensitive-commands"
-                  ? "sensitive-command-settings"
-                  : item.id === "hooks"
-                  ? "hooks-settings"
-                  : item.id === "terminal"
-                  ? "terminal-settings"
-                  : item.id === "theme"
-                  ? "theme-settings"
-                  : item.id === "privacy"
-                  ? "privacy-settings"
-                  : item.id === "usage"
-                  ? "usage-settings"
-                  : item.id === "system-logs"
-                  ? "system-logs"
-                  : null;
-              const isActive = targetView === activeMainView;
+              const isActive = item.view === activeMainView;
 
               return (
                 <button
                   key={item.id}
                   className={`settings-item ${isActive ? "active" : ""}`}
-                  onClick={() => {
-                    if (targetView) {
-                      onSelectMainView(targetView);
-                    }
-                  }}
+                  onClick={() => onSelectMainView(item.view)}
                   type="button"
                 >
                   <item.icon

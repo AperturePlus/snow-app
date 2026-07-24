@@ -1,18 +1,24 @@
 import { Download, Search, Settings } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { useI18n } from "../../i18n";
 import { useChatConversationContext } from "../mainContent/chatMessages";
+import type { MainContentView } from "../mainContent/types";
 import { ChatsSection } from "./mainSidebar/ChatsSection";
 import { PinnedSection } from "./mainSidebar/PinnedSection";
 import { ProjectsSection } from "./mainSidebar/ProjectsSection";
-import { SearchModal } from "./SearchModal";
+import { GlobalSearchModal } from "./GlobalSearchModal";
 import type { SidebarContentProps } from "./types";
-import type { UpdateStatus, ConversationSearchResult } from "../../../preload";
+import type {
+  UpdateStatus,
+  ConversationSearchResult,
+  WorkspaceDirectoryRecord,
+} from "../../../preload";
 
 export function MainSidebarContent({
   activeDirectory,
   onActiveDirectoryChange,
+  onSelectMainView,
   onSwitchContent,
   onSwitchToExplorer,
   onOpenSshWizard,
@@ -57,7 +63,9 @@ export function MainSidebarContent({
     void window.snow.installUpdate();
   };
 
-  const handleSearchSelect = (conversation: ConversationSearchResult): void => {
+  const handleSearchSelectConversation = (
+    conversation: ConversationSearchResult
+  ): void => {
     void handleSelectConversation(
       conversation.conversationId,
       conversation.summary || conversation.title,
@@ -71,6 +79,22 @@ export function MainSidebarContent({
     );
   };
 
+  const handleSearchSelectDirectory = useCallback(
+    (directory: WorkspaceDirectoryRecord): void => {
+      onActiveDirectoryChange?.(directory);
+      onSwitchContent?.("main");
+    },
+    [onActiveDirectoryChange, onSwitchContent]
+  );
+
+  const handleSearchSelectSetting = useCallback(
+    (view: MainContentView): void => {
+      onSwitchContent?.("settings");
+      onSelectMainView(view);
+    },
+    [onSwitchContent, onSelectMainView]
+  );
+
   return (
     <>
       <div className="sidebar-search-bar">
@@ -82,7 +106,7 @@ export function MainSidebarContent({
           <Search size={15} strokeWidth={1.8} />
           <span>
             {t("search.placeholder", {
-              defaultValue: "Search conversations...",
+              defaultValue: "Search...",
             })}
           </span>
         </button>
@@ -157,10 +181,12 @@ export function MainSidebarContent({
           </button>
         )}
       </div>
-      <SearchModal
+      <GlobalSearchModal
         open={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
-        onSelect={handleSearchSelect}
+        onSelectConversation={handleSearchSelectConversation}
+        onSelectDirectory={handleSearchSelectDirectory}
+        onSelectSetting={handleSearchSelectSetting}
       />
     </>
   );

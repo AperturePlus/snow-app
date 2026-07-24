@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, RefreshCw, X } from "lucide-react";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { UsageDateFilter } from "./UsageDateFilter";
@@ -348,6 +349,208 @@ export function UsageSettingsPanel({
 
   const formatTokensLocale = (value: number): string => formatTokens(value);
 
+  // Floating tooltip that follows the cursor. Position is applied directly to
+  // the DOM node via a ref so high-frequency mousemove events do not trigger
+  // React re-renders; only visibility and content use state.
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const [tooltipVisible, setTooltipVisible] = useState(false);
+  const [tooltipContent, setTooltipContent] = useState<React.ReactNode>(null);
+
+  const positionTooltip = (clientX: number, clientY: number) => {
+    const node = tooltipRef.current;
+    if (!node) return;
+    const margin = 12;
+    const rect = node.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let left = clientX + margin;
+    let top = clientY + margin;
+    if (left + rect.width > vw - margin) {
+      left = clientX - rect.width - margin;
+    }
+    if (top + rect.height > vh - margin) {
+      top = clientY - rect.height - margin;
+    }
+    if (left < margin) left = margin;
+    if (top < margin) top = margin;
+    node.style.left = `${left}px`;
+    node.style.top = `${top}px`;
+  };
+
+  const showTooltip = (content: React.ReactNode, clientX: number, clientY: number) => {
+    setTooltipContent(content);
+    setTooltipVisible(true);
+    // Position after the node becomes visible. requestAnimationFrame ensures
+    // the ref'd node has non-zero dimensions for accurate boundary detection.
+    requestAnimationFrame(() => positionTooltip(clientX, clientY));
+  };
+
+  const hideTooltip = () => {
+    setTooltipVisible(false);
+    setTooltipContent(null);
+  };
+
+  const renderHeatmapTooltip = (cell: {
+    date: string;
+    value: number;
+    data: DailyUsageBreakdown | null;
+  }): React.ReactNode => {
+    if (!cell.data) {
+      return (
+        <div className="usage-floating-tooltip">
+          <div className="usage-floating-tooltip-title">{cell.date}</div>
+          <div className="usage-floating-tooltip-row">
+            <span className="usage-floating-tooltip-label">
+              {t("settings.usageTotalTokens", { defaultValue: "Total tokens" })}
+            </span>
+            <span className="usage-floating-tooltip-value">
+              {formatTokensLocale(cell.value)}
+            </span>
+          </div>
+        </div>
+      );
+    }
+    const d = cell.data;
+    const errorRate =
+      d.totalRequests > 0
+        ? `${((d.errorRequests / d.totalRequests) * 100).toFixed(1)}%`
+        : "0%";
+    return (
+      <div className="usage-floating-tooltip">
+        <div className="usage-floating-tooltip-title">{cell.date}</div>
+        <div className="usage-floating-tooltip-row">
+          <span className="usage-floating-tooltip-label">
+            {t("settings.usageTotalTokens", { defaultValue: "Total tokens" })}
+          </span>
+          <span className="usage-floating-tooltip-value">
+            {formatTokensLocale(d.totalTokens)}
+          </span>
+        </div>
+        <div className="usage-floating-tooltip-row">
+          <span className="usage-floating-tooltip-label">
+            {t("settings.usageInputTokens", { defaultValue: "Input tokens" })}
+          </span>
+          <span className="usage-floating-tooltip-value">
+            {formatTokensLocale(d.totalInputTokens)}
+          </span>
+        </div>
+        <div className="usage-floating-tooltip-row">
+          <span className="usage-floating-tooltip-label">
+            {t("settings.usageOutputTokens", { defaultValue: "Output tokens" })}
+          </span>
+          <span className="usage-floating-tooltip-value">
+            {formatTokensLocale(d.totalOutputTokens)}
+          </span>
+        </div>
+        <div className="usage-floating-tooltip-row">
+          <span className="usage-floating-tooltip-label">
+            {t("settings.usageCacheCreation", { defaultValue: "Cache write" })}
+          </span>
+          <span className="usage-floating-tooltip-value">
+            {formatTokensLocale(d.totalCacheCreationInputTokens)}
+          </span>
+        </div>
+        <div className="usage-floating-tooltip-row">
+          <span className="usage-floating-tooltip-label">
+            {t("settings.usageCacheRead", { defaultValue: "Cache read" })}
+          </span>
+          <span className="usage-floating-tooltip-value">
+            {formatTokensLocale(d.totalCacheReadInputTokens)}
+          </span>
+        </div>
+        <div className="usage-floating-tooltip-divider" />
+        <div className="usage-floating-tooltip-row">
+          <span className="usage-floating-tooltip-label">
+            {t("settings.usageTotalRequests", { defaultValue: "Total requests" })}
+          </span>
+          <span className="usage-floating-tooltip-value">
+            {d.totalRequests.toLocaleString()}
+          </span>
+        </div>
+        <div className="usage-floating-tooltip-row">
+          <span className="usage-floating-tooltip-label">
+            {t("settings.usageErrorRequests", { defaultValue: "Error requests" })}
+          </span>
+          <span className="usage-floating-tooltip-value">
+            {d.errorRequests.toLocaleString()} ({errorRate})
+          </span>
+        </div>
+      </div>
+    );
+  };
+
+  const renderRecordTooltip = (record: UsageRecord): React.ReactNode => (
+    <div className="usage-floating-tooltip">
+      <div className="usage-floating-tooltip-title">
+        {formatDateTime(record.createdAt)}
+      </div>
+      <div className="usage-floating-tooltip-row">
+        <span className="usage-floating-tooltip-label">
+          {t("settings.usageColModel", { defaultValue: "Model" })}
+        </span>
+        <span className="usage-floating-tooltip-value">
+          {record.model || "-"}
+        </span>
+      </div>
+      <div className="usage-floating-tooltip-row">
+        <span className="usage-floating-tooltip-label">
+          {t("settings.usageColProfile", { defaultValue: "Profile" })}
+        </span>
+        <span className="usage-floating-tooltip-value">
+          {record.apiProfileName || "-"}
+        </span>
+      </div>
+      <div className="usage-floating-tooltip-row">
+        <span className="usage-floating-tooltip-label">
+          {t("settings.usageColInput", { defaultValue: "Input" })}
+        </span>
+        <span className="usage-floating-tooltip-value">
+          {formatTokensLocale(record.inputTokens)}
+        </span>
+      </div>
+      <div className="usage-floating-tooltip-row">
+        <span className="usage-floating-tooltip-label">
+          {t("settings.usageColOutput", { defaultValue: "Output" })}
+        </span>
+        <span className="usage-floating-tooltip-value">
+          {formatTokensLocale(record.outputTokens)}
+        </span>
+      </div>
+      <div className="usage-floating-tooltip-row">
+        <span className="usage-floating-tooltip-label">
+          {t("settings.usageColCacheWrite", { defaultValue: "Cache W" })}
+        </span>
+        <span className="usage-floating-tooltip-value">
+          {formatTokensLocale(record.cacheCreationInputTokens)}
+        </span>
+      </div>
+      <div className="usage-floating-tooltip-row">
+        <span className="usage-floating-tooltip-label">
+          {t("settings.usageColCacheRead", { defaultValue: "Cache R" })}
+        </span>
+        <span className="usage-floating-tooltip-value">
+          {formatTokensLocale(record.cacheReadInputTokens)}
+        </span>
+      </div>
+      <div className="usage-floating-tooltip-row">
+        <span className="usage-floating-tooltip-label">
+          {t("settings.usageColTotal", { defaultValue: "Total" })}
+        </span>
+        <span className="usage-floating-tooltip-value usage-floating-tooltip-total">
+          {formatTokensLocale(record.totalTokens)}
+        </span>
+      </div>
+      <div className="usage-floating-tooltip-row">
+        <span className="usage-floating-tooltip-label">
+          {t("settings.usageColStatus", { defaultValue: "Status" })}
+        </span>
+        <span className="usage-floating-tooltip-value">
+          {record.status || "-"}
+        </span>
+      </div>
+    </div>
+  );
+
   return (
     <div className="api-settings-page" role="region">
       <div className="api-settings-page-header">
@@ -552,13 +755,15 @@ export function UsageSettingsPanel({
                         key={`${colIndex}-${rowIndex}`}
                         className="usage-heatmap-cell"
                         style={{ backgroundColor: getHeatmapColor(cell.value) }}
-                        title={`${cell.date}: ${formatTokens(
-                          cell.value
-                        )} tokens${
-                          cell.data
-                            ? ` (${cell.data.totalRequests} requests)`
-                            : ""
-                        }`}
+                        onMouseEnter={(e) =>
+                          showTooltip(
+                            renderHeatmapTooltip(cell),
+                            e.clientX,
+                            e.clientY
+                          )
+                        }
+                        onMouseMove={(e) => positionTooltip(e.clientX, e.clientY)}
+                        onMouseLeave={hideTooltip}
                       />
                     ) : (
                       <div
@@ -665,17 +870,25 @@ export function UsageSettingsPanel({
                 </tr>
               ) : (
                 records.map((record) => (
-                  <tr key={record.id}>
+                  <tr
+                    key={record.id}
+                    onMouseEnter={(e) =>
+                      showTooltip(
+                        renderRecordTooltip(record),
+                        e.clientX,
+                        e.clientY
+                      )
+                    }
+                    onMouseMove={(e) => positionTooltip(e.clientX, e.clientY)}
+                    onMouseLeave={hideTooltip}
+                  >
                     <td className="usage-cell-time">
                       {formatDateTime(record.createdAt)}
                     </td>
-                    <td className="usage-cell-model" title={record.model}>
+                    <td className="usage-cell-model">
                       {record.model || "-"}
                     </td>
-                    <td
-                      className="usage-cell-profile"
-                      title={record.apiProfileName}
-                    >
+                    <td className="usage-cell-profile">
                       {record.apiProfileName || "-"}
                     </td>
                     <td className="usage-cell-number">
@@ -751,6 +964,19 @@ export function UsageSettingsPanel({
           </div>
         )}
       </div>
+
+      {createPortal(
+        <div
+          ref={tooltipRef}
+          className={`usage-floating-tooltip-root${
+            tooltipVisible ? " visible" : ""
+          }`}
+          role="tooltip"
+        >
+          {tooltipContent}
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

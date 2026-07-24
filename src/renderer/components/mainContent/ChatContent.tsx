@@ -584,7 +584,9 @@ const ChatContentBody = ({
       <div className="chat-input-region">
         {showScrollToBottom && hasMessages ? (
           <button
-            className="chat-scroll-to-bottom"
+            className={`chat-scroll-to-bottom${
+              isStreaming ? " is-streaming" : ""
+            }`}
             type="button"
             onClick={handleScrollToBottom}
             aria-label={t("chat.scrollToBottom")}

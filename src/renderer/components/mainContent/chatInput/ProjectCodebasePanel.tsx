@@ -22,6 +22,7 @@ import type {
 import { useI18n } from "../../../i18n";
 import { useCodebaseEmbedding } from "../../../hooks/useCodebaseEmbedding";
 import { useCodebaseSync } from "../../../hooks/useCodebaseSync";
+import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { Modal } from "../../common/Modal";
 
 type ProjectCodebasePanelProps = {
@@ -62,9 +63,7 @@ export const ProjectCodebasePanel = ({
   const { t } = useI18n();
 
   // ── Scope & gitignore (project-scoped data) ──────────────────────────
-  const [scope, setScope] = useState<CodebaseProjectScopeSettings | null>(
-    null
-  );
+  const [scope, setScope] = useState<CodebaseProjectScopeSettings | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingKey, setPendingKey] = useState<ToggleKey | null>(null);
@@ -77,6 +76,12 @@ export const ProjectCodebasePanel = ({
     null
   );
   const [isScanningPreview, setIsScanningPreview] = useState(false);
+
+  // ── Disable-with-embedding confirmation ─────────────────────────────
+  // When the user tries to disable codebase indexing while embedding is
+  // still active, we show a confirmation dialog. If confirmed, the embedding
+  // is cancelled and the index (and related tables) are deleted.
+  const [showDisableConfirm, setShowDisableConfirm] = useState(false);
 
   // ── Generation guard for async loads (scope/stats/scan/resumable) ────
   // Ensures that when the user switches projects, stale async results from
@@ -109,8 +114,7 @@ export const ProjectCodebasePanel = ({
   });
 
   const isEmbedding =
-    embedding.embedState === "running" ||
-    embedding.embedState === "paused";
+    embedding.embedState === "running" || embedding.embedState === "paused";
 
   // ── Sync progress (fully isolated by projectId via the hook) ────────
   const sync = useCodebaseSync({
@@ -199,6 +203,7 @@ export const ProjectCodebasePanel = ({
     loadGenerationRef.current += 1;
     setPendingKey(null);
     setIsLoading(false);
+    setShowDisableConfirm(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, projectId, loadScope, loadIndexStats]);
 
@@ -227,6 +232,15 @@ export const ProjectCodebasePanel = ({
   // ── Toggle handlers ──────────────────────────────────────────────────
   const toggle = async (key: ToggleKey, enabled: boolean): Promise<void> => {
     if (!projectId || pendingKey) {
+      return;
+    }
+
+    // When disabling codebase indexing while embedding is still active,
+    // intercept and show a confirmation dialog instead of proceeding
+    // directly. The user may not realise that disabling will discard
+    // all in-progress embedding work and the existing index.
+    if (key === "enabled" && !enabled && isEmbedding) {
+      setShowDisableConfirm(true);
       return;
     }
 
@@ -279,6 +293,56 @@ export const ProjectCodebasePanel = ({
     }
   }, [projectId, loadIndexStats]);
 
+  // ── Confirm disable while embedding is active ────────────────────────
+  // User confirmed: cancel the in-progress embedding, clear the index and
+  // related tables, then actually disable codebase indexing for the project.
+  const confirmDisableWithEmbedding = useCallback(async (): Promise<void> => {
+    if (!projectId) {
+      setShowDisableConfirm(false);
+      return;
+    }
+
+    setShowDisableConfirm(false);
+    const generation = loadGenerationRef.current;
+    setPendingKey("enabled");
+    setError(null);
+
+    try {
+      // 1. Cancel any in-progress embedding session.
+      if (isEmbedding) {
+        await embedding.cancelEmbedding();
+      }
+
+      // 2. Clear the existing index and related tables.
+      await window.snow.clearCodebaseIndex(projectId);
+      setIndexStats(null);
+      setIndexStatsLoaded(false);
+      setScanPreview(null);
+
+      // 3. Disable codebase indexing for the project.
+      await window.snow.setCodebaseProjectEnabled(projectId, false);
+      if (loadGenerationRef.current === generation) {
+        setScope((current) =>
+          current ? { ...current, enabled: false } : current
+        );
+      }
+    } catch (disableError) {
+      if (loadGenerationRef.current === generation) {
+        setError(
+          disableError instanceof Error
+            ? disableError.message
+            : String(disableError)
+        );
+        // Reload scope to reflect the actual server-side state.
+        void loadScope();
+      }
+    } finally {
+      if (loadGenerationRef.current === generation) {
+        setPendingKey(null);
+      }
+    }
+  }, [projectId, isEmbedding, embedding, loadScope]);
+
   const renderToggle = (
     key: ToggleKey,
     label: string,
@@ -289,7 +353,9 @@ export const ProjectCodebasePanel = ({
 
     return (
       <article
-        className={`project-sensitive-command-row${checked ? " is-enabled" : ""}`}
+        className={`project-sensitive-command-row${
+          checked ? " is-enabled" : ""
+        }`}
       >
         <SearchCode size={15} />
         <div className="project-sensitive-command-content">
@@ -337,326 +403,340 @@ export const ProjectCodebasePanel = ({
     : "";
 
   return (
-    <Modal
-      className="project-sensitive-command-modal project-codebase-modal"
-      closeLabel={t("projectCodebase.close")}
-      description={
-        projectId
-          ? t("projectCodebase.description", {
-              values: { project: projectName || projectId },
-            })
-          : t("projectCodebase.noProject")
-      }
-      onClose={onClose}
-      open={open}
-      size="large"
-      title={t("projectCodebase.title")}
-    >
-      {!projectId ? (
-        <div className="project-sensitive-command-state">
-          <AlertCircle size={18} />
-          <span>{t("projectCodebase.noProject")}</span>
-        </div>
-      ) : isLoading && !scope ? (
-        <div className="project-sensitive-command-state">
-          <Loader2 className="spin" size={18} />
-          <span>{t("projectCodebase.loading")}</span>
-        </div>
-      ) : hasGitignore === false ? (
-        <div className="project-sensitive-command-state project-codebase-gitignore-warning">
-          <FileWarning size={18} />
-          <span>{t("projectCodebase.gitignoreMissing")}</span>
-        </div>
-      ) : (
-        <>
-          <div className="project-sensitive-command-toolbar">
-            <div>
-              <span>{t("projectCodebase.scopeNote")}</span>
-            </div>
-            <div>
-              <button
-                className="project-sensitive-command-toolbar-btn"
-                disabled={isLoading || pendingKey !== null || isEmbedding}
-                onClick={() => {
-                  void loadScope();
-                  void loadIndexStats();
-                }}
-                type="button"
-              >
-                <RefreshCw className={isLoading ? "spin" : ""} size={14} />
-                <span>{t("projectCodebase.refresh")}</span>
-              </button>
-            </div>
+    <>
+      <Modal
+        className="project-sensitive-command-modal project-codebase-modal"
+        closeLabel={t("projectCodebase.close")}
+        description={
+          projectId
+            ? t("projectCodebase.description", {
+                values: { project: projectName || projectId },
+              })
+            : t("projectCodebase.noProject")
+        }
+        onClose={onClose}
+        open={open}
+        size="large"
+        title={t("projectCodebase.title")}
+      >
+        {!projectId ? (
+          <div className="project-sensitive-command-state">
+            <AlertCircle size={18} />
+            <span>{t("projectCodebase.noProject")}</span>
           </div>
-
-          {error ? (
-            <div className="project-sensitive-command-error">
-              <AlertCircle size={15} />
-              <span>{error}</span>
-            </div>
-          ) : null}
-
-          <div className="project-sensitive-command-groups project-codebase-list">
-            {renderToggle(
-              "enabled",
-              t("projectCodebase.toggleEnabled"),
-              t("projectCodebase.toggleEnabledDescription")
-            )}
-            {renderToggle(
-              "enableAgentReview",
-              t("projectCodebase.toggleAgentReview"),
-              t("projectCodebase.toggleAgentReviewDescription")
-            )}
-            {renderToggle(
-              "enableReranking",
-              t("projectCodebase.toggleReranking"),
-              t("projectCodebase.toggleRerankingDescription")
-            )}
+        ) : isLoading && !scope ? (
+          <div className="project-sensitive-command-state">
+            <Loader2 className="spin" size={18} />
+            <span>{t("projectCodebase.loading")}</span>
           </div>
-
-          {isEnabled ? (
-            <div className="project-codebase-embedding-section">
-              <div className="project-codebase-embedding-header">
-                <Database size={15} />
-                <div>
-                  <strong>{t("projectCodebase.embedding.title")}</strong>
-                  <span>{t("projectCodebase.embedding.description")}</span>
-                </div>
+        ) : hasGitignore === false ? (
+          <div className="project-sensitive-command-state project-codebase-gitignore-warning">
+            <FileWarning size={18} />
+            <span>{t("projectCodebase.gitignoreMissing")}</span>
+          </div>
+        ) : (
+          <>
+            <div className="project-sensitive-command-toolbar">
+              <div>
+                <span>{t("projectCodebase.scopeNote")}</span>
               </div>
+              <div>
+                <button
+                  className="project-sensitive-command-toolbar-btn"
+                  disabled={isLoading || pendingKey !== null || isEmbedding}
+                  onClick={() => {
+                    void loadScope();
+                    void loadIndexStats();
+                  }}
+                  type="button"
+                >
+                  <RefreshCw className={isLoading ? "spin" : ""} size={14} />
+                  <span>{t("projectCodebase.refresh")}</span>
+                </button>
+              </div>
+            </div>
 
-              {sync.syncProgress && indexStats?.isIndexed && !isEmbedding ? (
-                <div className="project-codebase-files-changed-hint">
-                  <Loader2 size={14} className="spin" />
-                  <span>{t("projectCodebase.syncing")}</span>
+            {error ? (
+              <div className="project-sensitive-command-error">
+                <AlertCircle size={15} />
+                <span>{error}</span>
+              </div>
+            ) : null}
+
+            <div className="project-sensitive-command-groups project-codebase-list">
+              {renderToggle(
+                "enabled",
+                t("projectCodebase.toggleEnabled"),
+                t("projectCodebase.toggleEnabledDescription")
+              )}
+              {renderToggle(
+                "enableAgentReview",
+                t("projectCodebase.toggleAgentReview"),
+                t("projectCodebase.toggleAgentReviewDescription")
+              )}
+              {renderToggle(
+                "enableReranking",
+                t("projectCodebase.toggleReranking"),
+                t("projectCodebase.toggleRerankingDescription")
+              )}
+            </div>
+
+            {isEnabled ? (
+              <div className="project-codebase-embedding-section">
+                <div className="project-codebase-embedding-header">
+                  <Database size={15} />
+                  <div>
+                    <strong>{t("projectCodebase.embedding.title")}</strong>
+                    <span>{t("projectCodebase.embedding.description")}</span>
+                  </div>
                 </div>
-              ) : null}
 
-              {embedding.resumableSession && !isEmbedding ? (
-                <div className="project-codebase-resumable-session">
-                  <div className="project-codebase-resumable-info">
-                    <RotateCcw size={15} />
-                    <div>
-                      <strong>
-                        {t("projectCodebase.resume.title")}
-                        <span className="project-codebase-resumable-status">
-                          {embedding.resumableSession.status === "paused"
-                            ? t("projectCodebase.resume.statusPaused")
-                            : t("projectCodebase.resume.statusInterrupted")}
+                {sync.syncProgress && indexStats?.isIndexed && !isEmbedding ? (
+                  <div className="project-codebase-files-changed-hint">
+                    <Loader2 size={14} className="spin" />
+                    <span>{t("projectCodebase.syncing")}</span>
+                  </div>
+                ) : null}
+
+                {embedding.resumableSession && !isEmbedding ? (
+                  <div className="project-codebase-resumable-session">
+                    <div className="project-codebase-resumable-info">
+                      <RotateCcw size={15} />
+                      <div>
+                        <strong>
+                          {t("projectCodebase.resume.title")}
+                          <span className="project-codebase-resumable-status">
+                            {embedding.resumableSession.status === "paused"
+                              ? t("projectCodebase.resume.statusPaused")
+                              : t("projectCodebase.resume.statusInterrupted")}
+                          </span>
+                        </strong>
+                        <span>{t("projectCodebase.resume.description")}</span>
+                        {embedding.resumableSession.totalFiles > 0 ? (
+                          <span className="project-codebase-resumable-progress">
+                            {t("projectCodebase.resume.progress", {
+                              values: {
+                                processed:
+                                  embedding.resumableSession.processedFiles,
+                                total: embedding.resumableSession.totalFiles,
+                                chunks:
+                                  embedding.resumableSession.processedChunks,
+                              },
+                            })}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="project-codebase-resumable-actions">
+                      <button
+                        className="project-codebase-embed-btn primary"
+                        disabled={embedding.isResuming}
+                        onClick={() => void embedding.resumeSession()}
+                        type="button"
+                      >
+                        {embedding.isResuming ? (
+                          <Loader2 className="spin" size={14} />
+                        ) : (
+                          <Play size={14} />
+                        )}
+                        <span>{t("projectCodebase.resume.resume")}</span>
+                      </button>
+                      <button
+                        className="project-codebase-embed-btn"
+                        disabled={embedding.isResuming}
+                        onClick={() => void embedding.discardSession()}
+                        type="button"
+                      >
+                        <X size={14} />
+                        <span>{t("projectCodebase.resume.discard")}</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {embedding.embedState === "completed" && indexStats ? (
+                  <div className="project-codebase-index-stats">
+                    <div className="project-codebase-stat-item">
+                      <span className="project-codebase-stat-label">
+                        {t("projectCodebase.stats.files")}
+                      </span>
+                      <span className="project-codebase-stat-value">
+                        {indexStats.totalFiles}
+                      </span>
+                    </div>
+                    <div className="project-codebase-stat-item">
+                      <span className="project-codebase-stat-label">
+                        {t("projectCodebase.stats.chunks")}
+                      </span>
+                      <span className="project-codebase-stat-value">
+                        {indexStats.totalChunks}
+                      </span>
+                    </div>
+                    <div className="project-codebase-stat-item">
+                      <span className="project-codebase-stat-label">
+                        {t("projectCodebase.stats.size")}
+                      </span>
+                      <span className="project-codebase-stat-value">
+                        {formatBytes(indexStats.totalSizeBytes)}
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+
+                {scanPreview && !indexStats?.isIndexed && !isEmbedding ? (
+                  <div className="project-codebase-scan-preview">
+                    <div className="project-codebase-stat-item">
+                      <span className="project-codebase-stat-label">
+                        {t("projectCodebase.preview.files")}
+                      </span>
+                      <span className="project-codebase-stat-value">
+                        {scanPreview.fileCount}
+                      </span>
+                    </div>
+                    <div className="project-codebase-stat-item">
+                      <span className="project-codebase-stat-label">
+                        {t("projectCodebase.preview.chunks")}
+                      </span>
+                      <span className="project-codebase-stat-value">
+                        {scanPreview.estimatedChunks}
+                      </span>
+                    </div>
+                    <div className="project-codebase-stat-item">
+                      <span className="project-codebase-stat-label">
+                        {t("projectCodebase.preview.size")}
+                      </span>
+                      <span className="project-codebase-stat-value">
+                        {formatBytes(scanPreview.totalSizeBytes)}
+                      </span>
+                    </div>
+                  </div>
+                ) : isScanningPreview &&
+                  !indexStats?.isIndexed &&
+                  !isEmbedding ? (
+                  <div className="project-codebase-scan-preview">
+                    <Loader2 className="spin" size={14} />
+                    <span>{t("projectCodebase.preview.scanning")}</span>
+                  </div>
+                ) : null}
+
+                {embedding.embedProgress ? (
+                  <div className="project-codebase-embed-progress">
+                    <div className="project-codebase-embed-progress-info">
+                      <span className="project-codebase-embed-phase">
+                        {phaseLabel}
+                      </span>
+                      {embedding.embedProgress.currentFile ? (
+                        <span
+                          className="project-codebase-embed-file"
+                          title={embedding.embedProgress.currentFile}
+                        >
+                          {embedding.embedProgress.currentFile}
                         </span>
-                      </strong>
-                      <span>{t("projectCodebase.resume.description")}</span>
-                      {embedding.resumableSession.totalFiles > 0 ? (
-                        <span className="project-codebase-resumable-progress">
-                          {t("projectCodebase.resume.progress", {
-                            values: {
-                              processed: embedding.resumableSession.processedFiles,
-                              total: embedding.resumableSession.totalFiles,
-                              chunks: embedding.resumableSession.processedChunks,
-                            },
-                          })}
+                      ) : null}
+                      <span className="project-codebase-embed-counts">
+                        {embedding.embedProgress.processedChunks} /{" "}
+                        {embedding.embedProgress.totalChunks}
+                        {embedding.embedProgress.totalFiles > 0
+                          ? ` (${embedding.embedProgress.processedFiles}/${embedding.embedProgress.totalFiles})`
+                          : ""}
+                      </span>
+                      {embedding.embedProgress.elapsedMs > 0 ? (
+                        <span className="project-codebase-embed-elapsed">
+                          {formatElapsed(embedding.embedProgress.elapsedMs)}
                         </span>
                       ) : null}
                     </div>
+                    <div className="project-codebase-embed-progress-bar">
+                      <div
+                        className="project-codebase-embed-progress-fill"
+                        style={{ width: `${progressPercent}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="project-codebase-resumable-actions">
+                ) : null}
+
+                <div className="project-codebase-embed-actions">
+                  {(embedding.embedState === "idle" ||
+                    embedding.embedState === "completed") &&
+                  !embedding.resumableSession ? (
                     <button
                       className="project-codebase-embed-btn primary"
-                      disabled={embedding.isResuming}
-                      onClick={() => void embedding.resumeSession()}
+                      disabled={isEmbedding}
+                      onClick={() => void embedding.startEmbedding()}
                       type="button"
                     >
-                      {embedding.isResuming ? (
-                        <Loader2 className="spin" size={14} />
-                      ) : (
-                        <Play size={14} />
-                      )}
-                      <span>{t("projectCodebase.resume.resume")}</span>
+                      <Play size={14} />
+                      <span>
+                        {embedding.embedState === "completed"
+                          ? t("projectCodebase.embedding.reindex")
+                          : t("projectCodebase.embedding.start")}
+                      </span>
                     </button>
+                  ) : null}
+                  {embedding.embedState === "running" ? (
                     <button
                       className="project-codebase-embed-btn"
-                      disabled={embedding.isResuming}
-                      onClick={() => void embedding.discardSession()}
+                      onClick={() => void embedding.pauseEmbedding()}
                       type="button"
                     >
-                      <X size={14} />
-                      <span>{t("projectCodebase.resume.discard")}</span>
+                      <Pause size={14} />
+                      <span>{t("projectCodebase.embedding.pause")}</span>
                     </button>
-                  </div>
+                  ) : null}
+                  {embedding.embedState === "paused" ? (
+                    <button
+                      className="project-codebase-embed-btn primary"
+                      onClick={() => void embedding.resumeEmbedding()}
+                      type="button"
+                    >
+                      <Play size={14} />
+                      <span>{t("projectCodebase.embedding.resume")}</span>
+                    </button>
+                  ) : null}
+                  {isEmbedding ? (
+                    <button
+                      className="project-codebase-embed-btn danger"
+                      onClick={() => void embedding.cancelEmbedding()}
+                      type="button"
+                    >
+                      <Square size={14} />
+                      <span>{t("projectCodebase.embedding.cancel")}</span>
+                    </button>
+                  ) : null}
+                  {indexStats &&
+                  indexStats.isIndexed &&
+                  !isEmbedding &&
+                  !embedding.resumableSession ? (
+                    <button
+                      className="project-codebase-embed-btn danger"
+                      onClick={() => void handleClearIndex()}
+                      type="button"
+                    >
+                      <Trash2 size={14} />
+                      <span>{t("projectCodebase.embedding.clear")}</span>
+                    </button>
+                  ) : null}
                 </div>
-              ) : null}
-
-              {embedding.embedState === "completed" && indexStats ? (
-                <div className="project-codebase-index-stats">
-                  <div className="project-codebase-stat-item">
-                    <span className="project-codebase-stat-label">
-                      {t("projectCodebase.stats.files")}
-                    </span>
-                    <span className="project-codebase-stat-value">
-                      {indexStats.totalFiles}
-                    </span>
-                  </div>
-                  <div className="project-codebase-stat-item">
-                    <span className="project-codebase-stat-label">
-                      {t("projectCodebase.stats.chunks")}
-                    </span>
-                    <span className="project-codebase-stat-value">
-                      {indexStats.totalChunks}
-                    </span>
-                  </div>
-                  <div className="project-codebase-stat-item">
-                    <span className="project-codebase-stat-label">
-                      {t("projectCodebase.stats.size")}
-                    </span>
-                    <span className="project-codebase-stat-value">
-                      {formatBytes(indexStats.totalSizeBytes)}
-                    </span>
-                  </div>
-                </div>
-              ) : null}
-
-              {scanPreview && !indexStats?.isIndexed && !isEmbedding ? (
-                <div className="project-codebase-scan-preview">
-                  <div className="project-codebase-stat-item">
-                    <span className="project-codebase-stat-label">
-                      {t("projectCodebase.preview.files")}
-                    </span>
-                    <span className="project-codebase-stat-value">
-                      {scanPreview.fileCount}
-                    </span>
-                  </div>
-                  <div className="project-codebase-stat-item">
-                    <span className="project-codebase-stat-label">
-                      {t("projectCodebase.preview.chunks")}
-                    </span>
-                    <span className="project-codebase-stat-value">
-                      {scanPreview.estimatedChunks}
-                    </span>
-                  </div>
-                  <div className="project-codebase-stat-item">
-                    <span className="project-codebase-stat-label">
-                      {t("projectCodebase.preview.size")}
-                    </span>
-                    <span className="project-codebase-stat-value">
-                      {formatBytes(scanPreview.totalSizeBytes)}
-                    </span>
-                  </div>
-                </div>
-              ) : isScanningPreview &&
-                !indexStats?.isIndexed &&
-                !isEmbedding ? (
-                <div className="project-codebase-scan-preview">
-                  <Loader2 className="spin" size={14} />
-                  <span>{t("projectCodebase.preview.scanning")}</span>
-                </div>
-              ) : null}
-
-              {embedding.embedProgress ? (
-                <div className="project-codebase-embed-progress">
-                  <div className="project-codebase-embed-progress-info">
-                    <span className="project-codebase-embed-phase">
-                      {phaseLabel}
-                    </span>
-                    {embedding.embedProgress.currentFile ? (
-                      <span
-                        className="project-codebase-embed-file"
-                        title={embedding.embedProgress.currentFile}
-                      >
-                        {embedding.embedProgress.currentFile}
-                      </span>
-                    ) : null}
-                    <span className="project-codebase-embed-counts">
-                      {embedding.embedProgress.processedChunks} /{" "}
-                      {embedding.embedProgress.totalChunks}
-                      {embedding.embedProgress.totalFiles > 0
-                        ? ` (${embedding.embedProgress.processedFiles}/${embedding.embedProgress.totalFiles})`
-                        : ""}
-                    </span>
-                    {embedding.embedProgress.elapsedMs > 0 ? (
-                      <span className="project-codebase-embed-elapsed">
-                        {formatElapsed(embedding.embedProgress.elapsedMs)}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="project-codebase-embed-progress-bar">
-                    <div
-                      className="project-codebase-embed-progress-fill"
-                      style={{ width: `${progressPercent}%` }}
-                    />
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="project-codebase-embed-actions">
-                {(embedding.embedState === "idle" ||
-                  embedding.embedState === "completed") &&
-                !embedding.resumableSession ? (
-                  <button
-                    className="project-codebase-embed-btn primary"
-                    disabled={isEmbedding}
-                    onClick={() => void embedding.startEmbedding()}
-                    type="button"
-                  >
-                    <Play size={14} />
-                    <span>
-                      {embedding.embedState === "completed"
-                        ? t("projectCodebase.embedding.reindex")
-                        : t("projectCodebase.embedding.start")}
-                    </span>
-                  </button>
-                ) : null}
-                {embedding.embedState === "running" ? (
-                  <button
-                    className="project-codebase-embed-btn"
-                    onClick={() => void embedding.pauseEmbedding()}
-                    type="button"
-                  >
-                    <Pause size={14} />
-                    <span>{t("projectCodebase.embedding.pause")}</span>
-                  </button>
-                ) : null}
-                {embedding.embedState === "paused" ? (
-                  <button
-                    className="project-codebase-embed-btn primary"
-                    onClick={() => void embedding.resumeEmbedding()}
-                    type="button"
-                  >
-                    <Play size={14} />
-                    <span>{t("projectCodebase.embedding.resume")}</span>
-                  </button>
-                ) : null}
-                {isEmbedding ? (
-                  <button
-                    className="project-codebase-embed-btn danger"
-                    onClick={() => void embedding.cancelEmbedding()}
-                    type="button"
-                  >
-                    <Square size={14} />
-                    <span>{t("projectCodebase.embedding.cancel")}</span>
-                  </button>
-                ) : null}
-                {indexStats &&
-                indexStats.isIndexed &&
-                !isEmbedding &&
-                !embedding.resumableSession ? (
-                  <button
-                    className="project-codebase-embed-btn danger"
-                    onClick={() => void handleClearIndex()}
-                    type="button"
-                  >
-                    <Trash2 size={14} />
-                    <span>{t("projectCodebase.embedding.clear")}</span>
-                  </button>
-                ) : null}
               </div>
-            </div>
-          ) : null}
+            ) : null}
 
-          <div className="project-codebase-config-hint">
-            <BrainCircuit size={14} />
-            <span>{t("projectCodebase.configHint")}</span>
-          </div>
-        </>
-      )}
-    </Modal>
+            <div className="project-codebase-config-hint">
+              <BrainCircuit size={14} />
+              <span>{t("projectCodebase.configHint")}</span>
+            </div>
+          </>
+        )}
+      </Modal>
+      <ConfirmDialog
+        cancelLabel={t("projectCodebase.disableConfirmCancel")}
+        confirmLabel={t("projectCodebase.disableConfirmAction")}
+        message={t("projectCodebase.disableConfirmMessage")}
+        onCancel={() => setShowDisableConfirm(false)}
+        onConfirm={() => void confirmDisableWithEmbedding()}
+        open={showDisableConfirm}
+        title={t("projectCodebase.disableConfirmTitle")}
+        variant="danger"
+      />
+    </>
   );
 };

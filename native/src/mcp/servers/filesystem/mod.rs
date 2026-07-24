@@ -4,7 +4,6 @@ use std::path::Path;
 use base64::Engine;
 use napi::bindgen_prelude::*;
 use serde_json::{json, Value};
-use similar::TextDiff;
 
 use super::super::service::McpService;
 use super::super::tools::McpTool;
@@ -241,92 +240,60 @@ impl FilesystemService {
             )
         })?;
 
-        // Step 1: Try exact match
-        let matches: Vec<usize> = content
-            .match_indices(search_content)
-            .map(|(i, _)| i)
-            .collect();
+        // 检测文件主要使用的行尾风格，并将 replace_content 适配为相同风格，
+        // 避免在 CRLF 文件中插入 LF 行尾导致混合行尾。
+        let replace_content = adapt_line_endings(replace_content, &content);
 
-        if !matches.is_empty() {
-            let target_idx = matches
-                .get(occurrence.saturating_sub(1))
-                .copied()
-                .ok_or_else(|| {
-                    Error::new(
-                        Status::GenericFailure,
-                        format!(
-                            "Occurrence {} not found, only {} matches",
-                            occurrence,
-                            matches.len()
-                        ),
-                    )
-                })?;
+        // 全程使用 split('\n') 而非 lines()，保留 \r 在行内容中。
+        // 匹配时用 normalize_whitespace 比较（忽略空白差异含 \r），
+        // 替换时用 splice 在行数组上操作，天然保持文件原有行尾风格。
+        let file_lines: Vec<&str> = content.split('\n').collect();
+        let total_lines = file_lines.len();
 
-            let end_idx = target_idx + search_content.len();
-            let new_content = format!(
-                "{}{}{}",
-                &content[..target_idx],
-                replace_content,
-                &content[end_idx..]
-            );
+        // search_lines_variants: 每个元素是 (变体名, 行数组)
+        let search_content_stripped = try_strip_line_prefixes(search_content);
+        let variants: Vec<(&str, Vec<&str>)> = vec![
+            ("exact", search_content.split('\n').collect()),
+        ]
+        .into_iter()
+        .chain(search_content_stripped.as_ref().map(|s| {
+            ("exact_after_stripping_prefixes", s.split('\n').collect())
+        }))
+        .collect();
 
-            fs::write(&file_path, &new_content).map_err(|e| {
-                Error::new(
-                    Status::GenericFailure,
-                    format!("Failed to write file: {} (path: {})", e, file_path),
-                )
-            })?;
+        // Step 1: 精确行级匹配
+        // 在 file_lines 中查找与 search 某个变体完全相同的行序列（归一化比较）。
+        for (match_type, search_lines) in &variants {
+            let search_line_count = search_lines.len();
+            if search_line_count == 0 || search_line_count > file_lines.len() {
+                continue;
+            }
 
-            let review = build_edit_review_context(
-                &new_content,
-                target_idx,
-                target_idx + replace_content.len(),
-            );
+            // 收集所有匹配位置
+            let mut match_positions: Vec<usize> = Vec::new();
+            for start in 0..=(file_lines.len() - search_line_count) {
+                let all_match = search_lines
+                    .iter()
+                    .enumerate()
+                    .all(|(i, &sline)| {
+                        normalize_whitespace(&file_lines[start + i]) == normalize_whitespace(sline)
+                    });
+                if all_match {
+                    match_positions.push(start);
+                }
+            }
 
-            // 将字节偏移转换为可读行号（基于编辑前的文件内容）
-            let (matched_line_start, matched_line_end) =
-                byte_offset_to_line_range(&content, target_idx, target_idx + search_content.len());
+            if let Some(&target_start) = match_positions.get(occurrence.saturating_sub(1)) {
+                let end_line = target_start + search_line_count;
 
-            return Ok(json!({
-                "success": true,
-                "matchIndex": target_idx,
-                "totalMatches": matches.len(),
-                "occurrence": occurrence,
-                "matchType": "exact",
-                "matchedLineStart": matched_line_start,
-                "matchedLineEnd": matched_line_end,
-                "review": review
-            }));
-        }
-
-        // Step 2: Try with line number prefixes stripped from searchContent
-        // (AI often copies content from read output which includes line number prefixes)
-        if let Some(stripped) = try_strip_line_prefixes(search_content) {
-            let stripped_matches: Vec<usize> =
-                content.match_indices(&stripped).map(|(i, _)| i).collect();
-
-            if !stripped_matches.is_empty() {
-                let target_idx = stripped_matches
-                    .get(occurrence.saturating_sub(1))
-                    .copied()
-                    .ok_or_else(|| {
-                        Error::new(
-                            Status::GenericFailure,
-                            format!(
-                                "Occurrence {} not found after stripping line prefixes, only {} matches",
-                                occurrence,
-                                stripped_matches.len()
-                            ),
-                        )
-                    })?;
-
-                let end_idx = target_idx + stripped.len();
-                let new_content = format!(
-                    "{}{}{}",
-                    &content[..target_idx],
-                    replace_content,
-                    &content[end_idx..]
-                );
+                // 行级替换：用 splice 替换目标行范围
+                let replacement_lines: Vec<String> = replace_content
+                    .split('\n')
+                    .map(str::to_owned)
+                    .collect();
+                let mut new_lines: Vec<String> = file_lines.iter().map(|s| s.to_string()).collect();
+                new_lines.splice(target_start..end_line, replacement_lines);
+                let new_content = new_lines.join("\n");
 
                 fs::write(&file_path, &new_content).map_err(|e| {
                     Error::new(
@@ -335,77 +302,65 @@ impl FilesystemService {
                     )
                 })?;
 
-                let review = build_edit_review_context(
+                let review = build_edit_review_context_lines(
                     &new_content,
-                    target_idx,
-                    target_idx + replace_content.len(),
+                    target_start,
+                    target_start + replace_content.split('\n').count().saturating_sub(1),
                 );
-
-                // 将字节偏移转换为可读行号（基于编辑前的文件内容）
-                let (matched_line_start, matched_line_end) =
-                    byte_offset_to_line_range(&content, target_idx, target_idx + stripped.len());
 
                 return Ok(json!({
                     "success": true,
-                    "matchIndex": target_idx,
-                    "totalMatches": stripped_matches.len(),
+                    "totalMatches": match_positions.len(),
                     "occurrence": occurrence,
-                    "matchType": "exact_after_stripping_prefixes",
-                    "matchedLineStart": matched_line_start,
-                    "matchedLineEnd": matched_line_end,
+                    "matchType": match_type,
+                    "matchedLineStart": target_start + 1,
+                    "matchedLineEnd": end_line,
                     "review": review
                 }));
             }
         }
 
-        // Step 3: Try fuzzy line-based matching
-        let content_lines: Vec<&str> = content.lines().collect();
-        let total_lines = content_lines.len();
+        // Step 2: 模糊行匹配（基于 Levenshtein 距离 + 变窗口 + 预过滤）
+        if let Some((start_line, end_line, similarity)) =
+            find_best_line_match_v2(search_content, &file_lines)
+        {
+            if similarity >= FUZZY_MATCH_THRESHOLD {
+                let replacement_lines: Vec<String> = replace_content
+                    .split('\n')
+                    .map(str::to_owned)
+                    .collect();
+                let mut new_lines: Vec<String> = file_lines.iter().map(|s| s.to_string()).collect();
+                new_lines.splice(start_line..end_line, replacement_lines);
+                let new_content = new_lines.join("\n");
 
-        // Skip fuzzy matching for very large files to avoid blocking
-        if total_lines <= 5000 {
-            if let Some((start_line, end_line, similarity)) =
-                find_best_line_match(search_content, &content)
-            {
-                if similarity >= FUZZY_MATCH_THRESHOLD {
-                    let (start_byte, end_byte) =
-                        line_range_to_byte_range(&content, start_line, end_line);
-                    let new_content = format!(
-                        "{}{}{}",
-                        &content[..start_byte],
-                        replace_content,
-                        &content[end_byte..]
-                    );
+                fs::write(&file_path, &new_content).map_err(|e| {
+                    Error::new(
+                        Status::GenericFailure,
+                        format!("Failed to write file: {} (path: {})", e, file_path),
+                    )
+                })?;
 
-                    fs::write(&file_path, &new_content).map_err(|e| {
-                        Error::new(
-                            Status::GenericFailure,
-                            format!("Failed to write file: {} (path: {})", e, file_path),
-                        )
-                    })?;
+                let review = build_edit_review_context_lines(
+                    &new_content,
+                    start_line,
+                    start_line + replace_content.split('\n').count().saturating_sub(1),
+                );
 
-                    let review = build_edit_review_context(
-                        &new_content,
-                        start_byte,
-                        start_byte + replace_content.len(),
-                    );
-
-                    return Ok(json!({
-                        "success": true,
-                        "matchType": "fuzzy",
-                        "similarity": similarity,
-                        "matchedLineStart": start_line + 1,
-                        "matchedLineEnd": end_line,
-                        "totalLines": total_lines,
-                        "review": review
-                    }));
-                }
+                return Ok(json!({
+                    "success": true,
+                    "matchType": "fuzzy",
+                    "similarity": similarity,
+                    "matchedLineStart": start_line + 1,
+                    "matchedLineEnd": end_line,
+                    "totalLines": total_lines,
+                    "review": review
+                }));
             }
         }
 
-        // Step 4: All matches failed - return helpful error with closest match context
+        // Step 3: 所有匹配策略均失败 - 返回包含最相似区间上下文的详细错误
         let error_msg =
-            build_search_not_found_error(search_content, &content, &file_path, total_lines);
+            build_search_not_found_error_v2(search_content, &file_lines, &file_path, total_lines);
 
         Err(Error::new(Status::GenericFailure, error_msg))
     }
@@ -556,6 +511,103 @@ fn parse_read_path_item(
     }
 }
 
+/// 将所有空白字符（含 \r、\n、\t、BOM 等）压缩为单个空格并 trim 首尾。
+/// 仅用于比较两段文本是否"内容等价"，不修改原始文件。
+/// 这天然解决了 CRLF/LF 行尾差异、多余空格/制表符差异等问题。
+fn normalize_whitespace(content: &str) -> String {
+    let mut normalized = String::with_capacity(content.len());
+    let mut previous_was_whitespace = true;
+
+    for character in content.chars() {
+        let is_whitespace = character.is_whitespace() || character == '\u{feff}';
+        if is_whitespace {
+            if !previous_was_whitespace {
+                normalized.push(' ');
+            }
+        } else {
+            normalized.push(character);
+        }
+        previous_was_whitespace = is_whitespace;
+    }
+
+    normalized.trim_end().to_owned()
+}
+
+/// 计算两个字符串之间的 Levenshtein 相似度（0.0 ~ 1.0），带提前剪枝优化。
+fn compute_levenshtein_similarity(left: &str, right: &str, threshold: f64) -> f64 {
+    let left_u16: Vec<u16> = left.encode_utf16().collect();
+    let right_u16: Vec<u16> = right.encode_utf16().collect();
+
+    if left_u16.is_empty() {
+        return if right_u16.is_empty() { 1.0 } else { 0.0 };
+    }
+    if right_u16.is_empty() {
+        return 0.0;
+    }
+
+    let max_length = left_u16.len().max(right_u16.len());
+    let length_ratio = left_u16.len().min(right_u16.len()) as f64 / max_length as f64;
+    if threshold > 0.0 && length_ratio < threshold {
+        return length_ratio;
+    }
+
+    let max_distance = (max_length as f64 * (1.0 - threshold)).ceil() as usize;
+
+    // 带提前终止的 Levenshtein 距离
+    if left_u16 == right_u16 {
+        return 1.0;
+    }
+    if left_u16.len().abs_diff(right_u16.len()) > max_distance {
+        return 0.0;
+    }
+
+    let mut previous: Vec<usize> = (0..=right_u16.len()).collect();
+    for (left_index, left_unit) in left_u16.iter().enumerate() {
+        let mut current = Vec::with_capacity(right_u16.len() + 1);
+        current.push(left_index + 1);
+        let mut minimum = left_index + 1;
+
+        for (right_index, right_unit) in right_u16.iter().enumerate() {
+            let value = (previous[right_index + 1] + 1)
+                .min(current[right_index] + 1)
+                .min(previous[right_index] + usize::from(left_unit != right_unit));
+            current.push(value);
+            minimum = minimum.min(value);
+        }
+
+        if minimum > max_distance {
+            return 0.0;
+        }
+        previous = current;
+    }
+
+    let distance = previous[right_u16.len()];
+    1.0 - distance as f64 / max_length as f64
+}
+
+/// 根据文件内容的主要行尾风格，调整 text 的行尾以匹配。
+/// 若文件以 CRLF 为主，则将 text 中的行尾转为 CRLF；
+/// 若文件以 LF 为主，则将 text 中的行尾转为 LF。
+/// 若文件为空或无法判定，则原样返回。
+fn adapt_line_endings(text: &str, file_content: &str) -> String {
+    if file_content.is_empty() || text.is_empty() {
+        return text.to_string();
+    }
+
+    let crlf_count = file_content.matches("\r\n").count();
+    let lf_count = file_content.matches('\n').count();
+    let lf_only = lf_count.saturating_sub(crlf_count);
+
+    let use_crlf = crlf_count > lf_only;
+
+    if use_crlf {
+        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        normalized.replace('\n', "\r\n")
+    } else {
+        text.replace("\r\n", "\n").replace('\r', "\n")
+    }
+}
+
 /// 如果 searchContent 的每一行都以行号前缀开头（如 "42: " 或 "  10| "），
 /// 则剥离所有行号前缀，返回纯内容。否则返回 None。
 /// 这处理 AI 从 read 输出中复制了行号前缀的情况。
@@ -567,7 +619,6 @@ fn try_strip_line_prefixes(text: &str) -> Option<String> {
         return None;
     }
 
-    // Check if at least 60% of non-empty lines have a line number prefix
     let non_empty_count = lines.iter().filter(|l| !l.trim().is_empty()).count();
     if non_empty_count == 0 {
         return None;
@@ -583,7 +634,6 @@ fn try_strip_line_prefixes(text: &str) -> Option<String> {
         return None;
     }
 
-    // Strip prefixes from all lines
     let stripped_lines: Vec<String> = lines
         .iter()
         .map(|line| {
@@ -597,7 +647,6 @@ fn try_strip_line_prefixes(text: &str) -> Option<String> {
 
     let result = stripped_lines.join("\n");
 
-    // Only return if it's actually different from the original
     if result != text {
         Some(result)
     } else {
@@ -605,60 +654,128 @@ fn try_strip_line_prefixes(text: &str) -> Option<String> {
     }
 }
 
-/// 计算两个字符串之间的相似度（0.0 ~ 1.0），基于 TextDiff 的 ratio。
-fn compute_similarity(a: &str, b: &str) -> f64 {
-    if a.is_empty() && b.is_empty() {
-        return 1.0;
-    }
-    if a.is_empty() || b.is_empty() {
-        return 0.0;
-    }
-    let diff = TextDiff::from_lines(a, b);
-    diff.ratio() as f64
-}
-
-/// 在文件内容中，按行滑动窗口查找与 searchContent 最相似的区间。
-/// 返回 (起始行号, 结束行号(不含), 相似度)。
-/// 起始行号和结束行号都是 0-indexed。
-fn find_best_line_match(search_content: &str, file_content: &str) -> Option<(usize, usize, f64)> {
-    let search_lines: Vec<&str> = search_content.lines().collect();
-    let file_lines: Vec<&str> = file_content.lines().collect();
-
+/// 在文件行数组中，按行滑动窗口查找与 searchContent 最相似的区间。
+/// 基于 normalize_whitespace + Levenshtein 距离 + 变窗口 + 首行预过滤。
+/// 返回 (起始行号, 结束行号(不含), 相似度)，均为 0-indexed。
+fn find_best_line_match_v2(search_content: &str, file_lines: &[&str]) -> Option<(usize, usize, f64)> {
+    let search_lines: Vec<&str> = search_content.split('\n').collect();
     if search_lines.is_empty() || file_lines.is_empty() {
         return None;
     }
 
-    let search_line_count = search_lines.len();
-    let max_window = search_line_count + 5; // Allow some slack
-    let min_window = if search_line_count > 5 {
-        search_line_count - 5
+    let base_window = search_lines.len();
+    if base_window > file_lines.len() {
+        return None;
+    }
+
+    let threshold = FUZZY_MATCH_THRESHOLD;
+    let normalized_search = normalize_whitespace(search_content);
+    let normalized_first_line = normalize_whitespace(search_lines.first().copied().unwrap_or_default());
+
+    // 变窗口：大代码块允许窗口大小浮动以改善边界对齐
+    let window_delta = if base_window >= 10 {
+        (base_window / 5).clamp(3, 15)
     } else {
-        1
+        0
     };
 
     let mut best_similarity: f64 = 0.0;
     let mut best_start: usize = 0;
     let mut best_end: usize = 0;
 
-    // Slide window over file lines
-    for window_size in min_window..=max_window {
-        if window_size > file_lines.len() {
-            break;
+    for start_index in 0..=(file_lines.len() - base_window) {
+        // 首行预过滤：首行相似度低于阈值则跳过
+        let normalized_candidate_first = normalize_whitespace(file_lines[start_index]);
+        if compute_levenshtein_similarity(&normalized_first_line, &normalized_candidate_first, 0.5) < 0.5 {
+            continue;
         }
 
-        for start in 0..=(file_lines.len().saturating_sub(window_size)) {
-            let end = start + window_size;
-            let file_slice = file_lines[start..end].join("\n");
-            let similarity = compute_similarity(search_content, &file_slice);
+        // 尝试精确窗口大小
+        let exact_candidate = file_lines[start_index..start_index + base_window].join("\n");
+        let exact_score = if exact_candidate == search_content {
+            1.0
+        } else {
+            compute_levenshtein_similarity(
+                &normalized_search,
+                &normalize_whitespace(&exact_candidate),
+                threshold,
+            )
+        };
 
-            if similarity > best_similarity {
-                best_similarity = similarity;
-                best_start = start;
-                best_end = end;
+        if exact_score >= 0.9 {
+            if exact_score > best_similarity {
+                best_similarity = exact_score;
+                best_start = start_index;
+                best_end = start_index + base_window;
+            }
+            if best_similarity >= 0.95 {
+                return Some((best_start, best_end, best_similarity));
+            }
+            continue;
+        }
+
+        // 大块：尝试变窗口
+        if window_delta > 0 {
+            let mut score = exact_score;
+            let mut end = start_index + base_window;
+
+            for delta in 1..=window_delta {
+                // 更小窗口
+                if base_window > delta {
+                    let smaller = base_window - delta;
+                    let candidate = file_lines[start_index..start_index + smaller].join("\n");
+                    let s = if candidate == search_content {
+                        1.0
+                    } else {
+                        compute_levenshtein_similarity(
+                            &normalized_search,
+                            &normalize_whitespace(&candidate),
+                            threshold,
+                        )
+                    };
+                    if s > score {
+                        score = s;
+                        end = start_index + smaller;
+                    }
+                }
+
+                // 更大窗口
+                let larger = base_window + delta;
+                if start_index + larger <= file_lines.len() {
+                    let candidate = file_lines[start_index..start_index + larger].join("\n");
+                    let s = if candidate == search_content {
+                        1.0
+                    } else {
+                        compute_levenshtein_similarity(
+                            &normalized_search,
+                            &normalize_whitespace(&candidate),
+                            threshold,
+                        )
+                    };
+                    if s > score {
+                        score = s;
+                        end = start_index + larger;
+                    }
+                }
+
+                if score >= 0.95 {
+                    break;
+                }
             }
 
-            // Early exit if we found a very good match
-            if similarity > 0.95 {
+            if score >= threshold && score > best_similarity {
+                best_similarity = score;
+                best_start = start_index;
+                best_end = end;
+                if best_similarity >= 0.95 {
+                    return Some((best_start, best_end, best_similarity));
+                }
+            }
+        } else if exact_score >= threshold && exact_score > best_similarity {
+            best_similarity = exact_score;
+            best_start = start_index;
+            best_end = start_index + base_window;
+            if best_similarity >= 0.95 {
                 return Some((best_start, best_end, best_similarity));
             }
         }
@@ -671,58 +788,16 @@ fn find_best_line_match(search_content: &str, file_content: &str) -> Option<(usi
     }
 }
 
-/// 将行号范围 (0-indexed, end exclusive) 转换为字节范围。
-fn line_range_to_byte_range(content: &str, start_line: usize, end_line: usize) -> (usize, usize) {
-    let mut current_line = 0;
-    let mut start_byte = 0;
-    let mut end_byte = content.len();
-
-    for (byte_idx, ch) in content.char_indices() {
-        if current_line == start_line {
-            start_byte = byte_idx;
-        }
-        if ch == '\n' {
-            current_line += 1;
-            if current_line == end_line {
-                end_byte = byte_idx + 1; // Include the newline
-                break;
-            }
-        }
-    }
-
-    // Handle the case where end_line is the last line (no trailing newline)
-    if end_byte == content.len() && current_line < end_line {
-        end_byte = content.len();
-    }
-
-    (start_byte, end_byte)
-}
-
-/// 将字节偏移量转换为 1-based 行号范围（闭区间）。
-/// 用于把 replace_edit 的 matchIndex（字节偏移）转成可读的行号，
-/// 与 fuzzy 分支返回的 matchedLineStart/matchedLineEnd 语义一致。
-fn byte_offset_to_line_range(content: &str, start_byte: usize, end_byte: usize) -> (usize, usize) {
-    let start_byte = start_byte.min(content.len());
-    let end_byte = end_byte.min(content.len());
-    let start_line = content[..start_byte].matches('\n').count() + 1;
-    let end_line = if end_byte == 0 {
-        1
-    } else {
-        content[..end_byte].matches('\n').count() + 1
-    };
-    (start_line, end_line)
-}
-
 /// 构建编辑成功后的复核上下文：返回编辑区域前后各 EDIT_REVIEW_CONTEXT_LINES 行
 /// 的带行号代码块（编辑行以 ">>>" 标记），供 AI 复核编辑结果是否正确。
 ///
-/// edit_start_byte / edit_end_byte 是替换内容在新文件中的字节范围。
-fn build_edit_review_context(
+/// edit_start_line / edit_end_line 是 0-indexed 的行号（闭区间）。
+fn build_edit_review_context_lines(
     new_content: &str,
-    edit_start_byte: usize,
-    edit_end_byte: usize,
+    edit_start_line: usize,
+    edit_end_line: usize,
 ) -> Value {
-    let lines: Vec<&str> = new_content.lines().collect();
+    let lines: Vec<&str> = new_content.split('\n').collect();
     let total_lines = lines.len();
     if total_lines == 0 {
         return json!({
@@ -735,25 +810,14 @@ fn build_edit_review_context(
         });
     }
 
-    // 通过换行符计数定位编辑区域所在行（0-indexed），对 LF/CRLF 均安全。
-    let edit_start_line = new_content[..edit_start_byte].matches('\n').count();
-    let mut edit_end_line = new_content[..edit_end_byte].matches('\n').count();
-    // 若替换内容以换行结尾，end 落在下一行行首，需回退一行避免多标记。
-    if edit_end_byte > edit_start_byte
-        && new_content.as_bytes().get(edit_end_byte.wrapping_sub(1)) == Some(&b'\n')
-    {
-        edit_end_line = edit_end_line.saturating_sub(1);
-    }
-    if edit_end_line >= total_lines {
-        edit_end_line = total_lines - 1;
-    }
+    let edit_end = edit_end_line.min(total_lines.saturating_sub(1));
 
     let context_start = edit_start_line.saturating_sub(EDIT_REVIEW_CONTEXT_LINES);
-    let context_end = (edit_end_line + 1 + EDIT_REVIEW_CONTEXT_LINES).min(total_lines);
+    let context_end = (edit_end + 1 + EDIT_REVIEW_CONTEXT_LINES).min(total_lines);
 
     let block: Vec<String> = (context_start..context_end)
         .map(|i| {
-            let marker = if i >= edit_start_line && i <= edit_end_line {
+            let marker = if i >= edit_start_line && i <= edit_end {
                 ">>>"
             } else {
                 "   "
@@ -766,31 +830,29 @@ fn build_edit_review_context(
         "startLine": context_start + 1,
         "endLine": context_end,
         "editedLineStart": edit_start_line + 1,
-        "editedLineEnd": edit_end_line + 1,
+        "editedLineEnd": edit_end + 1,
         "totalLines": total_lines,
         "content": block.join("\n")
     })
 }
 
 /// 构建 "searchContent not found" 的详细错误信息，包含最相似区间的上下文。
-fn build_search_not_found_error(
+fn build_search_not_found_error_v2(
     search_content: &str,
-    file_content: &str,
+    file_lines: &[&str],
     file_path: &str,
     total_lines: usize,
 ) -> String {
-    let search_lines = search_content.lines().count();
+    let search_lines = search_content.split('\n').count();
     let search_preview: String = search_content
         .chars()
         .take(200)
         .collect::<String>()
         .replace('\n', "\\n");
 
-    // Try to find the closest match for helpful context
     if let Some((start_line, end_line, similarity)) =
-        find_best_line_match(search_content, file_content)
+        find_best_line_match_v2(search_content, file_lines)
     {
-        let file_lines: Vec<&str> = file_content.lines().collect();
         let context_start = start_line.saturating_sub(2);
         let context_end = (end_line + 2).min(file_lines.len());
 
