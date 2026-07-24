@@ -25,6 +25,7 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
           streamId: null,
           isSending: false,
           isAbortRequested: false,
+          runId: 0,
           directoryId: dirId,
           checkpointIds: [],
           hasAutoCompacted: false,

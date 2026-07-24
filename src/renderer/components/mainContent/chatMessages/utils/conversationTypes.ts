@@ -103,6 +103,15 @@ export type ConversationSessionRef = {
   streamId: string | null;
   isSending: boolean;
   isAbortRequested: boolean;
+  /**
+   * Generation counter incremented on every handleSendMessage and
+   * handleAbort invocation. runAgentLoop captures the value at start
+   * and treats a mismatch as a cancellation signal — this prevents
+   * stale loops from continuing after isAbortRequested is reset by a
+   * new send (the race window that occurs when aborting during tool
+   * execution).
+   */
+  runId: number;
   directoryId?: string;
   checkpointIds: string[];
   hasAutoCompacted: boolean;

@@ -76,9 +76,13 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
 
       ctx.ensureSession(sessionKey, sessionDirId);
       const sessionRef = ctx.sessionsRefData.current.get(sessionKey);
+      // Capture the current runId so runAgentLoop can detect when a newer
+      // send or abort has superseded this invocation.
+      const currentRunId = (sessionRef?.runId ?? 0) + 1;
       if (sessionRef) {
         sessionRef.isSending = true;
         sessionRef.isAbortRequested = false;
+        sessionRef.runId = currentRunId;
       }
 
       const userMessage: ChatConversationMessage = {
@@ -149,6 +153,18 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       }
 
       let finalSessionKey = sessionKey;
+
+      /**
+       * Returns true when the current run has been superseded — either by an
+       * explicit abort (isAbortRequested), by a newer send/abort that
+       * incremented runId, or because the session ref was deleted entirely.
+       * Stale loops call this at every await boundary and bail out early so
+       * they never write state belonging to a newer run.
+       */
+      const isRunCancelled = (key: string): boolean => {
+        const r = ctx.sessionsRefData.current.get(key);
+        return !r || r.isAbortRequested || r.runId !== currentRunId;
+      };
 
       const executeSubAgentActivation = async (
         argsJson: string,
@@ -749,7 +765,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         const iterSessionKey = currentConversationId ?? PENDING_SESSION_KEY;
         let effectiveKey = iterSessionKey;
 
-        if (ctx.sessionsRefData.current.get(effectiveKey)?.isAbortRequested) {
+        if (isRunCancelled(effectiveKey)) {
           return;
         }
 
@@ -771,9 +787,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             planMode: ctx.planModeRef.current,
           },
           (chunk) => {
-            if (
-              ctx.sessionsRefData.current.get(effectiveKey)?.isAbortRequested
-            ) {
+            if (isRunCancelled(effectiveKey)) {
               return;
             }
 
@@ -832,7 +846,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             const ref = ctx.sessionsRefData.current.get(effectiveKey);
             if (ref) {
               ref.streamId = streamId;
-              if (ref.isAbortRequested) {
+              if (isRunCancelled(effectiveKey)) {
                 void window.snow.abortResponseStream(streamId);
               }
             }
@@ -931,10 +945,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                   );
 
                 if (compactionSummary) {
-                  if (
-                    ctx.sessionsRefData.current.get(effectiveKey)
-                      ?.isAbortRequested
-                  ) {
+                  if (isRunCancelled(effectiveKey)) {
                     return;
                   }
 
@@ -973,7 +984,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           }
         }
 
-        if (ctx.sessionsRefData.current.get(effectiveKey)?.isAbortRequested) {
+        if (isRunCancelled(effectiveKey)) {
           return;
         }
 
@@ -1071,7 +1082,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         let userQuestionCancelled = false;
         for (let toolIndex = 0; toolIndex < toolCalls.length; toolIndex++) {
           const toolCall = toolCalls[toolIndex];
-          if (ctx.sessionsRefData.current.get(effectiveKey)?.isAbortRequested) {
+          if (isRunCancelled(effectiveKey)) {
             return;
           }
 
@@ -1457,7 +1468,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             `[Tool: ${toolResultIdentifier}]\n${modelToolResult}`
           );
 
-          if (ctx.sessionsRefData.current.get(effectiveKey)?.isAbortRequested) {
+          if (isRunCancelled(effectiveKey)) {
             return;
           }
         }
@@ -1591,10 +1602,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
 
                   // If the user aborted during compaction, stop here
                   // regardless of whether compaction succeeded.
-                  if (
-                    ctx.sessionsRefData.current.get(sessionKey)
-                      ?.isAbortRequested
-                  ) {
+                  if (isRunCancelled(sessionKey)) {
                     return;
                   }
 
@@ -1711,7 +1719,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         })
         .finally(() => {
           const ref = ctx.sessionsRefData.current.get(finalSessionKey);
-          if (ref) {
+          // Only clear isSending when this run is still the current one.
+          // If a newer send or abort has incremented runId, the newer run
+          // owns isSending and we must not clobber it.
+          if (ref && ref.runId === currentRunId) {
             ref.isSending = false;
           }
           ctx.updateSessionField(finalSessionKey, "isStreaming", false);
@@ -1721,7 +1732,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           // Flush pending messages queued while this session was busy.
           const pendingQueue =
             ctx.pendingQueueRef.current.get(finalSessionKey) ?? [];
-          if (!ref?.isAbortRequested && pendingQueue.length > 0) {
+          if (!isRunCancelled(finalSessionKey) && pendingQueue.length > 0) {
             ctx.pendingQueueRef.current.delete(finalSessionKey);
             const combined = pendingQueue.map((item) => item.text).join("\n\n");
             const lastOptions =
@@ -1781,7 +1792,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           // 如果用户正在看应用，主进程会自动跳过通知，不会打扰。
           if (
             finalSessionKey !== PENDING_SESSION_KEY &&
-            !ref?.isAbortRequested
+            !isRunCancelled(finalSessionKey)
           ) {
             const sessionState = ctx.sessionsRef.current?.[finalSessionKey];
             ctx.notifyAiComplete(sessionState?.summary || undefined);

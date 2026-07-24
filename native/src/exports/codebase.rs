@@ -69,14 +69,16 @@ struct EmbeddingSession {
     cancel_token: CancellationToken,
     pause_token: Arc<Notify>,
     is_paused: bool,
+    project_id: String,
 }
 
 impl EmbeddingSession {
-    fn new() -> Self {
+    fn new(project_id: String) -> Self {
         Self {
             cancel_token: CancellationToken::new(),
             pause_token: Arc::new(Notify::new()),
             is_paused: false,
+            project_id,
         }
     }
 }
@@ -94,9 +96,12 @@ where
     f(sessions)
 }
 
-fn register_session(session_id: &str) {
+fn register_session(session_id: &str, project_id: &str) {
     with_sessions(|sessions| {
-        sessions.insert(session_id.to_string(), EmbeddingSession::new());
+        sessions.insert(
+            session_id.to_string(),
+            EmbeddingSession::new(project_id.to_string()),
+        );
     });
 }
 
@@ -157,6 +162,18 @@ fn is_paused(session_id: &str) -> bool {
             .get(session_id)
             .map(|s| s.is_paused)
             .unwrap_or(false)
+    })
+}
+
+/// Check whether any embedding session is currently active (running or
+/// paused) for the given project. This queries the in-memory session
+/// registry, NOT the database — so it reflects the true live state of
+/// background embeddings even after the user switches projects.
+fn is_embedding_active_for_project(project_id: &str) -> bool {
+    with_sessions(|sessions| {
+        sessions
+            .values()
+            .any(|s| s.project_id == project_id)
     })
 }
 
@@ -257,7 +274,7 @@ pub async fn start_codebase_embedding(
     session_id: String,
     on_progress: EmbedProgressCallback,
 ) -> Result<()> {
-    register_session(&session_id);
+    register_session(&session_id, &project_id);
 
     let start_time = std::time::Instant::now();
 
@@ -1053,6 +1070,19 @@ pub async fn cancel_codebase_embedding(session_id: String) -> Result<bool> {
     Ok(success)
 }
 
+/// Check whether an embedding session is currently active (running or
+/// paused) for the given project. This queries the in-memory session
+/// registry — NOT the database — so it reflects the true live state of
+/// background embeddings even after the user switches projects.
+///
+/// The frontend uses this to decide whether to show "running" state when
+/// the user switches back to a project whose embedding is still in
+/// progress in the background.
+#[napi]
+pub fn is_codebase_embedding_active(project_id: String) -> bool {
+    is_embedding_active_for_project(&project_id)
+}
+
 /// Get the index statistics for a project.
 #[napi]
 pub async fn get_codebase_index_stats(project_id: String) -> Result<CodebaseIndexStats> {
@@ -1340,17 +1370,10 @@ pub async fn sync_codebase_changes(
 
     let project_root = PathBuf::from(&project_path);
 
-    // Phase 1: Scan files on disk
-    send_progress("scanning", 0, 0, 0, 0, "", "");
-
-    let scanned_files = {
-        let root = project_root.clone();
-        tokio::task::spawn_blocking(move || scan_project(&root))
-            .await
-            .map_err(|e| Error::from_reason(format!("File scan failed: {e}")))?
-    };
-
-    // Load indexed file hashes and paths
+    // Load indexed file hashes and paths BEFORE scanning. This lets us
+    // short-circuit: if the project has never been indexed (empty hashes
+    // and paths), there is nothing to sync — the frontend should show a
+    // scan preview / build-index flow instead of a "syncing" indicator.
     let indexed_file_hashes: HashMap<String, String> = {
         let db_path = Arc::clone(&database_path);
         let pid = (*project_id).clone();
@@ -1367,6 +1390,30 @@ pub async fn sync_codebase_changes(
             .await
             .map_err(|e| Error::from_reason(format!("Failed to load indexed paths: {e}")))?
             .map_err(|e| e)?
+    };
+
+    // Short-circuit: no existing index means there is nothing to sync.
+    // The frontend will detect the missing index and show the scan preview
+    // / build-index UI instead of a "syncing" spinner.
+    if indexed_file_hashes.is_empty() && indexed_file_paths.is_empty() {
+        send_progress("no_changes", 0, 0, 0, 0, "", "");
+        return Ok(CodebaseSyncResult {
+            changed: false,
+            embedded_files: 0,
+            deleted_files: 0,
+            skipped_files: 0,
+            error: String::new(),
+        });
+    }
+
+    // Phase 1: Scan files on disk
+    send_progress("scanning", 0, 0, 0, 0, "", "");
+
+    let scanned_files = {
+        let root = project_root.clone();
+        tokio::task::spawn_blocking(move || scan_project(&root))
+            .await
+            .map_err(|e| Error::from_reason(format!("File scan failed: {e}")))?
     };
 
     // Build the set of current file paths on disk

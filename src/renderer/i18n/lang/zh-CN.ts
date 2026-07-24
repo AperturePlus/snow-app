@@ -1246,6 +1246,7 @@ export const zhCN = {
     "项目文件已变更，向量索引可能已过时。建议重新嵌入以保持搜索准确度。",
   "projectCodebase.syncing": "正在自动同步代码库变更...",
   "topBar.codebaseSync.watching": "代码库监听中",
+  "topBar.codebaseSync.pending": "代码库未建库，待嵌入",
   "topBar.codebaseSync.changed": "代码库文件已变更，建议重新嵌入",
   "topBar.codebaseSync.syncing": "代码库同步中",
   "chatCommand.navigate": "选择",

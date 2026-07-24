@@ -636,6 +636,12 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to cancel codebase embedding"
           )
         ),
+      isCodebaseEmbeddingActive: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to check codebase embedding status"
+          )
+        ),
       getCodebaseIndexStats: () =>
         Promise.reject(
           new Error(

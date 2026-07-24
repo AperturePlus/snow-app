@@ -77,10 +77,20 @@ const ensureMcpToolChunkListener = (): void => {
   });
 };
 
-const codebaseEmbedProgressCallbacks = new Map<
-  string,
-  (progress: CodebaseEmbedProgress) => void
->();
+// Codebase embed progress: broadcast model.
+// The main process sends progress events with { sessionId, projectId, progress }.
+// We maintain a Set of subscribers (one per active panel/hook instance) that
+// each receive ALL embed progress events, filtered by projectId on the
+// subscriber side. This decouples the listener from any specific session,
+// so when the user switches projects and switches back, the new panel
+// instance can still receive progress for the ongoing background embedding.
+type EmbedProgressSubscriber = (
+  progress: CodebaseEmbedProgress,
+  projectId: string,
+  sessionId: string
+) => void;
+
+const codebaseEmbedProgressSubscribers = new Set<EmbedProgressSubscriber>();
 let codebaseEmbedProgressListenerRegistered = false;
 
 const ensureCodebaseEmbedProgressListener = (): void => {
@@ -98,15 +108,13 @@ const ensureCodebaseEmbedProgressListener = (): void => {
       if (typeof sessionId !== "string") {
         return;
       }
-      const callback = codebaseEmbedProgressCallbacks.get(sessionId);
-      if (!callback) {
-        return;
-      }
+      const projectId =
+        typeof payload.projectId === "string" ? payload.projectId : "";
       const progress = payload.progress;
       if (!isRecord(progress)) {
         return;
       }
-      callback({
+      const normalized: CodebaseEmbedProgress = {
         phase: typeof progress.phase === "string" ? progress.phase : "",
         totalFiles:
           typeof progress.totalFiles === "number" ? progress.totalFiles : 0,
@@ -125,7 +133,10 @@ const ensureCodebaseEmbedProgressListener = (): void => {
         error: typeof progress.error === "string" ? progress.error : "",
         elapsedMs:
           typeof progress.elapsedMs === "number" ? progress.elapsedMs : 0,
-      });
+      };
+      for (const subscriber of codebaseEmbedProgressSubscribers) {
+        subscriber(normalized, projectId, sessionId);
+      }
     }
   );
 };
@@ -154,18 +165,10 @@ export const systemApi = {
     ipcRenderer.invoke("codebase:check-project-gitignore", projectId),
   startCodebaseEmbedding: (
     projectId: string,
-    sessionId: string,
-    onProgress?: (progress: CodebaseEmbedProgress) => void
+    sessionId: string
   ): Promise<void> => {
     ensureCodebaseEmbedProgressListener();
-    if (onProgress) {
-      codebaseEmbedProgressCallbacks.set(sessionId, onProgress);
-    }
-    return ipcRenderer
-      .invoke("codebase:start-embedding", projectId, sessionId)
-      .finally(() => {
-        codebaseEmbedProgressCallbacks.delete(sessionId);
-      });
+    return ipcRenderer.invoke("codebase:start-embedding", projectId, sessionId);
   },
   pauseCodebaseEmbedding: (sessionId: string): Promise<boolean> =>
     ipcRenderer.invoke("codebase:pause-embedding", sessionId),
@@ -173,6 +176,21 @@ export const systemApi = {
     ipcRenderer.invoke("codebase:resume-embedding", sessionId),
   cancelCodebaseEmbedding: (sessionId: string): Promise<boolean> =>
     ipcRenderer.invoke("codebase:cancel-embedding", sessionId),
+  isCodebaseEmbeddingActive: (projectId: string): Promise<boolean> =>
+    ipcRenderer.invoke("codebase:is-embedding-active", projectId),
+  onCodebaseEmbedProgress: (
+    callback: (
+      progress: CodebaseEmbedProgress,
+      projectId: string,
+      sessionId: string
+    ) => void
+  ): (() => void) => {
+    ensureCodebaseEmbedProgressListener();
+    codebaseEmbedProgressSubscribers.add(callback);
+    return () => {
+      codebaseEmbedProgressSubscribers.delete(callback);
+    };
+  },
   getCodebaseIndexStats: (projectId: string): Promise<CodebaseIndexStats> =>
     ipcRenderer.invoke("codebase:get-index-stats", projectId),
   clearCodebaseIndex: (projectId: string): Promise<void> =>

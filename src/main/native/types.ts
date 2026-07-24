@@ -795,6 +795,7 @@ export type NativeBridge = {
   pauseCodebaseEmbedding: (sessionId: string) => Promise<boolean>;
   resumeCodebaseEmbedding: (sessionId: string) => Promise<boolean>;
   cancelCodebaseEmbedding: (sessionId: string) => Promise<boolean>;
+  isCodebaseEmbeddingActive: (projectId: string) => Promise<boolean>;
   getCodebaseIndexStats: (projectId: string) => Promise<CodebaseIndexStats>;
   clearCodebaseIndex: (projectId: string) => Promise<void>;
   startCodebaseWatch: (

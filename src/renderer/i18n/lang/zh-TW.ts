@@ -1247,6 +1247,7 @@ export const zhTW = {
     "專案檔案已變更，向量索引可能已過時。建議重新嵌入以保持搜尋準確度。",
   "projectCodebase.syncing": "正在自動同步程式碼庫變更...",
   "topBar.codebaseSync.watching": "程式碼庫監聽中",
+  "topBar.codebaseSync.pending": "程式碼庫未建庫，待嵌入",
   "topBar.codebaseSync.changed": "程式碼庫檔案已變更，建議重新嵌入",
   "topBar.codebaseSync.syncing": "程式碼庫同步中",
   "chatCommand.navigate": "選擇",

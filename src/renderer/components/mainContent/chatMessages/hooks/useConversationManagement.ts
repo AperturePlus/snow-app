@@ -122,6 +122,7 @@ export const useConversationManagement = (
           streamId: null,
           isSending: false,
           isAbortRequested: false,
+          runId: 0,
           directoryId: conversationDirId,
           checkpointIds,
           hasAutoCompacted: false,
@@ -283,6 +284,8 @@ export const useConversationManagement = (
     rejectAllToolAuthorizations();
     rejectPendingUserQuestions(key);
     ref.isAbortRequested = true;
+    ref.isSending = false;
+    ref.runId += 1;
     ctx.updateSessionMessages(key, (currentMessages) =>
       currentMessages.map((message) => ({
         ...message,

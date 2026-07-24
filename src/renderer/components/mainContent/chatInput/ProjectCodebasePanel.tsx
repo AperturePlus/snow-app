@@ -16,13 +16,12 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CodebaseProjectScopeSettings } from "../../../../preload";
 import type {
-  CodebaseEmbedProgress,
   CodebaseIndexStats,
   CodebaseScanPreview,
-  CodebaseSyncProgress,
-  ResumableCodebaseSession,
 } from "../../../../preload/types/settings";
 import { useI18n } from "../../../i18n";
+import { useCodebaseEmbedding } from "../../../hooks/useCodebaseEmbedding";
+import { useCodebaseSync } from "../../../hooks/useCodebaseSync";
 import { Modal } from "../../common/Modal";
 
 type ProjectCodebasePanelProps = {
@@ -33,11 +32,6 @@ type ProjectCodebasePanelProps = {
 };
 
 type ToggleKey = "enabled" | "enableAgentReview" | "enableReranking";
-
-type EmbedState = "idle" | "running" | "paused" | "completed" | "error";
-
-const createSessionId = (): string =>
-  `embed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const formatElapsed = (ms: number): string => {
   const seconds = Math.floor(ms / 1000);
@@ -66,34 +60,73 @@ export const ProjectCodebasePanel = ({
   onClose,
 }: ProjectCodebasePanelProps): React.JSX.Element => {
   const { t } = useI18n();
-  const [scope, setScope] = useState<CodebaseProjectScopeSettings | null>(null);
+
+  // ── Scope & gitignore (project-scoped data) ──────────────────────────
+  const [scope, setScope] = useState<CodebaseProjectScopeSettings | null>(
+    null
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingKey, setPendingKey] = useState<ToggleKey | null>(null);
   const [hasGitignore, setHasGitignore] = useState<boolean | null>(null);
+
+  // ── Index stats & scan preview (project-scoped data) ─────────────────
   const [indexStats, setIndexStats] = useState<CodebaseIndexStats | null>(null);
   const [indexStatsLoaded, setIndexStatsLoaded] = useState(false);
   const [scanPreview, setScanPreview] = useState<CodebaseScanPreview | null>(
     null
   );
   const [isScanningPreview, setIsScanningPreview] = useState(false);
-  const [embedState, setEmbedState] = useState<EmbedState>("idle");
-  const [embedProgress, setEmbedProgress] =
-    useState<CodebaseEmbedProgress | null>(null);
-  const [resumableSession, setResumableSession] =
-    useState<ResumableCodebaseSession | null>(null);
-  const [isResuming, setIsResuming] = useState(false);
-  const [syncProgress, setSyncProgress] = useState<CodebaseSyncProgress | null>(
-    null
-  );
-  const sessionIdRef = useRef<string | null>(null);
-  const loadGenerationRef = useRef(0);
-  const pendingGenerationRef = useRef(0);
 
+  // ── Generation guard for async loads (scope/stats/scan/resumable) ────
+  // Ensures that when the user switches projects, stale async results from
+  // the previous project don't overwrite the new project's state.
+  const loadGenerationRef = useRef(0);
+
+  // ── Embedding state (fully isolated by projectId via the hook) ──────
+  // The hook uses a generation counter internally: every project switch
+  // bumps the counter, permanently invalidating any in-flight progress
+  // callbacks from the previous project — even if the user switches back.
+  const loadIndexStats = useCallback(async (): Promise<void> => {
+    if (!projectId) {
+      return;
+    }
+    try {
+      const stats = await window.snow.getCodebaseIndexStats(projectId);
+      setIndexStats(stats);
+    } catch {
+      setIndexStats(null);
+    } finally {
+      setIndexStatsLoaded(true);
+    }
+  }, [projectId]);
+
+  const embedding = useCodebaseEmbedding({
+    projectId,
+    onEmbeddingDone: () => {
+      void loadIndexStats();
+    },
+  });
+
+  const isEmbedding =
+    embedding.embedState === "running" ||
+    embedding.embedState === "paused";
+
+  // ── Sync progress (fully isolated by projectId via the hook) ────────
+  const sync = useCodebaseSync({
+    projectId,
+    suppress: isEmbedding,
+    onSyncDone: () => {
+      void loadIndexStats();
+    },
+  });
+
+  const isEnabled = scope?.enabled ?? false;
+
+  // ── Load scope & gitignore when project changes ──────────────────────
   const loadScope = useCallback(async (): Promise<void> => {
     const generation = loadGenerationRef.current + 1;
     loadGenerationRef.current = generation;
-    pendingGenerationRef.current = generation;
     setPendingKey(null);
     setScope(null);
     setError(null);
@@ -127,20 +160,6 @@ export const ProjectCodebasePanel = ({
     }
   }, [projectId]);
 
-  const loadIndexStats = useCallback(async (): Promise<void> => {
-    if (!projectId) {
-      return;
-    }
-    try {
-      const stats = await window.snow.getCodebaseIndexStats(projectId);
-      setIndexStats(stats);
-    } catch {
-      setIndexStats(null);
-    } finally {
-      setIndexStatsLoaded(true);
-    }
-  }, [projectId]);
-
   const loadScanPreview = useCallback(async (): Promise<void> => {
     if (!projectId) {
       return;
@@ -156,171 +175,34 @@ export const ProjectCodebasePanel = ({
     }
   }, [projectId]);
 
-  const loadResumableSession = useCallback(async (): Promise<void> => {
-    if (!projectId) {
-      return;
-    }
-    try {
-      const sessions = await window.snow.getResumableCodebaseSessions(
-        projectId
-      );
-      // Only show the most recent resumable session; older ones are
-      // discarded to keep the UI simple.
-      setResumableSession(sessions.length > 0 ? sessions[0] : null);
-    } catch {
-      setResumableSession(null);
-    }
-  }, [projectId]);
-
-  const handleResumeSession = useCallback(async (): Promise<void> => {
-    const session = resumableSession;
-    if (!session || !projectId) {
-      return;
-    }
-    setIsResuming(true);
-    setError(null);
-    try {
-      // Reuse the interrupted session id so the Rust side can update the
-      // existing persisted record instead of creating a new one. The
-      // embedding loop will skip files whose vectors are already stored
-      // (insert_vectors deletes-and-reinserts per file_path, and files
-      // that haven't changed since the last run are skipped by hash).
-      sessionIdRef.current = session.sessionId;
-      setEmbedState("running");
-      setResumableSession(null);
-      setScanPreview(null);
-
-      await window.snow.startCodebaseEmbedding(
-        projectId,
-        session.sessionId,
-        (progress: CodebaseEmbedProgress) => {
-          setEmbedProgress(progress);
-          if (progress.phase === "done") {
-            setEmbedState("completed");
-            setScanPreview(null);
-          } else if (progress.phase === "error") {
-            setEmbedState("error");
-            if (progress.error) {
-              setError(progress.error);
-            }
-          } else if (progress.phase === "cancelled") {
-            setEmbedState("idle");
-          } else if (progress.phase === "paused") {
-            setEmbedState("paused");
-          }
-        }
-      );
-      void loadIndexStats();
-    } catch (resumeError) {
-      setEmbedState("error");
-      setError(
-        resumeError instanceof Error ? resumeError.message : String(resumeError)
-      );
-    } finally {
-      setIsResuming(false);
-    }
-  }, [resumableSession, projectId, loadIndexStats]);
-
-  const handleDiscardSession = useCallback(async (): Promise<void> => {
-    const session = resumableSession;
-    if (!session) {
-      return;
-    }
-    try {
-      await window.snow.discardResumableCodebaseSession(session.sessionId);
-      setResumableSession(null);
-    } catch (discardError) {
-      setError(
-        discardError instanceof Error
-          ? discardError.message
-          : String(discardError)
-      );
-    }
-  }, [resumableSession]);
-
-  const isEnabled = scope?.enabled ?? false;
-  const isEmbedding = embedState === "running" || embedState === "paused";
-
-  // Persistently listen to codebase sync progress events. The TopBar's
-  // useCodebaseWatcher automatically triggers syncs (on watcher start for
-  // offline changes, and on file-change events). This panel listens to the
-  // broadcast sync progress to show real-time status.
-  useEffect(() => {
-    if (!projectId) {
-      setSyncProgress(null);
-      return;
-    }
-
-    const dispose = window.snow.onCodebaseSyncProgress(
-      (progress, changedProjectId) => {
-        // Only show progress for the currently active project.
-        if (changedProjectId !== projectId) {
-          return;
-        }
-
-        // Don't show sync progress while embedding — the index is being
-        // rebuilt by the user's explicit embedding action.
-        if (embedState === "running" || embedState === "paused") {
-          return;
-        }
-
-        // Terminal phases clear the progress display.
-        if (
-          progress.phase === "done" ||
-          progress.phase === "no_changes" ||
-          progress.phase === "error"
-        ) {
-          setSyncProgress(null);
-          // Refresh index stats after sync completes to reflect changes.
-          if (progress.phase === "done" || progress.phase === "no_changes") {
-            void loadIndexStats();
-          }
-          return;
-        }
-
-        // Non-terminal phases (scanning/deleting/embedding) update the display.
-        setSyncProgress(progress);
-      }
-    );
-
-    return () => {
-      dispose();
-    };
-  }, [projectId, embedState, loadIndexStats]);
-
-  // Reset sync progress when an embedding starts.
-  useEffect(() => {
-    if (embedState === "running") {
-      setSyncProgress(null);
-    }
-  }, [embedState]);
-
+  // ── Reset project-scoped data when the panel opens or project changes ─
   useEffect(() => {
     if (open) {
-      // Clear any stale sync progress from a previous session when reopening.
-      setSyncProgress(null);
+      sync.clearSyncProgress();
+      setScanPreview(null);
+      setIndexStats(null);
       setIndexStatsLoaded(false);
       void loadScope();
       void loadIndexStats();
-      void loadResumableSession();
+      void embedding.loadResumableSession();
       return;
     }
 
-    // When closing the panel, reset scope-loading state and sync progress.
-    // Embedding state (embedState, embedProgress, sessionIdRef) is preserved
-    // so that the background embedding continues and progress callbacks keep
-    // updating the UI. When the user reopens the panel, they see the current
-    // embedding status instead of a stale "idle" state.
-    setSyncProgress(null);
+    // When closing: reset scope-loading state and sync progress.
+    // Embedding state is owned by the hook and isolated by projectId, so
+    // it does not need to be reset here — the hook's internal generation
+    // guard prevents stale callbacks from leaking.
+    sync.clearSyncProgress();
+    setScanPreview(null);
+    setIndexStats(null);
+    setIndexStatsLoaded(false);
     loadGenerationRef.current += 1;
-    pendingGenerationRef.current = loadGenerationRef.current;
     setPendingKey(null);
     setIsLoading(false);
-  }, [loadScope, loadIndexStats, loadResumableSession, open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, projectId, loadScope, loadIndexStats]);
 
-  // Auto-load scan preview when codebase is enabled and no index exists yet.
-  // Wait for indexStats to load first so we don't trigger a preview scan
-  // when the project is already indexed.
+  // ── Auto-load scan preview when codebase is enabled and no index yet ─
   useEffect(() => {
     if (
       open &&
@@ -342,13 +224,13 @@ export const ProjectCodebasePanel = ({
     loadScanPreview,
   ]);
 
+  // ── Toggle handlers ──────────────────────────────────────────────────
   const toggle = async (key: ToggleKey, enabled: boolean): Promise<void> => {
     if (!projectId || pendingKey) {
       return;
     }
 
     const generation = loadGenerationRef.current;
-    pendingGenerationRef.current = generation;
     setPendingKey(key);
     setError(null);
     setScope((current) => (current ? { ...current, [key]: enabled } : current));
@@ -379,98 +261,6 @@ export const ProjectCodebasePanel = ({
     }
   };
 
-  const handleStartEmbedding = useCallback(async (): Promise<void> => {
-    if (!projectId || embedState === "running") {
-      return;
-    }
-
-    const sessionId = createSessionId();
-    sessionIdRef.current = sessionId;
-    setEmbedState("running");
-    setEmbedProgress(null);
-    setError(null);
-    // Clear the preview once embedding starts — it's no longer relevant.
-    setScanPreview(null);
-
-    try {
-      await window.snow.startCodebaseEmbedding(
-        projectId,
-        sessionId,
-        (progress: CodebaseEmbedProgress) => {
-          setEmbedProgress(progress);
-          if (progress.phase === "done") {
-            setEmbedState("completed");
-            // Clear the preview — the actual index stats replace it.
-            setScanPreview(null);
-          } else if (progress.phase === "error") {
-            setEmbedState("error");
-            if (progress.error) {
-              setError(progress.error);
-            }
-          } else if (progress.phase === "cancelled") {
-            setEmbedState("idle");
-          } else if (progress.phase === "paused") {
-            setEmbedState("paused");
-          }
-        }
-      );
-      // Reload stats after completion
-      void loadIndexStats();
-    } catch (embedError) {
-      setEmbedState("error");
-      setError(
-        embedError instanceof Error ? embedError.message : String(embedError)
-      );
-    }
-  }, [projectId, embedState, loadIndexStats]);
-
-  const handlePauseEmbedding = useCallback(async (): Promise<void> => {
-    const sessionId = sessionIdRef.current;
-    if (!sessionId) {
-      return;
-    }
-    try {
-      await window.snow.pauseCodebaseEmbedding(sessionId);
-      setEmbedState("paused");
-    } catch (pauseError) {
-      setError(
-        pauseError instanceof Error ? pauseError.message : String(pauseError)
-      );
-    }
-  }, []);
-
-  const handleResumeEmbedding = useCallback(async (): Promise<void> => {
-    const sessionId = sessionIdRef.current;
-    if (!sessionId) {
-      return;
-    }
-    try {
-      await window.snow.resumeCodebaseEmbedding(sessionId);
-      setEmbedState("running");
-    } catch (resumeError) {
-      setError(
-        resumeError instanceof Error ? resumeError.message : String(resumeError)
-      );
-    }
-  }, []);
-
-  const handleCancelEmbedding = useCallback(async (): Promise<void> => {
-    const sessionId = sessionIdRef.current;
-    if (!sessionId) {
-      return;
-    }
-    try {
-      await window.snow.cancelCodebaseEmbedding(sessionId);
-      setEmbedState("idle");
-      setEmbedProgress(null);
-      sessionIdRef.current = null;
-    } catch (cancelError) {
-      setError(
-        cancelError instanceof Error ? cancelError.message : String(cancelError)
-      );
-    }
-  }, []);
-
   const handleClearIndex = useCallback(async (): Promise<void> => {
     if (!projectId) {
       return;
@@ -479,11 +269,8 @@ export const ProjectCodebasePanel = ({
       await window.snow.clearCodebaseIndex(projectId);
       setIndexStats(null);
       setIndexStatsLoaded(false);
-      setEmbedState("idle");
-      setEmbedProgress(null);
       // Clear preview so it auto-reloads after clearing the index.
       setScanPreview(null);
-      // Reload stats to update indexStatsLoaded.
       void loadIndexStats();
     } catch (clearError) {
       setError(
@@ -502,9 +289,7 @@ export const ProjectCodebasePanel = ({
 
     return (
       <article
-        className={`project-sensitive-command-row${
-          checked ? " is-enabled" : ""
-        }`}
+        className={`project-sensitive-command-row${checked ? " is-enabled" : ""}`}
       >
         <SearchCode size={15} />
         <div className="project-sensitive-command-content">
@@ -539,14 +324,16 @@ export const ProjectCodebasePanel = ({
   };
 
   const progressPercent =
-    embedProgress && embedProgress.totalChunks > 0
+    embedding.embedProgress && embedding.embedProgress.totalChunks > 0
       ? Math.round(
-          (embedProgress.processedChunks / embedProgress.totalChunks) * 100
+          (embedding.embedProgress.processedChunks /
+            embedding.embedProgress.totalChunks) *
+            100
         )
       : 0;
 
-  const phaseLabel = embedProgress
-    ? t(`projectCodebase.phase.${embedProgress.phase}`)
+  const phaseLabel = embedding.embedProgress
+    ? t(`projectCodebase.phase.${embedding.embedProgress.phase}`)
     : "";
 
   return (
@@ -637,14 +424,14 @@ export const ProjectCodebasePanel = ({
                 </div>
               </div>
 
-              {syncProgress && !isEmbedding ? (
+              {sync.syncProgress && indexStats?.isIndexed && !isEmbedding ? (
                 <div className="project-codebase-files-changed-hint">
                   <Loader2 size={14} className="spin" />
                   <span>{t("projectCodebase.syncing")}</span>
                 </div>
               ) : null}
 
-              {resumableSession && !isEmbedding ? (
+              {embedding.resumableSession && !isEmbedding ? (
                 <div className="project-codebase-resumable-session">
                   <div className="project-codebase-resumable-info">
                     <RotateCcw size={15} />
@@ -652,19 +439,19 @@ export const ProjectCodebasePanel = ({
                       <strong>
                         {t("projectCodebase.resume.title")}
                         <span className="project-codebase-resumable-status">
-                          {resumableSession.status === "paused"
+                          {embedding.resumableSession.status === "paused"
                             ? t("projectCodebase.resume.statusPaused")
                             : t("projectCodebase.resume.statusInterrupted")}
                         </span>
                       </strong>
                       <span>{t("projectCodebase.resume.description")}</span>
-                      {resumableSession.totalFiles > 0 ? (
+                      {embedding.resumableSession.totalFiles > 0 ? (
                         <span className="project-codebase-resumable-progress">
                           {t("projectCodebase.resume.progress", {
                             values: {
-                              processed: resumableSession.processedFiles,
-                              total: resumableSession.totalFiles,
-                              chunks: resumableSession.processedChunks,
+                              processed: embedding.resumableSession.processedFiles,
+                              total: embedding.resumableSession.totalFiles,
+                              chunks: embedding.resumableSession.processedChunks,
                             },
                           })}
                         </span>
@@ -674,11 +461,11 @@ export const ProjectCodebasePanel = ({
                   <div className="project-codebase-resumable-actions">
                     <button
                       className="project-codebase-embed-btn primary"
-                      disabled={isResuming}
-                      onClick={() => void handleResumeSession()}
+                      disabled={embedding.isResuming}
+                      onClick={() => void embedding.resumeSession()}
                       type="button"
                     >
-                      {isResuming ? (
+                      {embedding.isResuming ? (
                         <Loader2 className="spin" size={14} />
                       ) : (
                         <Play size={14} />
@@ -687,8 +474,8 @@ export const ProjectCodebasePanel = ({
                     </button>
                     <button
                       className="project-codebase-embed-btn"
-                      disabled={isResuming}
-                      onClick={() => void handleDiscardSession()}
+                      disabled={embedding.isResuming}
+                      onClick={() => void embedding.discardSession()}
                       type="button"
                     >
                       <X size={14} />
@@ -698,7 +485,7 @@ export const ProjectCodebasePanel = ({
                 </div>
               ) : null}
 
-              {embedState === "completed" && indexStats ? (
+              {embedding.embedState === "completed" && indexStats ? (
                 <div className="project-codebase-index-stats">
                   <div className="project-codebase-stat-item">
                     <span className="project-codebase-stat-label">
@@ -763,30 +550,30 @@ export const ProjectCodebasePanel = ({
                 </div>
               ) : null}
 
-              {embedProgress ? (
+              {embedding.embedProgress ? (
                 <div className="project-codebase-embed-progress">
                   <div className="project-codebase-embed-progress-info">
                     <span className="project-codebase-embed-phase">
                       {phaseLabel}
                     </span>
-                    {embedProgress.currentFile ? (
+                    {embedding.embedProgress.currentFile ? (
                       <span
                         className="project-codebase-embed-file"
-                        title={embedProgress.currentFile}
+                        title={embedding.embedProgress.currentFile}
                       >
-                        {embedProgress.currentFile}
+                        {embedding.embedProgress.currentFile}
                       </span>
                     ) : null}
                     <span className="project-codebase-embed-counts">
-                      {embedProgress.processedChunks} /{" "}
-                      {embedProgress.totalChunks}
-                      {embedProgress.totalFiles > 0
-                        ? ` (${embedProgress.processedFiles}/${embedProgress.totalFiles})`
+                      {embedding.embedProgress.processedChunks} /{" "}
+                      {embedding.embedProgress.totalChunks}
+                      {embedding.embedProgress.totalFiles > 0
+                        ? ` (${embedding.embedProgress.processedFiles}/${embedding.embedProgress.totalFiles})`
                         : ""}
                     </span>
-                    {embedProgress.elapsedMs > 0 ? (
+                    {embedding.embedProgress.elapsedMs > 0 ? (
                       <span className="project-codebase-embed-elapsed">
-                        {formatElapsed(embedProgress.elapsedMs)}
+                        {formatElapsed(embedding.embedProgress.elapsedMs)}
                       </span>
                     ) : null}
                   </div>
@@ -800,36 +587,37 @@ export const ProjectCodebasePanel = ({
               ) : null}
 
               <div className="project-codebase-embed-actions">
-                {(embedState === "idle" || embedState === "completed") &&
-                !resumableSession ? (
+                {(embedding.embedState === "idle" ||
+                  embedding.embedState === "completed") &&
+                !embedding.resumableSession ? (
                   <button
                     className="project-codebase-embed-btn primary"
                     disabled={isEmbedding}
-                    onClick={() => void handleStartEmbedding()}
+                    onClick={() => void embedding.startEmbedding()}
                     type="button"
                   >
                     <Play size={14} />
                     <span>
-                      {embedState === "completed"
+                      {embedding.embedState === "completed"
                         ? t("projectCodebase.embedding.reindex")
                         : t("projectCodebase.embedding.start")}
                     </span>
                   </button>
                 ) : null}
-                {embedState === "running" ? (
+                {embedding.embedState === "running" ? (
                   <button
                     className="project-codebase-embed-btn"
-                    onClick={() => void handlePauseEmbedding()}
+                    onClick={() => void embedding.pauseEmbedding()}
                     type="button"
                   >
                     <Pause size={14} />
                     <span>{t("projectCodebase.embedding.pause")}</span>
                   </button>
                 ) : null}
-                {embedState === "paused" ? (
+                {embedding.embedState === "paused" ? (
                   <button
                     className="project-codebase-embed-btn primary"
-                    onClick={() => void handleResumeEmbedding()}
+                    onClick={() => void embedding.resumeEmbedding()}
                     type="button"
                   >
                     <Play size={14} />
@@ -839,7 +627,7 @@ export const ProjectCodebasePanel = ({
                 {isEmbedding ? (
                   <button
                     className="project-codebase-embed-btn danger"
-                    onClick={() => void handleCancelEmbedding()}
+                    onClick={() => void embedding.cancelEmbedding()}
                     type="button"
                   >
                     <Square size={14} />
@@ -849,7 +637,7 @@ export const ProjectCodebasePanel = ({
                 {indexStats &&
                 indexStats.isIndexed &&
                 !isEmbedding &&
-                !resumableSession ? (
+                !embedding.resumableSession ? (
                   <button
                     className="project-codebase-embed-btn danger"
                     onClick={() => void handleClearIndex()}

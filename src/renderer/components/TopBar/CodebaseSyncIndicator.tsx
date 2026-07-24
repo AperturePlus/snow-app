@@ -1,4 +1,4 @@
-import { Database, Loader2, RefreshCw } from "lucide-react";
+import { Database, Loader2 } from "lucide-react";
 import { useI18n } from "../../i18n";
 import type { CodebaseSyncStatus } from "../../hooks/useCodebaseWatcher";
 
@@ -9,6 +9,8 @@ type CodebaseSyncIndicatorProps = {
   watchedProjectId: string | undefined;
   /** The currently active project id (used to decide visibility). */
   activeProjectId: string | undefined;
+  /** Whether the project has an existing index (totalChunks > 0). */
+  isIndexed: boolean;
 };
 
 /**
@@ -20,7 +22,10 @@ type CodebaseSyncIndicatorProps = {
  * - Hidden when `syncStatus` is `idle` (codebase disabled or no project).
  *
  * Visual states:
- * - `watching`: Database icon with a subtle green dot — index is up to date.
+ * - `watching` + indexed: Database icon with a green dot — index is up to
+ *   date, watching for file changes.
+ * - `watching` + not indexed: Database icon with an amber pulsing dot —
+ *   codebase is enabled but embedding has not been started yet.
  * - `syncing`: Loader2 icon (spinning) with a blue dot — incremental sync
  *   in progress (embedding new/changed files, deleting removed files).
  */
@@ -28,6 +33,7 @@ export const CodebaseSyncIndicator = ({
   syncStatus,
   watchedProjectId,
   activeProjectId,
+  isIndexed,
 }: CodebaseSyncIndicatorProps): React.JSX.Element | null => {
   const { t } = useI18n();
 
@@ -41,15 +47,23 @@ export const CodebaseSyncIndicator = ({
   }
 
   const isSyncing = syncStatus === "syncing";
+  const isPending = !isSyncing && !isIndexed;
+
   const label = isSyncing
     ? t("topBar.codebaseSync.syncing")
-    : t("topBar.codebaseSync.watching");
+    : isPending
+      ? t("topBar.codebaseSync.pending")
+      : t("topBar.codebaseSync.watching");
+
+  const className = isSyncing
+    ? "is-syncing"
+    : isPending
+      ? "is-pending"
+      : "is-watching";
 
   return (
     <button
-      className={`icon-btn ghost top-bar-codebase-sync${
-        isSyncing ? " is-syncing" : " is-watching"
-      }`}
+      className={`icon-btn ghost top-bar-codebase-sync ${className}`}
       type="button"
       aria-label={label}
       title={label}

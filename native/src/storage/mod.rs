@@ -2,7 +2,11 @@ pub mod database;
 mod paths;
 pub mod services;
 
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::PathBuf,
+    sync::Once,
+};
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -372,6 +376,8 @@ pub struct ChatMessagePage {
     pub has_more: bool,
 }
 
+static INTERRUPT_MARK_INIT: Once = Once::new();
+
 pub fn initialize_app_storage() -> Result<AppStorageInfo> {
     let storage_dir = ensure_storage_dir()?;
     let database_path = paths::database_file_path(&storage_dir);
@@ -382,14 +388,19 @@ pub fn initialize_app_storage() -> Result<AppStorageInfo> {
     services::sensitive_command_configs::seed_default_sensitive_command_configs(&database_path)?;
 
     // Mark any embedding sessions that were still "running" or "paused" when
-    // the app was last closed as "interrupted". This lets the frontend detect
-    // them via `get_resumable_codebase_sessions` and offer to resume. Errors
-    // here are non-fatal — we just log them so storage init still succeeds.
-    if let Err(error) =
-        services::codebase_embed_sessions::mark_interrupted_sessions(&database_path)
-    {
-        eprintln!("Failed to mark interrupted codebase sessions: {error}");
-    }
+    // the app was last closed as "interrupted". This should only run ONCE per
+    // process lifetime — at startup. Without this guard, every subsequent
+    // call to initialize_app_storage() (which happens on every API call)
+    // would mark genuinely-active sessions as "interrupted", causing the
+    // frontend to show a false "interrupted" prompt when the user switches
+    // projects and switches back. Errors here are non-fatal.
+    INTERRUPT_MARK_INIT.call_once(|| {
+        if let Err(error) =
+            services::codebase_embed_sessions::mark_interrupted_sessions(&database_path)
+        {
+            eprintln!("Failed to mark interrupted codebase sessions: {error}");
+        }
+    });
 
     Ok(AppStorageInfo {
         directory_path: storage_dir.to_string_lossy().into_owned(),

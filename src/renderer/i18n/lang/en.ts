@@ -1322,6 +1322,7 @@ export const en = {
     "Project files have changed and the vector index may be stale. Re-embed to keep search accurate.",
   "projectCodebase.syncing": "Auto-syncing codebase changes...",
   "topBar.codebaseSync.watching": "Codebase watching",
+  "topBar.codebaseSync.pending": "Codebase not indexed — embedding pending",
   "topBar.codebaseSync.changed":
     "Codebase files changed — re-embed recommended",
   "topBar.codebaseSync.syncing": "Codebase syncing",

@@ -53,6 +53,7 @@ export const TopBar = ({
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
   const [isTodoPanelOpen, setIsTodoPanelOpen] = useState(false);
   const [codebaseEnabled, setCodebaseEnabled] = useState(false);
+  const [codebaseIndexed, setCodebaseIndexed] = useState(false);
   // Track which projectId the codebaseEnabled state corresponds to. This is
   // used to detect stale enabled values during project switches — when the
   // active project changes, codebaseEnabled may still hold the previous
@@ -138,6 +139,55 @@ export const TopBar = ({
     projectPath: activeProjectPath,
     enabled: effectiveEnabled,
   });
+
+  // Load index stats to determine whether the codebase has been indexed.
+  // The indicator uses this to distinguish "watching with an existing index"
+  // (green dot) from "enabled but never embedded" (amber pulsing dot).
+  // Reload when the project changes or when a sync completes.
+  useEffect(() => {
+    if (!activeProjectId) {
+      setCodebaseIndexed(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadStats = (): void => {
+      void window.snow
+        .getCodebaseIndexStats(activeProjectId)
+        .then((stats) => {
+          if (!cancelled) {
+            setCodebaseIndexed(stats.isIndexed);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setCodebaseIndexed(false);
+          }
+        });
+    };
+
+    loadStats();
+
+    // Refresh stats after a sync completes (done / no_changes) so the
+    // indicator updates from "pending" to "watching" once the first embed
+    // finishes, or stays current after incremental syncs.
+    const disposeSync = window.snow.onCodebaseSyncProgress(
+      (progress, changedProjectId) => {
+        if (
+          changedProjectId === activeProjectId &&
+          (progress.phase === "done" || progress.phase === "no_changes")
+        ) {
+          loadStats();
+        }
+      }
+    );
+
+    return () => {
+      cancelled = true;
+      disposeSync();
+    };
+  }, [activeProjectId]);
 
   useEffect(() => {
     if (!conversationDirectoryId) {
@@ -275,6 +325,7 @@ export const TopBar = ({
           syncStatus={syncStatus}
           watchedProjectId={watchedProjectId}
           activeProjectId={activeProjectId}
+          isIndexed={codebaseIndexed}
         />
       </div>
 

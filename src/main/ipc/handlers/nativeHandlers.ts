@@ -170,6 +170,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
           }
           event.sender.send("codebase:embed:progress", {
             sessionId: normalizedSessionId,
+            projectId: normalizedProjectId,
             progress,
           });
         }
@@ -194,6 +195,15 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     }
     return native.cancelCodebaseEmbedding(sessionId.trim());
   });
+  ipcMain.handle(
+    "codebase:is-embedding-active",
+    (_event, projectId: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      return native.isCodebaseEmbeddingActive(projectId.trim());
+    }
+  );
   ipcMain.handle("codebase:get-index-stats", (_event, projectId: unknown) => {
     if (typeof projectId !== "string" || !projectId.trim()) {
       throw new Error("Project id is required");

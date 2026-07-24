@@ -456,6 +456,10 @@ input {
   color: var(--text-muted);
 }
 
+.top-bar-codebase-sync.is-pending {
+  color: var(--text-muted);
+}
+
 .top-bar-codebase-sync.is-changed {
   color: var(--accent-blue);
 }
@@ -481,6 +485,11 @@ input {
 
 .top-bar-codebase-sync.is-watching .top-bar-codebase-sync-dot {
   background: var(--accent-green);
+}
+
+.top-bar-codebase-sync.is-pending .top-bar-codebase-sync-dot {
+  background: var(--accent-amber-text, #b45309);
+  animation: codebase-sync-pulse 1.5s ease-in-out infinite;
 }
 
 .top-bar-codebase-sync.is-changed .top-bar-codebase-sync-dot {
@@ -11411,11 +11420,12 @@ input {
 
 .project-codebase-scan-preview {
   display: flex;
+  align-items: center;
   gap: 16px;
   padding: 8px 10px;
-  border: 1px solid var(--accent-blue);
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--accent-blue) 8%, var(--bg-tertiary));
+  background: var(--bg-tertiary);
 }
 
 .project-codebase-stat-item {
