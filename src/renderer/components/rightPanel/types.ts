@@ -5,7 +5,12 @@ import type {
   WorkspaceDirectoryRecord,
 } from "../../../preload";
 
-export type RightPanelContentKey = "git" | "terminal" | "browser" | "file";
+export type RightPanelContentKey =
+  | "git"
+  | "terminal"
+  | "browser"
+  | "file"
+  | "file-diff-preview";
 
 export type RightPanelContentProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
@@ -34,11 +39,25 @@ export type FileViewerTabData = {
   sshSessionId?: string | null;
 };
 
+export type FileDiffPreviewTabData = {
+  fileName: string;
+  filePath: string;
+  patch: string | null;
+  oldStartLine?: number;
+  newStartLine?: number;
+  changeType: "added" | "modified" | "deleted";
+};
+
 export type RightPanelTab = {
   id: string;
-  type: "git" | "diff" | "terminal" | "browser" | "file";
+  type: "git" | "diff" | "terminal" | "browser" | "file" | "file-diff-preview";
   title: string;
-  data?: DiffTabData | TerminalTabData | BrowserTabData | FileViewerTabData;
+  data?:
+    | DiffTabData
+    | TerminalTabData
+    | BrowserTabData
+    | FileViewerTabData
+    | FileDiffPreviewTabData;
 };
 
 export type OpenDiffTabCallback = (
@@ -46,6 +65,8 @@ export type OpenDiffTabCallback = (
   diffResult: GitDiffResult | null,
   diffLoading: boolean
 ) => void;
+
+export type OpenFileDiffPreviewTabCallback = (data: FileDiffPreviewTabData) => void;
 
 export type OpenFileTabCallback = (
   filePath: string,

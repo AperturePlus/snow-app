@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { ExternalLink } from "lucide-react";
 
 import { GitDiffView } from "../../../../common/GitDiffView";
 
@@ -11,6 +12,10 @@ type MiniDiffViewerProps = {
    * 用于编辑工具调用时,让 diff 显示正确的源文件行号而非始终从 1 开始。
    */
   startLine?: number;
+  /** 在右侧面板新标签页中查看完整 diff 的回调;未提供时不渲染按钮。 */
+  onOpenInTab?: () => void;
+  /** 打开按钮的 title / aria-label 文案。 */
+  openInTabLabel?: string;
 };
 
 /**
@@ -23,16 +28,31 @@ export const MiniDiffViewer = memo(
     oldContent,
     newContent,
     startLine,
+    onOpenInTab,
+    openInTabLabel,
   }: MiniDiffViewerProps): React.JSX.Element => (
     <div className="tool-call-diff-content">
-      <GitDiffView
-        fileName={fileName}
-        oldContent={oldContent}
-        newContent={newContent}
-        fontSize={11}
-        oldStartLine={startLine}
-        newStartLine={startLine}
-      />
+      <div className="tool-call-diff-view">
+        <GitDiffView
+          fileName={fileName}
+          oldContent={oldContent}
+          newContent={newContent}
+          fontSize={11}
+          oldStartLine={startLine}
+          newStartLine={startLine}
+        />
+      </div>
+      {onOpenInTab ? (
+        <button
+          type="button"
+          className="tool-call-diff-open-tab"
+          onClick={onOpenInTab}
+          title={openInTabLabel}
+          aria-label={openInTabLabel}
+        >
+          <ExternalLink size={11} strokeWidth={1.8} />
+        </button>
+      ) : null}
     </div>
   )
 );

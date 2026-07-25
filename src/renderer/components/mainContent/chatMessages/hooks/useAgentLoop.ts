@@ -475,6 +475,13 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               dirId
             );
 
+            // 非 YOLO 模式授权判定：单工具被拒绝，或多工具全部被拒绝时，
+            // sub-agent 流程直接结束；部分拒绝时，已拒绝的工具返回拒绝
+            // 结果给 AI，已批准的工具正常执行，Loop 继续。
+            const subAllToolsRejected = subAuthorizationDecisions.every(
+              (decision) => decision.status === "rejected"
+            );
+
             const subToolResults: string[] = [];
             for (
               let subToolIndex = 0;
@@ -695,6 +702,15 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               ...currentMessages,
               subToolResultMessage,
             ]);
+
+            // 非 YOLO 模式：当本批次所有工具均被用户拒绝时，sub-agent 流程
+            // 直接结束，不再向模型追加工具结果或发起新一轮请求。部分拒绝时
+            // 本分支不触发，Loop 照常继续，已拒绝工具的拒绝结果已写入结果。
+            if (subAllToolsRejected) {
+              ctx.pendingQueueRef.current.delete(subConvId);
+              ctx.setActivePendingMessages([]);
+              return subToolResults.join("\n\n");
+            }
 
             // Flush pending user messages before the next AI request so
             // they are sent in the next iteration as soon as tools finish.
@@ -1173,6 +1189,13 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           sessionDirId
         );
 
+        // 非 YOLO 模式授权判定：单工具被拒绝，或多工具全部被拒绝时，
+        // AI 流程直接结束；部分拒绝时，已拒绝的工具返回拒绝结果给 AI，
+        // 已批准的工具正常执行，Loop 继续。
+        const allToolsRejected = authorizationDecisions.every(
+          (decision) => decision.status === "rejected"
+        );
+
         const toolResults: string[] = [];
         let userQuestionCancelled = false;
         for (let toolIndex = 0; toolIndex < toolCalls.length; toolIndex++) {
@@ -1618,6 +1641,21 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         ]);
 
         if (userQuestionCancelled) {
+          ctx.pendingQueueRef.current.delete(effectiveKey);
+          ctx.setActivePendingMessages([]);
+          if (response.conversationId) {
+            await window.snow.appendToolMessage(
+              response.conversationId,
+              toolResultContent
+            );
+          }
+          return;
+        }
+
+        // 非 YOLO 模式：当本批次所有工具均被用户拒绝时，AI 流程直接结束，
+        // 不再向模型追加工具结果或发起新一轮请求。部分拒绝时本分支不触发，
+        // Loop 照常继续，已拒绝工具的拒绝结果已在上方写入 toolResults。
+        if (allToolsRejected) {
           ctx.pendingQueueRef.current.delete(effectiveKey);
           ctx.setActivePendingMessages([]);
           if (response.conversationId) {

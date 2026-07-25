@@ -67,33 +67,38 @@ export const FileDiffPreview = ({
   const [selectedDiffPath, setSelectedDiffPath] = useState<string | null>(null);
   const selectedDiff =
     diffs.find((diff) => diff.path === selectedDiffPath) ?? diffs[0] ?? null;
+  const isSingleFile = diffs.length <= 1;
 
   return (
-    <div className="file-diff-preview">
-      <div className="file-diff-preview-files">
-        {isLoading ? (
-          <div className="file-diff-preview-state">{labels.loading}</div>
-        ) : hasError ? (
-          <div className="file-diff-preview-state error">{labels.error}</div>
-        ) : diffs.length > 0 ? (
-          diffs.map((diff) => (
-            <button
-              type="button"
-              key={diff.path}
-              className={`file-diff-preview-file ${
-                selectedDiff?.path === diff.path ? "active" : ""
-              }`}
-              onClick={() => setSelectedDiffPath(diff.path)}
-              title={diff.path}
-            >
-              <FileChangeIcon changeType={diff.changeType} />
-              <span>{diff.path}</span>
-            </button>
-          ))
-        ) : (
-          <div className="file-diff-preview-state">{labels.empty}</div>
-        )}
-      </div>
+    <div
+      className={`file-diff-preview${isSingleFile ? " single-file" : ""}`}
+    >
+      {!isSingleFile ? (
+        <div className="file-diff-preview-files">
+          {isLoading ? (
+            <div className="file-diff-preview-state">{labels.loading}</div>
+          ) : hasError ? (
+            <div className="file-diff-preview-state error">{labels.error}</div>
+          ) : diffs.length > 0 ? (
+            diffs.map((diff) => (
+              <button
+                type="button"
+                key={diff.path}
+                className={`file-diff-preview-file ${
+                  selectedDiff?.path === diff.path ? "active" : ""
+                }`}
+                onClick={() => setSelectedDiffPath(diff.path)}
+                title={diff.path}
+              >
+                <FileChangeIcon changeType={diff.changeType} />
+                <span>{diff.path}</span>
+              </button>
+            ))
+          ) : (
+            <div className="file-diff-preview-state">{labels.empty}</div>
+          )}
+        </div>
+      ) : null}
       <div className="file-diff-preview-diff">
         {selectedDiff ? (
           <DiffViewer

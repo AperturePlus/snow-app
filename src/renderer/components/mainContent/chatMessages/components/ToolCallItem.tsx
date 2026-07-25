@@ -1,10 +1,3 @@
-import {
-  CheckCircle,
-  ChevronRight,
-  Loader2,
-  AlertCircle,
-  Wrench,
-} from "lucide-react";
 import { memo } from "react";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import {
@@ -18,7 +11,7 @@ import {
   SubAgentToolCall,
   CodebaseToolCall,
 } from "../toolCalls";
-import { ToolNameBadge } from "../toolCalls/shared/ToolNameBadge";
+import { ToolCallNode } from "../toolCalls/shared/ToolCallNode";
 import { useI18n } from "../../../../i18n";
 
 type ToolCallItemProps = {
@@ -40,12 +33,7 @@ const formatArguments = (args: string): string => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** Detect whether the tool result JSON carries an error, mirroring the
- *  logic used by specialised renderers (Bash, Grep, Todo, etc.).  When the
- *  agent loop catches an exception or a hook blocks the call, it still sets
- *  `status: "completed"` but embeds `{ error: "..." }` (or
- *  `{ success: false, error: "..." }`) in the result.  We need to surface
- *  that as a failure in the UI. */
+/** Detect whether the tool result JSON carries an error. */
 const hasResultError = (result: string | undefined): boolean => {
   if (!result) {
     return false;
@@ -101,47 +89,19 @@ export const ToolCallItem = memo(
       return <CodebaseToolCall toolCall={toolCall} />;
     }
 
-    const iconName = toolCall.name.replace(/^mcp__.*__/, "");
     const effectiveStatus = hasResultError(toolCall.result)
       ? "error"
       : toolCall.status;
-    const StatusIcon =
-      effectiveStatus === "completed"
-        ? CheckCircle
-        : effectiveStatus === "running"
-        ? Loader2
-        : effectiveStatus === "error"
-        ? AlertCircle
-        : Wrench;
     const formattedArgs = formatArguments(toolCall.arguments);
     const hasBody = Boolean(formattedArgs || toolCall.result);
 
     return (
-      <details className="tool-call-item">
-        <summary className="tool-call-header">
-          <ChevronRight
-            className="tool-call-chevron"
-            size={14}
-            aria-hidden="true"
-          />
-          <StatusIcon
-            size={14}
-            className={
-              effectiveStatus === "running" ? "tool-call-icon-spinning" : ""
-            }
-            aria-hidden="true"
-          />
-          <ToolNameBadge name={iconName} />
-          <span
-            className={`tool-call-status tool-call-status-${effectiveStatus}`}
-          >
-            {t(`toolCall.common.status.${effectiveStatus}`, {
-              defaultValue: effectiveStatus,
-            })}
-          </span>
-        </summary>
+      <ToolCallNode
+        toolName={toolCall.name}
+        status={effectiveStatus}
+      >
         {hasBody ? (
-          <div className="tool-call-body">
+          <>
             {formattedArgs ? (
               <div className="tool-call-section">
                 <span className="tool-call-section-label">
@@ -158,9 +118,9 @@ export const ToolCallItem = memo(
                 <pre className="tool-call-section-pre">{toolCall.result}</pre>
               </div>
             ) : null}
-          </div>
+          </>
         ) : null}
-      </details>
+      </ToolCallNode>
     );
   }
 );

@@ -1,7 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   AlertCircle,
-  ChevronRight,
   Loader2,
   Search,
   Hash,
@@ -11,7 +10,7 @@ import {
 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
-import { ToolNameBadge } from "./shared/ToolNameBadge";
+import { ToolCallNode } from "./shared/ToolCallNode";
 
 type GrepToolCallProps = {
   toolCall: ToolCallInfo;
@@ -151,13 +150,11 @@ export const GrepToolCall = ({
   );
 
   const isRunning = toolCall.status === "running";
-  const [isOpen, setIsOpen] = useState(false);
 
   const pattern = parsedArgs?.pattern ?? "search";
   const searchPath = parsedArgs?.path ?? ".";
   const hasError = parsedResult.type === "error";
   const effectiveStatus = hasError ? "error" : toolCall.status;
-  const statusLabel = t(`toolCall.grep.status.${effectiveStatus}`);
 
   const matchCount =
     parsedResult.type === "success" ? parsedResult.totalMatches : 0;
@@ -180,31 +177,14 @@ export const GrepToolCall = ({
   }, [parsedResult]);
 
   return (
-    <details
-      className="tool-call-item tool-call-grep"
-      open={isOpen}
-      onToggle={(event) => setIsOpen(event.currentTarget.open)}
-    >
-      <summary className="tool-call-header">
-        <ChevronRight
-          className="tool-call-chevron"
-          size={14}
-          aria-hidden="true"
-        />
-        <ToolNameBadge name={t("toolCall.grep.name")} category="search" />
-        {isRunning ? (
-          <Loader2
-            size={14}
-            className="tool-call-icon-spinning"
-            aria-hidden="true"
-          />
-        ) : (
-          <Search size={14} aria-hidden="true" />
-        )}
-        <span className="tool-call-name" title={pattern}>
-          {pattern.length > 60 ? `${pattern.slice(0, 60)}...` : pattern}
-        </span>
-        {parsedResult.type === "success" ? (
+    <ToolCallNode
+      toolName={toolCall.name}
+      badgeName={t("toolCall.grep.name")}
+      category="search"
+      displayName={pattern.length > 60 ? `${pattern.slice(0, 60)}...` : pattern}
+      status={effectiveStatus}
+      meta={
+        parsedResult.type === "success" ? (
           <span
             className={`tool-call-grep-match-count ${
               hasMatches
@@ -214,17 +194,10 @@ export const GrepToolCall = ({
           >
             {t("toolCall.grep.matchCount", { values: { count: matchCount } })}
           </span>
-        ) : null}
-        <span
-          className={`tool-call-status tool-call-status-${effectiveStatus}`}
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-        >
-          {statusLabel}
-        </span>
-      </summary>
-
+        ) : null
+      }
+      className="tool-call-grep"
+    >
       <div className="tool-call-body tool-call-grep-body">
         {/* Search parameters */}
         {parsedArgs ? (
@@ -386,6 +359,6 @@ export const GrepToolCall = ({
           </div>
         ) : null}
       </div>
-    </details>
+    </ToolCallNode>
   );
 };

@@ -1,9 +1,8 @@
 import { useMemo } from "react";
-import { ChevronRight, Loader2, AlertCircle, Hash, Files } from "lucide-react";
-import { useI18n } from "../../../../i18n";
+import { AlertCircle, Hash } from "lucide-react";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
-import { ToolNameBadge } from "./shared/ToolNameBadge";
+import { ToolCallNode } from "./shared/ToolCallNode";
 
 type ParsedPathItem = {
   path: string;
@@ -338,7 +337,6 @@ type FilesystemReadToolCallProps = {
 export const FilesystemReadToolCall = ({
   toolCall,
 }: FilesystemReadToolCallProps): React.JSX.Element => {
-  const { t } = useI18n();
   const parsedArgs = useMemo(
     () => parseArgs(toolCall.arguments),
     [toolCall.arguments]
@@ -349,7 +347,6 @@ export const FilesystemReadToolCall = ({
   );
 
   const isMulti = parsedArgs?.isMulti === true || parsedResult.type === "multi";
-  const isDirectory = parsedResult.type === "directory";
 
   const rangeLabel = getLineRangeLabel(parsedArgs, parsedResult);
 
@@ -364,46 +361,42 @@ export const FilesystemReadToolCall = ({
 
   const hasError = parsedResult.type === "error";
   const effectiveStatus = hasError ? "error" : toolCall.status;
-  const statusLabel = t(`toolCall.filesystem.status.${effectiveStatus}`);
 
   return (
-    <details className="tool-call-item tool-call-filesystem-read">
-      <summary className="tool-call-header">
-        <ChevronRight
-          className="tool-call-chevron"
-          size={14}
-          aria-hidden="true"
-        />
-        <ToolNameBadge name="read" category="read" />
-        {toolCall.status === "running" ? (
-          <Loader2
-            size={14}
-            className="tool-call-icon-spinning"
-            aria-hidden="true"
-          />
-        ) : isMulti ? (
-          <Files size={14} aria-hidden="true" />
+    <ToolCallNode
+      toolName={toolCall.name}
+      badgeName="read"
+      category="read"
+      displayName={
+        isMulti ? (
+          displayName
         ) : (
-          getFileTypeIcon(fileName, isDirectory, false, {
-            size: 14,
-            "aria-hidden": true,
-          })
-        )}
-        <span className="tool-call-name" title={isMulti ? "" : filePath}>
-          {displayName}
-        </span>
-        {rangeLabel ? (
+          <>
+            {getFileTypeIcon(
+              fileName,
+              parsedResult.type === "directory",
+              false,
+              {
+                size: 13,
+                "aria-hidden": true,
+              }
+            )}
+            {fileName}
+          </>
+        )
+      }
+      displayNameTitle={isMulti ? undefined : filePath}
+      status={effectiveStatus}
+      meta={
+        rangeLabel ? (
           <span className="tool-call-line-range">
             <Hash size={10} aria-hidden="true" />
             {rangeLabel}
           </span>
-        ) : null}
-        <span
-          className={`tool-call-status tool-call-status-${effectiveStatus}`}
-        >
-          {statusLabel}
-        </span>
-      </summary>
+        ) : null
+      }
+      className="tool-call-filesystem-read"
+    >
       <div className="tool-call-body">
         {parsedResult.type === "error" ? (
           <div className="tool-call-error">
@@ -477,6 +470,6 @@ export const FilesystemReadToolCall = ({
           </>
         )}
       </div>
-    </details>
+    </ToolCallNode>
   );
 };

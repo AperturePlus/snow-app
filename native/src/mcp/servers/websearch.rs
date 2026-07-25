@@ -180,7 +180,7 @@ impl McpService for WebSearchService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: "websearch-fetch".to_string(),
-                description: "Fetch and read the full content of a web page or a direct image URL. For HTML pages, automatically cleans and extracts main text content. For direct image URLs (detected by image content-type or image file extension), downloads the image and returns a base64 image block for the model to inspect. USAGE RULE: Only fetch ONE page per search - choose the most credible and relevant result (prefer official documentation, reputable tech sites, or well-known sources).".to_string(),
+                description: "Fetch and read the full content of a web page or a direct image URL. For HTML pages, automatically cleans and extracts main text content. For direct image URLs (detected by image content-type or image file extension), downloads the image and returns a base64 image block for the model to inspect. RENDERING TIP: When the fetched result contains valid image information (a direct image URL or image data), present it to the user using Markdown image syntax, e.g. ![description](https://example.com/image.png), so the image is rendered inline. USAGE RULE: Only fetch ONE page per search - choose the most credible and relevant result (prefer official documentation, reputable tech sites, or well-known sources).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {

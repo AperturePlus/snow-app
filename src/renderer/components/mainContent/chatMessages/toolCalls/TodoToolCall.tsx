@@ -1,7 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   AlertCircle,
-  ChevronRight,
   Circle,
   CircleDot,
   CheckCircle2,
@@ -14,7 +13,7 @@ import {
 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
-import { ToolNameBadge } from "./shared/ToolNameBadge";
+import { ToolCallNode } from "./shared/ToolCallNode";
 
 type TodoToolCallProps = {
   toolCall: ToolCallInfo;
@@ -163,7 +162,6 @@ export const TodoToolCall = ({
   );
 
   const isRunning = toolCall.status === "running";
-  const [isOpen, setIsOpen] = useState(false);
 
   const action = parsedArgs?.action ?? "get";
   const ActionIcon = ACTION_ICON_MAP[action] ?? ListChecks;
@@ -171,7 +169,6 @@ export const TodoToolCall = ({
 
   const effectiveStatus =
     parsedResult.type === "error" ? "error" : toolCall.status;
-  const statusLabel = t(`toolCall.todo.status.${effectiveStatus}`);
 
   const contentText = formatContent(parsedArgs?.content);
   const todoIdText = formatTodoId(parsedArgs?.todoId);
@@ -179,29 +176,14 @@ export const TodoToolCall = ({
   const hasError = parsedResult.type === "error";
 
   return (
-    <details
-      className="tool-call-item tool-call-todo"
-      open={isOpen}
-      onToggle={(event) => setIsOpen(event.currentTarget.open)}
-    >
-      <summary className="tool-call-header">
-        <ChevronRight
-          className="tool-call-chevron"
-          size={14}
-          aria-hidden="true"
-        />
-        <ToolNameBadge name={t("toolCall.todo.name")} category="todo" />
-        {isRunning ? (
-          <Loader2
-            size={14}
-            className="tool-call-icon-spinning"
-            aria-hidden="true"
-          />
-        ) : (
-          <ActionIcon size={14} aria-hidden="true" />
-        )}
-        <span className="tool-call-name">{actionLabel}</span>
-        {parsedResult.type === "success" ? (
+    <ToolCallNode
+      toolName={toolCall.name}
+      badgeName={t("toolCall.todo.name")}
+      category="todo"
+      displayName={actionLabel}
+      status={effectiveStatus}
+      meta={
+        parsedResult.type === "success" ? (
           <span className="tool-call-todo-count">
             {t("toolCall.todo.itemCount", {
               values: {
@@ -210,17 +192,10 @@ export const TodoToolCall = ({
               },
             })}
           </span>
-        ) : null}
-        <span
-          className={`tool-call-status tool-call-status-${effectiveStatus}`}
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-        >
-          {statusLabel}
-        </span>
-      </summary>
-
+        ) : null
+      }
+      className="tool-call-todo"
+    >
       <div className="tool-call-body tool-call-todo-body">
         {/* Action badge */}
         <div className="tool-call-todo-action-row">
@@ -324,6 +299,6 @@ export const TodoToolCall = ({
           </div>
         ) : null}
       </div>
-    </details>
+    </ToolCallNode>
   );
 };

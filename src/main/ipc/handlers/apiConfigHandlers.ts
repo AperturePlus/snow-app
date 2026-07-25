@@ -28,9 +28,28 @@ export const registerApiConfigHandlers = (native: NativeBridge): void => {
   });
   ipcMain.handle("api-configs:import-snow-cli", async () => {
     const profiles = readSnowCliProfiles();
+    const existingConfigs = await native.listApiConfigs();
+    const isFirstSync = !existingConfigs.some(
+      (config) => config.source === "snow-cli"
+    );
 
-    for (const profile of profiles) {
-      await native.upsertApiConfig(toApiConfigInput(profile));
+    if (isFirstSync) {
+      // 首次同步：沿用 Snow CLI 的激活状态
+      for (const profile of profiles) {
+        await native.upsertApiConfig(toApiConfigInput(profile));
+      }
+    } else {
+      // 增量同步：仅同步配置数据，保留应用内当前激活的 profile
+      const activeProfileName =
+        existingConfigs.find((config) => config.isActive)?.profileName ?? null;
+
+      for (const profile of profiles) {
+        const input = toApiConfigInput(profile);
+        await native.upsertApiConfig({
+          ...input,
+          isActive: profile.name === activeProfileName,
+        });
+      }
     }
 
     return {

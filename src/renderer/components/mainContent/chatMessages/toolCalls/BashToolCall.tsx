@@ -1,14 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  AlertCircle,
-  ChevronRight,
-  Loader2,
-  SquareTerminal,
-  Timer,
-} from "lucide-react";
+import { AlertCircle, Timer } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
-import { ToolNameBadge } from "./shared/ToolNameBadge";
+import { ToolCallNode } from "./shared/ToolCallNode";
 
 type BashToolCallProps = {
   toolCall: ToolCallInfo;
@@ -140,7 +134,6 @@ export const BashToolCall = ({
     parsedResult.type === "timeout" ||
     (parsedResult.type === "success" && parsedResult.exitCode !== 0);
   const effectiveStatus = hasFailed ? "error" : toolCall.status;
-  const statusLabel = t(`toolCall.bash.status.${effectiveStatus}`);
 
   const isRunning = toolCall.status === "running";
   const timeoutMs = parsedArgs?.timeout ?? DEFAULT_TIMEOUT_MS;
@@ -196,73 +189,49 @@ export const BashToolCall = ({
       : "toolCall.bash.waiting"
   );
 
-  const [isOpen, setIsOpen] = useState(false);
-
   return (
-    <details
-      className="tool-call-item tool-call-bash"
-      open={isOpen}
-      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+    <ToolCallNode
+      toolName={toolCall.name}
+      badgeName={t("toolCall.bash.name")}
+      category="terminal"
+      displayName={commandSummary}
+      status={effectiveStatus}
+      meta={
+        <>
+          {parsedResult.type === "success" ? (
+            <span
+              className={`tool-call-bash-exit-code ${
+                parsedResult.exitCode === 0
+                  ? "tool-call-bash-exit-success"
+                  : "tool-call-bash-exit-error"
+              }`}
+            >
+              {t("toolCall.bash.exitCode", {
+                values: { code: parsedResult.exitCode },
+              })}
+            </span>
+          ) : null}
+          {parsedResult.type === "timeout" ? (
+            <span className="tool-call-bash-timeout-badge">
+              {t("toolCall.bash.timeout")}
+            </span>
+          ) : null}
+          {isRunning && countdownSeconds !== null ? (
+            <span
+              className={`tool-call-bash-countdown ${
+                countdownSeconds <= 5 ? "tool-call-bash-countdown-urgent" : ""
+              }`}
+            >
+              <Timer size={12} aria-hidden="true" />
+              {t("toolCall.bash.countdown", {
+                values: { seconds: countdownSeconds },
+              })}
+            </span>
+          ) : null}
+        </>
+      }
+      className="tool-call-bash"
     >
-      <summary className="tool-call-header">
-        <ChevronRight
-          className="tool-call-chevron"
-          size={14}
-          aria-hidden="true"
-        />
-        <ToolNameBadge name={t("toolCall.bash.name")} category="terminal" />
-        {isRunning ? (
-          <Loader2
-            size={14}
-            className="tool-call-icon-spinning"
-            aria-hidden="true"
-          />
-        ) : (
-          <SquareTerminal size={14} aria-hidden="true" />
-        )}
-        <span className="tool-call-name" title={command}>
-          {commandSummary}
-        </span>
-        {parsedResult.type === "success" ? (
-          <span
-            className={`tool-call-bash-exit-code ${
-              parsedResult.exitCode === 0
-                ? "tool-call-bash-exit-success"
-                : "tool-call-bash-exit-error"
-            }`}
-          >
-            {t("toolCall.bash.exitCode", {
-              values: { code: parsedResult.exitCode },
-            })}
-          </span>
-        ) : null}
-        {parsedResult.type === "timeout" ? (
-          <span className="tool-call-bash-timeout-badge">
-            {t("toolCall.bash.timeout")}
-          </span>
-        ) : null}
-        {isRunning && countdownSeconds !== null ? (
-          <span
-            className={`tool-call-bash-countdown ${
-              countdownSeconds <= 5 ? "tool-call-bash-countdown-urgent" : ""
-            }`}
-          >
-            <Timer size={12} aria-hidden="true" />
-            {t("toolCall.bash.countdown", {
-              values: { seconds: countdownSeconds },
-            })}
-          </span>
-        ) : null}
-        <span
-          className={`tool-call-status tool-call-status-${effectiveStatus}`}
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-        >
-          {statusLabel}
-        </span>
-      </summary>
-
       <div className="tool-call-body tool-call-bash-body">
         {parsedResult.type === "timeout" ? (
           <div className="tool-call-error tool-call-bash-timeout-notice">
@@ -327,6 +296,6 @@ export const BashToolCall = ({
           ) : null}
         </div>
       </div>
-    </details>
+    </ToolCallNode>
   );
 };

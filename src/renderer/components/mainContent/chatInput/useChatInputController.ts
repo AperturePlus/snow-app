@@ -352,12 +352,31 @@ export const useChatInputController = ({
       setValue(content);
 
       if (textareaRef.current) {
-        const html = content
-          .replace(/\u0026/g, "\u0026amp;")
-          .replace(/</g, "\u0026lt;")
-          .replace(/>/g, "\u0026gt;")
-          .replace(/\n/g, "\u003cbr\u003e");
+        const segments = parseContentSegments(content);
+        const html = segments
+          .map((segment) => {
+            if (segment.type === "text") {
+              return segment.content
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/\n/g, "<br>");
+            }
+            if (segment.type === "image") {
+              return createImageChipHtml(segment.tag);
+            }
+            if (segment.type === "commit") {
+              return createCommitChipHtml(segment.tag);
+            }
+            if (segment.type === "change") {
+              return createChangeChipHtml(segment.tag);
+            }
+            return createChipHtml(segment.tag);
+          })
+          .join("");
+
         textareaRef.current.innerHTML = html;
+        renumberImageChips(textareaRef.current);
         textareaRef.current.dataset.empty =
           content.trim() === "" ? "true" : "false";
         requestAnimationFrame(() => {
@@ -392,6 +411,9 @@ export const useChatInputController = ({
       if (
         event.key !== "Enter" ||
         event.shiftKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
         isComposingKeyboardEvent(event)
       ) {
         return;

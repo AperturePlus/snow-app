@@ -10,6 +10,10 @@ import {
   registerThemeBgProtocol,
   registerThemeBgSchemePrivilege,
 } from "./themeBgProtocol";
+import {
+  registerImageProxyProtocol,
+  registerImageProxySchemePrivilege,
+} from "./imageProxyProtocol";
 
 export const bootstrapApplication = (): void => {
   snowLog.info({
@@ -22,6 +26,8 @@ export const bootstrapApplication = (): void => {
   // registerSchemesAsPrivileged 必须在 app.whenReady() 之前调用，
   // 否则 Chromium 不会允许在 CSS url() / <img src> 中加载 theme-bg:// 资源。
   registerThemeBgSchemePrivilege();
+  // img-proxy:// 同样需要在 whenReady 前声明特权，才能用于 <img src>。
+  registerImageProxySchemePrivilege();
 
   // Prevent multiple instances — must be called before app.whenReady().
   const gotTheLock = app.requestSingleInstanceLock();
@@ -59,6 +65,9 @@ export const bootstrapApplication = (): void => {
     // 注册 theme-bg:// 自定义协议处理器，使渲染进程能加载本地背景图。
     // 必须在 createWindow 之前调用，确保窗口加载时协议已就绪。
     registerThemeBgProtocol();
+    // 注册 img-proxy:// 协议处理器，代理渲染进程请求的外部 http(s) 图片，
+    // 使 markdown 图片能绕过 CSP 限制安全加载。
+    registerImageProxyProtocol();
 
     if (isMacOS && app.dock) {
       app.dock.setIcon(nativeImage.createFromPath(APP_ICON_PATH));

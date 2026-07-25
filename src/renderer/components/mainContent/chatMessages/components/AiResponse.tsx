@@ -5,6 +5,7 @@ import { AiResponseActions } from "./AiResponseActions";
 import { StreamCursor } from "./StreamCursor";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallItem } from "./ToolCallItem";
+import { ToolCallGroup } from "./ToolCallGroup";
 import { ToolAuthorizationDialog } from "../dialogs/ToolAuthorizationDialog";
 import { SensitiveCommandConfirmDialog } from "../toolCalls/SensitiveCommandConfirmDialog";
 import { MarkdownBlock } from "./markdownRenderer";
@@ -91,14 +92,17 @@ export const AiResponse = memo(
 
           {/* 4. Tool calls */}
           {hasToolCalls ? (
-            <div className="tool-calls-container">
+            <ToolCallGroup
+              count={toolCalls.length}
+              isRunning={toolCalls.some((tc) => tc.status === "running")}
+            >
               {toolCalls.map((toolCall, index) => (
                 <ToolCallItem
                   key={`${toolCall.name}-${index}`}
                   toolCall={toolCall}
                 />
               ))}
-            </div>
+            </ToolCallGroup>
           ) : null}
 
           {onApproveToolAuthorization &&

@@ -15,6 +15,7 @@ import { ChatConversationProvider } from "./components/mainContent/chatMessages"
 import type { MainContentView } from "./components/mainContent/types";
 import { SshConnectWizard } from "./components/sidebar/mainSidebar/SshConnectWizard";
 import { ConfirmDialog } from "./components/common/ConfirmDialog";
+import { rightPanelEvents } from "./components/rightPanel/rightPanelEvents";
 import { useI18n } from "./i18n";
 import { useTheme } from "./hooks/useTheme";
 import type { WorkspaceDirectoryRecord } from "../preload";
@@ -69,6 +70,16 @@ export const App = (): React.JSX.Element => {
       dispose();
     };
   }, []);
+
+  // 监听右侧面板的展开请求：工具调用组件打开 diff 预览时，
+  // 若面板处于折叠状态则自动展开，保证用户能看到新 tab。
+  useEffect(() => {
+    return rightPanelEvents.on("request-expand", () => {
+      if (isRightPanelCollapsed) {
+        setIsRightPanelCollapsed(false);
+      }
+    });
+  }, [isRightPanelCollapsed]);
 
   const handleConfirmClose = useCallback((): void => {
     setShowCloseConfirm(false);

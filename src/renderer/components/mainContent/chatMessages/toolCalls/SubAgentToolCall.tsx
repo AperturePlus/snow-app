@@ -1,10 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   AlertCircle,
   ArrowRight,
   Bot,
   CheckCircle2,
-  ChevronRight,
   CircleDot,
   Loader2,
   Wrench,
@@ -13,7 +12,7 @@ import { useI18n } from "../../../../i18n";
 import { useChatConversationContext } from "../components/ChatConversationContext";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import type { ChatConversationMessage } from "../utils/conversationTypes";
-import { ToolNameBadge } from "./shared/ToolNameBadge";
+import { ToolCallNode } from "./shared/ToolCallNode";
 
 type SubAgentToolCallProps = {
   toolCall: ToolCallInfo;
@@ -216,10 +215,7 @@ export const SubAgentToolCall = ({
     : undefined;
 
   const isRunning = toolCall.status === "running";
-  const isCompleted = toolCall.status === "completed";
   const isError = parsedResult.type === "error" || toolCall.status === "error";
-
-  const [isOpen, setIsOpen] = useState(false);
 
   const toolCallEntries = useMemo(
     () => extractSubAgentToolCalls(subSession?.messages),
@@ -232,7 +228,6 @@ export const SubAgentToolCall = ({
   const totalCount = toolCallEntries.length;
 
   const effectiveStatus = isError ? "error" : toolCall.status;
-  const statusLabel = t(`toolCall.subAgent.status.${effectiveStatus}`);
 
   const agentName =
     parsedResult.type === "success"
@@ -257,25 +252,6 @@ export const SubAgentToolCall = ({
     }
   };
 
-  const renderStatusIcon = (): React.ReactNode => {
-    if (isRunning) {
-      return (
-        <Loader2
-          size={14}
-          className="tool-call-icon-spinning"
-          aria-hidden="true"
-        />
-      );
-    }
-    if (isError) {
-      return <AlertCircle size={14} aria-hidden="true" />;
-    }
-    if (isCompleted) {
-      return <CheckCircle2 size={14} aria-hidden="true" />;
-    }
-    return <Bot size={14} aria-hidden="true" />;
-  };
-
   const renderActivityIcon = (
     status: SubAgentToolCallEntry["status"]
   ): React.ReactNode => {
@@ -298,23 +274,14 @@ export const SubAgentToolCall = ({
   };
 
   return (
-    <details
-      className="tool-call-item tool-call-sub-agent"
-      open={isOpen}
-      onToggle={(event) => setIsOpen(event.currentTarget.open)}
-    >
-      <summary className="tool-call-header">
-        <ChevronRight
-          className="tool-call-chevron"
-          size={14}
-          aria-hidden="true"
-        />
-        <ToolNameBadge name={t("toolCall.subAgent.name")} category="agent" />
-        {renderStatusIcon()}
-        <span className="tool-call-name" title={displayAgentName}>
-          {displayAgentName}
-        </span>
-        {totalCount > 0 ? (
+    <ToolCallNode
+      toolName={toolCall.name}
+      badgeName={t("toolCall.subAgent.name")}
+      category="agent"
+      displayName={displayAgentName}
+      status={effectiveStatus}
+      meta={
+        totalCount > 0 ? (
           <span className="tool-call-sub-agent-count">
             {t("toolCall.subAgent.toolProgress", {
               values: {
@@ -323,17 +290,10 @@ export const SubAgentToolCall = ({
               },
             })}
           </span>
-        ) : null}
-        <span
-          className={`tool-call-status tool-call-status-${effectiveStatus}`}
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-        >
-          {statusLabel}
-        </span>
-      </summary>
-
+        ) : null
+      }
+      className="tool-call-sub-agent"
+    >
       <div className="tool-call-body tool-call-sub-agent-body">
         {/* Agent identity row */}
         <div className="tool-call-sub-agent-identity">
@@ -463,6 +423,6 @@ export const SubAgentToolCall = ({
           </button>
         ) : null}
       </div>
-    </details>
+    </ToolCallNode>
   );
 };

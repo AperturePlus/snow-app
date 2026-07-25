@@ -315,6 +315,26 @@ export const insertHtmlAtSelection = (html: string): void => {
 };
 
 /**
+ * 在 contenteditable 编辑区的当前光标位置插入换行。
+ *
+ * Shift+Enter 在 contenteditable 上有默认换行行为，但 Ctrl/Cmd+Enter
+ * 没有统一的默认行为，需手动调用浏览器原生换行命令插入 <br>，确保
+ * 光标定位与行末可见性与 Shift+Enter 一致。Chromium (Electron) 下
+ * 可靠工作。
+ */
+export const insertLineBreak = (): void => {
+  const selection = window.getSelection();
+  if (!selection || !selection.rangeCount) {
+    return;
+  }
+
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+
+  document.execCommand("insertLineBreak");
+};
+
+/**
  * 重新编号编辑区内的图片 chip，并固定所有 chip 的宽度。
  *
  * 固定宽度的目的：chip 内的 remove 按钮默认隐藏，hover 时才显示。

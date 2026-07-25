@@ -14,10 +14,17 @@ import { DiffViewer } from "./rightPanel/DiffViewer";
 import { FileViewerContent } from "./rightPanel/FileViewerContent";
 import { TerminalPanelContent } from "./rightPanel/TerminalPanelContent";
 import { BrowserPanelContent } from "./rightPanel/BrowserPanelContent";
+import { FileDiffPreview } from "./common/FileDiffPreview";
 import { useBrowserMcpCommandBridge } from "./rightPanel/browser/useBrowserMcpCommandBridge";
+import {
+  rightPanelEvents,
+  type OpenFileDiffPreviewPayload,
+} from "./rightPanel/rightPanelEvents";
+import { generateComparePatch } from "./common/GitDiffView";
 import type {
   BrowserTabData,
   DiffTabData,
+  FileDiffPreviewTabData,
   FileViewerTabData,
   OpenDiffTabCallback,
   RightPanelContentProps,
@@ -172,6 +179,52 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       []
     );
 
+    const handleOpenFileDiffPreviewTab = useCallback(
+      (payload: OpenFileDiffPreviewPayload) => {
+        const tabId = `file-diff-preview:${payload.filePath}`;
+        const patch = generateComparePatch(
+          payload.fileName,
+          payload.oldContent,
+          payload.newContent,
+          payload.oldStartLine,
+          payload.newStartLine
+        );
+        const data: FileDiffPreviewTabData = {
+          fileName: payload.fileName,
+          filePath: payload.filePath,
+          patch,
+          oldStartLine: payload.oldStartLine,
+          newStartLine: payload.newStartLine,
+          changeType: payload.changeType,
+        };
+        setTabs((prev) => {
+          const existing = prev.find((t) => t.id === tabId);
+          if (existing) {
+            return prev.map((t) =>
+              t.id === tabId ? { ...t, data } : t
+            );
+          }
+          const newTab: RightPanelTab = {
+            id: tabId,
+            type: "file-diff-preview",
+            title: payload.fileName,
+            data,
+          };
+          return [...prev, newTab];
+        });
+        setActiveTabId(tabId);
+        rightPanelEvents.emit("request-expand");
+      },
+      []
+    );
+
+    useEffect(() => {
+      return rightPanelEvents.on(
+        "open-file-diff-preview",
+        handleOpenFileDiffPreviewTab
+      );
+    }, [handleOpenFileDiffPreviewTab]);
+
     useImperativeHandle(
       ref,
       () => ({
@@ -295,6 +348,33 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             fileName={fileData.fileName}
             isSsh={fileData.isSsh}
             sshSessionId={fileData.sshSessionId}
+          />
+        );
+      }
+
+      if (tab.type === "file-diff-preview") {
+        const previewData = tab.data as FileDiffPreviewTabData;
+        if (!previewData) {
+          return null;
+        }
+        return (
+          <FileDiffPreview
+            diffs={[
+              {
+                path: previewData.filePath,
+                changeType: previewData.changeType,
+                content: previewData.patch ?? "",
+                isBinary: false,
+              },
+            ]}
+            isLoading={false}
+            hasError={previewData.patch == null}
+            labels={{
+              loading: t("rightPanel.loadingDiff"),
+              error: t("rightPanel.diffPreviewError"),
+              empty: t("rightPanel.noChangesToDisplay"),
+              selectFile: t("rightPanel.selectFileToViewDiff"),
+            }}
           />
         );
       }

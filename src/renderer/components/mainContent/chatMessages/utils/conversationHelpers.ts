@@ -204,10 +204,7 @@ export const parseToolCalls = (
             return null;
           }
           const record = tc as Record<string, unknown>;
-          const name = normalizeToolCallName(record);
-          if (!name) {
-            return null;
-          }
+          const name = normalizeToolCallName(record) || "unknown";
           const callId = normalizeToolCallId(record);
           return {
             name,

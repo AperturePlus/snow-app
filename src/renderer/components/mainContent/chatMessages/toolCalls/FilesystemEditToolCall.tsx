@@ -1,12 +1,15 @@
-import { useMemo } from "react";
-import { ChevronRight, Loader2 } from "lucide-react";
-import { useI18n } from "../../../../i18n";
+import { useCallback, useMemo } from "react";
 import type { ToolCallInfo } from "../utils/conversationTypes";
-import { getFileTypeIcon } from "../../../../utils/fileIcons";
-import { ToolNameBadge } from "./shared/ToolNameBadge";
+import { ToolCallNode } from "./shared/ToolCallNode";
 import { getFileName, getToolDisplayName } from "./shared/formatters";
 import { MiniDiffViewer } from "./shared/MiniDiffViewer";
 import { getCompareDiffStats } from "../../../common/GitDiffView";
+import { getFileTypeIcon } from "../../../../utils/fileIcons";
+import {
+  rightPanelEvents,
+  type OpenFileDiffPreviewPayload,
+} from "../../../rightPanel/rightPanelEvents";
+import { useI18n } from "../../../../i18n";
 
 type FilesystemEditToolCallProps = {
   toolCall: ToolCallInfo;
@@ -99,7 +102,6 @@ const parseResult = (result: string | undefined): ParsedEditResult => {
 export const FilesystemEditToolCall = ({
   toolCall,
 }: FilesystemEditToolCallProps): React.JSX.Element => {
-  const { t } = useI18n();
   const parsedArgs = useMemo(
     () => parseArgs(toolCall.arguments),
     [toolCall.arguments]
@@ -129,44 +131,57 @@ export const FilesystemEditToolCall = ({
   const fileName = getFileName(filePath);
 
   const effectiveStatus = hasError ? "error" : toolCall.status;
-  const statusLabel = t(`toolCall.filesystem.status.${effectiveStatus}`);
+
+  const { t } = useI18n();
+
+  const handleOpenInTab = useCallback(() => {
+    if (!parsedArgs) {
+      return;
+    }
+    const payload: OpenFileDiffPreviewPayload = {
+      fileName,
+      filePath,
+      oldContent: parsedArgs.searchContent,
+      newContent: parsedArgs.replaceContent,
+      oldStartLine:
+        parsedResult.type === "success"
+          ? parsedResult.matchedLineStart
+          : undefined,
+      newStartLine:
+        parsedResult.type === "success"
+          ? parsedResult.matchedLineStart
+          : undefined,
+      changeType: "modified",
+    };
+    rightPanelEvents.emit("open-file-diff-preview", payload);
+  }, [parsedArgs, parsedResult, fileName, filePath]);
 
   return (
-    <details className="tool-call-item tool-call-filesystem-edit" open>
-      <summary className="tool-call-header">
-        <ChevronRight
-          className="tool-call-chevron"
-          size={14}
-          aria-hidden="true"
-        />
-        <ToolNameBadge name={toolName} category="edit" />
-        {toolCall.status === "running" ? (
-          <Loader2
-            size={14}
-            className="tool-call-icon-spinning"
-            aria-hidden="true"
-          />
-        ) : (
-          getFileTypeIcon(fileName, false, false, {
-            size: 14,
+    <ToolCallNode
+      toolName={toolCall.name}
+      badgeName={toolName}
+      category="edit"
+      displayName={
+        <>
+          {getFileTypeIcon(fileName, false, false, {
+            size: 13,
             "aria-hidden": true,
-          })
-        )}
-        <span className="tool-call-name" title={filePath}>
+          })}
           {fileName}
-        </span>
-        {stats ? (
+        </>
+      }
+      displayNameTitle={filePath}
+      status={effectiveStatus}
+      meta={
+        stats ? (
           <span className="tool-call-diff-stats">
             <span className="tool-call-diff-add">+{stats.additions}</span>
             <span className="tool-call-diff-del">-{stats.deletions}</span>
           </span>
-        ) : null}
-        <span
-          className={`tool-call-status tool-call-status-${effectiveStatus}`}
-        >
-          {statusLabel}
-        </span>
-      </summary>
+        ) : null
+      }
+      className="tool-call-filesystem-edit"
+    >
       <div className="tool-call-body">
         <div className="tool-call-file-path">{filePath}</div>
         {hasError ? (
@@ -205,7 +220,13 @@ export const FilesystemEditToolCall = ({
             fileName={fileName}
             oldContent={parsedArgs.searchContent}
             newContent={parsedArgs.replaceContent}
-            startLine={parsedResult.type === "success" ? parsedResult.matchedLineStart : undefined}
+            startLine={
+              parsedResult.type === "success"
+                ? parsedResult.matchedLineStart
+                : undefined
+            }
+            onOpenInTab={handleOpenInTab}
+            openInTabLabel={t("rightPanel.openInNewTab")}
           />
         ) : null}
 
@@ -225,6 +246,6 @@ export const FilesystemEditToolCall = ({
           </div>
         ) : null}
       </div>
-    </details>
+    </ToolCallNode>
   );
 };

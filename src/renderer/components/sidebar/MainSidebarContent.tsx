@@ -103,10 +103,10 @@ export function MainSidebarContent({
           onClick={() => setIsSearchOpen(true)}
           type="button"
         >
-          <Search size={15} strokeWidth={1.8} />
+          <Search size={16} strokeWidth={1.8} />
           <span>
-            {t("search.placeholder", {
-              defaultValue: "Search...",
+            {t("sidebar.search", {
+              defaultValue: "Search",
             })}
           </span>
         </button>

@@ -29,7 +29,7 @@ export type ToolCategory =
   | "agent"
   | "generic";
 
-const TOOL_ICON_MAP: Record<ToolCategory, LucideIcon> = {
+export const TOOL_ICON_MAP: Record<ToolCategory, LucideIcon> = {
   read: FileText,
   edit: FilePen,
   create: FilePlus,

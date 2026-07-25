@@ -76,6 +76,53 @@ export const getCompareDiffStats = (
   return stats;
 };
 
+/**
+ * 基于两段文本生成 unified diff patch 文本(含 `---` / `+++` header)。
+ *
+ * - 用于工具调用将差异片段以 patch 形式传递给右侧面板的 diff 预览。
+ * - 当提供 oldStartLine / newStartLine 时,hunk header 中的行号会偏移到真实源文件位置。
+ * - 返回 null 表示两段文本无差异或生成失败。
+ */
+export const generateComparePatch = (
+  fileName: string,
+  oldContent: string,
+  newContent: string,
+  oldStartLine?: number,
+  newStartLine?: number
+): string | null => {
+  try {
+    const result = structuredPatch(
+      fileName,
+      fileName,
+      oldContent,
+      newContent,
+      undefined,
+      undefined,
+      { context: 3 }
+    );
+
+    if (!result.hunks || result.hunks.length === 0) {
+      return null;
+    }
+
+    const oldOffset = Math.max(0, (oldStartLine ?? 1) - 1);
+    const newOffset = Math.max(0, (newStartLine ?? 1) - 1);
+
+    const patchLines: string[] = [`--- ${fileName}`, `+++ ${fileName}`];
+    for (const hunk of result.hunks) {
+      const oldStart = hunk.oldStart + oldOffset;
+      const newStart = hunk.newStart + newOffset;
+      patchLines.push(
+        `@@ -${oldStart},${hunk.oldLines} +${newStart},${hunk.newLines} @@`
+      );
+      patchLines.push(...hunk.lines);
+    }
+    return patchLines.join("\n");
+  } catch {
+    return null;
+  }
+};
+
 type GitDiffViewProps = {
   /** 用于推断语法高亮语言的文件名 */
   fileName: string;
@@ -120,9 +167,8 @@ export const GitDiffView = ({
 
   /**
    * 当提供了 oldStartLine/newStartLine 时,说明 oldContent/newContent 是文件片段而非完整文件。
-   * 此时用 structuredPatch 生成 unified diff,并调整 hunk header 中的起始行号,
-   * 使其反映在真实源文件中的位置(而非片段内的 1-based 行号)。
-   * 预构建 DiffFile 实例(与 compareDiffFile 一致),避免 data 模式的异步初始化导致渲染闪烁。
+   * 复用 generateComparePatch 生成带正确行号偏移的 unified diff 文本,
+   * 再预构建 DiffFile 实例(与 compareDiffFile 一致),避免 data 模式的异步初始化导致渲染闪烁。
    */
   const offsetDiffFile = useMemo<DiffFile | null>(() => {
     if (patch) {
@@ -137,43 +183,25 @@ export const GitDiffView = ({
       return null;
     }
 
+    const patchText = generateComparePatch(
+      fileName,
+      oldStr,
+      newStr,
+      oldStartLine,
+      newStartLine
+    );
+    if (!patchText) {
+      return null;
+    }
+
     try {
-      const result = structuredPatch(
-        fileName,
-        fileName,
-        oldStr,
-        newStr,
-        undefined,
-        undefined,
-        { context: 3 }
-      );
-
-      if (!result.hunks || result.hunks.length === 0) {
-        return null;
-      }
-
-      const oldOffset = (oldStartLine ?? 1) - 1;
-      const newOffset = (newStartLine ?? 1) - 1;
-
-      // 构建完整的 unified diff 文本(包含 --- / +++ header),
-      // DiffFile 的 DiffParser 需要完整格式才能正确解析。
-      const patchLines: string[] = [`--- ${fileName}`, `+++ ${fileName}`];
-      for (const hunk of result.hunks) {
-        const oldStart = hunk.oldStart + oldOffset;
-        const newStart = hunk.newStart + newOffset;
-        patchLines.push(
-          `@@ -${oldStart},${hunk.oldLines} +${newStart},${hunk.newLines} @@`
-        );
-        patchLines.push(...hunk.lines);
-      }
-
       const lang = getLang(fileName);
       const diffFile = new DiffFile(
         fileName,
         "",
         fileName,
         "",
-        [patchLines.join("\n")],
+        [patchText],
         lang,
         lang
       );

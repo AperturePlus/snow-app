@@ -15,6 +15,7 @@ import hljs from "highlight.js";
 import katex from "katex";
 import MarkdownIt from "markdown-it";
 import texmath from "markdown-it-texmath";
+import { imageProxyUrl } from "../../../../utils/imageProxyUrl";
 
 /**
  * Escape HTML special characters in a string so that when highlight.js
@@ -125,6 +126,33 @@ markdown.renderer.rules.fence = (tokens, idx, options): string => {
 markdown.renderer.rules.table_open = (): string =>
   '<div class="table-wrapper">\n<table>\n';
 markdown.renderer.rules.table_close = (): string => "</table>\n</div>\n";
+
+// 改写外部 http(s) 图片 URL 为 img-proxy:// 协议，使其符合渲染进程的
+// CSP（img-src 允许 img-proxy: 但不允许任意 https:）。主进程通过 net.fetch
+// 代理请求并校验 scheme 与 Content-Type，保证安全性。
+const defaultImageRule = markdown.renderer.rules.image;
+markdown.renderer.rules.image = (
+  tokens,
+  idx,
+  options,
+  env,
+  self
+) => {
+  const token = tokens[idx];
+  const srcIndex = token.attrIndex("src");
+  if (srcIndex >= 0 && token.attrs) {
+    const pair = token.attrs[srcIndex];
+    if (pair) {
+      const src = pair[1];
+      if (/^https?:\/\//i.test(src)) {
+        pair[1] = imageProxyUrl(src);
+      }
+    }
+  }
+  return defaultImageRule
+    ? defaultImageRule(tokens, idx, options, env, self)
+    : self.renderToken(tokens, idx, options);
+};
 
 /**
  * KaTeX math rendering. texmath parses `$...$` inline and `$$...$$` display

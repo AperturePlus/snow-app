@@ -25,6 +25,7 @@ import {
   createCommitChipHtml,
   createImageChipHtml,
   insertHtmlAtSelection,
+  insertLineBreak,
   readEditableContent,
   renumberImageChips as renumberImageChipsFn,
   type ChangeTag,
@@ -582,8 +583,7 @@ export const ChatInputView = ({
             const mimeMatch = file.type.match(/^image\/([a-z]+)$/);
             const ext = mimeMatch ? mimeMatch[1] : "png";
             const imageTag: ImageTag = {
-              name:
-                file.name && file.name !== "image" ? file.name : `image.${ext}`,
+              name: `image.${ext}`,
               dataUrl,
             };
 
@@ -636,6 +636,16 @@ export const ChatInputView = ({
         return;
       }
 
+      if (
+        event.key === "Enter" &&
+        (event.ctrlKey || event.metaKey)
+      ) {
+        event.preventDefault();
+        insertLineBreak();
+        syncContent();
+        return;
+      }
+
       if (isCommandOpen && commandPanelRef.current) {
         const handled = commandPanelRef.current.handleKeyDown(event);
         if (handled) {
@@ -652,7 +662,7 @@ export const ChatInputView = ({
 
       handleKeyDown(event);
     },
-    [handleKeyDown, isCommandOpen, isMentionOpen]
+    [handleKeyDown, isCommandOpen, isMentionOpen, syncContent]
   );
 
   const showImagePreview = useCallback(

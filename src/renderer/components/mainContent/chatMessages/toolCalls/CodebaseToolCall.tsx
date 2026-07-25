@@ -1,9 +1,8 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   AlertCircle,
   BrainCircuit,
   CheckCircle,
-  ChevronRight,
   Database,
   FileCode,
   Hash,
@@ -14,7 +13,7 @@ import {
 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
-import { ToolNameBadge } from "./shared/ToolNameBadge";
+import { ToolCallNode } from "./shared/ToolCallNode";
 
 type CodebaseToolCallProps = {
   toolCall: ToolCallInfo;
@@ -264,12 +263,10 @@ export const CodebaseToolCall = ({
   );
 
   const isRunning = toolCall.status === "running";
-  const [isOpen, setIsOpen] = useState(false);
 
   const query = parsedArgs?.query ?? "search";
   const hasError = parsedResult.type === "error";
   const effectiveStatus = hasError ? "error" : toolCall.status;
-  const statusLabel = t(`toolCall.codebase.status.${effectiveStatus}`);
 
   const resultCount =
     parsedResult.type === "success" ? parsedResult.totalResults : 0;
@@ -338,31 +335,14 @@ export const CodebaseToolCall = ({
   }, [parsedResult, t]);
 
   return (
-    <details
-      className="tool-call-item tool-call-codebase"
-      open={isOpen}
-      onToggle={(event) => setIsOpen(event.currentTarget.open)}
-    >
-      <summary className="tool-call-header">
-        <ChevronRight
-          className="tool-call-chevron"
-          size={14}
-          aria-hidden="true"
-        />
-        <ToolNameBadge name={t("toolCall.codebase.name")} category="search" />
-        {isRunning ? (
-          <Loader2
-            size={14}
-            className="tool-call-icon-spinning"
-            aria-hidden="true"
-          />
-        ) : (
-          <Database size={14} aria-hidden="true" />
-        )}
-        <span className="tool-call-name" title={query}>
-          {query.length > 60 ? `${query.slice(0, 60)}...` : query}
-        </span>
-        {parsedResult.type === "success" ? (
+    <ToolCallNode
+      toolName={toolCall.name}
+      badgeName={t("toolCall.codebase.name")}
+      category="search"
+      displayName={query.length > 60 ? `${query.slice(0, 60)}...` : query}
+      status={effectiveStatus}
+      meta={
+        parsedResult.type === "success" ? (
           <span
             className={`tool-call-codebase-result-count ${
               hasResults
@@ -374,17 +354,10 @@ export const CodebaseToolCall = ({
               values: { count: resultCount },
             })}
           </span>
-        ) : null}
-        <span
-          className={`tool-call-status tool-call-status-${effectiveStatus}`}
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-        >
-          {statusLabel}
-        </span>
-      </summary>
-
+        ) : null
+      }
+      className="tool-call-codebase"
+    >
       <div className="tool-call-body tool-call-codebase-body">
         {/* Search parameters */}
         {parsedArgs ? (
@@ -587,6 +560,6 @@ export const CodebaseToolCall = ({
           </div>
         ) : null}
       </div>
-    </details>
+    </ToolCallNode>
   );
 };

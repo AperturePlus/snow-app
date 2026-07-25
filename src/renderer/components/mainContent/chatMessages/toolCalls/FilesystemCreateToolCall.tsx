@@ -1,11 +1,14 @@
-import { useMemo } from "react";
-import { ChevronRight, Loader2 } from "lucide-react";
-import { useI18n } from "../../../../i18n";
+import { useCallback, useMemo } from "react";
 import type { ToolCallInfo } from "../utils/conversationTypes";
-import { getFileTypeIcon } from "../../../../utils/fileIcons";
-import { ToolNameBadge } from "./shared/ToolNameBadge";
+import { ToolCallNode } from "./shared/ToolCallNode";
 import { getFileName, getToolDisplayName } from "./shared/formatters";
 import { MiniDiffViewer } from "./shared/MiniDiffViewer";
+import { getFileTypeIcon } from "../../../../utils/fileIcons";
+import {
+  rightPanelEvents,
+  type OpenFileDiffPreviewPayload,
+} from "../../../rightPanel/rightPanelEvents";
+import { useI18n } from "../../../../i18n";
 
 type FilesystemCreateToolCallProps = {
   toolCall: ToolCallInfo;
@@ -74,7 +77,6 @@ const parseResult = (result: string | undefined): ParsedCreateResult => {
 export const FilesystemCreateToolCall = ({
   toolCall,
 }: FilesystemCreateToolCallProps): React.JSX.Element => {
-  const { t } = useI18n();
   const parsedArgs = useMemo(
     () => parseArgs(toolCall.arguments),
     [toolCall.arguments]
@@ -91,7 +93,6 @@ export const FilesystemCreateToolCall = ({
   const fileName = getFileName(filePath);
 
   const effectiveStatus = hasError ? "error" : toolCall.status;
-  const statusLabel = t(`toolCall.filesystem.status.${effectiveStatus}`);
 
   const lineCount = useMemo(() => {
     if (hasError) return 0;
@@ -99,41 +100,47 @@ export const FilesystemCreateToolCall = ({
     return parsedArgs.content.split("\n").length;
   }, [parsedArgs, hasError]);
 
+  const { t } = useI18n();
+
+  const handleOpenInTab = useCallback(() => {
+    if (!parsedArgs) {
+      return;
+    }
+    const payload: OpenFileDiffPreviewPayload = {
+      fileName,
+      filePath,
+      oldContent: "",
+      newContent: parsedArgs.content,
+      changeType: "added",
+    };
+    rightPanelEvents.emit("open-file-diff-preview", payload);
+  }, [parsedArgs, fileName, filePath]);
+
   return (
-    <details className="tool-call-item tool-call-filesystem-create" open>
-      <summary className="tool-call-header">
-        <ChevronRight
-          className="tool-call-chevron"
-          size={14}
-          aria-hidden="true"
-        />
-        <ToolNameBadge name={toolName} category="create" />
-        {toolCall.status === "running" ? (
-          <Loader2
-            size={14}
-            className="tool-call-icon-spinning"
-            aria-hidden="true"
-          />
-        ) : (
-          getFileTypeIcon(fileName, false, false, {
-            size: 14,
+    <ToolCallNode
+      toolName={toolCall.name}
+      badgeName={toolName}
+      category="create"
+      displayName={
+        <>
+          {getFileTypeIcon(fileName, false, false, {
+            size: 13,
             "aria-hidden": true,
-          })
-        )}
-        <span className="tool-call-name" title={filePath}>
+          })}
           {fileName}
-        </span>
-        {lineCount > 0 ? (
+        </>
+      }
+      displayNameTitle={filePath}
+      status={effectiveStatus}
+      meta={
+        lineCount > 0 ? (
           <span className="tool-call-diff-stats">
             <span className="tool-call-diff-add">+{lineCount}</span>
           </span>
-        ) : null}
-        <span
-          className={`tool-call-status tool-call-status-${effectiveStatus}`}
-        >
-          {statusLabel}
-        </span>
-      </summary>
+        ) : null
+      }
+      className="tool-call-filesystem-create"
+    >
       <div className="tool-call-body">
         {parsedResult.type === "success" ? (
           <div className="tool-call-success-row">
@@ -160,6 +167,8 @@ export const FilesystemCreateToolCall = ({
             fileName={fileName}
             oldContent=""
             newContent={parsedArgs.content}
+            onOpenInTab={handleOpenInTab}
+            openInTabLabel={t("rightPanel.openInNewTab")}
           />
         ) : null}
 
@@ -179,6 +188,6 @@ export const FilesystemCreateToolCall = ({
           </div>
         ) : null}
       </div>
-    </details>
+    </ToolCallNode>
   );
 };

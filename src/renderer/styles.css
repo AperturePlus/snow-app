@@ -6229,90 +6229,197 @@ input {
   word-break: break-all;
 }
 
-/* Tool Call Item (collapsible, inline on assistant message) */
-.tool-calls-container {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 8px;
+/* ============================================================
+   Tool Call Group (tcg) - collapsible "N steps" wrapper
+   ============================================================ */
+.tcg {
+  margin-bottom: 6px;
 }
 
-.tool-call-item {
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  background: var(--bg-secondary);
-  overflow: hidden;
-}
-
-.tool-call-header {
-  display: flex;
+.tcg-toggle {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  font-size: 12px;
-  color: var(--text-secondary);
+  gap: 4px;
+  padding: 2px 0;
+  border: none;
+  background: none;
   cursor: pointer;
-  user-select: none;
-  list-style: none;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  transition: color 0.15s ease;
 }
 
-.tool-call-header::-webkit-details-marker {
-  display: none;
+.tcg-toggle:hover {
+  color: var(--text-secondary);
 }
 
-.tool-call-item[open] .tool-call-header {
-  border-bottom: 1px solid var(--border-light);
+.tcg-label {
+  font-weight: 500;
 }
 
-.tool-call-chevron {
+.tcg-chevron {
   flex-shrink: 0;
   transition: transform 0.15s ease;
   color: var(--text-tertiary);
 }
 
-.tool-call-item[open] .tool-call-chevron {
+.tcg-chevron--open {
   transform: rotate(90deg);
 }
 
-.tool-call-name {
-  font-weight: 500;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.tcg-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-left: 6px;
+  padding-left: 12px;
+  border-left: 1.5px solid var(--border-light);
 }
 
-.tool-call-status {
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
+/* ============================================================
+   Tool Call Node (tcn) - compact node-style tool call item
+   ============================================================ */
+.tcn {
+  position: relative;
 }
 
-.tool-call-status-pending {
-  color: var(--text-tertiary);
-  background: var(--bg-tertiary);
-}
-
-.tool-call-status-running {
-  color: var(--accent-blue-text);
-  background: var(--accent-blue-bg);
-}
-
-.tool-call-status-completed {
-  color: var(--accent-green-text);
-  background: var(--accent-green-bg);
-}
-.tool-call-status-error {
-  color: var(--accent-red-text);
-  background: var(--accent-red-bg);
-}
-
-.tool-call-status-cancelled {
+.tcn-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 12.5px;
   color: var(--text-secondary);
-  background: var(--bg-active);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  line-height: 1.4;
+}
+
+.tcn-header::-webkit-details-marker {
+  display: none;
+}
+
+/* Status dot on the vertical line */
+.tcn-dot {
+  position: absolute;
+  left: -16.5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1.5px solid var(--bg-primary, #fff);
+  box-sizing: content-box;
+}
+
+.tcn-dot--completed {
+  background: var(--accent-green, #22c55e);
+}
+
+.tcn-dot--running {
+  background: var(--accent-blue, #3b82f6);
+  box-shadow: 0 0 0 2px
+    color-mix(in srgb, var(--accent-blue, #3b82f6) 25%, transparent);
+}
+
+.tcn-dot--error {
+  background: var(--accent-red, #ef4444);
+}
+
+.tcn-dot--pending {
+  background: var(--text-tertiary);
+  opacity: 0.5;
+}
+
+.tcn-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.tcn-icon-spin {
+  animation: tcn-spin 0.8s linear infinite;
+}
+
+@keyframes tcn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tcn-icon-spin {
+    animation: none;
+  }
+}
+
+.tcn-provider {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.tcn-sep {
+  color: var(--text-tertiary);
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.tcn-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  overflow: hidden;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.tcn-name > svg {
+  flex-shrink: 0;
+}
+
+.tcn-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.tcn-chevron {
+  flex-shrink: 0;
+  margin-left: auto;
+  transition: transform 0.15s ease;
+  color: var(--text-tertiary);
+  opacity: 0.6;
+}
+
+.tcn[open] > .tcn-header .tcn-chevron {
+  transform: rotate(90deg);
+}
+
+.tcn-body {
+  padding: 6px 0 8px 0;
+  margin-left: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+/* ============================================================
+   Legacy tool-call styles (kept for body content)
+   ============================================================ */
+.tool-calls-container {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
 }
 
 .tool-call-icon-spinning {
@@ -6901,6 +7008,7 @@ input {
 }
 
 .tool-call-diff-content {
+  position: relative;
   max-height: 400px;
   overflow: auto;
   border: 1px solid var(--border-light);
@@ -6909,6 +7017,38 @@ input {
   font-family: var(--font-mono);
   font-size: 11.5px;
   line-height: 1.5;
+}
+
+.tool-call-diff-view {
+  min-width: 0;
+}
+
+.tool-call-diff-open-tab {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.tool-call-diff-content:hover .tool-call-diff-open-tab {
+  opacity: 1;
+}
+
+.tool-call-diff-open-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .tool-call-meta-row {
@@ -7475,18 +7615,26 @@ input {
 
 /* ===== Sidebar Search ===== */
 .sidebar-search-bar {
-  padding: 8px 8px 4px;
+  padding: 6px 8px 2px;
   flex-shrink: 0;
 }
 
 .sidebar-search-btn {
   width: 100%;
-  color: var(--text-muted);
-  font-size: 12.5px;
+  color: var(--text-secondary);
+  font-size: 13px;
   cursor: pointer;
 }
 
 .sidebar-search-btn:hover {
+  color: var(--text-primary);
+}
+
+.sidebar-search-btn svg {
+  color: var(--text-tertiary);
+}
+
+.sidebar-search-btn:hover svg {
   color: var(--text-secondary);
 }
 
@@ -8241,8 +8389,8 @@ input {
 }
 
 .image-chip:hover {
-  border-color: var(--accent-color, #3b82f6);
-  color: var(--accent-color, #3b82f6);
+  border-color: var(--text-primary);
+  color: var(--text-primary);
 }
 
 .commit-chip {
@@ -12887,6 +13035,10 @@ input {
   color: var(--accent-red-text);
 }
 
+.file-diff-preview.single-file {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 /* Commit Section */
 .git-commit-section {
   display: flex;
@@ -14800,7 +14952,6 @@ input {
 }
 
 .theme-preset-card:hover:not(:disabled) {
-  transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
   border-color: var(--border-subtle);
 }
