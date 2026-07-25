@@ -545,6 +545,30 @@ export type ChatMessagePage = {
   total: number;
   hasMore: boolean;
 };
+
+export type MemoStatus = "pending" | "done";
+
+export type MemoRecord = {
+  id: string;
+  memoId: string;
+  content: string;
+  status: MemoStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MemoPage = {
+  items: MemoRecord[];
+  total: number;
+  hasMore: boolean;
+};
+
+export type MemoCountSummary = {
+  total: number;
+  pending: number;
+  done: number;
+};
+
 export type ResponsesApiMessage = {
   role: "user" | "assistant" | "system" | "developer" | "tool";
   content: string;
@@ -1120,4 +1144,15 @@ export type NativeBridge = {
     conversationId: string,
     format: string
   ) => Promise<string>;
+  listMemos: (
+    directoryId: string,
+    limit: number,
+    offset: number,
+    status?: string
+  ) => Promise<MemoPage>;
+  createMemo: (directoryId: string, content: string) => Promise<MemoRecord>;
+  updateMemoContent: (memoId: string, content: string) => Promise<MemoRecord>;
+  updateMemoStatus: (memoId: string, status: string) => Promise<MemoRecord>;
+  deleteMemo: (memoId: string) => Promise<void>;
+  getMemoCountSummary: (directoryId: string) => Promise<MemoCountSummary>;
 };

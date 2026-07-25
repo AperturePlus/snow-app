@@ -40,6 +40,7 @@ export const useChatConversation = (
   >(new Set());
   const [isLoadingInitialHistory, setIsLoadingInitialHistory] = useState(false);
   const [draftToRestore, setDraftToRestore] = useState<string | null>(null);
+  const [autoSendToken, setAutoSendToken] = useState(0);
   const [rollbackPreview, setRollbackPreview] =
     useState<ConversationContextValue["rollbackPreview"]>(null);
   const [newChatRequested, setNewChatRequested] = useState(false);
@@ -335,7 +336,16 @@ export const useChatConversation = (
     abortConversation: conversationManagementApi.abortConversation,
     handleForkConversation: conversationManagementApi.handleForkConversation,
     draftToRestore,
-    clearDraftToRestore: rollbackApi.clearDraftToRestore,
+    autoSendToken,
+    clearDraftToRestore: () => {
+      rollbackApi.clearDraftToRestore();
+      setAutoSendToken(0);
+    },
+    buildFromContent: (content: string) => {
+      conversationManagementApi.handleNewChat();
+      setDraftToRestore(content);
+      setAutoSendToken(Date.now());
+    },
     handleRollback: rollbackApi.handleRollback,
     rollbackPreview,
     confirmRollback: rollbackApi.confirmRollback,

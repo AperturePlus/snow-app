@@ -378,6 +378,31 @@ pub struct ChatMessagePage {
     pub has_more: bool,
 }
 
+#[napi(object)]
+pub struct MemoRecord {
+    pub id: String,
+    pub memo_id: String,
+    pub directory_id: String,
+    pub content: String,
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[napi(object)]
+pub struct MemoPage {
+    pub items: Vec<MemoRecord>,
+    pub total: i32,
+    pub has_more: bool,
+}
+
+#[napi(object)]
+pub struct MemoCountSummary {
+    pub total: i32,
+    pub pending: i32,
+    pub done: i32,
+}
+
 static INTERRUPT_MARK_INIT: Once = Once::new();
 
 pub fn initialize_app_storage() -> Result<AppStorageInfo> {
@@ -1247,4 +1272,47 @@ pub fn get_storage_dir() -> Result<PathBuf> {
 pub fn export_conversation(conversation_id: String, format: String) -> Result<String> {
     let database_path = ensure_database_file()?;
     services::conversation_export::export_conversation(&database_path, &conversation_id, &format)
+}
+
+// ===== Memos =====
+
+pub fn list_memos(
+    directory_id: String,
+    limit: i32,
+    offset: i32,
+    status: Option<String>,
+) -> Result<MemoPage> {
+    let database_path = ensure_database_file()?;
+    services::memos::list_memos(
+        &database_path,
+        &directory_id,
+        limit,
+        offset,
+        status.as_deref(),
+    )
+}
+
+pub fn create_memo(directory_id: String, content: String) -> Result<MemoRecord> {
+    let database_path = ensure_database_file()?;
+    services::memos::create_memo(&database_path, &directory_id, &content)
+}
+
+pub fn update_memo_content(memo_id: String, content: String) -> Result<MemoRecord> {
+    let database_path = ensure_database_file()?;
+    services::memos::update_memo_content(&database_path, &memo_id, &content)
+}
+
+pub fn update_memo_status(memo_id: String, status: String) -> Result<MemoRecord> {
+    let database_path = ensure_database_file()?;
+    services::memos::update_memo_status(&database_path, &memo_id, &status)
+}
+
+pub fn delete_memo(memo_id: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::memos::delete_memo(&database_path, &memo_id)
+}
+
+pub fn get_memo_count_summary(directory_id: String) -> Result<MemoCountSummary> {
+    let database_path = ensure_database_file()?;
+    services::memos::get_memo_count_summary(&database_path, &directory_id)
 }

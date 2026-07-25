@@ -1,4 +1,4 @@
-import { Download, Search, Settings } from "lucide-react";
+import { Download, NotebookText, Search, Settings } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { useI18n } from "../../i18n";
@@ -8,6 +8,7 @@ import { ChatsSection } from "./mainSidebar/ChatsSection";
 import { PinnedSection } from "./mainSidebar/PinnedSection";
 import { ProjectsSection } from "./mainSidebar/ProjectsSection";
 import { GlobalSearchModal } from "./GlobalSearchModal";
+import { MemoModal } from "./MemoModal";
 import type { SidebarContentProps } from "./types";
 import type {
   UpdateStatus,
@@ -28,6 +29,8 @@ export function MainSidebarContent({
   const [isSwitchingDirectory, setIsSwitchingDirectory] = useState(false);
   const [appVersion, setAppVersion] = useState<string>("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isMemoOpen, setIsMemoOpen] = useState(false);
+  const [pendingMemoCount, setPendingMemoCount] = useState(0);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({
     available: false,
     version: null,
@@ -54,6 +57,27 @@ export function MainSidebarContent({
     });
     return unsubscribe;
   }, []);
+
+  // Load the pending memo count for the sidebar badge. It is refreshed
+  // whenever the memo modal closes (the modal calls onPendingCountChange
+  // while open) and once on mount, and whenever the active project changes
+  // since memos are scoped per directory.
+  const activeDirectoryId = activeDirectory?.directoryId ?? "";
+
+  const refreshPendingMemoCount = useCallback(() => {
+    if (!activeDirectoryId) {
+      setPendingMemoCount(0);
+      return;
+    }
+    window.snow
+      .getMemoCountSummary(activeDirectoryId)
+      .then((summary) => setPendingMemoCount(summary.pending))
+      .catch(() => undefined);
+  }, [activeDirectoryId]);
+
+  useEffect(() => {
+    refreshPendingMemoCount();
+  }, [refreshPendingMemoCount]);
 
   const handleDownloadUpdate = (): void => {
     void window.snow.downloadUpdate();
@@ -109,6 +133,21 @@ export function MainSidebarContent({
               defaultValue: "Search",
             })}
           </span>
+        </button>
+        <button
+          className="nav-item sidebar-memo-btn"
+          disabled={!activeDirectoryId}
+          onClick={() => setIsMemoOpen(true)}
+          title={t("memo.sidebarEntry", { defaultValue: "Memos" })}
+          type="button"
+        >
+          <NotebookText size={16} strokeWidth={1.8} />
+          <span>
+            {t("memo.sidebarEntry", { defaultValue: "Memos" })}
+          </span>
+          {pendingMemoCount > 0 && (
+            <span className="sidebar-memo-badge">{pendingMemoCount}</span>
+          )}
         </button>
       </div>
       <PinnedSection
@@ -188,6 +227,15 @@ export function MainSidebarContent({
         onSelectConversation={handleSearchSelectConversation}
         onSelectDirectory={handleSearchSelectDirectory}
         onSelectSetting={handleSearchSelectSetting}
+      />
+      <MemoModal
+        directoryId={activeDirectoryId}
+        open={isMemoOpen}
+        onClose={() => {
+          setIsMemoOpen(false);
+          refreshPendingMemoCount();
+        }}
+        onPendingCountChange={setPendingMemoCount}
       />
     </>
   );

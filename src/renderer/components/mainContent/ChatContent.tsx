@@ -48,6 +48,7 @@ const ChatContentBody = ({
     handleAbort,
     tokenUsage,
     draftToRestore,
+    autoSendToken,
     clearDraftToRestore,
     rollbackPreview,
     confirmRollback,
@@ -606,6 +607,7 @@ const ChatContentBody = ({
           onAbort={handleAbort}
           tokenUsage={tokenUsage}
           draftToRestore={draftToRestore}
+          autoSendToken={autoSendToken}
           onDraftRestored={clearDraftToRestore}
           pendingMessages={pendingMessages}
           onWithdrawPendingMessage={withdrawPendingMessage}

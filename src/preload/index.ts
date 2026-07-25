@@ -6,6 +6,7 @@ import { workspaceApi } from "./modules/workspaceApi";
 import { sshApi } from "./modules/sshApi";
 import { gitApi } from "./modules/gitApi";
 import { systemApi, ptyApi, windowApi } from "./modules/systemApi";
+import { memoApi } from "./modules/memoApi";
 
 export type * from "./types";
 
@@ -19,6 +20,7 @@ const api = {
   ...systemApi,
   ...ptyApi,
   ...windowApi,
+  ...memoApi,
 };
 
 contextBridge.exposeInMainWorld("snow", api);

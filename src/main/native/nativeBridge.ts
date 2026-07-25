@@ -712,6 +712,30 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to export conversation")
         ),
+      listMemos: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to list memos")
+        ),
+      createMemo: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to create memo")
+        ),
+      updateMemoContent: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to update memo content")
+        ),
+      updateMemoStatus: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to update memo status")
+        ),
+      deleteMemo: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to delete memo")
+        ),
+      getMemoCountSummary: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to count memos")
+        ),
     };
   }
 };

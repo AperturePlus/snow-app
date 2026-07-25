@@ -333,7 +333,9 @@ export type UseChatConversationResult = {
     upToResponseId: string
   ) => Promise<void>;
   draftToRestore: string | null;
+  autoSendToken: number;
   clearDraftToRestore: () => void;
+  buildFromContent: (content: string) => void;
   handleRollback: (messageId: string) => void;
   rollbackPreview: RollbackPreview | null;
   confirmRollback: (mode: RollbackMode) => void;

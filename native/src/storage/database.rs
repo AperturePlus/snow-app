@@ -389,6 +389,20 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            ON app_logs(level);
          CREATE INDEX IF NOT EXISTS idx_app_logs_module
            ON app_logs(module);
+
+         CREATE TABLE IF NOT EXISTS memos (
+           id TEXT PRIMARY KEY NOT NULL,
+           memo_id TEXT NOT NULL UNIQUE,
+           directory_id TEXT NOT NULL DEFAULT '',
+           content TEXT NOT NULL DEFAULT '',
+           status TEXT NOT NULL DEFAULT 'pending',
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+         );
+         CREATE INDEX IF NOT EXISTS idx_memos_directory_status_created
+           ON memos(directory_id, status, created_at DESC, id DESC);
+         CREATE INDEX IF NOT EXISTS idx_memos_directory_created
+           ON memos(directory_id, created_at DESC, id DESC);
     ",
     )?;
 

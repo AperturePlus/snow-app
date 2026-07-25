@@ -15,6 +15,7 @@ export type ChatInputProps = {
   onAbort?: () => void;
   tokenUsage?: TokenUsage | null;
   draftToRestore?: string | null;
+  autoSendToken?: number;
   onDraftRestored?: () => void;
   pendingMessages?: string[];
   onWithdrawPendingMessage?: (index: number) => string | null;

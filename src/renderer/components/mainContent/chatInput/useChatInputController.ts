@@ -37,6 +37,7 @@ type UseChatInputControllerParams = {
   isAborting?: boolean;
   onAbort?: () => void;
   draftToRestore?: string | null;
+  autoSendToken?: number;
   onDraftRestored?: () => void;
 };
 
@@ -58,6 +59,7 @@ export const useChatInputController = ({
   isAborting = false,
   onAbort,
   draftToRestore = null,
+  autoSendToken = 0,
   onDraftRestored,
 }: UseChatInputControllerParams): UseChatInputControllerResult => {
   const { t } = useI18n();
@@ -333,11 +335,24 @@ export const useChatInputController = ({
           selection.removeAllRanges();
           selection.addRange(range);
         }
+
+        // If autoSendToken is non-zero, this draft was queued by
+        // buildFromContent — automatically send it right after restore.
+        if (autoSendToken > 0) {
+          const message = draftToRestore.trim();
+          if (message) {
+            onSend?.(message, { model: selectedModel || undefined });
+          }
+          setValue("");
+          textarea.innerHTML = "";
+          textarea.dataset.empty = "true";
+          adjustHeight();
+        }
       });
     }
 
     onDraftRestored?.();
-  }, [draftToRestore, onDraftRestored, adjustHeight]);
+  }, [draftToRestore, onDraftRestored, adjustHeight, autoSendToken, onSend, selectedModel]);
 
   const handleChange = useCallback(
     (nextValue: string) => {

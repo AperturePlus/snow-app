@@ -14,6 +14,7 @@ export const ChatInput = ({
   onAbort,
   tokenUsage = null,
   draftToRestore = null,
+  autoSendToken = 0,
   onDraftRestored,
   pendingMessages = [],
   onWithdrawPendingMessage,
@@ -38,6 +39,7 @@ export const ChatInput = ({
     isAborting,
     onAbort,
     draftToRestore,
+    autoSendToken,
     onDraftRestored,
   });
 
