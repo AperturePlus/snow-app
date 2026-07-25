@@ -8339,6 +8339,14 @@ input {
 }
 
 /* ===== ContentEditable Input ===== */
+/* pre-wrap 使粘贴/恢复文本中的 \n 与连续空格（代码缩进）原样渲染，
+   序列化时 textContent 保留真实空格而非 &nbsp;；
+   overflow-wrap 保证无空格的超长行（长 URL/token）自动折行而非横向溢出 */
+.input-field-editable {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
 .input-field-editable[contenteditable][data-empty="true"]::before {
   content: attr(data-placeholder);
   color: var(--text-muted);

@@ -347,6 +347,8 @@ fn build_gemini_payload(
 
     let mut generation_config = json!({});
 
+    generation_config["temperature"] = json!(0.7);
+
     if let Some(max_tokens) = api_config.max_tokens {
         if max_tokens > 0 {
             generation_config["maxOutputTokens"] = json!(max_tokens);
@@ -553,7 +555,10 @@ async fn collect_gemini_stream(
     // of a read error or unexpected EOF (not via a finishReason event and
     // not via cancellation), we mark the response as "incomplete" so the
     // frontend can still process any collected content and tool calls.
+    #[allow(unused_assignments)]
     let mut stream_completed_normally = false;
+    // Set by process_gemini_sse_event_block when finishReason is received.
+    let mut stream_finished = false;
     loop {
         tokio::select! {
             biased;
@@ -593,10 +598,9 @@ async fn collect_gemini_stream(
                     let thinking_start_index = thinking_chunks.len();
                     let mut tool_args_delta = String::new();
                     // Process each SSE event block with error tolerance: if a
-                    // single event block is malformed (invalid JSON, unexpected
-                    // shape), skip it and continue processing the rest of the
-                    // stream rather than aborting the entire response.
-                    if let Err(parse_error) = process_gemini_sse_event_block(
+                    // single data line is malformed, skip it and continue
+                    // processing the rest of the stream.
+                    process_gemini_sse_event_block(
                         &event_block,
                         &mut raw_events,
                         &mut content_chunks,
@@ -607,11 +611,8 @@ async fn collect_gemini_stream(
                         &mut response_status,
                         &mut token_usage,
                         &mut tool_args_delta,
-                    ) {
-                        eprintln!(
-                            "Gemini stream event parse error (skipping event): {parse_error}"
-                        );
-                    }
+                        &mut stream_finished,
+                    );
                     let content_delta = content_chunks[content_start_index..].join("");
                     let thinking_delta = thinking_chunks[thinking_start_index..].join("");
                     if ttft_ms == 0 {
@@ -643,7 +644,7 @@ async fn collect_gemini_stream(
     // If the stream ended abnormally (no finishReason and no cancellation),
     // mark the response as incomplete so the frontend knows the result is
     // partial but still usable.
-    if !stream_completed_normally && response_status == "completed" {
+    if !stream_completed_normally && !stream_finished && response_status == "completed" {
         response_status = String::from("incomplete");
     }
 
@@ -653,7 +654,7 @@ async fn collect_gemini_stream(
             let content_start_index = content_chunks.len();
             let thinking_start_index = thinking_chunks.len();
             let mut tool_args_delta = String::new();
-            if let Err(parse_error) = process_gemini_sse_event_block(
+            process_gemini_sse_event_block(
                 &trailing_buffer,
                 &mut raw_events,
                 &mut content_chunks,
@@ -664,11 +665,8 @@ async fn collect_gemini_stream(
                 &mut response_status,
                 &mut token_usage,
                 &mut tool_args_delta,
-            ) {
-                eprintln!(
-                    "Gemini stream trailing event parse error (skipping event): {parse_error}"
-                );
-            }
+                &mut stream_finished,
+            );
             let content_delta = content_chunks[content_start_index..].join("");
             let thinking_delta = thinking_chunks[thinking_start_index..].join("");
             if ttft_ms == 0 {
@@ -721,35 +719,107 @@ fn process_gemini_sse_event_block(
     response_status: &mut String,
     token_usage: &mut ChatTokenUsage,
     tool_args_delta: &mut String,
-) -> Result<()> {
-    let data = event_block
-        .lines()
-        .filter_map(|line| line.trim_start().strip_prefix("data:"))
-        .map(str::trim_start)
-        .collect::<Vec<_>>()
-        .join("\n");
+    stream_finished: &mut bool,
+) {
+    // Process each `data:` line independently as a separate SSE event.
+    // This matches the TypeScript reference implementation where each line
+    // is parsed on its own. Joining multiple data lines into one string
+    // (the old behavior) produces invalid JSON when a proxy or server
+    // batches multiple events within a single block, causing tool-call
+    // data to be silently dropped.
+    let mut found_data_line = false;
+    for line in event_block.lines() {
+        let trimmed = line.trim_start();
+        let Some(data) = trimmed.strip_prefix("data:") else {
+            continue;
+        };
+        found_data_line = true;
+        let data = data.trim_start();
 
-    if data.trim().is_empty() {
-        return Ok(());
+        if data.is_empty() {
+            continue;
+        }
+
+        let event = match serde_json::from_str::<Value>(data) {
+            Ok(event) => event,
+            Err(error) => {
+                eprintln!(
+                    "Gemini stream event parse error (skipping line): {}",
+                    error
+                );
+                continue;
+            }
+        };
+
+        if let Err(process_error) = process_gemini_event(
+            &event,
+            content_chunks,
+            thinking_chunks,
+            tool_calls,
+            response_id,
+            response_model,
+            response_status,
+            token_usage,
+            tool_args_delta,
+        ) {
+            eprintln!(
+                "Gemini stream event processing error (skipping event): {}",
+                process_error.reason
+            );
+            continue;
+        }
+
+        // Detect finishReason to signal normal stream completion.
+        if let Some(candidates) = event.get("candidates").and_then(Value::as_array) {
+            for candidate in candidates {
+                if candidate
+                    .get("finishReason")
+                    .and_then(Value::as_str)
+                    .is_some_and(|r| !r.is_empty())
+                {
+                    *stream_finished = true;
+                }
+            }
+        }
+
+        raw_events.push(event);
     }
 
-    let event = serde_json::from_str::<Value>(&data).map_err(|error| {
-        Error::from_reason(format!("Failed to parse Gemini stream event: {}", error))
-    })?;
-    process_gemini_event(
-        &event,
-        content_chunks,
-        thinking_chunks,
-        tool_calls,
-        response_id,
-        response_model,
-        response_status,
-        token_usage,
-        tool_args_delta,
-    )?;
-    raw_events.push(event);
-
-    Ok(())
+    // Fallback: some providers return a complete JSON response without SSE
+    // `data:` framing. If no `data:` lines were found, try parsing the
+    // entire block as raw JSON.
+    if !found_data_line {
+        let trimmed_block = event_block.trim();
+        if trimmed_block.is_empty() || trimmed_block.starts_with(':') {
+            return;
+        }
+        if let Ok(event) = serde_json::from_str::<Value>(trimmed_block) {
+            let _ = process_gemini_event(
+                &event,
+                content_chunks,
+                thinking_chunks,
+                tool_calls,
+                response_id,
+                response_model,
+                response_status,
+                token_usage,
+                tool_args_delta,
+            );
+            // Detect finishReason in raw JSON fallback.
+            if let Some(candidates) = event.get("candidates").and_then(Value::as_array) {
+                for candidate in candidates {
+                    if candidate
+                        .get("finishReason")
+                        .and_then(Value::as_str)
+                        .is_some_and(|r| !r.is_empty())
+                    {
+                        *stream_finished = true;
+                    }
+                }
+            }
+            raw_events.push(event);
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

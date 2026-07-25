@@ -353,6 +353,8 @@ fn build_chat_completions_payload(
         },
     });
 
+    payload["temperature"] = json!(0.7);
+
     if let Some(max_tokens) = api_config.max_tokens {
         if max_tokens > 0 {
             payload["max_tokens"] = json!(max_tokens);
@@ -445,11 +447,13 @@ async fn collect_chat_completions_stream(
     let mut byte_buffer: Vec<u8> = Vec::new();
 
     let idle_timeout = Duration::from_secs(stream_idle_timeout_sec);
-    // Track whether the stream completed normally (via finish_reason or
-    // cancellation). Reset at the start of each HTTP attempt; when false after
-    // the inner loop, the response is marked "incomplete".
+    // Track whether the stream completed normally (via [DONE], finish_reason,
+    // or cancellation). When false after the inner loop, the response is
+    // marked "incomplete".
     #[allow(unused_assignments)]
     let mut stream_completed_normally = false;
+    // Set by process_sse_event_block when [DONE] is received.
+    let mut stream_finished = false;
 
     loop {
         // ---- Phase 1: send the request (with retry on connect errors) ----
@@ -590,8 +594,9 @@ async fn collect_chat_completions_stream(
                     let error = stream_idle_timeout_error();
                     if !should_retry(&error, attempt, retry_options) {
                         // Exhausted retries — return whatever we have so far
-                        // rather than discarding partial work.
-                        stream_completed_normally = true;
+                        // rather than discarding partial work. The response
+                        // will be marked "incomplete" since [DONE] was never
+                        // received.
                         break;
                     }
 
@@ -626,6 +631,7 @@ async fn collect_chat_completions_stream(
                             response_model.clear();
                             response_status = String::from("completed");
                             token_usage = ChatTokenUsage::default();
+                            stream_finished = false;
                             attempt += 1;
                             // Jump back to Phase 1 to re-send the request.
                             idle_reset = true;
@@ -667,10 +673,9 @@ async fn collect_chat_completions_stream(
                         let thinking_start_index = thinking_chunks.len();
                         let mut tool_args_delta = String::new();
                         // Process each SSE event block with error tolerance: if a
-                        // single event block is malformed (invalid JSON, unexpected
-                        // shape), skip it and continue processing the rest of the
-                        // stream rather than aborting the entire response.
-                        if let Err(parse_error) = process_sse_event_block(
+                        // single data line is malformed, skip it and continue
+                        // processing the rest of the stream.
+                        process_sse_event_block(
                             &event_block,
                             &mut raw_events,
                             &mut content_chunks,
@@ -682,11 +687,8 @@ async fn collect_chat_completions_stream(
                             &mut response_status,
                             &mut token_usage,
                             &mut tool_args_delta,
-                        ) {
-                            eprintln!(
-                                "Chat stream event parse error (skipping event): {parse_error}"
-                            );
-                        }
+                            &mut stream_finished,
+                        );
                         let content_delta = content_chunks[content_start_index..].join("");
                         let thinking_delta = thinking_chunks[thinking_start_index..].join("");
                         // Emit content/thinking delta (if any) and update the
@@ -728,10 +730,10 @@ async fn collect_chat_completions_stream(
         break;
     }
 
-    // If the stream ended abnormally (no finish_reason and no cancellation),
-    // mark the response as incomplete so the frontend knows the result is
-    // partial but still usable.
-    if !stream_completed_normally && response_status == "completed" {
+    // If the stream ended abnormally (no [DONE], no finish_reason, and no
+    // cancellation), mark the response as incomplete so the frontend knows
+    // the result is partial but still usable.
+    if !stream_completed_normally && !stream_finished && response_status == "completed" {
         response_status = String::from("incomplete");
     }
 
@@ -741,7 +743,7 @@ async fn collect_chat_completions_stream(
             let content_start_index = content_chunks.len();
             let thinking_start_index = thinking_chunks.len();
             let mut tool_args_delta = String::new();
-            if let Err(parse_error) = process_sse_event_block(
+            process_sse_event_block(
                 &trailing_buffer,
                 &mut raw_events,
                 &mut content_chunks,
@@ -753,11 +755,8 @@ async fn collect_chat_completions_stream(
                 &mut response_status,
                 &mut token_usage,
                 &mut tool_args_delta,
-            ) {
-                eprintln!(
-                    "Chat stream trailing event parse error (skipping event): {parse_error}"
-                );
-            }
+                &mut stream_finished,
+            );
             let content_delta = content_chunks[content_start_index..].join("");
             let thinking_delta = thinking_chunks[thinking_start_index..].join("");
             if ttft_ms == 0 {
@@ -837,36 +836,91 @@ fn process_sse_event_block(
     response_status: &mut String,
     token_usage: &mut ChatTokenUsage,
     tool_args_delta: &mut String,
-) -> Result<()> {
-    let data = event_block
-        .lines()
-        .filter_map(|line| line.trim_start().strip_prefix("data:"))
-        .map(str::trim_start)
-        .collect::<Vec<_>>()
-        .join("\n");
+    stream_finished: &mut bool,
+) {
+    // Process each `data:` line independently as a separate SSE event.
+    // This matches the TypeScript reference implementation where each line
+    // is parsed on its own. Joining multiple data lines into one string
+    // (the old behavior) produces invalid JSON when a proxy or server
+    // batches multiple events within a single block, causing tool-call
+    // deltas to be silently dropped.
+    let mut found_data_line = false;
+    for line in event_block.lines() {
+        let trimmed = line.trim_start();
+        let Some(data) = trimmed.strip_prefix("data:") else {
+            continue;
+        };
+        found_data_line = true;
+        let data = data.trim_start();
 
-    if data.trim().is_empty() || data.trim() == "[DONE]" {
-        return Ok(());
+        if data.is_empty() {
+            continue;
+        }
+        if data == "[DONE]" {
+            *stream_finished = true;
+            return;
+        }
+
+        let event = match serde_json::from_str::<Value>(data) {
+            Ok(event) => event,
+            Err(error) => {
+                eprintln!(
+                    "Chat stream event parse error (skipping line): {}",
+                    error
+                );
+                continue;
+            }
+        };
+
+        if let Err(process_error) = process_chat_completion_event(
+            &event,
+            content_chunks,
+            thinking_chunks,
+            tool_calls,
+            tool_call_positions_by_index,
+            response_id,
+            response_model,
+            response_status,
+            token_usage,
+            tool_args_delta,
+        ) {
+            eprintln!(
+                "Chat stream event processing error (skipping event): {}",
+                process_error.reason
+            );
+            continue;
+        }
+        raw_events.push(event);
     }
 
-    let event = serde_json::from_str::<Value>(&data).map_err(|error| {
-        Error::from_reason(format!("Failed to parse chat stream event: {}", error))
-    })?;
-    process_chat_completion_event(
-        &event,
-        content_chunks,
-        thinking_chunks,
-        tool_calls,
-        tool_call_positions_by_index,
-        response_id,
-        response_model,
-        response_status,
-        token_usage,
-        tool_args_delta,
-    )?;
-    raw_events.push(event);
-
-    Ok(())
+    // Fallback: some providers return a complete JSON response without SSE
+    // `data:` framing (non-streaming response to a stream request). If no
+    // `data:` lines were found, try parsing the entire block as raw JSON.
+    if !found_data_line {
+        let trimmed_block = event_block.trim();
+        if trimmed_block.is_empty() || trimmed_block.starts_with(':') {
+            return;
+        }
+        if trimmed_block == "[DONE]" {
+            *stream_finished = true;
+            return;
+        }
+        if let Ok(event) = serde_json::from_str::<Value>(trimmed_block) {
+            let _ = process_chat_completion_event(
+                &event,
+                content_chunks,
+                thinking_chunks,
+                tool_calls,
+                tool_call_positions_by_index,
+                response_id,
+                response_model,
+                response_status,
+                token_usage,
+                tool_args_delta,
+            );
+            raw_events.push(event);
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -917,6 +971,13 @@ fn process_chat_completion_event(
                 push_trimmed_string(message.get("content"), content_chunks);
                 push_trimmed_string(message.get("reasoning_content"), thinking_chunks);
                 collect_tool_calls(message.get("tool_calls"), tool_calls, tool_call_positions_by_index, false);
+            }
+
+            // Fallback: some non-standard providers place tool_calls directly
+            // on the choice object (not inside delta or message).
+            if choice.get("delta").is_none() && choice.get("message").is_none() {
+                push_trimmed_string(choice.get("content"), content_chunks);
+                collect_tool_calls(choice.get("tool_calls"), tool_calls, tool_call_positions_by_index, false);
             }
 
             if let Some(finish_reason) = choice

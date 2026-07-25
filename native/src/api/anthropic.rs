@@ -385,7 +385,9 @@ fn build_anthropic_payload(
         "stream": true,
     });
 
-    // Build the `system` field. When user system prompts exist they occupy
+    payload["temperature"] = json!(0.7);
+
+    // Build the `system` field.
     // the field exclusively (each prompt as an independent text block, with
     // cache_control on the last block). Otherwise the built-in system
     // prompt parts are used. A plain string system field cannot carry
@@ -551,11 +553,13 @@ async fn collect_anthropic_stream(
     let mut byte_buffer: Vec<u8> = Vec::new();
 
     let idle_timeout = Duration::from_secs(stream_idle_timeout_sec);
-    // Track whether the stream completed normally (via message_stop or
-    // cancellation). Reset at the start of each HTTP attempt; when false after
-    // the inner loop, the response is marked "incomplete".
+    // Track whether the stream completed normally (via [DONE], finish_reason,
+    // or cancellation). When false after the inner loop, the response is
+    // marked "incomplete".
     #[allow(unused_assignments)]
     let mut stream_completed_normally = false;
+    // Set by process_anthropic_sse_event_block when message_stop is received.
+    let mut stream_finished = false;
 
     loop {
         // ---- Phase 1: send the request (with retry on connect errors) ----
@@ -696,8 +700,9 @@ async fn collect_anthropic_stream(
                     let error = stream_idle_timeout_error();
                     if !should_retry(&error, attempt, retry_options) {
                         // Exhausted retries — return whatever we have so far
-                        // rather than discarding partial work.
-                        stream_completed_normally = true;
+                        // rather than discarding partial work. The response
+                        // will be marked "incomplete" since [DONE] was never
+                        // received.
                         break;
                     }
 
@@ -734,6 +739,7 @@ async fn collect_anthropic_stream(
                             response_model.clear();
                             response_status = String::from("completed");
                             token_usage = ChatTokenUsage::default();
+                            stream_finished = false;
                             attempt += 1;
                             // Jump back to Phase 1 to re-send the request.
                             idle_reset = true;
@@ -775,10 +781,9 @@ async fn collect_anthropic_stream(
                         let thinking_start_index = thinking_chunks.len();
                         let mut tool_args_delta = String::new();
                         // Process each SSE event block with error tolerance: if a
-                        // single event block is malformed (invalid JSON, unexpected
-                        // shape), skip it and continue processing the rest of the
-                        // stream rather than aborting the entire response.
-                        if let Err(parse_error) = process_anthropic_sse_event_block(
+                        // single data line is malformed, skip it and continue
+                        // processing the rest of the stream.
+                        process_anthropic_sse_event_block(
                             &event_block,
                             &mut raw_events,
                             &mut content_chunks,
@@ -792,13 +797,8 @@ async fn collect_anthropic_stream(
                             &mut token_usage,
                             &mut tool_args_delta,
                             &mut tool_parse_errors,
-                        ) {
-                            // Propagate "error" type events (server-sent errors)
-                            // as actual errors, but skip malformed JSON events.
-                            eprintln!(
-                                "Anthropic stream event error (skipping event): {parse_error}"
-                            );
-                        }
+                            &mut stream_finished,
+                        );
                         let content_delta = content_chunks[content_start_index..].join("");
                         let thinking_delta = thinking_chunks[thinking_start_index..].join("");
                         if ttft_ms == 0 {
@@ -838,10 +838,10 @@ async fn collect_anthropic_stream(
         break;
     }
 
-    // If the stream ended abnormally (no message_stop and no cancellation),
-    // mark the response as incomplete so the frontend knows the result is
-    // partial but still usable.
-    if !stream_completed_normally && response_status == "completed" {
+    // If the stream ended abnormally (no message_stop, no stop_reason, and
+    // no cancellation), mark the response as incomplete so the frontend knows
+    // the result is partial but still usable.
+    if !stream_completed_normally && !stream_finished && response_status == "completed" {
         response_status = String::from("incomplete");
     }
 
@@ -851,7 +851,7 @@ async fn collect_anthropic_stream(
             let content_start_index = content_chunks.len();
             let thinking_start_index = thinking_chunks.len();
             let mut tool_args_delta = String::new();
-            if let Err(parse_error) = process_anthropic_sse_event_block(
+            process_anthropic_sse_event_block(
                 &trailing_buffer,
                 &mut raw_events,
                 &mut content_chunks,
@@ -865,11 +865,8 @@ async fn collect_anthropic_stream(
                 &mut token_usage,
                 &mut tool_args_delta,
                 &mut tool_parse_errors,
-            ) {
-                eprintln!(
-                    "Anthropic stream trailing event error (skipping event): {parse_error}"
-                );
-            }
+                &mut stream_finished,
+            );
             let content_delta = content_chunks[content_start_index..].join("");
             let thinking_delta = thinking_chunks[thinking_start_index..].join("");
             if ttft_ms == 0 {
@@ -933,38 +930,101 @@ fn process_anthropic_sse_event_block(
     token_usage: &mut ChatTokenUsage,
     tool_args_delta: &mut String,
     tool_parse_errors: &mut Vec<String>,
-) -> Result<()> {
-    let data = event_block
-        .lines()
-        .filter_map(|line| line.trim_start().strip_prefix("data:"))
-        .map(str::trim_start)
-        .collect::<Vec<_>>()
-        .join("\n");
+    stream_finished: &mut bool,
+) {
+    // Process each `data:` line independently as a separate SSE event.
+    // This matches the TypeScript reference implementation where each line
+    // is parsed on its own. Joining multiple data lines into one string
+    // (the old behavior) produces invalid JSON when a proxy or server
+    // batches multiple events within a single block, causing tool-call
+    // deltas to be silently dropped.
+    let mut found_data_line = false;
+    for line in event_block.lines() {
+        let trimmed = line.trim_start();
+        let Some(data) = trimmed.strip_prefix("data:") else {
+            continue;
+        };
+        found_data_line = true;
+        let data = data.trim_start();
 
-    if data.trim().is_empty() {
-        return Ok(());
+        if data.is_empty() {
+            continue;
+        }
+
+        let event = match serde_json::from_str::<Value>(data) {
+            Ok(event) => event,
+            Err(error) => {
+                eprintln!(
+                    "Anthropic stream event parse error (skipping line): {}",
+                    error
+                );
+                continue;
+            }
+        };
+
+        // Detect message_stop to signal normal stream completion.
+        let event_type = event.get("type").and_then(Value::as_str).unwrap_or_default();
+        if event_type == "message_stop" {
+            *stream_finished = true;
+            raw_events.push(event);
+            return;
+        }
+
+        if let Err(process_error) = process_anthropic_event(
+            &event,
+            content_chunks,
+            thinking_chunks,
+            tool_calls,
+            tool_call_positions_by_index,
+            tool_input_json_by_index,
+            response_id,
+            response_model,
+            response_status,
+            token_usage,
+            tool_args_delta,
+            tool_parse_errors,
+        ) {
+            eprintln!(
+                "Anthropic stream event processing error (skipping event): {}",
+                process_error.reason
+            );
+            continue;
+        }
+        raw_events.push(event);
     }
 
-    let event = serde_json::from_str::<Value>(&data).map_err(|error| {
-        Error::from_reason(format!("Failed to parse Anthropic stream event: {}", error))
-    })?;
-    process_anthropic_event(
-        &event,
-        content_chunks,
-        thinking_chunks,
-        tool_calls,
-        tool_call_positions_by_index,
-        tool_input_json_by_index,
-        response_id,
-        response_model,
-        response_status,
-        token_usage,
-        tool_args_delta,
-        tool_parse_errors,
-    )?;
-    raw_events.push(event);
-
-    Ok(())
+    // Fallback: some providers return a complete JSON response without SSE
+    // `data:` framing. If no `data:` lines were found, try parsing the
+    // entire block as raw JSON.
+    if !found_data_line {
+        let trimmed_block = event_block.trim();
+        if trimmed_block.is_empty() || trimmed_block.starts_with(':') {
+            return;
+        }
+        if let Ok(event) = serde_json::from_str::<Value>(trimmed_block) {
+            let event_type = event.get("type").and_then(Value::as_str).unwrap_or_default();
+            if event_type == "message_stop" {
+                *stream_finished = true;
+                raw_events.push(event);
+                return;
+            }
+            let _ = process_anthropic_event(
+                &event,
+                content_chunks,
+                thinking_chunks,
+                tool_calls,
+                tool_call_positions_by_index,
+                tool_input_json_by_index,
+                response_id,
+                response_model,
+                response_status,
+                token_usage,
+                tool_args_delta,
+                tool_parse_errors,
+            );
+            raw_events.push(event);
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

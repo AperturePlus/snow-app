@@ -602,18 +602,10 @@ export const ChatInputView = ({
       if (!text) {
         return;
       }
-      const selection = window.getSelection();
-      if (!selection || !selection.rangeCount) {
-        return;
-      }
-      const range = selection.getRangeAt(0);
-      range.deleteContents();
-      const textNode = document.createTextNode(text);
-      range.insertNode(textNode);
-      range.setStartAfter(textNode);
-      range.setEndAfter(textNode);
-      selection.removeAllRanges();
-      selection.addRange(range);
+      // 用浏览器原生 insertText 插入纯文本：配合 .input-field-editable 的
+      // white-space: pre-wrap，原文的换行与缩进（连续空格）原样保留；
+      // 同时接入浏览器撤销栈，Ctrl+Z 可整体撤销本次粘贴。
+      document.execCommand("insertText", false, text);
       syncContent();
       checkInputTriggers();
     },
@@ -636,10 +628,7 @@ export const ChatInputView = ({
         return;
       }
 
-      if (
-        event.key === "Enter" &&
-        (event.ctrlKey || event.metaKey)
-      ) {
+      if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
         insertLineBreak();
         syncContent();
