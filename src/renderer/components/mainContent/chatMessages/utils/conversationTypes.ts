@@ -100,6 +100,13 @@ export type ConversationSessionState = {
   /** Time to first token in milliseconds. 0 until the first content
    *  or thinking delta arrives, then frozen for the iteration. */
   streamTtftMs: number;
+  /** Wall-clock timestamp (Date.now()) captured once when an agent loop
+   *  starts, used by StreamMetrics to drive an accumulating elapsed timer
+   *  that survives conversation switches between parallel streaming
+   *  sessions. Reset to 0 when the loop finishes (normal end, abort, or
+   *  rollback). Independent of the backend's per-iteration streamElapsedMs
+   *  (which resets on every new createResponseStream call). */
+  streamStartedAt: number;
 };
 
 export type ConversationSessionRef = {
@@ -300,6 +307,10 @@ export type UseChatConversationResult = {
   streamElapsedMs: number;
   /** Time to first token in milliseconds. */
   streamTtftMs: number;
+  /** Wall-clock timestamp (Date.now()) captured once when an agent loop
+   *  starts. Drives the accumulating elapsed timer in StreamMetrics so it
+   *  survives conversation switches between parallel streaming sessions. */
+  streamStartedAt: number;
   forkedFromConversationId: string | undefined;
   forkMessageCount: number | undefined;
   streamingConversationIds: Set<string>;

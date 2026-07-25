@@ -28,8 +28,8 @@ type FileMutationPreview = {
   overwrite?: boolean;
 };
 
-const FILE_EDIT_TOOL = "mcp__filesystem__replace_edit";
-const FILE_CREATE_TOOL = "mcp__filesystem__create";
+const FILE_EDIT_TOOL = "filesystem-replace_edit";
+const FILE_CREATE_TOOL = "filesystem-create";
 
 const isFileMutationTool = (toolName: string): boolean =>
   toolName === FILE_EDIT_TOOL || toolName === FILE_CREATE_TOOL;

@@ -138,7 +138,7 @@ impl McpService for BashService {
             _ => Err(Error::new(
                 Status::GenericFailure,
                 format!(
-                    "Unknown tool: \"{}\" for MCP server \"bash\". Available tools: [mcp__bash__terminal-execute]",
+                    "Unknown tool: \"{}\" for MCP server \"bash\". Available tools: [bash-terminal-execute]",
                     tool_name
                 ),
             )),

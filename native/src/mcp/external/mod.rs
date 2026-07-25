@@ -16,15 +16,10 @@ use super::tools::McpTool;
 const DISCOVERY_CONCURRENCY: usize = 4;
 const SERVER_NAME_MAX_LEN: usize = 18;
 const TOOL_NAME_MAX_LEN: usize = 24;
-const BUILTIN_SERVER_NAMES: &[&str] = &[
-    "filesystem",
-    "bash",
-    "todo",
-    "grep",
-    "websearch",
-    "browser",
-    "user-interaction",
-];
+
+// 内置 MCP 服务器名称，用于排除与之重名的外部工具。与
+// `tools::BUILTIN_SERVER_IDS` 保持一致（含动态注册的 skills）。
+const BUILTIN_SERVER_NAMES: &[&str] = super::tools::BUILTIN_SERVER_IDS;
 
 pub struct ExternalMcpProjectServer {
     pub config_server_id: String,
@@ -291,12 +286,7 @@ async fn load_configs(
 }
 
 fn parse_external_tool_name(full_name: &str) -> Option<(&str, &str)> {
-    let mut parts = full_name.splitn(3, "__");
-    if parts.next()? != "mcp" {
-        return None;
-    }
-    let server_name = parts.next()?;
-    let tool_name = parts.next()?;
+    let (server_name, tool_name) = super::tools::split_tool_full_name(full_name)?;
     if server_name.is_empty()
         || tool_name.is_empty()
         || BUILTIN_SERVER_NAMES.contains(&server_name)

@@ -339,12 +339,17 @@ export function UsageSettingsPanel({
   }, [heatmapColumns]);
 
   const getHeatmapColor = (value: number): string => {
+    // 0 tokens or no data at all: neutral gray. Any non-zero usage maps to a
+    // green ramp (light -> dark) so the heatmap reads as a single hue gradient
+    // instead of mixing in unrelated grays and blues.
     if (value === 0 || maxHeatmapValue === 0) return "var(--bg-tertiary)";
     const ratio = value / maxHeatmapValue;
     if (ratio >= 0.75) return "var(--accent-green)";
-    if (ratio >= 0.5) return "var(--accent-green-bg)";
-    if (ratio >= 0.25) return "var(--accent-blue-bg)";
-    return "var(--bg-hover)";
+    if (ratio >= 0.5)
+      return "color-mix(in srgb, var(--accent-green) 65%, var(--bg-tertiary))";
+    if (ratio >= 0.25)
+      return "color-mix(in srgb, var(--accent-green) 40%, var(--bg-tertiary))";
+    return "color-mix(in srgb, var(--accent-green) 20%, var(--bg-tertiary))";
   };
 
   const formatTokensLocale = (value: number): string => formatTokens(value);
@@ -787,15 +792,24 @@ export function UsageSettingsPanel({
           />
           <div
             className="usage-heatmap-cell"
-            style={{ backgroundColor: "var(--bg-hover)" }}
+            style={{
+              backgroundColor:
+                "color-mix(in srgb, var(--accent-green) 20%, var(--bg-tertiary))",
+            }}
           />
           <div
             className="usage-heatmap-cell"
-            style={{ backgroundColor: "var(--accent-blue-bg)" }}
+            style={{
+              backgroundColor:
+                "color-mix(in srgb, var(--accent-green) 40%, var(--bg-tertiary))",
+            }}
           />
           <div
             className="usage-heatmap-cell"
-            style={{ backgroundColor: "var(--accent-green-bg)" }}
+            style={{
+              backgroundColor:
+                "color-mix(in srgb, var(--accent-green) 65%, var(--bg-tertiary))",
+            }}
           />
           <div
             className="usage-heatmap-cell"

@@ -270,7 +270,7 @@ graph TD
 
 ## TODO Management
 
-The `mcp__todo__todo-manage` tool is the standard workflow for multi-step work — it is NOT optional overhead. It prevents forgotten steps, makes progress visible, and enables recovery if the conversation is interrupted.
+The `todo-todo-manage` tool is the standard workflow for multi-step work — it is NOT optional overhead. It prevents forgotten steps, makes progress visible, and enables recovery if the conversation is interrupted.
 
 **When to use (default for most work):**
 - ANY task touching 2+ files
@@ -290,7 +290,7 @@ The `mcp__todo__todo-manage` tool is the standard workflow for multi-step work �
 
 ## Git Safety
 
-- You MUST use the `mcp__user-interaction__askUserQuestion` tool to get explicit user confirmation before running ANY Git operation (add, commit, push, pull, merge, rebase, reset, checkout, restore, clean, branch/tag operations, etc.) — never run them silently
+- You MUST use the `user-interaction-askUserQuestion` tool to get explicit user confirmation before running ANY Git operation (add, commit, push, pull, merge, rebase, reset, checkout, restore, clean, branch/tag operations, etc.) — never run them silently
 - Rollback-style operations (`git reset --hard`, `git checkout --`, `git restore`, `git clean`, force push, branch deletion) are EXTREMELY dangerous: always ask first and state exactly what will be discarded
 - Never use Git to undo or roll back changes unless the user explicitly requested it
 - When asking, present the exact command(s) you intend to run so the user can make an informed decision

@@ -307,7 +307,7 @@ $$
 
 ## TODO Management
 
-The `mcp__todo__todo-manage` tool complements the plan file: the plan file is the source of truth for WHAT will be done, the TODO list tracks execution progress step by step.
+The `todo-todo-manage` tool complements the plan file: the plan file is the source of truth for WHAT will be done, the TODO list tracks execution progress step by step.
 
 - Batch-add all executable steps (action=add) when execution begins
 - Mark each item inProgress when you start it and completed as soon as it is verified — NEVER finish several steps and bulk-update at the end
@@ -317,7 +317,7 @@ The `mcp__todo__todo-manage` tool complements the plan file: the plan file is th
 
 ## Git Safety
 
-- You MUST use the `mcp__user-interaction__askUserQuestion` tool to get explicit user confirmation before running ANY Git operation (add, commit, push, pull, merge, rebase, reset, checkout, restore, clean, branch/tag operations, etc.) — never run them silently, even after the plan has been approved
+- You MUST use the `user-interaction-askUserQuestion` tool to get explicit user confirmation before running ANY Git operation (add, commit, push, pull, merge, rebase, reset, checkout, restore, clean, branch/tag operations, etc.) — never run them silently, even after the plan has been approved
 - Rollback-style operations (`git reset --hard`, `git checkout --`, `git restore`, `git clean`, force push, branch deletion) are EXTREMELY dangerous: always ask first and state exactly what will be discarded
 - Never use Git to undo or roll back changes unless the user explicitly requested it
 - When asking, present the exact command(s) you intend to run so the user can make an informed decision

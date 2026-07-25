@@ -53,39 +53,39 @@ export const ToolCallItem = memo(
   ({ toolCall }: ToolCallItemProps): React.JSX.Element => {
     const { t } = useI18n();
     // Delegate to specialized renderers based on tool name
-    if (toolCall.name === "mcp__user-interaction__askUserQuestion") {
+    if (toolCall.name === "user-interaction-askUserQuestion") {
       return <AskUserQuestionToolCall toolCall={toolCall} />;
     }
 
-    if (toolCall.name === "mcp__filesystem__read") {
+    if (toolCall.name === "filesystem-read") {
       return <FilesystemReadToolCall toolCall={toolCall} />;
     }
 
-    if (toolCall.name === "mcp__filesystem__replace_edit") {
+    if (toolCall.name === "filesystem-replace_edit") {
       return <FilesystemEditToolCall toolCall={toolCall} />;
     }
 
-    if (toolCall.name === "mcp__filesystem__create") {
+    if (toolCall.name === "filesystem-create") {
       return <FilesystemCreateToolCall toolCall={toolCall} />;
     }
 
-    if (toolCall.name === "mcp__bash__terminal-execute") {
+    if (toolCall.name === "bash-terminal-execute") {
       return <BashToolCall toolCall={toolCall} />;
     }
 
-    if (toolCall.name === "mcp__todo__todo-manage") {
+    if (toolCall.name === "todo-todo-manage") {
       return <TodoToolCall toolCall={toolCall} />;
     }
 
-    if (toolCall.name === "mcp__grep__search") {
+    if (toolCall.name === "grep-search") {
       return <GrepToolCall toolCall={toolCall} />;
     }
 
-    if (toolCall.name === "mcp__sub-agents__activate") {
+    if (toolCall.name === "sub-agents-activate") {
       return <SubAgentToolCall toolCall={toolCall} />;
     }
 
-    if (toolCall.name === "mcp__codebase__search") {
+    if (toolCall.name === "codebase-search") {
       return <CodebaseToolCall toolCall={toolCall} />;
     }
 

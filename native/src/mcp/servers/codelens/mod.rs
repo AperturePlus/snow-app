@@ -11,10 +11,10 @@
 //! loop is never blocked.
 //!
 //! Tools:
-//! - `mcp__codelens__diagnose`: Run diagnostics on any source file
-//! - `mcp__codelens__find_definition`: Find the definition of a symbol at a position
-//! - `mcp__codelens__find_references`: Find all references to a symbol at a position
-//! - `mcp__codelens__file_outline`: Get the symbol outline of a file
+//! - `codelens-diagnose`: Run diagnostics on any source file
+//! - `codelens-find_definition`: Find the definition of a symbol at a position
+//! - `codelens-find_references`: Find all references to a symbol at a position
+//! - `codelens-file_outline`: Get the symbol outline of a file
 
 #![allow(dead_code)]
 
@@ -151,7 +151,7 @@ impl McpService for CodeLensService {
             _ => Err(Error::new(
                 Status::GenericFailure,
                 format!(
-                    "Unknown tool: \"{}\" for MCP server \"codelens\". Available tools: [mcp__codelens__diagnose, mcp__codelens__find_definition, mcp__codelens__find_references, mcp__codelens__file_outline]",
+                    "Unknown tool: \"{}\" for MCP server \"codelens\". Available tools: [codelens-diagnose, codelens-find_definition, codelens-find_references, codelens-file_outline]",
                     tool_name
                 ),
             )),

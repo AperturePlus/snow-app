@@ -1,6 +1,6 @@
 //! Codebase semantic search MCP service.
 //!
-//! Provides the `mcp__codebase__search` tool that performs vector
+//! Provides the `codebase-search` tool that performs vector
 //! similarity search over a project's embedded codebase. Optionally
 //! applies reranking and/or agent review based on the project's
 //! CodebaseProjectScopeSettings.
@@ -81,7 +81,7 @@ impl McpService for CodebaseService {
             _ => Err(Error::new(
                 Status::GenericFailure,
                 format!(
-                    "Unknown tool: \"{}\" for MCP server \"codebase\". Available tools: [mcp__codebase__search]",
+                    "Unknown tool: \"{}\" for MCP server \"codebase\". Available tools: [codebase-search]",
                     tool_name
                 ),
             )),
@@ -109,7 +109,7 @@ impl CodebaseService {
             .ok_or_else(|| {
                 Error::new(
                     Status::InvalidArg,
-                    "projectId is required for tool \"mcp__codebase__search\". "
+                    "projectId is required for tool \"codebase-search\". "
                         .to_string(),
                 )
             })?
@@ -121,7 +121,7 @@ impl CodebaseService {
             .ok_or_else(|| {
                 Error::new(
                     Status::InvalidArg,
-                    "query is required for tool \"mcp__codebase__search\"".to_string(),
+                    "query is required for tool \"codebase-search\"".to_string(),
                 )
             })?;
 
@@ -135,7 +135,7 @@ impl CodebaseService {
         if query.trim().is_empty() {
             return Err(Error::new(
                 Status::InvalidArg,
-                "query must be a non-empty string for tool \"mcp__codebase__search\""
+                "query must be a non-empty string for tool \"codebase-search\""
                     .to_string(),
             ));
         }

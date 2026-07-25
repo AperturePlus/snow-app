@@ -103,7 +103,7 @@ export const TodoPanelButton = ({
 
     let cancelled = false;
     void window.snow
-      .findLatestToolResult(conversationId, "mcp__todo__todo-manage")
+      .findLatestToolResult(conversationId, "todo-todo-manage")
       .then((result) => {
         if (cancelled || !result) {
           return;
@@ -155,7 +155,7 @@ export const TodoPanelButton = ({
     let cancelled = false;
     void window.snow
       .callMcpTool(
-        "mcp__todo__todo-manage",
+        "todo-todo-manage",
         JSON.stringify({ action: "get", sessionId }),
         projectId,
         undefined,
@@ -226,7 +226,7 @@ export const TodoPanelButton = ({
       setIsDeleting(true);
       try {
         const result = await window.snow.callMcpTool(
-          "mcp__todo__todo-manage",
+          "todo-todo-manage",
           JSON.stringify({ action: "delete", sessionId, todoId: todoIds }),
           projectId,
           undefined,

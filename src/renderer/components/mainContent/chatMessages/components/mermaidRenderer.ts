@@ -565,3 +565,223 @@ export const watchThemeForMermaid = (): (() => void) => {
     themeObserverAttached = false;
   };
 };
+
+// ---------------------------------------------------------------------------
+// Image viewer (lightbox) — click a diagram to inspect it full-size
+// ---------------------------------------------------------------------------
+
+/** CSS class for the image viewer overlay (singleton enforced). */
+const IMAGE_VIEWER_CLASS = "mermaid-image-viewer";
+
+/**
+ * Open a full-screen lightbox for a mermaid block's rendered SVG.
+ *
+ * The SVG is cloned so the viewer stays stable even if the underlying block is
+ * re-rendered or evicted. Supports wheel zoom (cursor-anchored), drag pan,
+ * double-click reset-to-fit, toolbar zoom controls, Esc / backdrop close.
+ *
+ * The diagram view (`.mermaid-view-diagram svg`) receives `cursor: zoom-in`
+ * via CSS to hint that it is clickable.
+ *
+ * Only one viewer is allowed at a time — opening while one exists replaces it.
+ */
+export const openMermaidImageViewer = (block: HTMLElement): void => {
+  const svg = getBlockSvg(block);
+  if (!svg) return;
+
+  // Singleton: remove any existing viewer first.
+  document
+    .querySelectorAll(`.${IMAGE_VIEWER_CLASS}`)
+    .forEach((el) => el.remove());
+
+  const overlay = document.createElement("div");
+  overlay.className = IMAGE_VIEWER_CLASS;
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Diagram preview");
+
+  // Clone the SVG and make it self-contained so it renders at its natural
+  // vector size inside the viewer (independent of the live block's CSS).
+  const clone = svg.cloneNode(true) as SVGSVGElement;
+  if (!clone.getAttribute("xmlns")) {
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  }
+  const viewBox = svg.viewBox.baseVal;
+  const naturalW =
+    viewBox && viewBox.width > 0 ? viewBox.width : svg.clientWidth;
+  const naturalH =
+    viewBox && viewBox.height > 0 ? viewBox.height : svg.clientHeight;
+  if (viewBox && viewBox.width > 0 && viewBox.height > 0) {
+    clone.setAttribute("width", String(viewBox.width));
+    clone.setAttribute("height", String(viewBox.height));
+  }
+  clone.removeAttribute("style");
+
+  const stage = document.createElement("div");
+  stage.className = "mermaid-image-viewer-stage";
+  stage.appendChild(clone);
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "mermaid-image-viewer-toolbar";
+
+  // --- Zoom state ---------------------------------------------------------
+  let scale = 1;
+  let x = 0;
+  let y = 0;
+  const MIN_SCALE = 0.2;
+  const MAX_SCALE = 8;
+
+  const apply = (): void => {
+    clone.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+  };
+
+  const fit = (): void => {
+    const vw = stage.clientWidth;
+    const vh = stage.clientHeight;
+    const s = Math.min(vw / (naturalW || 1), vh / (naturalH || 1), 1);
+    scale = Math.max(MIN_SCALE, Math.min(s, MAX_SCALE));
+    x = 0;
+    y = 0;
+    apply();
+  };
+
+  const zoomBy = (
+    factor: number,
+    originX?: number,
+    originY?: number
+  ): void => {
+    const prev = scale;
+    scale = Math.max(MIN_SCALE, Math.min(scale * factor, MAX_SCALE));
+    if (originX !== undefined && originY !== undefined) {
+      // Keep the point under the cursor stationary. transform-origin is the
+      // element center, so a point at (originX, originY) relative to that
+      // center shifts by origin*(prev - scale) under a scale change — adjust
+      // the translate offset to compensate.
+      x = x + originX * (prev - scale);
+      y = y + originY * (prev - scale);
+    }
+    apply();
+  };
+
+  // --- Cleanup ------------------------------------------------------------
+  const close = (): void => {
+    document.removeEventListener("keydown", onKey, true);
+    overlay.remove();
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      close();
+    }
+  };
+
+  // --- Toolbar buttons (lucide icon paths) --------------------------------
+  const makeBtn = (
+    title: string,
+    innerSvg: string
+  ): HTMLButtonElement => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "mermaid-image-viewer-btn";
+    btn.title = title;
+    btn.setAttribute("aria-label", title);
+    btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${innerSvg}</svg>`;
+    return btn;
+  };
+
+  const zoomInBtn = makeBtn(
+    "Zoom in",
+    '<circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/><line x1="11" x2="11" y1="8" y2="14"/><line x1="8" x2="14" y1="11" y2="11"/>'
+  );
+  const zoomOutBtn = makeBtn(
+    "Zoom out",
+    '<circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/><line x1="8" x2="14" y1="11" y2="11"/>'
+  );
+  const resetBtn = makeBtn(
+    "Reset",
+    '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>'
+  );
+  const closeBtn = makeBtn(
+    "Close",
+    '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'
+  );
+
+  zoomInBtn.addEventListener("click", () => zoomBy(1.25));
+  zoomOutBtn.addEventListener("click", () => zoomBy(1 / 1.25));
+  resetBtn.addEventListener("click", fit);
+  closeBtn.addEventListener("click", close);
+
+  toolbar.append(zoomInBtn, zoomOutBtn, resetBtn, closeBtn);
+  overlay.append(stage, toolbar);
+  document.body.appendChild(overlay);
+
+  // Fit once laid out.
+  requestAnimationFrame(fit);
+
+  // --- Wheel zoom (cursor-anchored) --------------------------------------
+  stage.addEventListener(
+    "wheel",
+    (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = stage.getBoundingClientRect();
+      // Cursor position relative to the stage center (= transform origin).
+      const cx = e.clientX - rect.left - rect.width / 2;
+      const cy = e.clientY - rect.top - rect.height / 2;
+      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      zoomBy(factor, cx, cy);
+    },
+    { passive: false }
+  );
+
+  // --- Drag pan -----------------------------------------------------------
+  let dragging = false;
+  let startX = 0;
+  let startY = 0;
+  let startTx = 0;
+  let startTy = 0;
+
+  stage.addEventListener("pointerdown", (e: PointerEvent) => {
+    if (e.button !== 0) return;
+    dragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    startTx = x;
+    startTy = y;
+    try {
+      stage.setPointerCapture(e.pointerId);
+    } catch {
+      // capture may fail if the pointer is already released — ignore.
+    }
+    stage.classList.add("is-grabbing");
+  });
+
+  stage.addEventListener("pointermove", (e: PointerEvent) => {
+    if (!dragging) return;
+    x = startTx + (e.clientX - startX);
+    y = startTy + (e.clientY - startY);
+    apply();
+  });
+
+  const endDrag = (e: PointerEvent): void => {
+    if (!dragging) return;
+    dragging = false;
+    try {
+      stage.releasePointerCapture(e.pointerId);
+    } catch {
+      // already released — ignore.
+    }
+    stage.classList.remove("is-grabbing");
+  };
+  stage.addEventListener("pointerup", endDrag);
+  stage.addEventListener("pointercancel", endDrag);
+
+  // Double-click resets to fit.
+  stage.addEventListener("dblclick", fit);
+
+  // Close when clicking the backdrop (not the SVG/toolbar).
+  overlay.addEventListener("click", (e: MouseEvent) => {
+    if (e.target === overlay) close();
+  });
+
+  document.addEventListener("keydown", onKey, true);
+};

@@ -115,6 +115,7 @@ export const ChatInputView = ({
     streamTokenCount,
     streamElapsedMs,
     streamTtftMs,
+    streamStartedAt,
   } = useChatConversationContext();
   const isDraggingOverRef = useRef(false);
   const [isMentionOpen, setIsMentionOpen] = useState(false);
@@ -870,6 +871,7 @@ export const ChatInputView = ({
               tokenCount={streamTokenCount}
               elapsedMs={streamElapsedMs}
               ttftMs={streamTtftMs}
+              startedAt={streamStartedAt}
             />
           </div>
         ) : null}

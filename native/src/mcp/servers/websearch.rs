@@ -45,7 +45,7 @@ impl WebSearchService {
     }
 
     pub async fn execute_search(&self, args: &Value) -> napi::Result<Value> {
-        let query = required_string(args, "query", "mcp__websearch__websearch-search")?;
+        let query = required_string(args, "query", "websearch-websearch-search")?;
         let max_results = bounded_usize(
             args.get("maxResults").and_then(Value::as_u64),
             DEFAULT_MAX_RESULTS,
@@ -66,7 +66,7 @@ impl WebSearchService {
     }
 
     pub async fn execute_fetch(&self, args: &Value) -> napi::Result<Value> {
-        let url = required_string(args, "url", "mcp__websearch__websearch-fetch")?;
+        let url = required_string(args, "url", "websearch-websearch-fetch")?;
         validate_web_url(url)?;
         let max_length = bounded_usize(
             args.get("maxLength").and_then(Value::as_u64),
@@ -219,7 +219,7 @@ impl McpService for WebSearchService {
                 "The WebSearch tool must be executed through the asynchronous executor".to_string(),
             )),
             _ => Err(generic_error(format!(
-                "Unknown tool: \"{tool_name}\" for MCP server \"websearch\". Available tools: [mcp__websearch__websearch-search, mcp__websearch__websearch-fetch]"
+                "Unknown tool: \"{tool_name}\" for MCP server \"websearch\". Available tools: [websearch-websearch-search, websearch-websearch-fetch]"
             ))),
         }
     }

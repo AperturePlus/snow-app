@@ -143,7 +143,7 @@ impl McpService for FilesystemService {
             _ => Err(Error::new(
                 Status::GenericFailure,
                 format!(
-                    "Unknown tool: \"{}\" for MCP server \"filesystem\". Available tools: [mcp__filesystem__read, mcp__filesystem__replace_edit, mcp__filesystem__create]",
+                    "Unknown tool: \"{}\" for MCP server \"filesystem\". Available tools: [filesystem-read, filesystem-replace_edit, filesystem-create]",
                     tool_name
                 ),
             )),
@@ -165,7 +165,7 @@ impl FilesystemService {
             Error::new(
                 Status::InvalidArg,
                 format!(
-                    "filePath is required for tool \"mcp__filesystem__read\". Received keys: [{}]. Please provide a valid file path.",
+                    "filePath is required for tool \"filesystem-read\". Received keys: [{}]. Please provide a valid file path.",
                     keys.join(", ")
                 ),
             )
@@ -184,7 +184,7 @@ impl FilesystemService {
             Value::Array(paths) => read_paths(paths, default_start_line, default_end_line),
             _ => Err(Error::new(
                 Status::InvalidArg,
-                "filePath must be a string or an array of paths for tool \"mcp__filesystem__read\"."
+                "filePath must be a string or an array of paths for tool \"filesystem-read\"."
                     .to_string(),
             )),
         }
@@ -200,7 +200,7 @@ impl FilesystemService {
                     Error::new(
                         Status::InvalidArg,
                         format!(
-                            "filePath is required for tool \"mcp__filesystem__replace_edit\". Received keys: [{}]. Please provide a valid file path.",
+                            "filePath is required for tool \"filesystem-replace_edit\". Received keys: [{}]. Please provide a valid file path.",
                             keys.join(", ")
                         ),
                     )
@@ -213,7 +213,7 @@ impl FilesystemService {
             .ok_or_else(|| {
                 Error::new(
                     Status::InvalidArg,
-                    "searchContent is required for tool \"mcp__filesystem__replace_edit\". Please provide the content to search for in the file.".to_string(),
+                    "searchContent is required for tool \"filesystem-replace_edit\". Please provide the content to search for in the file.".to_string(),
                 )
             })?;
 
@@ -223,7 +223,7 @@ impl FilesystemService {
             .ok_or_else(|| {
                 Error::new(
                     Status::InvalidArg,
-                    "replaceContent is required for tool \"mcp__filesystem__replace_edit\". Please provide the new content to replace with.".to_string(),
+                    "replaceContent is required for tool \"filesystem-replace_edit\". Please provide the new content to replace with.".to_string(),
                 )
             })?;
 
@@ -375,7 +375,7 @@ impl FilesystemService {
                     Error::new(
                         Status::InvalidArg,
                         format!(
-                            "filePath is required for tool \"mcp__filesystem__create\". Received keys: [{}]. Please provide a valid file path.",
+                            "filePath is required for tool \"filesystem-create\". Received keys: [{}]. Please provide a valid file path.",
                             keys.join(", ")
                         ),
                     )
@@ -385,7 +385,7 @@ impl FilesystemService {
         let content = args
             .get("content")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| Error::new(Status::InvalidArg, "content is required for tool \"mcp__filesystem__create\". Please provide the content to write to the file.".to_string()))?;
+            .ok_or_else(|| Error::new(Status::InvalidArg, "content is required for tool \"filesystem-create\". Please provide the content to write to the file.".to_string()))?;
 
         let overwrite = args
             .get("overwrite")
@@ -402,7 +402,7 @@ impl FilesystemService {
             return Err(Error::new(
                 Status::GenericFailure,
                 format!(
-                    "File already exists: {} ({} bytes, {} lines). To overwrite this file, set overwrite=true. To modify the existing file, use mcp__filesystem__replace_edit instead.",
+                    "File already exists: {} ({} bytes, {} lines). To overwrite this file, set overwrite=true. To modify the existing file, use filesystem-replace_edit instead.",
                     file_path, file_size, line_count
                 ),
             ));
@@ -879,7 +879,7 @@ fn build_search_not_found_error_v2(
              1. searchContent was copied from read output and includes line number prefixes (e.g. \"42:...\") - remove them.\n\
              2. searchContent has been paraphrased or retyped instead of copied verbatim.\n\
              3. The file was modified since it was last read.\n\
-             Please re-read the file with mcp__filesystem__read and copy the EXACT raw source text as searchContent.",
+             Please re-read the file with filesystem-read and copy the EXACT raw source text as searchContent.",
             file_path,
             total_lines,
             search_lines,
@@ -896,7 +896,7 @@ fn build_search_not_found_error_v2(
          File: {} ({} lines total)\n\
          searchContent: {} lines, preview: \"{}\"\n\n\
          No similar content found in the file. The file may have been modified since it was last read.\n\
-         Please re-read the file with mcp__filesystem__read and copy the EXACT raw source text as searchContent.",
+         Please re-read the file with filesystem-read and copy the EXACT raw source text as searchContent.",
         file_path,
         total_lines,
         search_lines,
@@ -931,7 +931,7 @@ fn read_path(
     if file_path.is_empty() {
         return Err(Error::new(
             Status::InvalidArg,
-            "filePath must be a non-empty string for tool \"mcp__filesystem__read\".".to_string(),
+            "filePath must be a non-empty string for tool \"filesystem-read\".".to_string(),
         ));
     }
 

@@ -6,46 +6,46 @@
  * `.snow/plan/**` remain allowed.
  *
  * This mirrors snow-cli's source/utils/execution/planModeGate.ts, adapted for
- * Snow App's MCP tool naming convention (`mcp__<server>__<tool>`).
+ * Snow App's MCP tool naming convention (`<server>-<tool>`).
  */
 
 /** Tools that are always allowed regardless of plan approval status. */
 const ALWAYS_ALLOW_EXACT = new Set<string>([
-  "mcp__user-interaction__askUserQuestion",
-  "mcp__ace__ace-search",
-  "mcp__codebase__codebase-search",
-  "mcp__filesystem__filesystem-read",
-  "mcp__ide__ide-get_diagnostics",
-  "mcp__todo__todo-manage",
-  "mcp__todo__todo-ultra",
-  "mcp__notebook__notebook-manage",
-  "mcp__skill__skill-execute",
-  "mcp__websearch__websearch-search",
-  "mcp__websearch__websearch-fetch",
-  "mcp__snow-docs__snow-docs-list",
-  "mcp__snow-docs__snow-docs-search",
-  "mcp__snow-docs__snow-docs-get",
+  "user-interaction-askUserQuestion",
+  "ace-ace-search",
+  "codebase-codebase-search",
+  "filesystem-filesystem-read",
+  "ide-ide-get_diagnostics",
+  "todo-todo-manage",
+  "todo-todo-ultra",
+  "notebook-notebook-manage",
+  "skill-skill-execute",
+  "websearch-websearch-search",
+  "websearch-websearch-fetch",
+  "snow-docs-snow-docs-list",
+  "snow-docs-snow-docs-search",
+  "snow-docs-snow-docs-get",
 ]);
 
 /** Prefixes for tools that are always allowed (read-only / search). */
 const ALWAYS_ALLOW_PREFIXES = [
-  "mcp__ace__",
-  "mcp__websearch__",
-  "mcp__snow-docs__",
-  "mcp__codebase__",
+  "ace-",
+  "websearch-",
+  "snow-docs-",
+  "codebase-",
 ];
 
-/** Filesystem write tool names (MCP-prefixed). */
+/** Filesystem write tool names. */
 const FILESYSTEM_WRITE_TOOLS = new Set<string>([
-  "mcp__filesystem__filesystem-create",
-  "mcp__filesystem__filesystem-edit",
-  "mcp__filesystem__filesystem-replaceedit",
+  "filesystem-filesystem-create",
+  "filesystem-filesystem-edit",
+  "filesystem-filesystem-replaceedit",
 ]);
 
 /** Tools that are always blocked while plan is unapproved. */
 const BLOCKED_TOOLS = new Set<string>([
-  "mcp__bash__terminal-execute",
-  "mcp__sub-agents__activate",
+  "bash-terminal-execute",
+  "sub-agents-activate",
 ]);
 
 /**
@@ -62,7 +62,7 @@ function isAlwaysAllowTool(toolName: string): boolean {
  * Check if a tool is a terminal/shell execution tool.
  */
 function isTerminalLikeTool(toolName: string): boolean {
-  if (toolName === "mcp__bash__terminal-execute") {
+  if (toolName === "bash-terminal-execute") {
     return true;
   }
   if (toolName.includes("terminal") || toolName.includes("bash")) {
@@ -153,7 +153,7 @@ export function classifyPlanGateDecision(
   }
 
   // Sub-agent activation — block while unapproved
-  if (toolName === "mcp__sub-agents__activate") {
+  if (toolName === "sub-agents-activate") {
     return "block";
   }
 
@@ -221,7 +221,7 @@ export function evaluatePlanGate(input: {
   }
 
   // Always allow the approval tool itself
-  if (input.toolName === "mcp__user-interaction__askUserQuestion") {
+  if (input.toolName === "user-interaction-askUserQuestion") {
     return { allow: true };
   }
 
@@ -246,7 +246,7 @@ export function isPlanApprovalResult(
   toolName: string,
   result: string,
 ): boolean {
-  if (toolName !== "mcp__user-interaction__askUserQuestion") {
+  if (toolName !== "user-interaction-askUserQuestion") {
     return false;
   }
 

@@ -33,6 +33,7 @@ export const useRollback = (ctx: ConversationContextValue) => {
         ref.runId += 1;
       }
       ctx.updateSessionField(key, "isStreaming", false);
+      ctx.updateSessionField(key, "streamStartedAt", 0);
       ctx.updateSessionField(key, "isAborting", false);
       ctx.removeStreamingId(key);
 

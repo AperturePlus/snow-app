@@ -217,7 +217,7 @@ fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi::Result<Va
     let object = args.as_object().ok_or_else(|| {
         Error::new(
             Status::InvalidArg,
-            format!("Arguments for mcp__browser__{tool_name} must be a JSON object"),
+            format!("Arguments for browser-{tool_name} must be a JSON object"),
         )
     })?;
     let mut normalized = object.clone();
@@ -248,7 +248,7 @@ fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi::Result<Va
             if selector.is_none() && text.is_none() {
                 return Err(Error::new(
                     Status::InvalidArg,
-                    "Either selector or text is required for mcp__browser__click".to_string(),
+                    "Either selector or text is required for browser-click".to_string(),
                 ));
             }
             optional_boolean(args, "exact")?;
@@ -266,7 +266,7 @@ fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi::Result<Va
             if !matches!(action, "snapshot" | "console" | "open") {
                 return Err(Error::new(
                     Status::InvalidArg,
-                    "action must be one of snapshot, console, or open for mcp__browser__devtools"
+                    "action must be one of snapshot, console, or open for browser-devtools"
                         .to_string(),
                 ));
             }
@@ -302,7 +302,7 @@ fn required_non_empty_string<'a>(
         .ok_or_else(|| {
             Error::new(
                 Status::InvalidArg,
-                format!("{field} is required for mcp__browser__{tool_name}"),
+                format!("{field} is required for browser-{tool_name}"),
             )
         })
 }
@@ -384,7 +384,7 @@ fn unknown_tool_error(tool_name: &str) -> Error {
     Error::new(
         Status::GenericFailure,
         format!(
-            "Unknown tool: \"{tool_name}\" for MCP server \"browser\". Available tools: [mcp__browser__create, mcp__browser__navigate, mcp__browser__click, mcp__browser__screenshot, mcp__browser__devtools]"
+            "Unknown tool: \"{tool_name}\" for MCP server \"browser\". Available tools: [browser-create, browser-navigate, browser-click, browser-screenshot, browser-devtools]"
         ),
     )
 }

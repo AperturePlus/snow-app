@@ -130,7 +130,7 @@ impl McpService for GrepService {
             _ => Err(Error::new(
                 Status::GenericFailure,
                 format!(
-                    "Unknown tool: \"{}\" for MCP server \"grep\". Available tools: [mcp__grep__search]",
+                    "Unknown tool: \"{}\" for MCP server \"grep\". Available tools: [grep-search]",
                     tool_name
                 ),
             )),
@@ -146,7 +146,7 @@ impl GrepService {
             .ok_or_else(|| {
                 Error::new(
                     Status::InvalidArg,
-                    "pattern is required for tool \"mcp__grep__search\"".to_string(),
+                    "pattern is required for tool \"grep-search\"".to_string(),
                 )
             })?;
 

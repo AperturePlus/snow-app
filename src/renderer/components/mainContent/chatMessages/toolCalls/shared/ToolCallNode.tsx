@@ -4,7 +4,7 @@ import type { ToolCategory } from "./ToolNameBadge";
 import { ToolNameBadge } from "./ToolNameBadge";
 
 type ToolCallNodeProps = {
-  /** Raw MCP tool name (e.g. "mcp__filesystem__read") or short name. */
+  /** Raw MCP tool name (e.g. "filesystem-read") or short name. */
   toolName: string;
   /** Badge display name (e.g. "read", "edit"). Falls back to parsed short name. */
   badgeName?: string;
@@ -27,10 +27,10 @@ type ToolCallNodeProps = {
 };
 
 /**
- * Parse "mcp__filesystem__read" -> "read".
+ * Parse "filesystem-read" -> "read".
  * Non-MCP names are returned as-is.
  */
-const shortName = (name: string): string => name.replace(/^mcp__.*?__/, "");
+const shortName = (name: string): string => name.replace(/^.*?-/, "");
 
 export const ToolCallNode = ({
   toolName,
@@ -66,11 +66,7 @@ export const ToolCallNode = ({
     >
       <summary className="tcn-header">
         <span className={`tcn-dot ${dotClass}`} aria-hidden="true" />
-        {isRunning ? (
-          <Loader2 size={13} className="tcn-icon-spin" aria-hidden="true" />
-        ) : (
-          <ToolNameBadge name={resolvedBadgeName} category={category} />
-        )}
+        <ToolNameBadge name={resolvedBadgeName} category={category} />
         {displayName ? (
           <>
             <span className="tcn-sep" aria-hidden="true">
@@ -80,6 +76,13 @@ export const ToolCallNode = ({
               {displayName}
             </span>
           </>
+        ) : null}
+        {isRunning ? (
+          <Loader2
+            size={13}
+            className="tcn-icon-spin tcn-running-spinner"
+            aria-hidden="true"
+          />
         ) : null}
         {meta ? <span className="tcn-meta">{meta}</span> : null}
         <ChevronRight className="tcn-chevron" size={12} aria-hidden="true" />

@@ -310,6 +310,7 @@ export const useChatConversation = (
     streamTokenCount: activeSession?.streamTokenCount ?? 0,
     streamElapsedMs: activeSession?.streamElapsedMs ?? 0,
     streamTtftMs: activeSession?.streamTtftMs ?? 0,
+    streamStartedAt: activeSession?.streamStartedAt ?? 0,
     forkedFromConversationId: activeSession?.forkedFromConversationId,
     forkMessageCount: activeSession?.forkMessageCount,
     streamingConversationIds,

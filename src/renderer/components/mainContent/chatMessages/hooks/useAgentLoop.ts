@@ -109,6 +109,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       ctx.updateSessionField(sessionKey, "streamTokenCount", 0);
       ctx.updateSessionField(sessionKey, "streamElapsedMs", 1);
       ctx.updateSessionField(sessionKey, "streamTtftMs", 0);
+      // Anchor the wall-clock start of the accumulating elapsed timer once
+      // per agent loop. StreamMetrics derives its elapsed display from this
+      // timestamp instead of the backend's per-iteration streamElapsedMs
+      // (which resets on every createResponseStream call), so the timer
+      // keeps ticking across iterations and survives conversation switches.
+      ctx.updateSessionField(sessionKey, "streamStartedAt", Date.now());
       ctx.addStreamingId(sessionKey);
       ctx.updateSessionMessages(sessionKey, (currentMessages) => [
         ...currentMessages,
@@ -269,6 +275,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             subSessionRef.isAbortRequested = false;
           }
           ctx.updateSessionField(subConvId, "isStreaming", true);
+          // Anchor the accumulating timer start for the sub-agent session so
+          // its StreamMetrics timer is independent of the parent session.
+          ctx.updateSessionField(subConvId, "streamStartedAt", Date.now());
           ctx.addStreamingId(subConvId);
 
           const subUserMessage: ChatConversationMessage = {
@@ -537,7 +546,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
 
               let subSensitiveAuthorizationToken: string | undefined;
               if (
-                subToolCall.name === "mcp__bash__terminal-execute" &&
+                subToolCall.name === "bash-terminal-execute" &&
                 subAuthorizationDecision.status === "approved" &&
                 subAuthorizationDecision.sensitiveCommandConfirmed === true
               ) {
@@ -630,7 +639,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 // Recover partial streaming output for terminal-execute
                 // so the sub-agent (and ultimately the parent AI loop)
                 // receives the partial output together with the error.
-                if (subToolCall.name === "mcp__bash__terminal-execute") {
+                if (subToolCall.name === "bash-terminal-execute") {
                   const subSessionMessages =
                     ctx.sessionsRef.current?.[subConvId]?.messages ?? [];
                   const subAssistantMessage = subSessionMessages.find(
@@ -752,6 +761,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             subFinalRef.isSending = false;
           }
           ctx.updateSessionField(subConvId, "isStreaming", false);
+          ctx.updateSessionField(subConvId, "streamStartedAt", 0);
           ctx.updateSessionField(subConvId, "isAborting", false);
           ctx.removeStreamingId(subConvId);
 
@@ -797,6 +807,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               subCatchRef.isSending = false;
             }
             ctx.updateSessionField(subConversationId, "isStreaming", false);
+            ctx.updateSessionField(subConversationId, "streamStartedAt", 0);
             ctx.updateSessionField(subConversationId, "isAborting", false);
             ctx.removeStreamingId(subConversationId);
 
@@ -978,7 +989,11 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           // created and the first user message is persisted. No need to
           // wait for the entire agent loop (tool calls, multi-turn AI
           // responses) to finish.
-          if (isFirstMessage && !summaryTriggered && response.status !== "error") {
+          if (
+            isFirstMessage &&
+            !summaryTriggered &&
+            response.status !== "error"
+          ) {
             summaryTriggered = true;
             const summaryConvId = response.conversationId;
             void window.snow
@@ -1355,7 +1370,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 // to TODO items created by that action.
                 let toolArgs = toolCall.arguments;
                 if (
-                  toolCall.name === "mcp__todo__todo-manage" &&
+                  toolCall.name === "todo-todo-manage" &&
                   effectiveKey !== PENDING_SESSION_KEY
                 ) {
                   try {
@@ -1375,7 +1390,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
 
                 let sensitiveAuthorizationToken: string | undefined;
                 if (
-                  toolCall.name === "mcp__bash__terminal-execute" &&
+                  toolCall.name === "bash-terminal-execute" &&
                   authorizationDecision.status === "approved" &&
                   authorizationDecision.sensitiveCommandConfirmed === true
                 ) {
@@ -1393,7 +1408,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 }
 
                 const isUserQuestionTool =
-                  toolCall.name === "mcp__user-interaction__askUserQuestion";
+                  toolCall.name === "user-interaction-askUserQuestion";
                 if (isUserQuestionTool) {
                   ctx.userQuestionTargetRef.current.set(
                     toolCall.interactionId,
@@ -1406,7 +1421,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
 
                 try {
                   if (
-                    toolCall.name === "mcp__sub-agents__activate" &&
+                    toolCall.name === "sub-agents-activate" &&
                     effectiveKey !== PENDING_SESSION_KEY
                   ) {
                     result = await executeSubAgentActivation(
@@ -1538,7 +1553,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 // out. Recover that output from the session state so the
                 // AI receives it together with the error and can reason
                 // about the situation instead of the loop stalling.
-                if (toolCall.name === "mcp__bash__terminal-execute") {
+                if (toolCall.name === "bash-terminal-execute") {
                   const sessionMessages =
                     ctx.sessionsRef.current?.[effectiveKey]?.messages ?? [];
                   const assistantMessage = sessionMessages.find(
@@ -1593,7 +1608,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           }
 
           if (
-            toolCall.name === "mcp__user-interaction__askUserQuestion" &&
+            toolCall.name === "user-interaction-askUserQuestion" &&
             isUserQuestionCancellationResult(result!)
           ) {
             userQuestionCancelled = true;
@@ -1864,6 +1879,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       void initCheckpointAndRun()
         .catch((error: unknown) => {
           ctx.updateSessionField(finalSessionKey, "isStreaming", false);
+          ctx.updateSessionField(finalSessionKey, "streamStartedAt", 0);
           const ref = ctx.sessionsRefData.current.get(finalSessionKey);
           if (ref) {
             ref.streamId = null;
@@ -1891,6 +1907,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             ref.isSending = false;
           }
           ctx.updateSessionField(finalSessionKey, "isStreaming", false);
+          ctx.updateSessionField(finalSessionKey, "streamStartedAt", 0);
           ctx.updateSessionField(finalSessionKey, "isAborting", false);
           ctx.removeStreamingId(finalSessionKey);
 
@@ -1913,7 +1930,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             finalSessionKey !== ctx.activeConversationIdRef.current
           ) {
             ctx.updateSessionField(finalSessionKey, "hasNewContent", true);
-            ctx.setCompletedConversationIds((prev) => {
+            ctx.setCompletedConversationIds((prev: Set<string>) => {
               if (prev.has(finalSessionKey)) return prev;
               const next = new Set(prev);
               next.add(finalSessionKey);

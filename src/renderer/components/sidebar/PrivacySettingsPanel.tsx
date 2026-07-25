@@ -12,6 +12,18 @@ import { useI18n } from "../../i18n";
 import { CustomSelect } from "../common/CustomSelect";
 import type { PrivacyApiConfig, PrivacySettings } from "../../../preload";
 
+const PRIVACY_TOOL_LEGACY_MAP: Record<string, string> = {
+  "mcp__filesystem__read": "filesystem-read",
+  "mcp__grep__search": "grep-search",
+  "mcp__bash__terminal-execute": "bash-terminal-execute",
+  "mcp__codebase__search": "codebase-search",
+  "mcp__websearch__websearch-search": "websearch-websearch-search",
+  "mcp__websearch__websearch-fetch": "websearch-websearch-fetch",
+};
+
+const migratePrivacyToolName = (tool: string): string =>
+  PRIVACY_TOOL_LEGACY_MAP[tool] ?? tool;
+
 const DEFAULT_PRIVACY_SETTINGS: PrivacySettings = {
   enabled: false,
   mode: "local",
@@ -22,9 +34,9 @@ const DEFAULT_PRIVACY_SETTINGS: PrivacySettings = {
   },
   toolResults: {
     tools: [
-      "mcp__filesystem__read",
-      "mcp__grep__search",
-      "mcp__bash__terminal-execute",
+      "filesystem-read",
+      "grep-search",
+      "bash-terminal-execute",
     ],
   },
 };
@@ -42,32 +54,32 @@ type ToolOption = {
 
 const TOOL_OPTIONS: ToolOption[] = [
   {
-    value: "mcp__filesystem__read",
+    value: "filesystem-read",
     labelKey: "settings.privacyToolFilesystem",
     defaultLabel: "Filesystem",
   },
   {
-    value: "mcp__grep__search",
+    value: "grep-search",
     labelKey: "settings.privacyToolSearch",
     defaultLabel: "Search",
   },
   {
-    value: "mcp__bash__terminal-execute",
+    value: "bash-terminal-execute",
     labelKey: "settings.privacyToolTerminal",
     defaultLabel: "Terminal",
   },
   {
-    value: "mcp__codebase__search",
+    value: "codebase-search",
     labelKey: "settings.privacyToolCodebase",
     defaultLabel: "Codebase",
   },
   {
-    value: "mcp__websearch__websearch-search",
+    value: "websearch-websearch-search",
     labelKey: "settings.privacyToolWebsearch",
     defaultLabel: "Web search",
   },
   {
-    value: "mcp__websearch__websearch-fetch",
+    value: "websearch-websearch-fetch",
     labelKey: "settings.privacyToolWebsearch",
     defaultLabel: "Web fetch",
   },
@@ -492,8 +504,8 @@ const normalizePrivacySettings = (value: unknown): PrivacySettings => {
 
   const tools = Array.isArray(toolResultsSource.tools)
     ? toolResultsSource.tools
-        .map((tool) => (typeof tool === "string" ? tool : ""))
-        .filter((tool) => tool.trim().length > 0)
+        .map((tool) => (typeof tool === "string" ? migratePrivacyToolName(tool.trim()) : ""))
+        .filter((tool) => tool.length > 0)
     : DEFAULT_PRIVACY_SETTINGS.toolResults.tools;
 
   const mode = toText(source.mode).trim() || DEFAULT_PRIVACY_SETTINGS.mode;

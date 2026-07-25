@@ -69,8 +69,46 @@ pub struct McpTool {
 
 impl McpTool {
     pub fn full_name(&self) -> String {
-        format!("mcp__{}__{}", self.server_id, self.name)
+        format!("{}-{}", self.server_id, self.name)
     }
+}
+
+/// 所有内置 MCP 服务器 ID（含动态注册的 skills），按长度降序排列，
+/// 用于工具名最长前缀匹配。新格式 `{server_id}-{tool_name}` 中，server_id
+/// 可能含 `-`（如 `user-interaction`），需通过此列表消除歧义；外部工具的
+/// server_name 经 `sanitize_name` 后不含 `-`，可安全用第一个 `-` 分割。
+pub const BUILTIN_SERVER_IDS: &[&str] = &[
+    "user-interaction",
+    "filesystem",
+    "sub-agents",
+    "websearch",
+    "codebase",
+    "codelens",
+    "browser",
+    "skills",
+    "bash",
+    "todo",
+    "grep",
+];
+
+/// 将工具全名 `{server_id}-{tool_name}` 拆分为 `(server_id, tool_name)`。
+/// 先匹配已知内置 server_id 前缀（最长优先），再回退到首个 `-` 分割
+/// （适用于外部工具，其 server_name 不含 `-`）。
+pub fn split_tool_full_name(full_name: &str) -> Option<(&str, &str)> {
+    for &server_id in BUILTIN_SERVER_IDS {
+        if let Some(rest) = full_name.strip_prefix(server_id) {
+            if let Some(tool_name) = rest.strip_prefix('-') {
+                if !tool_name.is_empty() {
+                    return Some((server_id, tool_name));
+                }
+            }
+        }
+    }
+    let (server_id, tool_name) = full_name.split_once('-')?;
+    if server_id.is_empty() || tool_name.is_empty() {
+        return None;
+    }
+    Some((server_id, tool_name))
 }
 
 pub async fn list_mcp_tools() -> napi::Result<Vec<McpToolDefinition>> {
@@ -444,17 +482,7 @@ fn builtin_scope_server_id(server_id: &str) -> String {
 }
 
 fn server_id_from_tool_name(tool_name: &str) -> Option<&str> {
-    let mut parts = tool_name.splitn(3, "__");
-    if parts.next()? != "mcp" {
-        return None;
-    }
-    let server_id = parts.next()?;
-    let tool_id = parts.next()?;
-    if server_id.is_empty() || tool_id.is_empty() {
-        return None;
-    }
-
-    Some(server_id)
+    split_tool_full_name(tool_name).map(|(server_id, _)| server_id)
 }
 
 fn builtin_server_name(server_id: &str) -> &str {
@@ -466,6 +494,8 @@ fn builtin_server_name(server_id: &str) -> &str {
         "websearch" => "Web search",
         "browser" => "Browser",
         "user-interaction" => "User interaction",
+        "sub-agents" => "Sub-agents",
+        "codebase" => "Codebase",
         "codelens" => "CodeLens",
         _ => server_id,
     }
@@ -653,7 +683,7 @@ pub async fn call_mcp_tool(
     on_user_question: UserQuestionCallback,
     sub_agent_allowed_tools: Option<Vec<String>>,
 ) -> napi::Result<String> {
-    // Sanitize: AI may copy "[Tool: mcp__x__y#callId]" from conversation
+    // Sanitize: AI may copy "[Tool: server-tool#callId]" from conversation
     // history or leak internal XML tags into the tool name. Normalize
     // before any matching or whitelist check.
     let tool_full_name = super::builtin::sanitize_tool_full_name(&tool_full_name);
@@ -694,9 +724,9 @@ pub async fn call_mcp_tool(
         )
     })??;
 
-    let returns_plain_text = tool_full_name == "mcp__skills__skill-execute";
+    let returns_plain_text = tool_full_name == "skills-skill-execute";
     let masking_tool_name = tool_full_name.clone();
-    let result = if tool_full_name == "mcp__bash__terminal-execute" {
+    let result = if tool_full_name == "bash-terminal-execute" {
         let terminal_result = BashService::new()
             .execute_terminal_stream(
                 &args,
@@ -718,31 +748,31 @@ pub async fn call_mcp_tool(
             })??;
         }
         terminal_result?
-    } else if tool_full_name == "mcp__grep__search" {
+    } else if tool_full_name == "grep-search" {
         GrepService::new().execute_search(&args).await?
-    } else if tool_full_name == "mcp__todo__todo-manage" {
+    } else if tool_full_name == "todo-todo-manage" {
         TodoService::new().execute_async(&args).await?
-    } else if tool_full_name == "mcp__websearch__websearch-search" {
+    } else if tool_full_name == "websearch-websearch-search" {
         WebSearchService::new().execute_search(&args).await?
-    } else if tool_full_name == "mcp__websearch__websearch-fetch" {
+    } else if tool_full_name == "websearch-websearch-fetch" {
         WebSearchService::new().execute_fetch(&args).await?
-    } else if let Some(tool_name) = tool_full_name.strip_prefix("mcp__browser__") {
+    } else if let Some(tool_name) = tool_full_name.strip_prefix("browser-") {
         BrowserService::new()
             .execute_async(tool_name, &args, &on_browser_command)
             .await?
-    } else if tool_full_name == "mcp__user-interaction__askUserQuestion" {
+    } else if tool_full_name == "user-interaction-askUserQuestion" {
         UserInteractionService::new()
             .execute_async(&args, &on_user_question)
             .await?
-    } else if tool_full_name == "mcp__skills__skill-execute" {
+    } else if tool_full_name == "skills-skill-execute" {
         SkillsService::new()
             .execute(&args, project_id.as_deref())
             .await?
-    } else if tool_full_name == "mcp__codebase__search" {
+    } else if tool_full_name == "codebase-search" {
         CodebaseService::new()
             .execute_search(&args, project_id.as_deref(), &on_chunk)
             .await?
-    } else if let Some(codelens_tool) = tool_full_name.strip_prefix("mcp__codelens__") {
+    } else if let Some(codelens_tool) = tool_full_name.strip_prefix("codelens-") {
         let service = CodeLensService::new();
         match codelens_tool {
             "diagnose" => service.execute_diagnose(&args).await?,
@@ -836,7 +866,7 @@ fn capture_checkpoint_before_tool(
     })?;
 
     match tool_full_name {
-        "mcp__filesystem__replace_edit" | "mcp__filesystem__create" => {
+        "filesystem-replace_edit" | "filesystem-create" => {
             let file_path = args
                 .get("filePath")
                 .and_then(Value::as_str)
@@ -858,7 +888,7 @@ fn capture_checkpoint_before_tool(
                 file_path,
             })
         }
-        "mcp__bash__terminal-execute" => Ok(ToolCheckpointCapture::Worktree(
+        "bash-terminal-execute" => Ok(ToolCheckpointCapture::Worktree(
             crate::storage::services::checkpoint::capture_checkpoint_worktree_before(
                 checkpoint_ids,
                 work_dir,

@@ -109,7 +109,7 @@ const getToolSummary = (name: string, args: string): string => {
     if (!isRecord(parsed)) {
       return "";
     }
-    const shortName = name.replace(/^mcp__.*__/, "");
+    const shortName = name.replace(/^.*?-/, "");
     switch (shortName) {
       case "read":
       case "replace_edit":
@@ -151,7 +151,7 @@ const extractSubAgentToolCalls = (
       continue;
     }
     for (const tc of message.toolCalls) {
-      const shortName = tc.name.replace(/^mcp__.*__/, "");
+      const shortName = tc.name.replace(/^.*?-/, "");
       entries.push({
         id: tc.callId ?? `${tc.name}-${entries.length}`,
         name: tc.name,

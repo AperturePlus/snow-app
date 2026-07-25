@@ -560,7 +560,7 @@ impl McpService for TodoService {
             _ => Err(Error::new(
                 Status::GenericFailure,
                 format!(
-                    "Unknown tool: \"{}\" for MCP server \"todo\". Available tools: [mcp__todo__todo-manage]",
+                    "Unknown tool: \"{}\" for MCP server \"todo\". Available tools: [todo-todo-manage]",
                     tool_name
                 ),
             )),

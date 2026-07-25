@@ -50,6 +50,7 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
             streamTokenCount: 0,
             streamElapsedMs: 0,
             streamTtftMs: 0,
+            streamStartedAt: 0,
           },
         };
       });

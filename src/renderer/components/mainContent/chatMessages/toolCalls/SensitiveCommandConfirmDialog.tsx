@@ -15,7 +15,7 @@ type SensitiveCommandConfirmDialogProps = {
   onReject: (toolCall: ToolCallInfo, reason: string) => void;
 };
 
-const BASH_TOOL_NAME = "mcp__bash__terminal-execute";
+const BASH_TOOL_NAME = "bash-terminal-execute";
 
 const parseBashCommand = (toolCall: ToolCallInfo): string | null => {
   if (toolCall.name !== BASH_TOOL_NAME) {

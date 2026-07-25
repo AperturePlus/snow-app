@@ -1,10 +1,15 @@
 import { ArrowDown, Clock, Gauge, Timer } from "lucide-react";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useState } from "react";
 
 export type StreamMetricsProps = {
   tokenCount: number;
   elapsedMs: number;
   ttftMs: number;
+  /** Wall-clock timestamp (Date.now()) captured once when an agent loop
+   *  starts, sourced from the active conversation session state. Drives the
+   *  accumulating elapsed timer so it survives conversation switches between
+   *  parallel streaming sessions. 0 when the loop is finished. */
+  startedAt: number;
 };
 
 const formatTokenCount = (count: number): string =>
@@ -38,52 +43,45 @@ const formatTokPerSec = (tokens: number, elapsedMs: number): string => {
  * Fixed streaming metrics bar displayed above the input box while the AI
  * is generating a response. Shows token count, elapsed time, TTFT, and
  * tokens/sec in real time.
+ *
+ * The elapsed timer is driven by `startedAt` — a wall-clock timestamp the
+ * agent loop captures once when it begins and resets to 0 when it ends.
+ * This keeps the timer independent of the backend's per-iteration
+ * `elapsedMs` (which resets on every createResponseStream call) and lets
+ * each parallel streaming conversation carry its own anchor, so switching
+ * between them no longer resets the timer.
  */
 export const StreamMetrics = memo(
   ({
     tokenCount,
     elapsedMs,
     ttftMs,
+    startedAt,
   }: StreamMetricsProps): React.JSX.Element => {
-    const hasElapsed = typeof elapsedMs === "number" && elapsedMs > 0;
     const hasTtft = typeof ttftMs === "number" && ttftMs > 0;
+    const isActive = typeof startedAt === "number" && startedAt > 0;
 
-    // Accumulating elapsed timer. The timer starts when streaming begins
-    // and keeps ticking across all agent-loop iterations (including tool
-    // calls between streams) until the loop is completely finished. We
-    // anchor a wall-clock start time so the timer is independent of the
-    // backend's per-iteration elapsedMs, which resets on every new
-    // createResponseStream call.
+    // Derive the accumulated elapsed time purely from `startedAt`. The anchor
+    // lives in session state, so switching conversations swaps it atomically
+    // without any local ref bookkeeping. A 500ms interval keeps the display
+    // ticking; it re-subscribes whenever the anchor changes (new send, switch).
     const [localElapsed, setLocalElapsed] = useState(0);
-    const startTimeRef = useRef<number | null>(null);
 
     useEffect(() => {
-      if (!hasElapsed) {
+      if (!isActive) {
         setLocalElapsed(0);
-        startTimeRef.current = null;
         return;
       }
 
-      // Initialize the start anchor only once, when streaming begins.
-      if (startTimeRef.current === null) {
-        startTimeRef.current = Date.now() - elapsedMs;
-        setLocalElapsed(elapsedMs);
-      }
-
+      setLocalElapsed(Date.now() - startedAt);
       const interval = setInterval(() => {
-        if (startTimeRef.current !== null) {
-          setLocalElapsed(Date.now() - startTimeRef.current);
-        }
+        setLocalElapsed(Date.now() - startedAt);
       }, 500);
 
       return () => clearInterval(interval);
-      // Intentionally exclude elapsedMs: the timer must not re-sync
-      // (and reset) when the backend sends a new per-iteration value.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [hasElapsed]);
+    }, [isActive, startedAt]);
 
-    const displayElapsed = hasElapsed ? localElapsed : 0;
-    const elapsedDisplay = formatDuration(displayElapsed);
+    const elapsedDisplay = formatDuration(localElapsed);
     const hasTokens = tokenCount > 0;
     const tps =
       tokenCount > 0 && elapsedMs > 0
@@ -95,7 +93,7 @@ export const StreamMetrics = memo(
       <span className="stream-metrics">
         <span
           className={`stream-metrics-metric stream-metrics-elapsed${
-            hasElapsed ? " is-active" : ""
+            isActive ? " is-active" : ""
           }`}
         >
           <Timer size={11} className="stream-metrics-icon" />

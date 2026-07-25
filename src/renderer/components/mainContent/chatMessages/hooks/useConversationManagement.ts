@@ -147,6 +147,7 @@ export const useConversationManagement = (
             streamTokenCount: 0,
             streamElapsedMs: 0,
             streamTtftMs: 0,
+            streamStartedAt: 0,
           },
         }));
       } catch {
@@ -287,22 +288,25 @@ export const useConversationManagement = (
     ref.isSending = false;
     ref.runId += 1;
     ctx.updateSessionMessages(key, (currentMessages) =>
-      currentMessages.map((message) => ({
-        ...message,
-        status: message.status === "sending" ? "sent" : message.status,
-        isRetrying: message.status === "sending" ? false : message.isRetrying,
-        toolCalls: message.toolCalls?.map((toolCall) =>
-          toolCall.status === "running" || toolCall.status === "pending"
-            ? {
-                ...toolCall,
-                status: "error",
-                result: toolCall.result ?? "Interrupted by user",
-              }
-            : toolCall
-        ),
-      }))
+      currentMessages.map((message) => {
+        return {
+          ...message,
+          status: message.status === "sending" ? "sent" : message.status,
+          isRetrying: message.status === "sending" ? false : message.isRetrying,
+          toolCalls: message.toolCalls?.map((toolCall) =>
+            toolCall.status === "running" || toolCall.status === "pending"
+              ? {
+                  ...toolCall,
+                  status: "error",
+                  result: toolCall.result ?? "Interrupted by user",
+                }
+              : toolCall
+          ),
+        };
+      })
     );
     ctx.updateSessionField(key, "isStreaming", false);
+    ctx.updateSessionField(key, "streamStartedAt", 0);
     ctx.updateSessionField(key, "isAborting", false);
     ctx.removeStreamingId(key);
 
@@ -330,6 +334,7 @@ export const useConversationManagement = (
         ref.isSending = false;
       }
       ctx.updateSessionField(conversationId, "isStreaming", false);
+      ctx.updateSessionField(conversationId, "streamStartedAt", 0);
       ctx.updateSessionField(conversationId, "isAborting", false);
       ctx.removeStreamingId(conversationId);
       // Clean up session state and incremental checkpoint storage.

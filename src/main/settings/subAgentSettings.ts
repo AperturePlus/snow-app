@@ -6,7 +6,7 @@ const BUILTIN_GENERAL_AGENT_ID = "agent_general";
 const SUB_AGENT_SOURCE_BUILTIN = "builtin";
 const SUB_AGENT_SOURCE_MANUAL = "manual";
 const SUB_AGENT_ALL_TOOLS_MARKER = "*";
-const MCP_TOOL_NAME_PATTERN = /^mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$/;
+const MCP_TOOL_NAME_PATTERN = /^[A-Za-z0-9_-]+-[A-Za-z0-9_-]+$/;
 
 const normalizeToolsJson = (value: unknown, allowAllTools: boolean): string => {
   let parsed: unknown;

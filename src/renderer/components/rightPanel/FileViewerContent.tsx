@@ -3,11 +3,15 @@ import {
   AlertCircle,
   Code2,
   Copy,
+  Eye,
   FileText,
   Image as ImageIcon,
   Loader2,
+  Pencil,
+  Save,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import Editor from "react-simple-code-editor";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "../../i18n";
 import type { FileContentResult } from "./types";
@@ -17,7 +21,10 @@ type FileViewerContentProps = {
   fileName: string;
   isSsh: boolean;
   sshSessionId?: string | null;
+  onDirtyChange?: (dirty: boolean) => void;
 };
+
+const EDITOR_TEXTAREA_ID = "file-viewer-editor-textarea";
 
 const escapeHtml = (str: string): string =>
   str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -86,11 +93,15 @@ const formatSize = (bytes: number): string => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+const isEditable = (content: FileContentResult): boolean =>
+  !content.isBinary && !content.isImage;
+
 export function FileViewerContent({
   filePath,
   fileName,
   isSsh,
   sshSessionId,
+  onDirtyChange,
 }: FileViewerContentProps): React.JSX.Element {
   const { t } = useI18n();
   const [content, setContent] = useState<FileContentResult | null>(null);
@@ -99,9 +110,34 @@ export function FileViewerContent({
   const [svgMode, setSvgMode] = useState<"image" | "code">("image");
   const [copied, setCopied] = useState(false);
 
+  // Edit mode state
+  const [editMode, setEditMode] = useState(false);
+  const [editedContent, setEditedContent] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState(false);
+
+  const originalContentRef = useRef("");
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  const lineNumbersRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    onDirtyChangeRef.current = onDirtyChange;
+  }, [onDirtyChange]);
+
+  useEffect(() => {
+    onDirtyChangeRef.current?.(dirty);
+  }, [dirty]);
+
   const loadFile = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setEditMode(false);
+    setDirty(false);
+    setSaveError(null);
+    setSavedAt(false);
+    setEditedContent("");
     try {
       let result: FileContentResult;
       if (isSsh && sshSessionId) {
@@ -110,6 +146,7 @@ export function FileViewerContent({
         result = await window.snow.readFileContent(filePath);
       }
       setContent(result);
+      originalContentRef.current = result.content;
     } catch (err) {
       setError(
         err instanceof Error
@@ -127,24 +164,50 @@ export function FileViewerContent({
     void loadFile();
   }, [loadFile]);
 
+  const highlightCode = useCallback(
+    (code: string): string => {
+      const lang = getLanguageFromFileName(fileName);
+      if (lang && hljs.getLanguage(lang)) {
+        try {
+          return hljs.highlight(code, {
+            language: lang,
+            ignoreIllegals: true,
+          }).value;
+        } catch {
+          return escapeHtml(code);
+        }
+      }
+      return escapeHtml(code);
+    },
+    [fileName]
+  );
+
   const highlightedCode = useMemo(() => {
     if (!content || content.isImage || content.isBinary)
       return { html: "", lineCount: 0 };
-    const lang = getLanguageFromFileName(fileName);
-    const lineCount = content.content.split("\n").length;
-    if (lang && hljs.getLanguage(lang)) {
-      try {
-        const html = hljs.highlight(content.content, {
-          language: lang,
-          ignoreIllegals: true,
-        }).value;
-        return { html, lineCount };
-      } catch {
-        return { html: escapeHtml(content.content), lineCount };
-      }
-    }
-    return { html: escapeHtml(content.content), lineCount };
-  }, [content, fileName]);
+    return {
+      html: highlightCode(content.content),
+      lineCount: content.content.split("\n").length,
+    };
+  }, [content, highlightCode]);
+
+  const viewLineNumbers = useMemo(
+    () =>
+      Array.from({ length: highlightedCode.lineCount }, (_, i) => i + 1).join(
+        "\n"
+      ),
+    [highlightedCode.lineCount]
+  );
+
+  const editLineCount = useMemo(
+    () => (editMode ? editedContent.split("\n").length : 0),
+    [editMode, editedContent]
+  );
+
+  const editLineNumbers = useMemo(
+    () => Array.from({ length: editLineCount }, (_, i) => i + 1).join("\n"),
+    [editLineCount]
+  );
 
   const handleCopy = useCallback(() => {
     if (!content) return;
@@ -154,16 +217,126 @@ export function FileViewerContent({
     });
   }, [content]);
 
+  const handleEnterEditMode = useCallback(() => {
+    if (!content || !isEditable(content)) return;
+    setEditMode(true);
+    setEditedContent(content.content);
+    setDirty(false);
+    setSaveError(null);
+    setSavedAt(false);
+  }, [content]);
+
+  const handleExitEditMode = useCallback(() => {
+    if (dirty) {
+      const confirmed = window.confirm(
+        t("rightPanel.fileViewerDiscardConfirm", {
+          defaultValue:
+            "You have unsaved changes. Discard them and leave edit mode?",
+        })
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+    setEditMode(false);
+    setDirty(false);
+    setSaveError(null);
+    setSavedAt(false);
+    setEditedContent("");
+  }, [dirty, t]);
+
+  const handleValueChange = useCallback((next: string) => {
+    setEditedContent(next);
+    const isDirty = next !== originalContentRef.current;
+    setDirty(isDirty);
+    if (!isDirty) {
+      setSaveError(null);
+      setSavedAt(false);
+    }
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    if (!dirty || saving) return;
+    setSaving(true);
+    setSaveError(null);
+    setSavedAt(false);
+    try {
+      if (isSsh && sshSessionId) {
+        await window.snow.sshWriteFile(sshSessionId, filePath, editedContent);
+      } else {
+        await window.snow.writeFileContent(filePath, editedContent);
+      }
+      originalContentRef.current = editedContent;
+      setDirty(false);
+      setSavedAt(true);
+      window.setTimeout(() => setSavedAt(false), 2000);
+      if (content) {
+        setContent({
+          ...content,
+          content: editedContent,
+          size: new Blob([editedContent]).size,
+        });
+      }
+    } catch (err) {
+      setSaveError(
+        err instanceof Error
+          ? err.message
+          : t("rightPanel.fileViewerSaveError", {
+              defaultValue: "Failed to save file",
+            })
+      );
+    } finally {
+      setSaving(false);
+    }
+  }, [dirty, saving, isSsh, sshSessionId, filePath, editedContent, content, t]);
+
+  // Keyboard shortcuts handled inside the editor's onKeyDown (which runs before
+  // the library's own key handling): Ctrl/Cmd+S saves, Esc exits edit mode.
+  // Undo/redo (Ctrl/Cmd+Z, Ctrl+Y) is handled natively by the editor library.
+  const handleEditorKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLElement>) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && (e.key === "s" || e.key === "S")) {
+        e.preventDefault();
+        if (dirty && !saving) {
+          void handleSave();
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        handleExitEditMode();
+      }
+    },
+    [dirty, saving, handleSave, handleExitEditMode]
+  );
+
+  // Focus the editor when entering edit mode, and sync line numbers with the
+  // textarea scroll position.
+  useEffect(() => {
+    if (!editMode) return;
+    const textarea = document.getElementById(EDITOR_TEXTAREA_ID);
+    if (textarea instanceof HTMLTextAreaElement) {
+      textarea.focus();
+    }
+    const onScroll = () => {
+      if (lineNumbersRef.current && textarea) {
+        lineNumbersRef.current.scrollTop = textarea.scrollTop;
+      }
+    };
+    textarea?.addEventListener("scroll", onScroll);
+    return () => {
+      textarea?.removeEventListener("scroll", onScroll);
+    };
+  }, [editMode, editedContent]);
+
   const renderCodeBlock = () => {
-    const { html, lineCount } = highlightedCode;
-    const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1).join(
-      "\n"
-    );
+    const { html } = highlightedCode;
     return (
       <div className="file-viewer-code-scroll">
         <pre className="file-viewer-code">
           <code className="file-viewer-line-numbers" aria-hidden="true">
-            {lineNumbers}
+            {viewLineNumbers}
           </code>
           <code
             className="hljs file-viewer-code-content"
@@ -173,6 +346,33 @@ export function FileViewerContent({
       </div>
     );
   };
+
+  const renderEditBlock = () => (
+    <div className="file-viewer-edit-scroll">
+      <code
+        ref={lineNumbersRef}
+        className="file-viewer-line-numbers file-viewer-line-numbers--edit"
+        aria-hidden="true"
+      >
+        {editLineNumbers}
+      </code>
+      <div className="file-viewer-code file-viewer-editor-wrap">
+        <Editor
+          value={editedContent}
+          onValueChange={handleValueChange}
+          highlight={highlightCode}
+          onKeyDown={handleEditorKeyDown}
+          textareaId={EDITOR_TEXTAREA_ID}
+          textareaClassName="file-viewer-edit-textarea"
+          preClassName="hljs"
+          padding={{ top: 12, right: 14, bottom: 12, left: 10 }}
+          tabSize={2}
+          insertSpaces
+          spellCheck={false}
+        />
+      </div>
+    </div>
+  );
 
   if (loading) {
     return (
@@ -228,6 +428,7 @@ export function FileViewerContent({
   const isSvg = content.isSvg;
   const isImage = content.isImage;
   const isBinary = content.isBinary && !isImage;
+  const canEdit = isEditable(content);
 
   return (
     <div className="file-viewer">
@@ -238,6 +439,25 @@ export function FileViewerContent({
         <span className="file-viewer-file-size">
           {formatSize(content.size)}
         </span>
+        {editMode ? (
+          <span
+            className={`file-viewer-edit-status ${dirty ? "dirty" : ""} ${
+              savedAt ? "saved" : ""
+            }`}
+          >
+            {dirty
+              ? t("rightPanel.fileViewerUnsaved", {
+                  defaultValue: "Unsaved",
+                })
+              : savedAt
+              ? t("rightPanel.fileViewerSaved", {
+                  defaultValue: "Saved",
+                })
+              : t("rightPanel.fileViewerEditing", {
+                  defaultValue: "Editing",
+                })}
+          </span>
+        ) : null}
         {isSvg && (
           <div className="file-viewer-svg-toggle">
             <button
@@ -276,7 +496,56 @@ export function FileViewerContent({
             <Copy size={13} />
           </button>
         )}
+        {canEdit ? (
+          editMode ? (
+            <>
+              <button
+                type="button"
+                className="file-viewer-action-btn"
+                onClick={handleExitEditMode}
+                disabled={saving}
+                title={t("rightPanel.fileViewerExitEdit", {
+                  defaultValue: "Exit edit mode (Esc)",
+                })}
+              >
+                <Eye size={13} />
+              </button>
+              <button
+                type="button"
+                className={`file-viewer-save-btn ${dirty ? "dirty" : ""}`}
+                onClick={handleSave}
+                disabled={!dirty || saving}
+                title={t("rightPanel.fileViewerSave", {
+                  defaultValue: "Save (Ctrl+S)",
+                })}
+              >
+                {saving ? (
+                  <Loader2 className="spin" size={13} />
+                ) : (
+                  <Save size={13} />
+                )}
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="file-viewer-action-btn"
+              onClick={handleEnterEditMode}
+              title={t("rightPanel.fileViewerEdit", {
+                defaultValue: "Edit file",
+              })}
+            >
+              <Pencil size={13} />
+            </button>
+          )
+        ) : null}
       </div>
+      {saveError ? (
+        <div className="file-viewer-save-error">
+          <AlertCircle size={14} />
+          <span>{saveError}</span>
+        </div>
+      ) : null}
       <div className="file-viewer-body">
         {isImage && !isSvg && (
           <div className="file-viewer-image-container">
@@ -304,12 +573,13 @@ export function FileViewerContent({
             <ImageIcon size={32} />
             <span>
               {t("rightPanel.binaryFile", {
-                defaultValue: "Binary file not displayed",
+                defaultValue: "Binary file",
               })}
             </span>
           </div>
         )}
-        {!content.isBinary && !isImage && renderCodeBlock()}
+        {!content.isBinary && !isImage && editMode && renderEditBlock()}
+        {!content.isBinary && !isImage && !editMode && renderCodeBlock()}
       </div>
     </div>
   );

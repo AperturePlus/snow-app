@@ -33,7 +33,7 @@ const DEFAULT_PLAN_MODE_SETTING_VALUE: &str = "false";
 
 const DEFAULT_PRIVACY_SETTING_NAME: &str = "Privacy settings";
 const DEFAULT_PRIVACY_SETTING_CODE: &str = "privacy_settings";
-const DEFAULT_PRIVACY_SETTING_VALUE: &str = "{\"enabled\":false,\"mode\":\"local\",\"api\":{\"url\":\"\",\"apiKey\":\"\",\"model\":\"openai/privacy-filter\"},\"toolResults\":{\"tools\":[\"mcp__filesystem__read\",\"mcp__grep__search\",\"mcp__bash__terminal-execute\"]}}";
+const DEFAULT_PRIVACY_SETTING_VALUE: &str = "{\"enabled\":false,\"mode\":\"local\",\"api\":{\"url\":\"\",\"apiKey\":\"\",\"model\":\"openai/privacy-filter\"},\"toolResults\":{\"tools\":[\"filesystem-read\",\"grep-search\",\"bash-terminal-execute\"]}}";
 
 const DEFAULT_THEME_SETTING_NAME: &str = "Theme settings";
 const DEFAULT_THEME_SETTING_CODE: &str = "theme_settings";

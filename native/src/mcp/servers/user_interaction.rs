@@ -307,7 +307,7 @@ fn unknown_tool_error(tool_name: &str) -> Error {
     Error::new(
         Status::GenericFailure,
         format!(
-            "Unknown tool: \"{tool_name}\" for MCP server \"{SERVER_ID}\". Available tools: [mcp__{SERVER_ID}__{TOOL_NAME}]"
+            "Unknown tool: \"{tool_name}\" for MCP server \"{SERVER_ID}\". Available tools: [{SERVER_ID}-{TOOL_NAME}]"
         ),
     )
 }

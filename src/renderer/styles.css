@@ -5819,6 +5819,98 @@ input {
   color: var(--text-primary);
 }
 
+/* Diagram is clickable: hint with a zoom cursor when the diagram view is
+   active (the SVG is only present once it has been rendered). */
+:is(.ai-message, .file-viewer-code, .context-compaction-markdown)
+  .mermaid-block[data-mermaid-view="diagram"]
+  .mermaid-view-diagram
+  svg {
+  cursor: zoom-in;
+}
+
+/* Mermaid image viewer (lightbox) — created dynamically by
+   mermaidRenderer.openMermaidImageViewer. Rendered in document.body, so it is
+   not nested under .ai-message. */
+.mermaid-image-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(2px);
+  animation: mermaid-image-viewer-fade 0.16s ease-out;
+}
+
+@keyframes mermaid-image-viewer-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.mermaid-image-viewer-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+.mermaid-image-viewer-stage.is-grabbing {
+  cursor: grabbing;
+}
+
+.mermaid-image-viewer-stage svg {
+  max-width: none;
+  max-height: none;
+  height: auto;
+  transform-origin: center center;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.mermaid-image-viewer-toolbar {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+}
+
+.mermaid-image-viewer-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.mermaid-image-viewer-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 /* Fallback for pre/code not wrapped (e.g. plain code without language) */
 .ai-message pre {
   overflow-x: auto;
@@ -6352,6 +6444,18 @@ input {
 
 @media (prefers-reduced-motion: reduce) {
   .tcn-icon-spin {
+    animation: none;
+  }
+}
+
+/* Running-state spinner shown after the tool name badge while a call is in flight. */
+.tcn-running-spinner {
+  flex-shrink: 0;
+  color: var(--accent-blue, #3b82f6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tcn-running-spinner {
     animation: none;
   }
 }
@@ -13885,7 +13989,7 @@ input {
   justify-content: center;
   width: 16px;
   height: 16px;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
   background: transparent;
   border: none;
@@ -14855,7 +14959,7 @@ input {
   width: 22px;
   height: 22px;
   border: none;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -14880,7 +14984,7 @@ input {
   width: 22px;
   height: 22px;
   border: none;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -14982,6 +15086,154 @@ input {
 }
 .file-viewer-error {
   color: var(--accent-red);
+}
+
+/* ===== File Viewer Edit Mode ===== */
+.file-viewer-edit-status {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  font-weight: 500;
+}
+
+.file-viewer-edit-status.dirty {
+  color: var(--accent-amber-text, #d97706);
+  background: var(--accent-amber-bg, rgba(217, 119, 6, 0.12));
+}
+
+.file-viewer-edit-status.saved {
+  color: var(--accent-green);
+  background: var(--accent-green-bg, rgba(34, 197, 94, 0.12));
+}
+
+.file-viewer-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.file-viewer-action-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.file-viewer-action-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.file-viewer-save-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.file-viewer-save-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.file-viewer-save-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.file-viewer-save-btn.dirty {
+  color: var(--accent-amber-text, #d97706);
+}
+
+.file-viewer-save-btn.dirty:hover:not(:disabled) {
+  background: var(--accent-amber-bg, rgba(217, 119, 6, 0.12));
+}
+
+.file-viewer-save-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--accent-red-bg, rgba(229, 72, 77, 0.1));
+  color: var(--accent-red);
+  font-size: 11.5px;
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+
+.file-viewer-edit-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  background: var(--bg-primary);
+}
+
+.file-viewer-line-numbers--edit {
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Editor wrapper also carries `.file-viewer-code` so the shared highlight.js
+   theme (`:is(..., .file-viewer-code, ...) .hljs-*`) applies to the highlight
+   layer. Reset the layout properties that `.file-viewer-code` sets so the
+   library's overlay (absolute textarea over a relative <pre>) stays aligned. */
+.file-viewer-editor-wrap {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+/* The library overlays a transparent <textarea> on the highlighted <pre>. They
+   share the same font metrics via the wrapper, so the caret stays aligned with
+   the highlight. Keep the library's default wrapping (pre-wrap) so the
+   highlight layer and textarea scroll together vertically. */
+.file-viewer-edit-textarea {
+  outline: none;
+  caret-color: var(--text-primary);
+  tab-size: 2;
+  -moz-tab-size: 2;
+}
+
+/* ===== Right Panel Tab Dirty Dot ===== */
+.right-panel-tab-dirty-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-amber-text, #d97706);
+  margin-right: 4px;
+  flex-shrink: 0;
+  vertical-align: middle;
 }
 
 /* Codebase Tool Call */

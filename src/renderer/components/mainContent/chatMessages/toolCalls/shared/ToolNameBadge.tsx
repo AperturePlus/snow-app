@@ -48,9 +48,9 @@ export const TOOL_ICON_MAP: Record<ToolCategory, LucideIcon> = {
  * Map a raw MCP tool name to a display category for icon selection.
  *
  * Examples:
- *   "mcp__filesystem__read"       -> "read"
- *   "mcp__filesystem__replace_edit" -> "edit"
- *   "mcp__filesystem__create"      -> "create"
+ *   "filesystem-read"       -> "read"
+ *   "filesystem-replace_edit" -> "edit"
+ *   "filesystem-create"      -> "create"
  *   "ace-search"                   -> "search"
  *   "terminal-execute"             -> "terminal"
  *   "websearch-search"             -> "web"

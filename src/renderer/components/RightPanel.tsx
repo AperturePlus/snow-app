@@ -52,6 +52,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       { id: GIT_TAB_ID, type: "git", title: t("rightPanel.gitTab") },
     ]);
     const [activeTabId, setActiveTabId] = useState<string>(GIT_TAB_ID);
+    const [dirtyTabs, setDirtyTabs] = useState<Set<string>>(new Set());
 
     const handleOpenDiffTab = useCallback<OpenDiffTabCallback>(
       (file, diffResult, diffLoading) => {
@@ -252,6 +253,14 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         }
         return filtered;
       });
+      setDirtyTabs((prev) => {
+        if (!prev.has(tabId)) {
+          return prev;
+        }
+        const next = new Set(prev);
+        next.delete(tabId);
+        return next;
+      });
       setActiveTabId((currentActive) => {
         if (currentActive !== tabId) {
           return currentActive;
@@ -348,6 +357,17 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             fileName={fileData.fileName}
             isSsh={fileData.isSsh}
             sshSessionId={fileData.sshSessionId}
+            onDirtyChange={(dirty) =>
+              setDirtyTabs((prev) => {
+                const next = new Set(prev);
+                if (dirty) {
+                  next.add(tab.id);
+                } else {
+                  next.delete(tab.id);
+                }
+                return next;
+              })
+            }
           />
         );
       }
@@ -396,6 +416,9 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                   onClick={() => setActiveTabId(tab.id)}
                 >
                   <span className="right-panel-tab-title" title={tab.title}>
+                    {dirtyTabs.has(tab.id) && (
+                      <span className="right-panel-tab-dirty-dot" aria-hidden="true" />
+                    )}
                     {tab.title}
                   </span>
                   {tab.id !== GIT_TAB_ID && (

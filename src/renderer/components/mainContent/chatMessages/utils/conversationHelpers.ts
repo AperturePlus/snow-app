@@ -110,14 +110,14 @@ export const isUserQuestionCancellationResult = (
 };
 
 export const isValidToolName = (name: string): boolean => {
-  // Valid format: mcp__{server_id}__{tool_name}
-  const parts = name.split("__");
-  return (
-    parts.length === 3 &&
-    parts[0] === "mcp" &&
-    parts[1].length > 0 &&
-    parts[2].length > 0
-  );
+  // Valid format: {server_id}-{tool_name}, must contain at least one `-`
+  // and have non-empty parts on both sides of the first `-`.
+  const dashIndex = name.indexOf("-");
+  if (dashIndex <= 0) {
+    return false;
+  }
+  const toolName = name.slice(dashIndex + 1);
+  return toolName.length > 0;
 };
 
 const normalizeToolCallName = (tc: Record<string, unknown>): string => {
@@ -136,9 +136,9 @@ const normalizeToolCallName = (tc: Record<string, unknown>): string => {
 
   // Sanitize: AI may copy the "[Tool: name#callId]" format from conversation
   // history (used by useAgentLoop to label tool results) or leak internal XML
-  // tags (e.g. </arg_value>) into the tool name. Extract a valid
-  // mcp__{server}__{tool} pattern if one is buried in the polluted string.
-  const mcpMatch = name.match(/mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_-]+/);
+  // tags (e.g. ``) into the tool name. Extract a valid
+  // {server}-{tool} pattern if one is buried in the polluted string.
+  const mcpMatch = name.match(/[A-Za-z0-9_-]+-[A-Za-z0-9_-]+/);
   if (mcpMatch) {
     return mcpMatch[0];
   }
@@ -339,7 +339,7 @@ export const updateFirstMatchingToolCall = (
 export const validateToolCall = (toolCall: ToolCallInfo): string | null => {
   if (!isValidToolName(toolCall.name)) {
     return JSON.stringify({
-      error: `Invalid tool name format: "${toolCall.name}". Tool names must follow the format "mcp__{server}__{tool}". Please check the available tool definitions and use the correct full name.`,
+      error: `Invalid tool name format: "${toolCall.name}". Tool names must follow the format "{server}-{tool}". Please check the available tool definitions and use the correct full name.`,
     });
   }
 

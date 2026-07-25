@@ -216,7 +216,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       conversationId: string,
       projectId?: string
     ): Promise<ToolAuthorizationDecision> => {
-      if (toolCall.name === "mcp__user-interaction__askUserQuestion") {
+      if (toolCall.name === "user-interaction-askUserQuestion") {
         return Promise.resolve({ status: "approved" });
       }
 
@@ -229,7 +229,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       const checkSensitiveBash = async (): Promise<
         ToolAuthorizationDecision | "needs-dialog"
       > => {
-        if (toolCall.name !== "mcp__bash__terminal-execute") {
+        if (toolCall.name !== "bash-terminal-execute") {
           return shouldAutoApprove() ? { status: "approved" } : "needs-dialog";
         }
 

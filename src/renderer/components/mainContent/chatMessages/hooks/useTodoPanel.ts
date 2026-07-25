@@ -66,7 +66,7 @@ const parseTodoResult = (
 
 /**
  * Extract the latest TODO list from conversation messages by scanning
- * all tool calls to `mcp__todo__todo-manage` and taking the last
+ * all tool calls to `todo-todo-manage` and taking the last
  * successful result that contains a todo array.
  */
 export const useTodoPanel = (
@@ -88,7 +88,7 @@ export const useTodoPanel = (
       }
 
       for (const toolCall of message.toolCalls) {
-        if (toolCall.name !== "mcp__todo__todo-manage") {
+        if (toolCall.name !== "todo-todo-manage") {
           continue;
         }
 

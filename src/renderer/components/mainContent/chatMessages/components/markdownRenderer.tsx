@@ -8,6 +8,7 @@ import type {
 import {
   injectCachedDiagrams,
   openExportMenu,
+  openMermaidImageViewer,
   renderMermaidBlocks,
   setMermaidView,
   watchThemeForMermaid,
@@ -292,6 +293,12 @@ export const MarkdownBlock = memo(
           } else if (action === "download") {
             openExportMenu(actionBtn, mermaidBlock);
           }
+          return;
+        }
+
+        // Click on the rendered diagram opens the full-size viewer.
+        if (target.closest(".mermaid-view-diagram svg")) {
+          openMermaidImageViewer(mermaidBlock);
           return;
         }
       }
