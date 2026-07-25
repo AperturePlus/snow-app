@@ -94,12 +94,10 @@ pub async fn rerank(
         ));
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(60))
-        .build()
-        .map_err(|error| {
-            Error::from_reason(format!("Failed to create HTTP client: {error}"))
-        })?;
+    let client = crate::api::http_client::build_proxied_client_with_timeout(
+        Duration::from_secs(60),
+    )
+    .await?;
 
     let endpoint = resolve_rerank_endpoint(&config.base_url);
     let headers = build_headers(config);

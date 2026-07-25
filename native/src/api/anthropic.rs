@@ -120,8 +120,8 @@ async fn create_anthropic_response_async(
         system_prompt_ids_json: &api_config.system_prompt_ids_json,
     })?;
 
-    let client = reqwest::Client::builder()
-        .build()
+    let client = crate::api::http_client::build_proxied_client()
+        .await
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
     let skip_context = request.skip_context.unwrap_or(false);
     let mut prepared_messages = prepared_request.messages;

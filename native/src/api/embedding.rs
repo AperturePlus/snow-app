@@ -58,12 +58,10 @@ pub async fn embed_batch(
         return Ok(Vec::new());
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
-        .build()
-        .map_err(|error| {
-            Error::from_reason(format!("Failed to create HTTP client: {error}"))
-        })?;
+    let client = crate::api::http_client::build_proxied_client_with_timeout(
+        Duration::from_secs(120),
+    )
+    .await?;
 
     let endpoint = resolve_embedding_endpoint(config);
     let headers = build_headers(config);

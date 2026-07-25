@@ -69,8 +69,8 @@ pub async fn textify_images_in_messages(
     }
 
     let vision_config = VisionApiConfig::from(api_config, custom_headers)?;
-    let client = reqwest::Client::builder()
-        .build()
+    let client = crate::api::http_client::build_proxied_client()
+        .await
         .map_err(|error| {
             Error::from_reason(format!("Failed to create vision HTTP client: {error}"))
         })?;

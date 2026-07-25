@@ -13,7 +13,6 @@ use super::super::tools::McpTool;
 const SERVER_ID: &str = "websearch";
 const PROXY_BROWSER_SETTING_CODE: &str = "proxy_browser_settings";
 const DEFAULT_SEARCH_ENGINE: &str = "duckduckgo";
-const DEFAULT_PROXY_PORT: u16 = 7890;
 const REQUEST_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_MAX_RESULTS: usize = 10;
 const MAX_MAX_RESULTS: usize = 20;
@@ -24,20 +23,17 @@ const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 pub struct WebSearchService;
+
+/// Web search 引擎选择（代理设置由 `http_client` 统一管理）。
 #[derive(Debug, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 struct ProxyBrowserSettings {
-
-    enabled: bool,
-    port: u16,
     search_engine: String,
 }
 
 impl Default for ProxyBrowserSettings {
     fn default() -> Self {
         Self {
-            enabled: false,
-            port: DEFAULT_PROXY_PORT,
             search_engine: DEFAULT_SEARCH_ENGINE.to_string(),
         }
     }
@@ -56,8 +52,9 @@ impl WebSearchService {
             1,
             MAX_MAX_RESULTS,
         );
-        let settings = load_proxy_browser_settings().await?;
-        let client = build_http_client(&settings)?;
+        let settings = load_search_engine_settings().await?;
+        let proxy_config = crate::api::http_client::load_proxy_config().await?;
+        let client = build_http_client(&proxy_config)?;
         let results = search_with_engine(&client, &settings.search_engine, query, max_results).await?;
         let total_results = results.len();
 
@@ -77,8 +74,8 @@ impl WebSearchService {
             MIN_MAX_CONTENT_LENGTH,
             MAX_MAX_CONTENT_LENGTH,
         );
-        let settings = load_proxy_browser_settings().await?;
-        let client = build_http_client(&settings)?;
+        let proxy_config = crate::api::http_client::load_proxy_config().await?;
+        let client = build_http_client(&proxy_config)?;
         let response = client.get(url).send().await.map_err(|error| {
             generic_error(format!("Failed to fetch page: {error}"))
         })?;
@@ -228,7 +225,11 @@ impl McpService for WebSearchService {
     }
 }
 
-async fn load_proxy_browser_settings() -> napi::Result<ProxyBrowserSettings> {
+/// 从数据库加载 Web 搜索引擎配置（代理设置由 `http_client` 统一管理）。
+///
+/// 仅解析 `search_engine` 字段，代理相关字段已交由
+/// `crate::api::http_client` 统一处理。
+async fn load_search_engine_settings() -> napi::Result<ProxyBrowserSettings> {
     let setting_value = tokio::task::spawn_blocking(|| {
         let storage_info = crate::storage::initialize_app_storage()?;
         let database_path = std::path::PathBuf::from(storage_info.database_path);
@@ -238,24 +239,23 @@ async fn load_proxy_browser_settings() -> napi::Result<ProxyBrowserSettings> {
         )
     })
     .await
-    .map_err(|error| generic_error(format!("Failed to load proxy settings: {error}")))??;
+    .map_err(|error| generic_error(format!("Failed to load search engine settings: {error}")))??;
 
     Ok(setting_value
         .and_then(|value| serde_json::from_str(&value).ok())
         .unwrap_or_default())
 }
 
-fn build_http_client(settings: &ProxyBrowserSettings) -> napi::Result<Client> {
-    let mut builder = Client::builder()
+/// 构建带代理和超时设置的 HTTP 客户端。
+///
+/// 代理设置由 `ProxyConfig` 提供统一逻辑：启用时走 `http://127.0.0.1:{port}`，
+/// 未启用时由 reqwest 默认跟随系统代理环境变量。
+fn build_http_client(proxy_config: &crate::api::http_client::ProxyConfig) -> napi::Result<Client> {
+    let builder = Client::builder()
         .user_agent(USER_AGENT)
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS));
 
-    if settings.enabled {
-        builder = builder.proxy(reqwest::Proxy::all(format!(
-            "http://127.0.0.1:{}",
-            settings.port
-        )).map_err(|error| generic_error(format!("Invalid proxy settings: {error}")))?);
-    }
+    let builder = proxy_config.clone().apply(builder)?;
 
     builder
         .build()

@@ -189,7 +189,7 @@ async fn create_response_async(
         }
     }
 
-    let client = build_openai_client(&base_url, api_key, &effective_headers)?;
+    let client = build_openai_client(&base_url, api_key, &effective_headers).await?;
     let skip_context = request.skip_context.unwrap_or(false);
     let mut prepared_messages = prepared_request.messages;
     crate::api::vision::textify_images_in_messages(
@@ -308,7 +308,7 @@ fn resolve_effective_base_url(api_config: &ApiConfigRecord) -> String {
     resolve_sdk_api_base_url(&base_url, &api_config.base_url_mode)
 }
 
-fn build_openai_client(
+async fn build_openai_client(
     base_url: &str,
     api_key: &str,
     custom_headers: &HashMap<String, String>,
@@ -335,13 +335,18 @@ fn build_openai_client(
             Error::from_reason(format!("Invalid custom header '{}': {}", trimmed_key, error))
         })?;
         let header_value = HeaderValue::from_str(trimmed_value).map_err(|error| {
-            Error::from_reason(format!("Invalid custom header value for '{}': {}", trimmed_key, error))
+            Error::from_reason(format!(
+                "Invalid custom header value for '{}': {}",
+                trimmed_key, error
+            ))
         })?;
         default_headers.insert(header_name, header_value);
     }
 
-    let http_client = reqwest::Client::builder()
-        .default_headers(default_headers)
+    let proxy_config = crate::api::http_client::load_proxy_config().await?;
+    let builder = proxy_config
+        .apply(reqwest::Client::builder().default_headers(default_headers))?;
+    let http_client = builder
         .build()
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
 

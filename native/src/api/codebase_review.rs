@@ -323,9 +323,7 @@ async fn review_via_chat(
         "max_tokens": 4096,
     });
 
-    let client = reqwest::Client::builder()
-        .build()
-        .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
+    let client = crate::api::http_client::build_proxied_client().await?;
 
     let body: Value = send_review_request_with_retry(
         &client,
@@ -376,9 +374,7 @@ async fn review_via_responses(
         "stream": false,
     });
 
-    let client = reqwest::Client::builder()
-        .build()
-        .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
+    let client = crate::api::http_client::build_proxied_client().await?;
 
     let body: Value = send_review_request_with_retry(
         &client,
@@ -417,9 +413,7 @@ async fn review_via_anthropic(
         "messages": [{"role": "user", "content": user_content}],
     });
 
-    let client = reqwest::Client::builder()
-        .build()
-        .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
+    let client = crate::api::http_client::build_proxied_client().await?;
 
     let body: Value = send_review_request_with_retry(
         &client,
@@ -463,9 +457,7 @@ async fn review_via_gemini(
         }
     });
 
-    let client = reqwest::Client::builder()
-        .build()
-        .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
+    let client = crate::api::http_client::build_proxied_client().await?;
 
     let body: Value = send_review_request_with_retry(
         &client,

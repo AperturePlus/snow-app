@@ -7,6 +7,7 @@ pub mod config;
 pub mod conversation;
 pub mod embedding;
 pub mod gemini;
+pub mod http_client;
 pub mod models;
 pub mod reranking;
 pub mod retry;

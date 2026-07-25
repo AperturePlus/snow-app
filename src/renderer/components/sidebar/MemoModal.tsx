@@ -619,7 +619,11 @@ export function MemoModal({
       <div className="memo-editor-wrapper">
         <div className="memo-editor-toolbar">
           <div className="memo-editor-meta">
-            <span className="memo-editor-status-badge">
+            <span
+              className={`memo-editor-status-badge${
+                selectedMemo.status === "done" ? " done" : " pending"
+              }`}
+            >
               {selectedMemo.status === "done"
                 ? t("memo.statusDone")
                 : t("memo.statusPending")}

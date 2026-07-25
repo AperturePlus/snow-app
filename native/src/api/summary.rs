@@ -119,9 +119,7 @@ async fn generate_summary_via_chat(
         "max_tokens": 4096,
     });
 
-    let client = reqwest::Client::builder()
-        .build()
-        .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
+    let client = crate::api::http_client::build_proxied_client().await?;
 
     let body: Value = send_summary_request_with_retry(
         &client,
@@ -168,9 +166,7 @@ async fn generate_summary_via_responses(
         "stream": false,
     });
 
-    let client = reqwest::Client::builder()
-        .build()
-        .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
+    let client = crate::api::http_client::build_proxied_client().await?;
 
     let body: Value = send_summary_request_with_retry(
         &client,
@@ -210,9 +206,7 @@ async fn generate_summary_via_anthropic(
         "messages": [{"role": "user", "content": conversation_text}],
     });
 
-    let client = reqwest::Client::builder()
-        .build()
-        .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
+    let client = crate::api::http_client::build_proxied_client().await?;
 
     let body: Value = send_summary_request_with_retry(
         &client,
@@ -257,9 +251,7 @@ async fn generate_summary_via_gemini(
         }
     });
 
-    let client = reqwest::Client::builder()
-        .build()
-        .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
+    let client = crate::api::http_client::build_proxied_client().await?;
 
     let body: Value = send_summary_request_with_retry(
         &client,

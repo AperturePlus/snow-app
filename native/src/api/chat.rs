@@ -106,8 +106,8 @@ async fn create_chat_completion_response_async(
     )
     .await?;
 
-    let client = reqwest::Client::builder()
-        .build()
+    let client = crate::api::http_client::build_proxied_client()
+        .await
         .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {}", error)))?;
     let tools = if request.context_compaction.unwrap_or(false) || skip_context {
         None
