@@ -61,6 +61,8 @@ pub async fn create_response_stream(
         .map(|message| ChatContextMessage {
             role: message.role.clone(),
             content: message.content.clone(),
+            tool_calls_json: None,
+            tool_results_json: message.tool_results_json.clone(),
         })
         .collect::<Vec<_>>();
     let failure_conversation_id = request.conversation_id.clone();

@@ -28,10 +28,10 @@ pub fn prepare_context_request(
 ) -> Result<PreparedConversationRequest> {
     let mut current_messages = if request.context_compaction {
         vec![ChatContextMessage {
-            // Use a final user instruction for cross-provider compatibility. Some
-            // OpenAI-compatible Chat endpoints reject the `developer` role.
             role: "user".to_string(),
             content: "Create a durable context handoff for the next assistant. Output only the handoff document in Markdown. Preserve concrete objectives, user requirements, decisions, architecture constraints, relevant files and symbols, completed changes, current state, pending tasks, exact commands or errors, edge cases, and the next recommended steps. Be concise but do not omit information required to continue the work correctly. Do not call tools and do not address the user conversationally.".to_string(),
+            tool_calls_json: None,
+            tool_results_json: None,
         }]
     } else {
         normalize_messages(request.messages)
@@ -96,6 +96,8 @@ pub fn prepare_context_request(
             ChatContextMessage {
                 role: "system".to_string(),
                 content: system_prompt,
+                tool_calls_json: None,
+                tool_results_json: None,
             },
         );
     }
@@ -119,11 +121,11 @@ fn normalize_messages(messages: &[ChatContextMessage]) -> Vec<ChatContextMessage
                 return None;
             }
 
-            // Preserve original role (including "tool") for database storage.
-            // Each API adapter normalizes the role for its own payload.
             Some(ChatContextMessage {
                 role: message.role.trim().to_string(),
                 content: content.to_string(),
+                tool_calls_json: message.tool_calls_json.clone(),
+                tool_results_json: message.tool_results_json.clone(),
             })
         })
         .collect()

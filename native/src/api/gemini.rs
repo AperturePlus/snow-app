@@ -91,6 +91,8 @@ async fn create_gemini_response_async(
         .map(|message| ChatContextMessage {
             role: message.role.clone(),
             content: message.content.clone(),
+            tool_calls_json: None,
+            tool_results_json: message.tool_results_json.clone(),
         })
         .collect::<Vec<_>>();
     let prepared_request = prepare_context_request(ConversationContextRequest {
@@ -264,22 +266,77 @@ fn build_gemini_payload(
 
     for message in messages {
         let content = message.content.trim();
-        if content.is_empty() {
+        let role = message.role.trim();
+
+        // --- Tool result messages: emit as function role with functionResponse parts ---
+        if role == "tool" {
+            if content.is_empty() {
+                continue;
+            }
+            let results = match message.tool_results_json {
+                Some(ref raw) => crate::api::conversation::tool_messages::parse_tool_results_json(raw),
+                None => Vec::new(),
+            };
+            for (name, _call_id, result) in &results {
+                let response_content = if result.is_empty() {
+                    serde_json::json!({"result": "ok"})
+                } else {
+                    serde_json::json!({"result": result})
+                };
+                let tool_name = if name.is_empty() {
+                    "unknown_tool".to_string()
+                } else {
+                    name.clone()
+                };
+                contents.push(json!({
+                    "role": "function",
+                    "parts": [{
+                        "functionResponse": {
+                            "name": tool_name,
+                            "response": response_content,
+                        }
+                    }],
+                }));
+            }
             continue;
         }
 
-        let role = message.role.trim();
+        if content.is_empty() && message.tool_calls_json.is_none() {
+            continue;
+        }
+
+        // --- Assistant messages with tool_calls ---
+        if role == "assistant" {
+            if let Some(ref tool_calls_raw) = message.tool_calls_json {
+                let function_call_parts =
+                    crate::api::conversation::tool_messages::tool_calls_as_gemini_parts(tool_calls_raw);
+                if !function_call_parts.is_empty() {
+                    let mut parts = Vec::new();
+                    if !content.is_empty() {
+                        parts.push(json!({ "text": content }));
+                    }
+                    parts.extend(function_call_parts);
+                    contents.push(json!({
+                        "role": "model",
+                        "parts": parts,
+                    }));
+                    continue;
+                }
+            }
+        }
+
+        // --- System/developer messages ---
         if role == "system" || role == "developer" {
-            // Collect built-in system prompt parts; they will be emitted
-            // either as `systemInstruction` (no user prompts) or demoted to
-            // a leading `user` message (user prompts present), matching
-            // Snow CLI PR #127.
             if !content.is_empty() {
                 builtin_system_parts.push(content.to_string());
             }
             continue;
         }
 
+        // --- Regular user/model messages ---
+        if content.is_empty() {
+            continue;
+        }
         if skip_image_parsing {
             contents.push(json!({
                 "role": normalize_gemini_role(role),
@@ -368,6 +425,24 @@ fn build_gemini_payload(
             payload["tools"] = tools;
         }
     }
+
+    // TEMP: log full request payload for tool-call verification
+    let _ = crate::storage::services::app_logs::insert_app_log(
+        database_path,
+        &crate::storage::services::app_logs::AppLogInput {
+            level: "DEBUG".to_string(),
+            module: "api".to_string(),
+            func: "build_gemini_payload".to_string(),
+            line: None,
+            message: "Request payload".to_string(),
+            input: Some(serde_json::to_string(&payload).unwrap_or_default()),
+            output: None,
+            duration: None,
+            context: None,
+            error: None,
+            source: "main".to_string(),
+        },
+    );
 
     Ok(payload)
 }

@@ -492,6 +492,11 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             );
 
             const subToolResults: string[] = [];
+            const subStructuredResults: {
+              name: string;
+              callId: string;
+              result: string;
+            }[] = [];
             for (
               let subToolIndex = 0;
               subToolIndex < subToolCalls.length;
@@ -516,10 +521,13 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                     "User declined tool execution",
                 });
                 subToolResults.push(
-                  `[Tool: ${subToolCall.name}]\n${formatMcpToolResultForModel(
-                    subRejectResult
-                  )}`
+                  formatMcpToolResultForModel(subRejectResult)
                 );
+                subStructuredResults.push({
+                  name: subToolCall.name,
+                  callId: subToolCall.callId || "",
+                  result: formatMcpToolResultForModel(subRejectResult),
+                });
 
                 ctx.updateSessionMessages(subConvId, (currentMessages) =>
                   currentMessages.map((currentMessage) => {
@@ -688,14 +696,13 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 })
               );
 
-              const subIdentifier = subToolCall.callId
-                ? `${subToolCall.name}#${subToolCall.callId}`
-                : subToolCall.name;
-              subToolResults.push(
-                `[Tool: ${subIdentifier}]\n${formatMcpToolResultForModel(
-                  subResult
-                )}`
-              );
+              const subModelResult = formatMcpToolResultForModel(subResult);
+              subToolResults.push(subModelResult);
+              subStructuredResults.push({
+                name: subToolCall.name,
+                callId: subToolCall.callId || "",
+                result: subModelResult,
+              });
             }
 
             const subToolResultMessage: ChatConversationMessage = {
@@ -721,14 +728,20 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               return subToolResults.join("\n\n");
             }
 
-            // Flush pending user messages before the next AI request so
-            // they are sent in the next iteration as soon as tools finish.
             const subPendingForTools =
               ctx.pendingQueueRef.current.get(subConvId) ?? [];
+            const subToolResultsJson = JSON.stringify(subStructuredResults);
             const subNextMessages: {
               role: "user" | "assistant" | "system" | "developer" | "tool";
               content: string;
-            }[] = [{ role: "tool", content: subToolResults.join("\n\n") }];
+              toolResultsJson?: string;
+            }[] = [
+              {
+                role: "tool",
+                content: subToolResults.join("\n\n"),
+                toolResultsJson: subToolResultsJson,
+              },
+            ];
             if (subPendingForTools.length > 0) {
               ctx.pendingQueueRef.current.delete(subConvId);
               const subPendingText = subPendingForTools
@@ -837,6 +850,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         requestMessages: {
           role: "user" | "assistant" | "system" | "developer" | "tool";
           content: string;
+          toolResultsJson?: string;
         }[],
         currentConversationId: string | undefined,
         checkpointId?: string
@@ -1212,6 +1226,11 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         );
 
         const toolResults: string[] = [];
+        const structuredToolResults: {
+          name: string;
+          callId: string;
+          result: string;
+        }[] = [];
         let userQuestionCancelled = false;
         for (let toolIndex = 0; toolIndex < toolCalls.length; toolIndex++) {
           const toolCall = toolCalls[toolIndex];
@@ -1246,10 +1265,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 };
               })
             );
-            const skippedIdentifier = toolCall.callId
-              ? `${toolCall.name}#${toolCall.callId}`
-              : toolCall.name;
-            toolResults.push(`[Tool: ${skippedIdentifier}]\n${skippedResult}`);
+            toolResults.push(skippedResult);
+            structuredToolResults.push({
+              name: toolCall.name,
+              callId: toolCall.callId || "",
+              result: skippedResult,
+            });
             continue;
           }
 
@@ -1625,13 +1646,13 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             planApprovedRef.current = true;
           }
 
-          const toolResultIdentifier = toolCall.callId
-            ? `${toolCall.name}#${toolCall.callId}`
-            : toolCall.name;
           const modelToolResult = formatMcpToolResultForModel(result!);
-          toolResults.push(
-            `[Tool: ${toolResultIdentifier}]\n${modelToolResult}`
-          );
+          toolResults.push(modelToolResult);
+          structuredToolResults.push({
+            name: toolCall.name,
+            callId: toolCall.callId || "",
+            result: modelToolResult,
+          });
 
           if (isRunCancelled(effectiveKey)) {
             return;
@@ -1682,17 +1703,14 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           return;
         }
 
-        // Continue the loop with tool results sent as role: "tool"
-        // The Rust side (conversation.rs normalize_role) maps "tool" -> "user"
-        // when sending to the AI API, but stores it as "tool" in the database.
-        // Flush pending user messages before adding the next assistant placeholder so
-        // they are sent in the next request as soon as the tool batch finishes.
         const pendingQueueForTools =
           ctx.pendingQueueRef.current.get(effectiveKey) ?? [];
+        const toolResultsJson = JSON.stringify(structuredToolResults);
         const nextMessages: {
           role: "user" | "assistant" | "system" | "developer" | "tool";
           content: string;
-        }[] = [{ role: "tool", content: toolResultContent }];
+          toolResultsJson?: string;
+        }[] = [{ role: "tool", content: toolResultContent, toolResultsJson }];
         if (pendingQueueForTools.length > 0) {
           ctx.pendingQueueRef.current.delete(effectiveKey);
           const pendingText = pendingQueueForTools

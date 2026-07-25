@@ -10,6 +10,7 @@ import {
   GrepToolCall,
   SubAgentToolCall,
   CodebaseToolCall,
+  CodeLensToolCall,
 } from "../toolCalls";
 import { ToolCallNode } from "../toolCalls/shared/ToolCallNode";
 import { useI18n } from "../../../../i18n";
@@ -87,6 +88,15 @@ export const ToolCallItem = memo(
 
     if (toolCall.name === "codebase-search") {
       return <CodebaseToolCall toolCall={toolCall} />;
+    }
+
+    if (
+      toolCall.name === "codelens-diagnose" ||
+      toolCall.name === "codelens-find_definition" ||
+      toolCall.name === "codelens-find_references" ||
+      toolCall.name === "codelens-file_outline"
+    ) {
+      return <CodeLensToolCall toolCall={toolCall} />;
     }
 
     const effectiveStatus = hasResultError(toolCall.result)

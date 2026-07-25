@@ -52,6 +52,7 @@ fn build_request(image_data_url: &str) -> ResponsesApiRequest {
             ResponsesApiMessage {
                 role: "system".to_string(),
                 content: PALETTE_SYSTEM_PROMPT.to_string(),
+                tool_results_json: None,
             },
             ResponsesApiMessage {
                 role: "user".to_string(),
@@ -59,6 +60,7 @@ fn build_request(image_data_url: &str) -> ResponsesApiRequest {
                     "Here is the background image. Design the theme palette based on it.\n\n@@image:{}@@",
                     image_data_url
                 ),
+                tool_results_json: None,
             },
         ],
         // Force the advanced model (expected to support vision) for this task.

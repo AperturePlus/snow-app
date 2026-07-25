@@ -16,7 +16,7 @@ dirs-next = "2.0.0"
 futures = "0.3.31"
 napi = { version = "3.2.4", default-features = false, features = ["napi4", "async"] }
 napi-derive = "3.2.4"
-reqwest = { version = "0.12.5", features = ["blocking", "json", "stream", "gzip", "brotli", "deflate", "zstd", "charset"] }
+reqwest = { version = "0.12.5", features = ["blocking", "json", "stream", "gzip", "brotli", "deflate"] }
 rusqlite = { version = "0.32.1", features = ["bundled"] }
 serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1.0.120"
@@ -52,3 +52,18 @@ tree-sitter-lua = "0.5"
 
 [build-dependencies]
 napi-build = "2.2.3"
+
+# -- dev: reduce debug info (MSVC debug generation is very slow) --
+[profile.dev]
+debug = "line-tables-only"
+incremental = true
+
+# Dependencies are compiled once and cached; skip debug info + slight optimisation
+[profile.dev.package."*"]
+debug = false
+opt-level = 1
+
+# -- release: keep codegen-units high for parallel LLVM, thin LTO for link speed --
+[profile.release]
+lto = "thin"
+codegen-units = 4

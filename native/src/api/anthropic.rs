@@ -105,6 +105,8 @@ async fn create_anthropic_response_async(
         .map(|message| ChatContextMessage {
             role: message.role.clone(),
             content: message.content.clone(),
+            tool_calls_json: None,
+            tool_results_json: message.tool_results_json.clone(),
         })
         .collect::<Vec<_>>();
     let prepared_request = prepare_context_request(ConversationContextRequest {
@@ -293,62 +295,110 @@ fn build_anthropic_payload(
 
     for message in messages {
         let content = message.content.trim();
-        if content.is_empty() {
-            continue;
-        }
-
         let role = message.role.trim();
-        if skip_image_parsing {
-            match role {
-                "system" | "developer" => {
-                    if !content.is_empty() {
-                        builtin_system_parts.push(content.to_string());
-                    }
-                }
-                _ => {
-                    anthropic_messages.push(json!({
-                        "role": normalize_anthropic_role(role),
-                        "content": content,
+
+        // --- Tool result messages: emit as user message with tool_result blocks ---
+        if role == "tool" {
+            if content.is_empty() {
+                continue;
+            }
+            let results = match message.tool_results_json {
+                Some(ref raw) => crate::api::conversation::tool_messages::parse_tool_results_json(raw),
+                None => Vec::new(),
+            };
+            let mut tool_result_blocks = Vec::new();
+            for (_name, call_id, result) in &results {
+                if call_id.is_empty() {
+                    tool_result_blocks.push(json!({
+                        "type": "text",
+                        "text": result,
+                    }));
+                } else {
+                    tool_result_blocks.push(json!({
+                        "type": "tool_result",
+                        "tool_use_id": call_id,
+                        "content": result,
                     }));
                 }
             }
+            if !tool_result_blocks.is_empty() {
+                anthropic_messages.push(json!({
+                    "role": "user",
+                    "content": tool_result_blocks,
+                }));
+            }
+            continue;
+        }
+
+        if content.is_empty() && message.tool_calls_json.is_none() {
+            continue;
+        }
+
+        // --- Assistant messages with tool_calls ---
+        if role == "assistant" {
+            if let Some(ref tool_calls_raw) = message.tool_calls_json {
+                let tool_use_blocks =
+                    crate::api::conversation::tool_messages::tool_calls_as_anthropic_blocks(tool_calls_raw);
+                if !tool_use_blocks.is_empty() {
+                    let mut content_blocks = Vec::new();
+                    if !content.is_empty() {
+                        content_blocks.push(json!({ "type": "text", "text": content }));
+                    }
+                    content_blocks.extend(tool_use_blocks);
+                    anthropic_messages.push(json!({
+                        "role": "assistant",
+                        "content": content_blocks,
+                    }));
+                    continue;
+                }
+            }
+        }
+
+        // --- System/developer messages ---
+        if role == "system" || role == "developer" {
+            if !content.is_empty() {
+                builtin_system_parts.push(content.to_string());
+            }
+            continue;
+        }
+
+        // --- Regular user/assistant messages ---
+        if content.is_empty() {
+            continue;
+        }
+        if skip_image_parsing {
+            anthropic_messages.push(json!({
+                "role": normalize_anthropic_role(role),
+                "content": content,
+            }));
             continue;
         }
 
         let parsed_content = parse_chat_message_content(content, database_path)?;
-        match role {
-            "system" | "developer" => {
-                if !parsed_content.text.is_empty() {
-                    builtin_system_parts.push(parsed_content.text);
-                }
+        let content_value = if parsed_content.images.is_empty() {
+            Value::String(parsed_content.text)
+        } else {
+            let mut blocks = Vec::new();
+            if !parsed_content.text.is_empty() {
+                blocks.push(json!({ "type": "text", "text": parsed_content.text }));
             }
-            _ => {
-                let content = if parsed_content.images.is_empty() {
-                    Value::String(parsed_content.text)
-                } else {
-                    let mut blocks = Vec::new();
-                    if !parsed_content.text.is_empty() {
-                        blocks.push(json!({ "type": "text", "text": parsed_content.text }));
-                    }
-                    blocks.extend(parsed_content.images.iter().map(|image| {
-                        json!({
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": image.media_type,
-                                "data": image.data,
-                            },
-                        })
-                    }));
-                    Value::Array(blocks)
-                };
+            blocks.extend(parsed_content.images.iter().map(|image| {
+                json!({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": image.media_type,
+                        "data": image.data,
+                    },
+                })
+            }));
+            Value::Array(blocks)
+        };
 
-                anthropic_messages.push(json!({
-                    "role": normalize_anthropic_role(role),
-                    "content": content,
-                }));
-            }
-        }
+        anthropic_messages.push(json!({
+            "role": normalize_anthropic_role(role),
+            "content": content_value,
+        }));
     }
 
     // When user system prompts are present, demote the built-in system
@@ -474,6 +524,24 @@ fn build_anthropic_payload(
             break;
         }
     }
+
+    // TEMP: log full request payload for tool-call verification
+    let _ = crate::storage::services::app_logs::insert_app_log(
+        database_path,
+        &crate::storage::services::app_logs::AppLogInput {
+            level: "DEBUG".to_string(),
+            module: "api".to_string(),
+            func: "build_anthropic_payload".to_string(),
+            line: None,
+            message: "Request payload".to_string(),
+            input: Some(serde_json::to_string(&payload).unwrap_or_default()),
+            output: None,
+            duration: None,
+            context: None,
+            error: None,
+            source: "main".to_string(),
+        },
+    );
 
     Ok(payload)
 }

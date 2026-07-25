@@ -14,6 +14,15 @@ use super::super::{
 pub struct ChatContextMessage {
     pub role: String,
     pub content: String,
+    /// For assistant messages that contain tool calls, this holds the
+    /// serialized JSON array of tool call objects (OpenAI Chat format:
+    /// `[{"id":"...","type":"function","function":{"name":"...","arguments":"..."}}]`).
+    /// Providers convert this to their own API format when building payloads.
+    pub tool_calls_json: Option<String>,
+    /// For tool result messages (role="tool"), structured JSON array:
+    /// `[{"name":"...","callId":"...","result":"..."}]`
+    /// When present, providers use this directly instead of parsing content text.
+    pub tool_results_json: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -73,7 +82,7 @@ pub fn load_context_messages(
     database::open_connection(database_path)
         .and_then(|connection| {
             let mut statement = connection.prepare(
-                "SELECT role, content
+                "SELECT role, content, tool_calls_json
                    FROM chat_messages
                   WHERE conversation_id = ?1
                     AND id >= COALESCE(
@@ -85,15 +94,26 @@ pub fn load_context_messages(
                         LIMIT 1),
                       ''
                     )
-                    AND content <> ''
+                    AND (
+                      content <> ''
+                      OR (role = 'assistant' AND tool_calls_json <> '' AND tool_calls_json <> '[]')
+                    )
                     AND NOT (role = 'assistant' AND status = 'error')
                   ORDER BY id ASC",
             )?;
 
             let rows = statement.query_map(params![conversation_id], |row| {
+                let tool_calls_raw: String = row.get(2)?;
+                let tool_calls_json = if tool_calls_raw.is_empty() || tool_calls_raw == "[]" {
+                    None
+                } else {
+                    Some(tool_calls_raw)
+                };
                 Ok(ChatContextMessage {
                     role: row.get(0)?,
                     content: row.get(1)?,
+                    tool_calls_json,
+                    tool_results_json: None,
                 })
             })?;
 
@@ -275,6 +295,8 @@ pub fn store_failed_chat_exchange(
             (!content.is_empty()).then(|| ChatContextMessage {
                 role: message.role.trim().to_string(),
                 content: content.to_string(),
+                tool_calls_json: message.tool_calls_json.clone(),
+                tool_results_json: message.tool_results_json.clone(),
             })
         })
         .collect::<Vec<_>>();
@@ -722,7 +744,7 @@ pub fn list_sub_agent_conversations(
                    JOIN chat_conversations AS conversation
                      ON conversation.conversation_id = sub_agent.conversation_id
                   WHERE sub_agent.parent_conversation_id = ?1
-                  ORDER BY sub_agent.created_at ASC, sub_agent.id ASC",
+                  ORDER BY sub_agent.created_at ASC, sub_agent.id ASC"
             )?;
 
             let rows = statement.query_map(
@@ -1555,7 +1577,7 @@ fn map_chat_conversation_row(row: &Row<'_>) -> rusqlite::Result<ChatConversation
         sub_agent_name: row.get(19)?,
         sub_agent_status: row.get(20)?,
         sub_agent_error: row.get(21)?,
-        total_duration_ms: row.get(22)?,
+        total_duration_ms: row.get(22)?
     })
 }
 

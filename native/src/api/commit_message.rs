@@ -40,6 +40,7 @@ fn build_request(staged_diff: &str) -> ResponsesApiRequest {
             crate::api::responses::ResponsesApiMessage {
                 role: "system".to_string(),
                 content: COMMIT_SYSTEM_PROMPT.to_string(),
+                tool_results_json: None,
             },
             crate::api::responses::ResponsesApiMessage {
                 role: "user".to_string(),
@@ -47,6 +48,7 @@ fn build_request(staged_diff: &str) -> ResponsesApiRequest {
                     "Here is the staged diff:\n\n```\n{}\n```",
                     diff_content
                 ),
+                tool_results_json: None,
             },
         ],
         // Force the basic model for this lightweight task.

@@ -48,27 +48,8 @@ impl McpService for FilesystemService {
                     "type": "object",
                     "properties": {
                         "filePath": {
-                            "oneOf": [
-                                { "type": "string" },
-                                {
-                                    "type": "array",
-                                    "items": {
-                                        "oneOf": [
-                                            { "type": "string" },
-                                            {
-                                                "type": "object",
-                                                "properties": {
-                                                    "path": { "type": "string" },
-                                                    "startLine": { "type": "number" },
-                                                    "endLine": { "type": "number" }
-                                                },
-                                                "required": ["path"]
-                                            }
-                                        ]
-                                    }
-                                }
-                            ],
-                            "description": "Path to the file to read or directory to list. Can be a single path string, an array of path strings, or an array of {path, startLine, endLine} objects."
+                            "type": "string",
+                            "description": "Path to the file to read or directory to list."
                         },
                         "startLine": {
                             "type": "number",
@@ -153,41 +134,27 @@ impl McpService for FilesystemService {
 
 impl FilesystemService {
     fn execute_read(&self, args: &Value) -> napi::Result<Value> {
-        if let Value::Array(paths) = args {
-            return read_paths(paths, None, None);
-        }
+        let file_path = args
+            .get("filePath")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                let keys: Vec<String> = args
+                    .as_object()
+                    .map(|object| object.keys().cloned().collect())
+                    .unwrap_or_default();
+                Error::new(
+                    Status::InvalidArg,
+                    format!(
+                        "filePath is required for tool \"filesystem-read\". Received keys: [{}]. Please provide a valid file path.",
+                        keys.join(", ")
+                    ),
+                )
+            })?;
 
-        let file_path = args.get("filePath").ok_or_else(|| {
-            let keys: Vec<String> = args
-                .as_object()
-                .map(|object| object.keys().cloned().collect())
-                .unwrap_or_default();
-            Error::new(
-                Status::InvalidArg,
-                format!(
-                    "filePath is required for tool \"filesystem-read\". Received keys: [{}]. Please provide a valid file path.",
-                    keys.join(", ")
-                ),
-            )
-        })?;
+        let start_line = args.get("startLine").and_then(|value| value.as_u64());
+        let end_line = args.get("endLine").and_then(|value| value.as_u64());
 
-        let default_start_line = args.get("startLine").and_then(|value| value.as_u64());
-        let default_end_line = args.get("endLine").and_then(|value| value.as_u64());
-
-        match file_path {
-            Value::String(path) => {
-                if let Some(arr) = try_parse_as_json_array(path) {
-                    return read_paths(&arr, default_start_line, default_end_line);
-                }
-                read_path(path, default_start_line, default_end_line)
-            }
-            Value::Array(paths) => read_paths(paths, default_start_line, default_end_line),
-            _ => Err(Error::new(
-                Status::InvalidArg,
-                "filePath must be a string or an array of paths for tool \"filesystem-read\"."
-                    .to_string(),
-            )),
-        }
+        read_path(file_path, start_line, end_line)
     }
 
     fn execute_replace_edit(&self, args: &Value) -> napi::Result<Value> {
@@ -435,79 +402,6 @@ impl FilesystemService {
             "bytes": byte_count,
             "lines": line_count
         }))
-    }
-}
-
-fn read_paths(
-    paths: &[Value],
-    default_start_line: Option<u64>,
-    default_end_line: Option<u64>,
-) -> napi::Result<Value> {
-    let mut files = Vec::with_capacity(paths.len());
-
-    for (index, item) in paths.iter().enumerate() {
-        let (path, start_line, end_line) =
-            parse_read_path_item(item, default_start_line, default_end_line, index)?;
-        let mut result = read_path(&path, start_line, end_line)?;
-        result["filePath"] = Value::String(path);
-        files.push(result);
-    }
-
-    Ok(json!({ "files": files }))
-}
-
-fn parse_read_path_item(
-    item: &Value,
-    default_start_line: Option<u64>,
-    default_end_line: Option<u64>,
-    index: usize,
-) -> napi::Result<(String, Option<u64>, Option<u64>)> {
-    match item {
-        Value::String(path) => {
-            let normalized = normalize_path(path);
-            if normalized.is_empty() {
-                return Err(Error::new(
-                    Status::InvalidArg,
-                    format!("filePath[{}] must be a non-empty string.", index),
-                ));
-            }
-            Ok((normalized, default_start_line, default_end_line))
-        }
-        Value::Object(object) => {
-            let path = object.get("path").and_then(Value::as_str).ok_or_else(|| {
-                Error::new(
-                    Status::InvalidArg,
-                    format!("filePath[{}].path must be a non-empty string.", index),
-                )
-            })?;
-
-            let normalized = normalize_path(path);
-            if normalized.is_empty() {
-                return Err(Error::new(
-                    Status::InvalidArg,
-                    format!("filePath[{}].path must be a non-empty string.", index),
-                ));
-            }
-
-            Ok((
-                normalized,
-                object
-                    .get("startLine")
-                    .and_then(Value::as_u64)
-                    .or(default_start_line),
-                object
-                    .get("endLine")
-                    .and_then(Value::as_u64)
-                    .or(default_end_line),
-            ))
-        }
-        _ => Err(Error::new(
-            Status::InvalidArg,
-            format!(
-                "filePath[{}] must be a path string or an object with a path property.",
-                index
-            ),
-        )),
     }
 }
 
@@ -911,14 +805,6 @@ fn normalize_path(path: &str) -> String {
         normalized = normalized.trim_start_matches('\u{FEFF}').to_string();
     }
     normalized
-}
-
-fn try_parse_as_json_array(s: &str) -> Option<Vec<Value>> {
-    let trimmed = s.trim();
-    if !trimmed.starts_with('[') || !trimmed.ends_with(']') {
-        return None;
-    }
-    serde_json::from_str::<Vec<Value>>(trimmed).ok()
 }
 
 fn read_path(

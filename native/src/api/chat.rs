@@ -80,6 +80,8 @@ async fn create_chat_completion_response_async(
         .map(|message| ChatContextMessage {
             role: message.role.clone(),
             content: message.content.clone(),
+            tool_calls_json: None,
+            tool_results_json: message.tool_results_json.clone(),
         })
         .collect::<Vec<_>>();
     let prepared_request = prepare_context_request(ConversationContextRequest {
@@ -263,10 +265,76 @@ fn build_chat_completions_payload(
 
     for message in messages {
         let content = message.content.trim();
-        if content.is_empty() {
+        let role = message.role.trim();
+
+        // --- Tool result messages: emit as role "tool" with tool_call_id ---
+        if role == "tool" {
+            if content.is_empty() {
+                continue;
+            }
+            let results = match message.tool_results_json {
+                Some(ref raw) => crate::api::conversation::tool_messages::parse_tool_results_json(raw),
+                None => Vec::new(),
+            };
+            for (_name, call_id, result) in &results {
+                if call_id.is_empty() {
+                    payload_messages.push(json!({
+                        "role": "user",
+                        "content": result,
+                    }));
+                } else {
+                    payload_messages.push(json!({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": result,
+                    }));
+                }
+            }
             continue;
         }
 
+        if content.is_empty() && message.tool_calls_json.is_none() {
+            continue;
+        }
+
+        // --- Assistant messages with tool_calls ---
+        if role == "assistant" {
+            if let Some(ref tool_calls_raw) = message.tool_calls_json {
+                if let Ok(tool_calls) = serde_json::from_str::<Value>(tool_calls_raw) {
+                    if tool_calls.as_array().is_some_and(|a| !a.is_empty()) {
+                        let mut assistant_msg = json!({
+                            "role": "assistant",
+                            "tool_calls": tool_calls,
+                        });
+                        if !content.is_empty() {
+                            assistant_msg["content"] = json!(content);
+                        } else {
+                            assistant_msg["content"] = Value::Null;
+                        }
+                        payload_messages.push(assistant_msg);
+                        continue;
+                    }
+                }
+            }
+        }
+
+        // --- System/developer messages ---
+        if role == "system" || role == "developer" {
+            if content.is_empty() {
+                continue;
+            }
+            // Collect built-in system prompt parts; they will be emitted
+            // either as a `system` message (no user prompts) or demoted to
+            // a leading `user` message (user prompts present), matching
+            // Snow CLI PR #127.
+            builtin_system_parts.push(content.to_string());
+            continue;
+        }
+
+        // --- Regular user/assistant messages ---
+        if content.is_empty() {
+            continue;
+        }
         let content = if skip_image_parsing {
             Value::String(content.to_string())
         } else {
@@ -287,20 +355,6 @@ fn build_chat_completions_payload(
                 Value::Array(parts)
             }
         };
-
-        let role = message.role.trim();
-        if role == "system" || role == "developer" {
-            // Collect built-in system prompt parts; they will be emitted
-            // either as a `system` message (no user prompts) or demoted to
-            // a leading `user` message (user prompts present), matching
-            // Snow CLI PR #127.
-            if let Value::String(text) = &content {
-                if !text.is_empty() {
-                    builtin_system_parts.push(text.clone());
-                }
-            }
-            continue;
-        }
 
         payload_messages.push(json!({
             "role": normalize_message_role(role),
@@ -370,6 +424,24 @@ fn build_chat_completions_payload(
             payload["tools"] = tools;
         }
     }
+
+    // TEMP: log full request payload for tool-call verification
+    let _ = crate::storage::services::app_logs::insert_app_log(
+        database_path,
+        &crate::storage::services::app_logs::AppLogInput {
+            level: "DEBUG".to_string(),
+            module: "api".to_string(),
+            func: "build_chat_completions_payload".to_string(),
+            line: None,
+            message: "Request payload".to_string(),
+            input: Some(serde_json::to_string(&payload).unwrap_or_default()),
+            output: None,
+            duration: None,
+            context: None,
+            error: None,
+            source: "main".to_string(),
+        },
+    );
 
     Ok(payload)
 }

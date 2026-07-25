@@ -5,7 +5,7 @@ import {
   Loader2,
   Plus,
   Trash2,
-  Zap,
+  Sparkles,
 } from "lucide-react";
 import {
   useCallback,
@@ -648,7 +648,7 @@ export function MemoModal({
                 title={t("memo.build")}
                 type="button"
               >
-                <Zap size={14} strokeWidth={2.2} />
+                <Sparkles size={14} strokeWidth={2.2} />
                 {t("memo.build")}
               </button>
             )}

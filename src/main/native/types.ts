@@ -572,6 +572,7 @@ export type MemoCountSummary = {
 export type ResponsesApiMessage = {
   role: "user" | "assistant" | "system" | "developer" | "tool";
   content: string;
+  toolResultsJson?: string;
 };
 
 export type ResponsesApiRequest = {

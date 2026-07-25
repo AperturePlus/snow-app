@@ -1,0 +1,7 @@
+# Use rust-lld (bundled with Rust) instead of MSVC link.exe
+# Significantly faster linking for large cdylib on Windows
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld"
+
+[target.aarch64-pc-windows-msvc]
+linker = "rust-lld"

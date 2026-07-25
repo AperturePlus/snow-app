@@ -1,6 +1,7 @@
 import { ipcMain } from "electron";
 import type {
   NativeBridge,
+  ResponsesApiMessage,
   ResponsesApiRequest,
   ResponsesApiStreamChunk,
 } from "../../native/types";
@@ -41,13 +42,18 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
           : "user";
       const content =
         typeof message.content === "string" ? message.content : "";
+      const toolResultsJson =
+        typeof message.toolResultsJson === "string"
+          ? message.toolResultsJson
+          : undefined;
 
       return {
         role,
         content,
-      };
+        ...(toolResultsJson ? { toolResultsJson } : {}),
+      } as ResponsesApiMessage;
     })
-    .filter((message): message is ResponsesApiRequest["messages"][number] =>
+    .filter((message): message is ResponsesApiMessage =>
       Boolean(message && message.content.trim())
     );
 
