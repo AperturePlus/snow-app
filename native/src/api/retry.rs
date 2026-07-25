@@ -6,6 +6,7 @@ use tokio_util::sync::CancellationToken;
 
 pub const DEFAULT_MAX_RETRIES: u32 = 5;
 pub const DEFAULT_BASE_DELAY_MS: u64 = 3000;
+pub const DEFAULT_STREAM_IDLE_TIMEOUT_SEC: u64 = 60;
 
 pub struct RetryOptions {
     pub max_retries: u32,
@@ -36,6 +37,17 @@ impl RetryOptions {
             base_delay_ms,
         }
     }
+}
+
+/// Resolve the stream idle timeout (seconds) from the API config value.
+/// Falls back to a sensible default when the value is missing or invalid
+/// so the stream always has an idle guard — a stalled upstream will not
+/// hang the agent loop indefinitely.
+pub fn resolve_stream_idle_timeout_sec(stream_idle_timeout_sec: Option<i32>) -> u64 {
+    stream_idle_timeout_sec
+        .filter(|&v| v > 0)
+        .map(|v| v as u64)
+        .unwrap_or(DEFAULT_STREAM_IDLE_TIMEOUT_SEC)
 }
 
 pub fn is_retriable_error(error: &Error) -> bool {
@@ -103,6 +115,12 @@ pub fn is_retriable_error(error: &Error) -> bool {
         return true;
     }
 
+    // Stream idle timeout — a stalled upstream is treated as retriable so the
+    // agent loop re-issues the request with the original parameters.
+    if message.contains("stream idle timeout") {
+        return true;
+    }
+
     false
 }
 
@@ -132,6 +150,13 @@ pub async fn wait_before_retry(
             Ok(())
         }
     }
+}
+
+/// Build the error used when the stream has been idle (no data received)
+/// for longer than the configured `stream_idle_timeout_sec`. The message is
+/// phrased so `is_retriable_error` recognises it as a retriable condition.
+pub fn stream_idle_timeout_error() -> Error {
+    Error::from_reason("Stream idle timeout: no data received within the configured period")
 }
 
 /// Wrap an async function with retry logic.

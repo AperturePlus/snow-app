@@ -12,6 +12,7 @@ export type FileTag = {
 export type ImageTag = {
   name: string;
   dataUrl: string;
+  index?: number;
 };
 
 export type CommitTag = {
@@ -49,6 +50,7 @@ export const parseContentSegments = (content: string): ContentSegment[] => {
   const segments: ContentSegment[] = [];
   const regex = /@@(file|dir|image|commit):(.+?)@@/g;
   let lastIndex = 0;
+  let imageCounter = 0;
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(content)) !== null) {
@@ -79,17 +81,25 @@ export const parseContentSegments = (content: string): ContentSegment[] => {
         segments.push({ type: "text", content: match[0] });
       }
     } else if (kind === "image") {
-      if (value.startsWith("data:image/")) {
+      imageCounter += 1;
+      // 图片统一显示为 image.<ext>，避免磁盘存储路径里冗长的文件名
+      // （带 hash/时间戳）污染 chip 标签。扩展名从 data URL 或路径推断。
+      const ext = (() => {
         const mimeMatch = value.match(/^data:image\/([a-z]+);/);
-        const ext = mimeMatch ? mimeMatch[1] : "png";
-        segments.push({
-          type: "image",
-          tag: { name: `image.${ext}`, dataUrl: value },
-        });
-      } else {
-        const name = value.split("/").filter(Boolean).pop() || "image.png";
-        segments.push({ type: "image", tag: { name, dataUrl: value } });
-      }
+        if (mimeMatch) {
+          return mimeMatch[1];
+        }
+        const pathExtMatch = value.match(/\.([a-zA-Z0-9]+)(?:[?#]|$)/);
+        return pathExtMatch ? pathExtMatch[1].toLowerCase() : "png";
+      })();
+      segments.push({
+        type: "image",
+        tag: {
+          name: `image.${ext}`,
+          dataUrl: value,
+          index: imageCounter,
+        },
+      });
     } else {
       const isDirectory = kind === "dir";
       const path = value;
@@ -131,10 +141,14 @@ export const createChipHtml = (tag: FileTag): string => {
 
 export const createImageChipHtml = (tag: ImageTag): string => {
   const icon = getFileTypeIconHtml(tag.name, false, false, 12);
-  return `<span class="file-chip image-chip" contenteditable="false" data-image-tag="true" data-image-data-url="${escapeHtml(
+  const indexSuffix =
+    typeof tag.index === "number" && tag.index > 0 ? ` #${tag.index}` : "";
+  return `<span class="file-chip image-chip" contenteditable="false" data-image-tag="true" data-image-name="${escapeHtml(
+    tag.name
+  )}" data-image-data-url="${escapeHtml(
     tag.dataUrl
   )}"><span class="file-chip-icon">${icon}</span><span class="file-chip-name">${escapeHtml(
-    tag.name
+    `${tag.name}${indexSuffix}`
   )}</span><span class="file-chip-remove" data-chip-remove="true">${CLOSE_ICON_SVG}</span></span>`;
 };
 
@@ -173,8 +187,7 @@ export const readEditableContent = (el: HTMLElement): string => {
         });
       } else if (elem.dataset.imageTag === "true") {
         result += encodeImageTag({
-          name:
-            elem.querySelector(".file-chip-name")?.textContent || "image.png",
+          name: elem.dataset.imageName || "image.png",
           dataUrl: elem.dataset.imageDataUrl || "",
         });
       } else if (elem.dataset.commitTag === "true") {
@@ -230,4 +243,60 @@ export const insertHtmlAtSelection = (html: string): void => {
     selection.removeAllRanges();
     selection.addRange(range);
   }
+};
+
+/**
+ * 重新编号编辑区内的图片 chip，并固定所有 chip 的宽度。
+ *
+ * 固定宽度的目的：chip 内的 remove 按钮默认隐藏，hover 时才显示。
+ * 若不固定宽度，hover 出现按钮会撑大 chip，导致名字不省略、布局跳动。
+ * 固定后，hover 时名字用省略号收缩让位，chip 外框尺寸不变。
+ *
+ * 测量时需要临时释放 name 元素的 `flex: 1` + `min-width: 0`，否则
+ * inline-flex chip 会把名字收缩到接近 0，从而钉住一个过小的宽度，
+ * 导致大部分文件名被截断。释放后 chip 展开到完整内容宽度，再复原样式。
+ *
+ * 此逻辑在输入框内容变化（syncContent）和草稿还原（draftToRestore）
+ * 两个场景都需要调用，因此提取为独立工具函数。
+ */
+export const renumberImageChips = (el: HTMLElement): void => {
+  const chips = el.querySelectorAll<HTMLElement>("[data-image-tag='true']");
+  chips.forEach((chip, i) => {
+    const index = i + 1;
+    const name = chip.dataset.imageName || "";
+    const nameEl = chip.querySelector<HTMLElement>(".file-chip-name");
+    if (nameEl) {
+      nameEl.textContent = `${name} #${index}`;
+    }
+    chip.dataset.imageIndex = String(index);
+  });
+
+  const allChips = el.querySelectorAll<HTMLElement>(".file-chip");
+  allChips.forEach((chip) => {
+    const removeEl = chip.querySelector<HTMLElement>(".file-chip-remove");
+    const nameEl = chip.querySelector<HTMLElement>(".file-chip-name");
+
+    const prevRemoveDisplay = removeEl ? removeEl.style.display : "";
+    const prevNameFlex = nameEl ? nameEl.style.flex : "";
+    const prevNameMinWidth = nameEl ? nameEl.style.minWidth : "";
+
+    if (removeEl) {
+      removeEl.style.display = "none";
+    }
+    if (nameEl) {
+      nameEl.style.flex = "0 0 auto";
+      nameEl.style.minWidth = "";
+    }
+    chip.style.width = "";
+    const naturalWidth = chip.offsetWidth;
+
+    if (removeEl) {
+      removeEl.style.display = prevRemoveDisplay;
+    }
+    if (nameEl) {
+      nameEl.style.flex = prevNameFlex;
+      nameEl.style.minWidth = prevNameMinWidth;
+    }
+    chip.style.width = `${naturalWidth}px`;
+  });
 };

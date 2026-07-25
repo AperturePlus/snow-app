@@ -673,6 +673,9 @@ pub fn record_checkpoint_file_after(
     let _guard = checkpoint_guard()?;
     let root = canonical_work_dir(&work_dir)?;
     let (absolute, relative) = resolve_checkpoint_path(&root, &file_path)?;
+    if relative.as_os_str().is_empty() || should_skip_relative(&relative) {
+        return Ok(());
+    }
     let path = to_forward_slashes(&relative);
 
     for checkpoint_id in checkpoint_ids {
@@ -811,7 +814,11 @@ pub fn restore_checkpoint(checkpoint_id: String, work_dir: String) -> Result<()>
 
     let mut restored_entries = Vec::new();
     for entry in &manifest.entries {
-        let destination = root.join(from_forward_slashes(&entry.path));
+        let relative = from_forward_slashes(&entry.path);
+        if should_skip_relative(&relative) {
+            continue;
+        }
+        let destination = root.join(&relative);
         let Some(expected) = entry.expected.as_ref() else {
             continue;
         };

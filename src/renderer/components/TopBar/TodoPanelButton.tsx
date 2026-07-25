@@ -21,6 +21,7 @@ type TodoPanelButtonProps = {
   projectId?: string;
   isRunning?: boolean;
   onOpenChange?: (open: boolean) => void;
+  onPinnedChange?: (pinned: boolean) => void;
 };
 
 const todoStatusIcon = (status: TodoStatus): typeof Circle => {
@@ -65,6 +66,7 @@ export const TodoPanelButton = ({
   projectId,
   isRunning = false,
   onOpenChange,
+  onPinnedChange,
 }: TodoPanelButtonProps): React.JSX.Element | null => {
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
@@ -180,6 +182,10 @@ export const TodoPanelButton = ({
   useEffect(() => {
     onOpenChange?.(isOpen);
   }, [isOpen, onOpenChange]);
+
+  useEffect(() => {
+    onPinnedChange?.(isPinned);
+  }, [isPinned, onPinnedChange]);
 
   useEffect(() => {
     if (!isOpen) {

@@ -1,4 +1,5 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, ChevronUp, GitCommitHorizontal } from "lucide-react";
 import { UserMessageActions } from "./UserMessageActions";
 import type { UserMessageProps } from "../utils/types";
@@ -17,6 +18,78 @@ export const UserMessage = memo(
     const [expanded, setExpanded] = useState(false);
     const [collapsible, setCollapsible] = useState(false);
     const pRef = useRef<HTMLParagraphElement>(null);
+    const [imagePreview, setImagePreview] = useState<{
+      url: string;
+      x: number;
+      y: number;
+      placement: "up" | "down";
+    } | null>(null);
+    const [imageLightbox, setImageLightbox] = useState<string | null>(null);
+    const imagePreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+      null
+    );
+
+    const cancelHideImagePreview = useCallback(() => {
+      if (imagePreviewTimerRef.current) {
+        clearTimeout(imagePreviewTimerRef.current);
+        imagePreviewTimerRef.current = null;
+      }
+    }, []);
+
+    const scheduleHideImagePreview = useCallback(() => {
+      imagePreviewTimerRef.current = setTimeout(() => {
+        setImagePreview(null);
+      }, 200);
+    }, []);
+
+    const handleImageChipMouseMove = useCallback(
+      (event: React.MouseEvent<HTMLSpanElement>, dataUrl: string) => {
+        if (imagePreviewTimerRef.current) {
+          clearTimeout(imagePreviewTimerRef.current);
+          imagePreviewTimerRef.current = null;
+        }
+        const rect = event.currentTarget.getBoundingClientRect();
+        const PREVIEW_MAX_W = 328;
+        const PREVIEW_MAX_H = 240;
+        const PREVIEW_GAP = 8;
+        const halfW = PREVIEW_MAX_W / 2;
+        const clampedX = Math.max(
+          halfW + 4,
+          Math.min(
+            rect.left + rect.width / 2,
+            window.innerWidth - halfW - 4
+          )
+        );
+        // User 消息可能位于窗口任意位置，预览不能无脑朝上：
+        // 上方空间不足时改为朝下显示，避免预览被窗口顶部裁切。
+        const spaceAbove = rect.top;
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const placement: "up" | "down" =
+          spaceAbove >= PREVIEW_MAX_H + PREVIEW_GAP || spaceAbove >= spaceBelow
+            ? "up"
+            : "down";
+        setImagePreview({
+          url: dataUrl,
+          x: clampedX,
+          y: placement === "up" ? rect.top : rect.bottom,
+          placement,
+        });
+      },
+      []
+    );
+
+    const handleImageChipClick = useCallback((dataUrl: string) => {
+      setImageLightbox(dataUrl);
+      setImagePreview(null);
+    }, []);
+
+    useEffect(() => {
+      return () => {
+        if (imagePreviewTimerRef.current) {
+          clearTimeout(imagePreviewTimerRef.current);
+        }
+      };
+    }, []);
 
     useEffect(() => {
       const el = pRef.current;
@@ -54,18 +127,28 @@ export const UserMessage = memo(
               }
 
               if (segment.type === "image") {
+                const imgIndex = segment.tag.index ?? 0;
+                const imgDisplayName =
+                  imgIndex > 0
+                    ? `${segment.tag.name} #${imgIndex}`
+                    : segment.tag.name;
                 return (
                   <span
                     className="user-message-file-chip image-chip"
                     key={index}
                     title={segment.tag.name}
+                    onMouseMove={(event) =>
+                      handleImageChipMouseMove(event, segment.tag.dataUrl)
+                    }
+                    onMouseLeave={scheduleHideImagePreview}
+                    onClick={() => handleImageChipClick(segment.tag.dataUrl)}
                   >
                     {getFileTypeIcon(segment.tag.name, false, false, {
                       size: 12,
                       className: "user-message-file-chip-icon",
                     })}
                     <span className="user-message-file-chip-name">
-                      {segment.tag.name}
+                      {imgDisplayName}
                     </span>
                   </span>
                 );
@@ -125,6 +208,39 @@ export const UserMessage = memo(
           isStreaming={isStreaming}
           onRollback={onRollback}
         />
+        {imagePreview &&
+          createPortal(
+            <div
+              className="image-chip-preview"
+              style={{
+                left: imagePreview.x,
+                top: imagePreview.y,
+                transform:
+                  imagePreview.placement === "up"
+                    ? "translate(-50%, calc(-100% - 8px))"
+                    : "translate(-50%, 8px)",
+              }}
+              onMouseEnter={cancelHideImagePreview}
+              onMouseLeave={scheduleHideImagePreview}
+              onClick={() => {
+                setImageLightbox(imagePreview.url);
+                setImagePreview(null);
+              }}
+            >
+              <img src={imagePreview.url} alt="preview" />
+            </div>,
+            document.body
+          )}
+        {imageLightbox &&
+          createPortal(
+            <div
+              className="image-lightbox-overlay"
+              onClick={() => setImageLightbox(null)}
+            >
+              <img src={imageLightbox} alt="fullscreen" />
+            </div>,
+            document.body
+          )}
       </div>
     );
   }

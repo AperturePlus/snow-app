@@ -123,7 +123,7 @@ impl McpService for BashService {
                         "default": false
                     }
                 },
-                "required": ["command", "workingDirectory"]
+                "required": ["command", "workingDirectory", "timeout"]
             }),
         }]
     }
@@ -242,6 +242,15 @@ impl BashService {
             process.creation_flags(CREATE_NO_WINDOW);
         }
 
+        // On Unix, place the child in its own process group so that
+        // kill_process_tree can terminate the entire tree with a
+        // single kill(-pgid, SIGKILL).
+        #[cfg(not(target_os = "windows"))]
+        {
+            use std::os::unix::process::CommandExt;
+            process.process_group(0);
+        }
+
         let mut child = process.spawn().map_err(|error| {
             Error::new(
                 Status::GenericFailure,
@@ -265,19 +274,31 @@ impl BashService {
         {
             Ok(Ok(status)) => ProcessWaitResult::Completed(status.code().unwrap_or(1)),
             Ok(Err(error)) => {
-                let _ = child.kill().await;
-                let _ = child.wait().await;
+                kill_process_tree(&mut child).await;
                 ProcessWaitResult::Failed(error.to_string())
             }
             Err(_) => {
-                let _ = child.kill().await;
-                let _ = child.wait().await;
+                // On timeout, kill the entire process tree (not just
+                // the shell) and recover whatever output the stream
+                // tasks have collected so far.  The AI loop must
+                // receive the partial output together with a timeout
+                // notice so it can reason about the situation and
+                // continue.
+                kill_process_tree(&mut child).await;
                 ProcessWaitResult::TimedOut
             }
         };
 
-        let stdout = await_stream_task(stdout_task).await;
-        let stderr = await_stream_task(stderr_task).await;
+        // After a kill the pipes may linger briefly; bound the wait
+        // so we never block indefinitely.
+        let was_killed = !matches!(wait_result, ProcessWaitResult::Completed(_));
+        let stream_timeout = if was_killed {
+            Some(Duration::from_secs(3))
+        } else {
+            None
+        };
+        let stdout = await_stream_task(stdout_task, stream_timeout).await;
+        let stderr = await_stream_task(stderr_task, stream_timeout).await;
 
         match wait_result {
             ProcessWaitResult::Completed(exit_code) => Ok(json!({
@@ -305,13 +326,64 @@ enum ProcessWaitResult {
     Failed(String),
 }
 
+/// Await a stream reader task.  When `safety_timeout` is provided
+/// (used after a process-tree kill), the wait is bounded so we never
+/// block indefinitely if a grandchild somehow survives and keeps a
+/// pipe open.
 async fn await_stream_task(
     task: Option<tokio::task::JoinHandle<String>>,
+    safety_timeout: Option<Duration>,
 ) -> String {
     match task {
-        Some(task) => task.await.unwrap_or_default(),
+        Some(task) => match safety_timeout {
+            Some(dur) => match tokio::time::timeout(dur, task).await {
+                Ok(Ok(output)) => output,
+                _ => String::new(),
+            },
+            None => task.await.unwrap_or_default(),
+        },
         None => String::new(),
     }
+}
+
+/// Kill the entire process tree rooted at `child`, not just the
+/// immediate shell process.  On Windows, `child.kill()` only
+/// terminates the shell (cmd.exe / powershell) while grandchildren
+/// (the actual command like `npm run build`) keep running and hold
+/// the stdout/stderr pipes open, causing `await_stream_task` to
+/// block until the command finishes naturally.
+async fn kill_process_tree(child: &mut tokio::process::Child) {
+    if let Some(pid) = child.id() {
+        #[cfg(target_os = "windows")]
+        {
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            // /T = kill entire process tree, /F = force kill
+            let _ = tokio::process::Command::new("taskkill")
+                .args(["/T", "/F", "/PID", &pid.to_string()])
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .await;
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            // Negative PID kills the entire process group.  The child
+            // was spawned with process_group(0) so it leads its own
+            // group.
+            let _ = tokio::process::Command::new("kill")
+                .args(["-9", &format!("-{pid}")])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .await;
+        }
+    }
+    // Fallback: ensure the immediate child is reaped.
+    let _ = child.kill().await;
+    let _ = child.wait().await;
 }
 
 async fn read_stream<R>(
@@ -360,6 +432,7 @@ where
     }
 
     let mut text = String::from_utf8_lossy(&output).into_owned();
+    text = strip_ansi_codes(&text);
     if was_truncated {
         text.push_str(OUTPUT_TRUNCATED_MARKER);
     }
@@ -409,13 +482,37 @@ fn emit_stream_chunk(
         return;
     }
 
+    let cleaned = strip_ansi_codes(&data);
+    if cleaned.is_empty() {
+        return;
+    }
+
     on_chunk.call(
         BashStreamChunk {
             stream: stream.to_string(),
-            data,
+            data: cleaned,
         },
         ThreadsafeFunctionCallMode::NonBlocking,
     );
+}
+
+/// Strip ANSI escape sequences (CSI/SGR color codes, cursor movement,
+/// OSC hyperlinks, etc.) from terminal output. These codes are emitted
+/// by tools like `vite build` / `npm run build` when they detect a TTY
+/// and would otherwise leak as raw `\x1b[...m` bytes into the model
+/// context and the UI.
+fn strip_ansi_codes(input: &str) -> String {
+    static ANSI_RE: OnceLock<Regex> = OnceLock::new();
+    let re = ANSI_RE.get_or_init(|| {
+        // CSI sequences: ESC [ ... final byte in 0x40..=0x7E
+        // OSC sequences: ESC ] ... BEL  or  ESC ] ... ESC \  (ST)
+        // Other two-byte escapes (ESC + single char) that some tools emit.
+        Regex::new(
+            r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][0-9AB]",
+        )
+        .expect("invalid ANSI strip regex")
+    });
+    re.replace_all(input, "").into_owned()
 }
 
 // ============================================================================

@@ -1,22 +1,26 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { GitFork } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import { AiResponse } from "./AiResponse";
 import { CompactionMessage } from "./CompactionMessage";
 import { UserMessage } from "./UserMessage";
+import { VirtualizedMessage } from "./VirtualizedMessage";
 import type { ChatConversationMessage } from "../utils/conversationTypes";
+import { useViewportVirtualization } from "../hooks/useViewportVirtualization";
 import { useChatConversationContext } from "./ChatConversationContext";
 
 type ChatMessageListProps = {
   messages: ChatConversationMessage[];
   isStreaming: boolean;
   isAborting: boolean;
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 };
 
 export const ChatMessageList = ({
   messages,
   isStreaming,
   isAborting,
+  scrollContainerRef,
 }: ChatMessageListProps): React.JSX.Element => {
   const { t } = useI18n();
   const {
@@ -106,57 +110,73 @@ export const ChatMessageList = ({
     </div>
   );
 
-  const renderItem = (
-    message: ChatConversationMessage
-  ): React.JSX.Element | null => {
-    if (message.role === "user") {
-      if (message.isContextCompaction) {
+  // Pinned message ids: the streaming (last assistant) message must always be
+  // rendered so the live output is never unmounted, and any message carrying a
+  // pending tool authorization must stay mounted so the approval dialog is not
+  // unmounted while waiting for the user.
+  const pinnedIds = useMemo(() => {
+    const pinned = new Set<string>();
+    if (lastAssistantMessageId) {
+      pinned.add(lastAssistantMessageId);
+    }
+    for (const msg of messages) {
+      const hasPendingAuth =
+        msg.role === "assistant" &&
+        msg.toolCalls?.some(
+          (tc) => tc.authorizationConversationId === activeConversationId
+        );
+      if (hasPendingAuth) {
+        pinned.add(msg.id);
+      }
+    }
+    return pinned;
+  }, [activeConversationId, lastAssistantMessageId, messages]);
+
+  const virtualization = useViewportVirtualization(scrollContainerRef, pinnedIds);
+
+  const renderMessageContent = useCallback(
+    (message: ChatConversationMessage): React.JSX.Element | null => {
+      if (message.role === "user") {
+        if (message.isContextCompaction) {
+          return (
+            <CompactionMessage
+              content={message.content}
+              isStreaming={isStreaming}
+              onRollback={() => handleRollback(message.id)}
+            />
+          );
+        }
+
         return (
-          <CompactionMessage
+          <UserMessage
             content={message.content}
             isStreaming={isStreaming}
             onRollback={() => handleRollback(message.id)}
-            key={message.id}
           />
         );
       }
 
+      // Skip standalone tool messages — their results are already
+      // rendered inside the preceding assistant message's ToolCallItem.
+      if (message.role === "tool") {
+        return null;
+      }
+
+      const isLastAssistant = message.id === lastAssistantMessageId;
+      const hasToolCalls = (message.toolCalls?.length ?? 0) > 0;
+      const isMessageStreaming = message.status === "sending";
+      // Show actions on:
+      // - All assistant messages without tool calls (1-on-1 conversations)
+      // - The last assistant message when it has tool calls (AI Loop ending)
+      // - Never on a message that is currently streaming
+      // - Never while the conversation-level streaming is active (AI Loop in
+      //   progress). Without this guard, a message that finishes streaming
+      //   but precedes a tool-call round would briefly show actions that
+      //   vanish when the next assistant turn starts — causing a flash.
+      const showActions =
+        !isStreaming && !isMessageStreaming && (!hasToolCalls || isLastAssistant);
+
       return (
-        <UserMessage
-          content={message.content}
-          isStreaming={isStreaming}
-          onRollback={() => handleRollback(message.id)}
-          key={message.id}
-        />
-      );
-    }
-
-    // Skip standalone tool messages — their results are already
-    // rendered inside the preceding assistant message's ToolCallItem.
-    if (message.role === "tool") {
-      return null;
-    }
-
-    const className = `chat-message-group ${
-      message.status ? `is-${message.status}` : ""
-    }`.trim();
-
-    const isLastAssistant = message.id === lastAssistantMessageId;
-    const hasToolCalls = (message.toolCalls?.length ?? 0) > 0;
-    const isMessageStreaming = message.status === "sending";
-    // Show actions on:
-    // - All assistant messages without tool calls (1-on-1 conversations)
-    // - The last assistant message when it has tool calls (AI Loop ending)
-    // - Never on a message that is currently streaming
-    // - Never while the conversation-level streaming is active (AI Loop in
-    //   progress). Without this guard, a message that finishes streaming
-    //   but precedes a tool-call round would briefly show actions that
-    //   vanish when the next assistant turn starts — causing a flash.
-    const showActions =
-      !isStreaming && !isMessageStreaming && (!hasToolCalls || isLastAssistant);
-
-    return (
-      <div className={className} key={message.id}>
         <AiResponse
           isStreaming={message.status === "sending"}
           isAborting={isLastAssistant && isAborting}
@@ -192,7 +212,51 @@ export const ChatMessageList = ({
           responseId={message.responseId}
           onFork={handleFork}
         />
-      </div>
+      );
+    },
+    [
+      activeConversationId,
+      approveToolAuthorization,
+      approveToolAuthorizationAlways,
+      isAborting,
+      isStreaming,
+      lastAssistantMessageId,
+      pendingToolAuthorizations,
+      rejectToolAuthorization,
+      streamElapsedMs,
+      streamTokenCount,
+      streamTtftMs,
+    ]
+  );
+
+  // Keep the fork divider outside virtualization so it is always present when
+  // visible (it is a single small node and never needs height preservation).
+  const renderItem = (
+    message: ChatConversationMessage,
+    index: number
+  ): React.JSX.Element => {
+    const content = renderMessageContent(message);
+
+    // Tool messages return null; render an empty keyed placeholder so React
+    // keeps stable keys across renders.
+    if (content === null) {
+      return <div className="chat-message-hidden" key={message.id} />;
+    }
+
+    const className = `chat-message-group ${
+      message.status ? `is-${message.status}` : ""
+    }`.trim();
+
+    return (
+      <VirtualizedMessage
+        id={message.id}
+        key={message.id}
+        virtualization={virtualization}
+      >
+        <div className={className} data-message-index={index}>
+          {content}
+        </div>
+      </VirtualizedMessage>
     );
   };
 
@@ -200,7 +264,7 @@ export const ChatMessageList = ({
   if (!showForkDivider) {
     return (
       <div className="chat-message-list">
-        {messages.map(renderItem)}
+        {messages.map((message, index) => renderItem(message, index))}
         {forkDividerIndex === messages.length && forkedFromConversationId
           ? renderForkDivider()
           : null}
@@ -214,9 +278,11 @@ export const ChatMessageList = ({
 
   return (
     <div className="chat-message-list">
-      {beforeFork.map(renderItem)}
+      {beforeFork.map((message, index) => renderItem(message, index))}
       {renderForkDivider()}
-      {afterFork.map(renderItem)}
+      {afterFork.map((message, index) =>
+        renderItem(message, forkDividerIndex + index)
+      )}
     </div>
   );
 };

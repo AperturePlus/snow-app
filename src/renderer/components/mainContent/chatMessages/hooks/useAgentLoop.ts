@@ -150,9 +150,27 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           },
           timestamp: Date.now(),
         });
+      } else {
+        // Follow-up message: immediately bump the conversation to the top
+        // of the sidebar list without waiting for AI response.
+        const followUpId = sessionKey;
+        void window.snow
+          .getChatConversation(followUpId)
+          .then((conv) => {
+            if (conv) {
+              ctx.setUpsertedConversation({
+                record: { ...conv, updatedAt: new Date().toISOString() },
+                timestamp: Date.now(),
+              });
+            }
+          })
+          .catch(() => {
+            // Sidebar refresh failure should not block the conversation
+          });
       }
 
       let finalSessionKey = sessionKey;
+      let summaryTriggered = false;
 
       /**
        * Returns true when the current run has been superseded — either by an
@@ -328,6 +346,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                     if (chunk.retrying) {
                       return {
                         ...currentMessage,
+                        // Reset accumulated content/thinking so the UI reflects
+                        // the fresh request the backend is about to re-issue.
+                        content: "",
+                        thinking: undefined,
                         isRetrying: true,
                         retryAttempt: chunk.retryAttempt ?? undefined,
                         retryError: chunk.retryError ?? undefined,
@@ -542,6 +564,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                       (currentToolCall) => ({
                         ...currentToolCall,
                         status: "running" as const,
+                        startedAt: Date.now(),
                       })
                     ),
                   };
@@ -596,7 +619,36 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                   allowedTools
                 );
               } catch (err) {
-                subResult = JSON.stringify({ error: getErrorMessage(err) });
+                const errorMessage = getErrorMessage(err);
+                // Recover partial streaming output for terminal-execute
+                // so the sub-agent (and ultimately the parent AI loop)
+                // receives the partial output together with the error.
+                if (subToolCall.name === "mcp__bash__terminal-execute") {
+                  const subSessionMessages =
+                    ctx.sessionsRef.current?.[subConvId]?.messages ?? [];
+                  const subAssistantMessage = subSessionMessages.find(
+                    (m) => m.id === subAssistantMessageId
+                  );
+                  const liveSubToolCall = subAssistantMessage?.toolCalls?.find(
+                    (tc) =>
+                      tc.interactionId === subToolCall.interactionId &&
+                      tc.name === subToolCall.name
+                  );
+                  const partialStdout = liveSubToolCall?.streamingStdout ?? "";
+                  const partialStderr = liveSubToolCall?.streamingStderr ?? "";
+                  const partialOutput = [partialStdout, partialStderr]
+                    .filter(Boolean)
+                    .join("\n");
+                  subResult = JSON.stringify({
+                    error: errorMessage,
+                    stdout: partialStdout,
+                    stderr: partialStderr,
+                    partialOutput:
+                      partialOutput.length > 0 ? partialOutput : undefined,
+                  });
+                } else {
+                  subResult = JSON.stringify({ error: errorMessage });
+                }
               }
 
               ctx.updateSessionMessages(subConvId, (currentMessages) =>
@@ -817,6 +869,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 if (chunk.retrying) {
                   return {
                     ...currentMessage,
+                    // Reset accumulated content/thinking so the UI reflects the
+                    // fresh request the backend is about to re-issue. The Rust
+                    // backend discards partial state on retry, so the frontend
+                    // must do the same to avoid showing stale fragments.
+                    content: "",
+                    thinking: undefined,
                     isRetrying: true,
                     retryAttempt: chunk.retryAttempt ?? undefined,
                     retryError: chunk.retryError ?? undefined,
@@ -880,9 +938,13 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           }
           // First message: immediately upsert the new conversation into
           // the list so it appears while AI is still responding.
-          if (isFirstMessage) {
+          // Follow-up message: refresh the record so the sidebar can
+          // re-sort by the latest updated_at and move the conversation
+          // to the top of its time group.
+          if (response.status !== "error") {
+            const refreshId = response.conversationId;
             void window.snow
-              .getChatConversation(response.conversationId)
+              .getChatConversation(refreshId)
               .then((conv) => {
                 if (conv) {
                   ctx.setUpsertedConversation({
@@ -893,6 +955,39 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               })
               .catch(() => {
                 // Upsert failure should not block the conversation
+              });
+          }
+
+          // Trigger summary generation as soon as the conversation is
+          // created and the first user message is persisted. No need to
+          // wait for the entire agent loop (tool calls, multi-turn AI
+          // responses) to finish.
+          if (isFirstMessage && !summaryTriggered && response.status !== "error") {
+            summaryTriggered = true;
+            const summaryConvId = response.conversationId;
+            void window.snow
+              .generateConversationSummary(summaryConvId)
+              .then((generatedSummary) => {
+                if (generatedSummary) {
+                  ctx.updateSessionField(
+                    summaryConvId,
+                    "summary",
+                    generatedSummary
+                  );
+                  return window.snow.getChatConversation(summaryConvId);
+                }
+                return null;
+              })
+              .then((updated) => {
+                if (updated) {
+                  ctx.setUpsertedConversation({
+                    record: updated,
+                    timestamp: Date.now(),
+                  });
+                }
+              })
+              .catch(() => {
+                // Summary generation failure should not block the conversation
               });
           }
         }
@@ -1220,6 +1315,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                       (currentToolCall) => ({
                         ...currentToolCall,
                         status: "running" as const,
+                        startedAt: Date.now(),
                       })
                     ),
                   };
@@ -1413,7 +1509,38 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                   }
                 }
               } catch (err) {
-                result = JSON.stringify({ error: getErrorMessage(err) });
+                const errorMessage = getErrorMessage(err);
+                // For streaming tools (e.g. terminal-execute) the process
+                // may have produced partial output before failing/timing
+                // out. Recover that output from the session state so the
+                // AI receives it together with the error and can reason
+                // about the situation instead of the loop stalling.
+                if (toolCall.name === "mcp__bash__terminal-execute") {
+                  const sessionMessages =
+                    ctx.sessionsRef.current?.[effectiveKey]?.messages ?? [];
+                  const assistantMessage = sessionMessages.find(
+                    (m) => m.id === currentAssistantMessageId
+                  );
+                  const liveToolCall = assistantMessage?.toolCalls?.find(
+                    (tc) =>
+                      tc.interactionId === toolCall.interactionId &&
+                      tc.name === toolCall.name
+                  );
+                  const partialStdout = liveToolCall?.streamingStdout ?? "";
+                  const partialStderr = liveToolCall?.streamingStderr ?? "";
+                  const partialOutput = [partialStdout, partialStderr]
+                    .filter(Boolean)
+                    .join("\n");
+                  result = JSON.stringify({
+                    error: errorMessage,
+                    stdout: partialStdout,
+                    stderr: partialStderr,
+                    partialOutput:
+                      partialOutput.length > 0 ? partialOutput : undefined,
+                  });
+                } else {
+                  result = JSON.stringify({ error: errorMessage });
+                }
               }
             }
 
@@ -1754,37 +1881,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               next.add(finalSessionKey);
               return next;
             });
-          }
-
-          // First message: generate summary asynchronously, then upsert
-          // again to update the conversation title.
-          if (isFirstMessage && finalSessionKey !== PENDING_SESSION_KEY) {
-            const currentId = finalSessionKey;
-
-            void window.snow
-              .generateConversationSummary(currentId)
-              .then((generatedSummary) => {
-                if (generatedSummary) {
-                  ctx.updateSessionField(
-                    currentId,
-                    "summary",
-                    generatedSummary
-                  );
-                  return window.snow.getChatConversation(currentId);
-                }
-                return null;
-              })
-              .then((updated) => {
-                if (updated) {
-                  ctx.setUpsertedConversation({
-                    record: updated,
-                    timestamp: Date.now(),
-                  });
-                }
-              })
-              .catch(() => {
-                // Summary generation failure should not block the conversation
-              });
           }
 
           // 通知系统：AI 流程正常结束时触发系统通知。

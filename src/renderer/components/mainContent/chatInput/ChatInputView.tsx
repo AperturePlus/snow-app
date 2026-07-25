@@ -25,6 +25,7 @@ import {
   createImageChipHtml,
   insertHtmlAtSelection,
   readEditableContent,
+  renumberImageChips as renumberImageChipsFn,
   type CommitTag,
   type FileTag,
   type ImageTag,
@@ -234,14 +235,22 @@ export const ChatInputView = ({
     (option) => option.value === thinkingValue
   );
 
+  const renumberImageChips = useCallback(() => {
+    const el = textareaRef.current;
+    if (el) {
+      renumberImageChipsFn(el);
+    }
+  }, [textareaRef]);
+
   const syncContent = useCallback(() => {
     if (textareaRef.current) {
+      renumberImageChips();
       const content = readEditableContent(textareaRef.current);
       handleChange(content);
       textareaRef.current.dataset.empty =
         content.trim() === "" ? "true" : "false";
     }
-  }, [handleChange, textareaRef]);
+  }, [handleChange, renumberImageChips, textareaRef]);
 
   const insertFileTag = useCallback(
     (tag: FileTag) => {

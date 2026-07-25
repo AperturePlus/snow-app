@@ -35,6 +35,9 @@ export type ToolCallInfo = {
     pattern: string;
     description: string;
   }>;
+  /** Epoch milliseconds when the tool transitioned to "running".
+   *  Used by the Bash tool UI to render a live timeout countdown. */
+  startedAt?: number;
 };
 
 export type ChatConversationMessage = {

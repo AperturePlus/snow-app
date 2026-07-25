@@ -197,16 +197,14 @@ input {
   transition: none;
 }
 
-/* During panel resize, hint the browser to optimise the chat area
-   which contains the heaviest DOM (many Markdown blocks). This
-   prevents janky reflows while dragging the splitter. */
+/* During panel resize, the heaviest DOM (many Markdown blocks) would
+   otherwise reflow on every mousemove. With viewport virtualization,
+   off-screen messages are already replaced by fixed-height placeholders
+   (contain: strict), so they are cheap. For the few visible messages we
+   only need to suppress content-visibility toggling so their heights
+   stay stable while the width changes. */
 .app-shell.is-resizing .chat-area {
   will-change: contents;
-  /* Disable content-visibility toggling during resize to avoid
-     scrollbar jitter from height recalculations. */
-}
-.app-shell.is-resizing .chat-message-group {
-  content-visibility: visible;
 }
 
 .panel-resizer {
@@ -264,7 +262,7 @@ input {
 }
 
 .top-bar.plus-menu-open,
-.top-bar.todo-panel-open {
+.top-bar.todo-panel-interactive {
   -webkit-app-region: no-drag;
 }
 .app-shell.sidebar-collapsed .top-bar {
@@ -527,6 +525,7 @@ input {
   background: var(--bg-primary);
   box-shadow: var(--shadow-md);
   overflow: hidden;
+  -webkit-app-region: no-drag;
 }
 
 .top-bar-todo-dropdown-header {
@@ -4611,14 +4610,26 @@ input {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  /* Skip rendering work for off-screen messages. This is the single
-     most effective optimisation for long conversations with many
-     Markdown blocks: the browser can skip layout/paint for messages
-     that are scrolled out of view. */
-  content-visibility: auto;
-  /* Provide a minimum height estimate so the scrollbar doesn't jump
-     erratically when content-visibility toggles sections in/out. */
-  contain-intrinsic-size: auto 80px;
+}
+
+/* Virtualized message wrapper. When visible, it just renders children
+   without interference. When virtualized out, it becomes a fixed-height
+   placeholder that reserves space so the scrollbar does not jump.
+   content-visibility on the inner .chat-message-group is no longer needed
+   because off-screen messages are fully unmounted by VirtualizedMessage. */
+.virtualized-message.is-visible {
+  display: block;
+}
+
+.virtualized-message.is-placeholder {
+  /* Height is set inline by VirtualizedMessage based on the last measured
+     value. Keep the node paint-cheap: no background, no children. */
+  contain: strict;
+}
+
+/* Tool-role messages render nothing but must keep a stable React key. */
+.chat-message-hidden {
+  display: none;
 }
 
 .chat-message-group.is-sending .ai-message {
@@ -6944,66 +6955,82 @@ input {
   background: var(--accent-red-bg);
 }
 
+.tool-call-bash-timeout-badge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--accent-orange-text, #e8973a);
+  background: color-mix(
+    in srgb,
+    var(--accent-orange-text, #e8973a) 14%,
+    transparent
+  );
+}
+
+.tool-call-bash-countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+}
+
+.tool-call-bash-countdown-urgent {
+  color: var(--accent-red-text);
+  background: var(--accent-red-bg);
+  animation: tool-call-bash-countdown-pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes tool-call-bash-countdown-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.tool-call-bash-timeout-notice {
+  border-left: 2px solid var(--accent-orange-text, #e8973a);
+}
+
 .tool-call-bash-body {
   gap: 10px;
 }
 
-.tool-call-bash-workdir {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  color: var(--text-tertiary);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.tool-call-bash-workdir svg {
-  display: block;
-  flex-shrink: 0;
-}
-
-.tool-call-bash-workdir span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  user-select: text;
-}
-
-.tool-call-bash-terminal,
-.tool-call-bash-output {
+.tool-call-bash-terminal {
   overflow: hidden;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
   background: var(--bg-primary);
 }
 
-.tool-call-bash-terminal-header,
-.tool-call-bash-output-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 10px;
+.tool-call-bash-terminal-live {
+  border-color: color-mix(
+    in srgb,
+    var(--accent-blue-text) 28%,
+    var(--border-light)
+  );
+}
+.tool-call-bash-workdir {
+  padding: 6px 12px;
   border-bottom: 1px solid var(--border-light);
-  background: var(--bg-tertiary);
   color: var(--text-tertiary);
-  font-size: 10.5px;
-  line-height: 1.2;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-}
-
-.tool-call-bash-terminal-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.tool-call-bash-terminal-title svg {
-  display: block;
-  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
 }
 
 .tool-call-bash .tool-call-bash-command {
@@ -7040,49 +7067,11 @@ input {
   user-select: none;
 }
 
-.tool-call-bash-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 5px;
-}
-
-.tool-call-bash-meta-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-tertiary);
-  color: var(--text-tertiary);
-  font-size: 10.5px;
-}
-
-.tool-call-bash-results {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.tool-call-bash-results-live .tool-call-bash-output {
-  border-color: color-mix(
-    in srgb,
-    var(--accent-blue-text) 28%,
-    var(--border-light)
-  );
-  box-shadow: inset 2px 0 0 var(--accent-blue-text);
-}
-
-.tool-call-bash-output-header span:last-child {
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  text-transform: none;
-}
-
 .tool-call-bash .tool-call-bash-output-pre {
   max-height: 320px;
   margin: 0;
   padding: 10px 12px;
+  border-top: 1px solid var(--border-light);
   overflow: auto;
   color: var(--text-secondary);
   font-family: var(--font-mono);
@@ -7090,19 +7079,6 @@ input {
   line-height: 1.55;
   white-space: pre;
   user-select: text;
-}
-
-.tool-call-bash-stderr {
-  border-color: var(--accent-red-bg);
-}
-
-.tool-call-bash-stderr .tool-call-bash-output-header {
-  color: var(--accent-red-text);
-  background: var(--accent-red-bg);
-}
-
-.tool-call-bash-stderr .tool-call-bash-output-pre {
-  color: var(--accent-red-text);
 }
 
 .tool-call-bash-stream-cursor {
@@ -7115,14 +7091,12 @@ input {
   animation: tool-call-bash-cursor-blink 0.9s steps(2, start) infinite;
 }
 
-.tool-call-bash-empty-output,
 .tool-call-bash-pending {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 8px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-tertiary);
+  padding: 7px 12px;
+  border-top: 1px solid var(--border-light);
   color: var(--text-tertiary);
   font-size: 11.5px;
 }
@@ -8247,7 +8221,10 @@ input {
   background: var(--bg-hover);
   color: var(--text-secondary);
   border: 1px solid var(--border-color);
-  max-width: 200px;
+}
+
+.user-message-file-chip {
+  max-width: 240px;
 }
 
 .file-chip {
@@ -8316,10 +8293,18 @@ input {
   border-radius: var(--radius-md);
 }
 
-.file-chip-name,
+.file-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
 .user-message-file-chip-name {
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
 }
 
 .file-chip-icon,
@@ -15678,10 +15663,7 @@ input {
   opacity: 0;
   visibility: hidden;
   transform: translateY(2px);
-  transition:
-    opacity 0.12s ease,
-    visibility 0.12s ease,
-    transform 0.12s ease;
+  transition: opacity 0.12s ease, visibility 0.12s ease, transform 0.12s ease;
 }
 
 .usage-floating-tooltip-root.visible {

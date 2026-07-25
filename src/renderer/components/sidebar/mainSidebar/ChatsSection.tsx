@@ -3,15 +3,37 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useI18n } from "../../../i18n";
 import { useChatConversationContext } from "../../mainContent/chatMessages";
+import { PENDING_SESSION_KEY } from "../../mainContent/chatMessages/utils/conversationTypes";
 import type {
   ChatConversationRecord,
   WorkspaceDirectoryRecord,
 } from "../../../../preload";
 import { ChatItem } from "./ChatItem";
 import type { ExportFormat } from "./ChatItemMenu";
-import { groupConversationsByTime, type TimeGroupKey } from "./chatTimeGroup";
+import {
+  groupConversationsByTime,
+  parseDbTimestamp,
+  type TimeGroupKey,
+} from "./chatTimeGroup";
 
 const CHAT_PAGE_SIZE = 20;
+
+/**
+ * 按 updatedAt 倒序排序会话列表。
+ * 必须基于时间戳比较，不能直接用字符串 localeCompare：
+ * 占位符会话的 updatedAt 是 ISO UTC 格式（带 T 与 Z），
+ * 而数据库返回的是 SQLite 本地时间格式（空格分隔、无时区），
+ * 两种格式的字典序与真实时间顺序不一致，会导致新会话排到旧会话下方。
+ */
+const sortConversationsByUpdatedAt = (
+  items: ChatConversationRecord[]
+): ChatConversationRecord[] =>
+  [...items].sort(
+    (a, b) =>
+      parseDbTimestamp(b.updatedAt).getTime() -
+        parseDbTimestamp(a.updatedAt).getTime() ||
+      b.conversationId.localeCompare(a.conversationId)
+  );
 
 type ChatsSectionProps = {
   isSwitchingDirectory: boolean;
@@ -114,33 +136,31 @@ export function ChatsSection({
 
     let isNew = false;
     setConversations((prev) => {
-      const existing = prev.find(
+      const existingIndex = prev.findIndex(
         (item) => item.conversationId === conv.conversationId
       );
 
-      if (existing) {
-        return prev.map((item) =>
+      if (existingIndex >= 0) {
+        const updated = prev.map((item) =>
           item.conversationId === conv.conversationId ? conv : item
         );
+        return sortConversationsByUpdatedAt(updated);
       }
 
       // If the real conversation arrives, replace the pending placeholder.
       const pendingIndex = prev.findIndex(
-        (item) => item.conversationId === "__pending__"
+        (item) => item.conversationId === PENDING_SESSION_KEY
       );
       if (pendingIndex >= 0) {
-        return prev.map((item, index) =>
+        const replaced = prev.map((item, index) =>
           index === pendingIndex ? conv : item
         );
+        return sortConversationsByUpdatedAt(replaced);
       }
 
       isNew = true;
       // New conversation: prepend and re-sort by updatedAt
-      return [conv, ...prev].sort(
-        (a, b) =>
-          b.updatedAt.localeCompare(a.updatedAt) ||
-          b.conversationId.localeCompare(a.conversationId)
-      );
+      return sortConversationsByUpdatedAt([conv, ...prev]);
     });
 
     if (isNew) {

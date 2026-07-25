@@ -12,6 +12,8 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use regex::Regex;
 
+use crate::api::conversation::images::resolve_inline_images_from_disk;
+
 #[napi(object)]
 pub struct AppStorageInfo {
     pub directory_path: String,
@@ -1099,7 +1101,12 @@ pub fn append_tool_message(conversation_id: String, content: String) -> Result<(
 
 pub fn list_chat_messages(conversation_id: String) -> Result<Vec<ChatMessageRecord>> {
     let database_path = ensure_database_file()?;
-    services::chat_conversations::list_chat_messages(&database_path, &conversation_id)
+    let mut records =
+        services::chat_conversations::list_chat_messages(&database_path, &conversation_id)?;
+    for record in &mut records {
+        record.content = resolve_inline_images_from_disk(&record.content, &database_path);
+    }
+    Ok(records)
 }
 
 pub fn list_chat_messages_paginated(
@@ -1108,12 +1115,16 @@ pub fn list_chat_messages_paginated(
     limit: i32,
 ) -> Result<ChatMessagePage> {
     let database_path = ensure_database_file()?;
-    services::chat_conversations::list_chat_messages_paginated(
+    let mut page = services::chat_conversations::list_chat_messages_paginated(
         &database_path,
         &conversation_id,
         &before_message_id,
         limit,
-    )
+    )?;
+    for record in &mut page.items {
+        record.content = resolve_inline_images_from_disk(&record.content, &database_path);
+    }
+    Ok(page)
 }
 
 pub fn find_latest_tool_result(

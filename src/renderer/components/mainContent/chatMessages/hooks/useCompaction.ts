@@ -69,6 +69,9 @@ export const useCompaction = (ctx: ConversationContextValue) => {
           },
           (chunk) => {
             if (chunk.retrying) {
+              // Reset accumulated preview so the UI reflects the fresh request
+              // the backend is about to re-issue after the stream idle timeout.
+              ctx.setCompactionPreview("");
               return;
             }
             ctx.setCompactionPreview(

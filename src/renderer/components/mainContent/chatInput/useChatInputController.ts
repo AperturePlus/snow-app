@@ -27,6 +27,7 @@ import {
   createCommitChipHtml,
   createImageChipHtml,
   parseContentSegments,
+  renumberImageChips,
 } from "./fileTagUtils";
 type UseChatInputControllerParams = {
   conversationId?: string;
@@ -313,6 +314,9 @@ export const useChatInputController = ({
         .join("");
 
       textarea.innerHTML = html;
+      // 固定 chip 宽度，确保 hover 显示 remove 按钮时布局不跳动、
+      // 名字能正确省略。与新输入时 syncContent -> renumberImageChips 一致。
+      renumberImageChips(textarea);
       textarea.dataset.empty = draftToRestore.trim() === "" ? "true" : "false";
       requestAnimationFrame(() => {
         adjustHeight();

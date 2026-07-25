@@ -232,7 +232,15 @@ export function ChatItem({
                   />
                 </span>
               )}
-              <span className="chat-item-title">{displayName}</span>
+              <span
+                className="chat-item-title"
+                onDoubleClick={(event) => {
+                  event.stopPropagation();
+                  handleRenameStart();
+                }}
+              >
+                {displayName}
+              </span>
               {hasSubAgents && runningSubAgentCount > 0 && (
                 <span className="chat-item-sub-agent-count">
                   {runningSubAgentCount}

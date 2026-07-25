@@ -41,6 +41,12 @@ pub fn parse_chat_message_content(
         let data_url = &tag_value_and_rest[..tag_end];
         let full_tag_end = tag_value_start + tag_end + 2;
         if let Some(image) = parse_image_tag_value(data_url, database_path)? {
+            // Insert an inline placeholder so the model can see the image's
+            // position and order within the message text. The 1-based index
+            // matches the order images appear in the `parsed.images` vector,
+            // which is also the order they are emitted as multimodal parts.
+            let index = parsed.images.len() + 1;
+            parsed.text.push_str(&format!("[Image #{index}]"));
             parsed.images.push(image);
         } else {
             parsed.text.push_str(&remaining[tag_start..full_tag_end]);
@@ -210,6 +216,51 @@ fn persist_base64_image(data_url: &str, date_dir: &Path) -> Result<Option<String
         .join(date_dir.file_name().unwrap_or_default())
         .join(&filename);
     Ok(Some(relative.to_string_lossy().replace('\\', "/")))
+}
+
+/// 将消息内容中以相对路径（如 `upload/2026-07-25/hash.png`）引用的
+/// 内联图片重新读取为 data URL。
+///
+/// 发送消息时 base64 图片会被持久化到磁盘，内容里只保留相对路径以节省
+/// 数据库体积。但渲染进程无法直接访问该相对路径（浏览器会按页面 base URL
+/// 解析，导致 ERR_FILE_NOT_FOUND），因此加载历史消息时需把相对路径还原为
+/// data URL，前端才能正常显示与预览。
+///
+/// 已是 data URL 的标签原样保留；无法读取的相对路径也原样保留，避免破坏内容。
+pub fn resolve_inline_images_from_disk(content: &str, database_path: &Path) -> String {
+    const IMAGE_TAG_PREFIX: &str = "@@image:";
+
+    let mut result = String::with_capacity(content.len());
+    let mut remaining = content;
+
+    while let Some(tag_start) = remaining.find(IMAGE_TAG_PREFIX) {
+        result.push_str(&remaining[..tag_start]);
+
+        let tag_value_start = tag_start + IMAGE_TAG_PREFIX.len();
+        let tag_value_and_rest = &remaining[tag_value_start..];
+        let Some(tag_end) = tag_value_and_rest.find("@@") else {
+            result.push_str(&remaining[tag_start..]);
+            return result;
+        };
+
+        let value = &tag_value_and_rest[..tag_end];
+        let full_tag_end = tag_value_start + tag_end + 2;
+
+        if value.trim().starts_with("data:") {
+            result.push_str(&remaining[tag_start..full_tag_end]);
+        } else if let Some(image) =
+            parse_image_tag_value(value, database_path).unwrap_or(None)
+        {
+            result.push_str(&format!("@@image:{}@@", image.data_url));
+        } else {
+            result.push_str(&remaining[tag_start..full_tag_end]);
+        }
+
+        remaining = &remaining[full_tag_end..];
+    }
+
+    result.push_str(remaining);
+    result
 }
 
 fn media_type_to_extension(media_type: &str) -> &str {

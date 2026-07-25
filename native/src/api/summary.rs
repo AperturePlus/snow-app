@@ -10,7 +10,7 @@ use crate::api::config::{
 use crate::api::retry::{RetryOptions, should_retry};
 use crate::storage::services::chat_conversations::{load_context_messages, update_conversation_summary};
 
-const SUMMARY_SYSTEM_PROMPT: &str = "You are a conversation title generator. Based on the conversation below, generate a concise title (max 50 characters) that captures the main topic. Respond with only the title text, no quotes, no additional explanation.";
+const SUMMARY_SYSTEM_PROMPT: &str = "You are a conversation title generator. Based on the conversation below, generate a concise title (max 50 characters) that captures the main topic. Respond with only the title text, no quotes, no additional explanation, summary language follows user language";
 
 pub async fn generate_conversation_summary(conversation_id: String) -> Result<String> {
     let context = get_active_api_request_context()?;

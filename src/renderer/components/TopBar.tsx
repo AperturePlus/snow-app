@@ -52,6 +52,7 @@ export const TopBar = ({
   >(undefined);
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
   const [isTodoPanelOpen, setIsTodoPanelOpen] = useState(false);
+  const [isTodoPanelPinned, setIsTodoPanelPinned] = useState(false);
   const [codebaseEnabled, setCodebaseEnabled] = useState(false);
   const [codebaseIndexed, setCodebaseIndexed] = useState(false);
   // Track which projectId the codebaseEnabled state corresponds to. This is
@@ -278,11 +279,13 @@ export const TopBar = ({
     setIsPlusMenuOpen(false);
   };
 
+  const isTodoPanelInteractive = isTodoPanelOpen && !isTodoPanelPinned;
+
   return (
     <header
       className={`top-bar${isPlusMenuOpen ? " plus-menu-open" : ""}${
         isTodoPanelOpen ? " todo-panel-open" : ""
-      }`}
+      }${isTodoPanelInteractive ? " todo-panel-interactive" : ""}`}
     >
       <div className="top-bar-left">
         <div className="top-bar-sidebar-actions" aria-label="Sidebar actions">
@@ -320,6 +323,7 @@ export const TopBar = ({
           projectId={conversationDirectoryId ?? activeDirectory?.directoryId}
           isRunning={isStreaming}
           onOpenChange={setIsTodoPanelOpen}
+          onPinnedChange={setIsTodoPanelPinned}
         />
         <CodebaseSyncIndicator
           syncStatus={syncStatus}

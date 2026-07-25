@@ -555,6 +555,7 @@ const ChatContentBody = ({
               messages={messages}
               isStreaming={isStreaming}
               isAborting={isAborting}
+              scrollContainerRef={scrollRef}
             />
             <CompactionStream
               isCompacting={isCompacting}
