@@ -116,6 +116,7 @@ export function MainSidebarContent({
         isSwitchingDirectory={isSwitchingDirectory}
       />
       <ProjectsSection
+        activeDirectory={activeDirectory}
         onActiveDirectoryChange={onActiveDirectoryChange}
         onSwitchingDirectoryChange={setIsSwitchingDirectory}
         onSwitchContent={onSwitchContent}

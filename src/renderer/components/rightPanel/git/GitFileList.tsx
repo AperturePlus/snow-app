@@ -7,12 +7,13 @@ import {
   Plus,
   Undo2,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { GitFileStatus } from "../../../../preload";
 import { useI18n } from "../../../i18n";
 import { getFileTypeIcon } from "../../../utils/fileIcons";
 
 type GitFileListProps = {
+  repoPath: string;
   files: GitFileStatus[];
   section: "staged" | "unstaged";
   selectedPaths: Set<string>;
@@ -87,6 +88,7 @@ const getStatusLabel = (status: string): string => {
 };
 
 export const GitFileList = ({
+  repoPath,
   files,
   section,
   selectedPaths,
@@ -121,6 +123,20 @@ export const GitFileList = ({
       return next;
     });
   };
+
+  const handleFileDragStart = useCallback(
+    (event: React.DragEvent<HTMLDivElement>, file: GitFileStatus) => {
+      const tag = {
+        repoPath,
+        path: file.path,
+        section,
+        status: file.status,
+      };
+      event.dataTransfer.setData("application/json", JSON.stringify(tag));
+      event.dataTransfer.effectAllowed = "copy";
+    },
+    [repoPath, section]
+  );
 
   return (
     <div className="git-file-list">
@@ -196,6 +212,8 @@ export const GitFileList = ({
                   key={`${section}-${file.path}`}
                   className={`git-file-item${isSelected ? " selected" : ""}`}
                   onClick={(e) => onFileSelect(file, e, section)}
+                  draggable
+                  onDragStart={(event) => handleFileDragStart(event, file)}
                 >
                   <span
                     className={`git-file-status ${getStatusColor(file.status)}`}

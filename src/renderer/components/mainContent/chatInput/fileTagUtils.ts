@@ -1,4 +1,5 @@
 import {
+  getChangeIconHtml,
   getCommitIconHtml,
   getFileTypeIconHtml,
 } from "../../../utils/fileIcons";
@@ -24,11 +25,19 @@ export type CommitTag = {
   repoPath: string;
 };
 
+export type ChangeTag = {
+  repoPath: string;
+  path: string;
+  section: "staged" | "unstaged";
+  status: string;
+};
+
 export type ContentSegment =
   | { type: "text"; content: string }
   | { type: "file"; tag: FileTag }
   | { type: "image"; tag: ImageTag }
-  | { type: "commit"; tag: CommitTag };
+  | { type: "commit"; tag: CommitTag }
+  | { type: "change"; tag: ChangeTag };
 
 export const encodeFileTag = (tag: FileTag): string =>
   `@@${tag.isDirectory ? "dir" : "file"}:${tag.path}@@`;
@@ -46,9 +55,17 @@ export const encodeCommitTag = (tag: CommitTag): string =>
     repoPath: tag.repoPath,
   })}@@`;
 
+export const encodeChangeTag = (tag: ChangeTag): string =>
+  `@@change:${JSON.stringify({
+    repoPath: tag.repoPath,
+    path: tag.path,
+    section: tag.section,
+    status: tag.status,
+  })}@@`;
+
 export const parseContentSegments = (content: string): ContentSegment[] => {
   const segments: ContentSegment[] = [];
-  const regex = /@@(file|dir|image|commit):(.+?)@@/g;
+  const regex = /@@(file|dir|image|commit|change):(.+?)@@/g;
   let lastIndex = 0;
   let imageCounter = 0;
   let match: RegExpExecArray | null;
@@ -75,6 +92,21 @@ export const parseContentSegments = (content: string): ContentSegment[] => {
             date: data.date ?? "",
             message: data.message ?? "",
             repoPath: data.repoPath ?? "",
+          },
+        });
+      } catch {
+        segments.push({ type: "text", content: match[0] });
+      }
+    } else if (kind === "change") {
+      try {
+        const data = JSON.parse(value) as Partial<ChangeTag>;
+        segments.push({
+          type: "change",
+          tag: {
+            repoPath: data.repoPath ?? "",
+            path: data.path ?? "",
+            section: data.section === "staged" ? "staged" : "unstaged",
+            status: data.status ?? "",
           },
         });
       } catch {
@@ -172,6 +204,29 @@ export const createCommitChipHtml = (tag: CommitTag): string => {
   )}</span><span class="file-chip-remove" data-chip-remove="true">${CLOSE_ICON_SVG}</span></span>`;
 };
 
+export const createChangeChipHtml = (tag: ChangeTag): string => {
+  const icon = getChangeIconHtml(12);
+  const lastSep = Math.max(
+    tag.path.lastIndexOf("/"),
+    tag.path.lastIndexOf("\\")
+  );
+  const name = lastSep === -1 ? tag.path : tag.path.slice(lastSep + 1);
+  const chipTitle = `${tag.section === "staged" ? "Staged" : "Unstaged"} ${tag.status} ${tag.path}`;
+  const changeData = escapeHtml(
+    JSON.stringify({
+      repoPath: tag.repoPath,
+      path: tag.path,
+      section: tag.section,
+      status: tag.status,
+    })
+  );
+  return `<span class="file-chip change-chip" contenteditable="false" data-change-tag="true" data-change-data="${changeData}" title="${escapeHtml(
+    chipTitle
+  )}"><span class="file-chip-icon">${icon}</span><span class="file-chip-name">${escapeHtml(
+    name
+  )}</span><span class="file-chip-remove" data-chip-remove="true">${CLOSE_ICON_SVG}</span></span>`;
+};
+
 export const readEditableContent = (el: HTMLElement): string => {
   let result = "";
   const walk = (node: Node): void => {
@@ -205,6 +260,20 @@ export const readEditableContent = (el: HTMLElement): string => {
           });
         } catch {
           // Ignore malformed commit data
+        }
+      } else if (elem.dataset.changeTag === "true") {
+        try {
+          const data = JSON.parse(
+            elem.dataset.changeData || "{}"
+          ) as Partial<ChangeTag>;
+          result += encodeChangeTag({
+            repoPath: data.repoPath ?? "",
+            path: data.path ?? "",
+            section: data.section === "staged" ? "staged" : "unstaged",
+            status: data.status ?? "",
+          });
+        } catch {
+          // Ignore malformed change data
         }
       } else if (elem.tagName === "BR") {
         result += "\n";

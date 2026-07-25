@@ -23,6 +23,7 @@ import {
 } from "./configThinking";
 import type { ChatInputActions, ChatInputState } from "./types";
 import {
+  createChangeChipHtml,
   createChipHtml,
   createCommitChipHtml,
   createImageChipHtml,
@@ -308,6 +309,9 @@ export const useChatInputController = ({
           }
           if (segment.type === "commit") {
             return createCommitChipHtml(segment.tag);
+          }
+          if (segment.type === "change") {
+            return createChangeChipHtml(segment.tag);
           }
           return createChipHtml(segment.tag);
         })

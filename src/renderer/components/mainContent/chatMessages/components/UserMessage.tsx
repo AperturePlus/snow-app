@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ChevronUp, GitCommitHorizontal } from "lucide-react";
+import { ChevronDown, ChevronUp, GitCommitHorizontal, GitCompare } from "lucide-react";
 import { UserMessageActions } from "./UserMessageActions";
 import type { UserMessageProps } from "../utils/types";
 import { parseContentSegments } from "../../chatInput/fileTagUtils";
@@ -169,6 +169,34 @@ export const UserMessage = memo(
                     />
                     <span className="user-message-file-chip-name">
                       {segment.tag.shortHash}
+                    </span>
+                  </span>
+                );
+              }
+
+              if (segment.type === "change") {
+                const lastSep = Math.max(
+                  segment.tag.path.lastIndexOf("/"),
+                  segment.tag.path.lastIndexOf("\\")
+                );
+                const changeName =
+                  lastSep === -1
+                    ? segment.tag.path
+                    : segment.tag.path.slice(lastSep + 1);
+                const chipTitle = `${segment.tag.section === "staged" ? "Staged" : "Unstaged"} ${segment.tag.status} ${segment.tag.path}`;
+                return (
+                  <span
+                    className="user-message-file-chip change-chip"
+                    key={index}
+                    title={chipTitle}
+                  >
+                    <GitCompare
+                      size={12}
+                      className="user-message-file-chip-icon"
+                      style={{ color: "#f59e0b" }}
+                    />
+                    <span className="user-message-file-chip-name">
+                      {changeName}
                     </span>
                   </span>
                 );

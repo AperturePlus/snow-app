@@ -73,6 +73,7 @@ const toPersistableDirectoryInput = (
 });
 
 export function ProjectsSection({
+  activeDirectory: externalActiveDirectory,
   onActiveDirectoryChange,
   onSwitchingDirectoryChange,
   onSwitchContent,
@@ -111,6 +112,69 @@ export function ProjectsSection({
     onActiveDirectoryChange?.(activeDirectory ?? null);
   }, [activeDirectory, onActiveDirectoryChange]);
 
+  const updateSwitchingDirectory = useCallback(
+    (nextIsSwitching: boolean): void => {
+      setIsSwitchingDirectory(nextIsSwitching);
+      onSwitchingDirectoryChange(nextIsSwitching);
+    },
+    [onSwitchingDirectoryChange]
+  );
+
+  // Mirror values into refs so the external-sync effect can read the latest
+  // state without re-running on every internal change (which would cause an
+  // infinite loop with the upward-sync effect above).
+  const activeDirectoryIdRef = useRef<string | undefined>(undefined);
+  activeDirectoryIdRef.current = activeDirectory?.directoryId;
+  const isSwitchingRef = useRef(isSwitchingDirectory);
+  isSwitchingRef.current = isSwitchingDirectory;
+  // Tracks the last external directoryId we have already processed so we
+  // only react to genuine external changes (e.g. global search), not to
+  // our own internal changes echoing back through the parent.
+  const lastSyncedExternalIdRef = useRef<string | null>(null);
+
+  // Sync internal state when the active directory changes from outside
+  // (e.g. via global search). Only fires on real external changes.
+  useEffect(() => {
+    if (!externalActiveDirectory) {
+      return;
+    }
+    const externalId = externalActiveDirectory.directoryId;
+    // Already processed this external ID
+    if (externalId === lastSyncedExternalIdRef.current) {
+      return;
+    }
+    // Internal state already matches
+    if (externalId === activeDirectoryIdRef.current) {
+      lastSyncedExternalIdRef.current = externalId;
+      return;
+    }
+    // In the middle of a switch
+    if (isSwitchingRef.current) {
+      return;
+    }
+    lastSyncedExternalIdRef.current = externalId;
+    void (async (): Promise<void> => {
+      updateSwitchingDirectory(true);
+      setDirectoryError(null);
+      try {
+        const directories = await window.snow.activateWorkspaceDirectory(
+          externalId
+        );
+        setWorkspaceDirectories(directories);
+      } catch (error) {
+        setDirectoryError(
+          error instanceof Error
+            ? error.message
+            : t("sidebar.activateDirectoryError", {
+                defaultValue: "Failed to activate workspace directory",
+              })
+        );
+      } finally {
+        updateSwitchingDirectory(false);
+      }
+    })();
+  }, [externalActiveDirectory, updateSwitchingDirectory, t]);
+
   const visibleDirectoryCount = directoryPage * DIRECTORY_PAGE_SIZE;
   const visibleDirectories = useMemo(
     () => workspaceDirectories.slice(0, visibleDirectoryCount),
@@ -128,11 +192,6 @@ export function ProjectsSection({
       return Math.min(currentPage + 1, Math.max(maxPage, 1));
     });
   }, [workspaceDirectories.length]);
-
-  const updateSwitchingDirectory = (nextIsSwitching: boolean): void => {
-    setIsSwitchingDirectory(nextIsSwitching);
-    onSwitchingDirectoryChange(nextIsSwitching);
-  };
 
   const loadWorkspaceDirectories = async (): Promise<void> => {
     setDirectoryError(null);

@@ -201,20 +201,11 @@ export const useRollback = (ctx: ConversationContextValue) => {
         if (shouldRestoreFiles && ctx.directoryPath) {
           void window.snow
             .restoreCheckpoint(checkpointId, ctx.directoryPath)
-            .then(() => {
-              deleteCheckpoints(discardedCheckpointIds);
-            })
             .catch(() => {
-              if (
-                sessionRef &&
-                checkpointIndex >= 0 &&
-                !sessionRef.checkpointIds.includes(checkpointId)
-              ) {
-                sessionRef.checkpointIds = [
-                  ...sessionRef.checkpointIds,
-                  ...discardedCheckpointIds,
-                ];
-              }
+              // Best effort — file restore failure must not block rollback cleanup.
+            })
+            .finally(() => {
+              deleteCheckpoints(discardedCheckpointIds);
             });
         } else {
           deleteCheckpoints(discardedCheckpointIds);

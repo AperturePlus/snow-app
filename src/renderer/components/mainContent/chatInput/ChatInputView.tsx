@@ -20,12 +20,14 @@ import { useI18n } from "../../../i18n";
 import type { ChatInputViewProps } from "./types";
 import { TokenUsageRing } from "./TokenUsageRing";
 import {
+  createChangeChipHtml,
   createChipHtml,
   createCommitChipHtml,
   createImageChipHtml,
   insertHtmlAtSelection,
   readEditableContent,
   renumberImageChips as renumberImageChipsFn,
+  type ChangeTag,
   type CommitTag,
   type FileTag,
   type ImageTag,
@@ -426,6 +428,30 @@ export const ChatInputView = ({
           }
 
           insertHtmlAtSelection(createCommitChipHtml(tag));
+          syncContent();
+          return;
+        }
+
+        // Change tag: has "section", "path", "repoPath" and "status" fields
+        if (
+          typeof parsed.section === "string" &&
+          (parsed.section === "staged" || parsed.section === "unstaged") &&
+          typeof parsed.path === "string" &&
+          typeof parsed.repoPath === "string" &&
+          typeof parsed.status === "string"
+        ) {
+          const tag: ChangeTag = {
+            repoPath: parsed.repoPath,
+            path: parsed.path,
+            section: parsed.section,
+            status: parsed.status,
+          };
+
+          if (textareaRef.current) {
+            textareaRef.current.focus();
+          }
+
+          insertHtmlAtSelection(createChangeChipHtml(tag));
           syncContent();
           return;
         }

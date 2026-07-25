@@ -165,21 +165,27 @@ pub fn analyze_file(file_path: &str, source_text: &str) -> AnalyzedFile {
                     access: access.to_string(),
                 },
             ));
-        }
-    }
 
-    for (name, ref_info) in &unresolved_references {
-        if !is_known_global(name) {
-            diagnostics.push(DiagnosticItem {
-                severity: DiagnosticSeverity::Error.as_str().to_string(),
-                message: format!("Cannot find name '{name}'. Did you forget to import it?"),
-                start_line: ref_info.location.line,
-                end_line: ref_info.location.end_line,
-                start_column: ref_info.location.column,
-                end_column: ref_info.location.end_column,
-                source: "codelens".to_string(),
-                code: Some("unresolved-reference".to_string()),
-            });
+            // Type-position references (e.g. Record, Partial, Pick, Omit, ...)
+            // resolve to ambient declarations in lib.d.ts which are unavailable
+            // in single-file analysis.  Skip them to avoid false positives.
+            // Value-position references still go through the known-global check.
+            if reference.is_type() {
+                continue;
+            }
+
+            if !is_known_global(name) {
+                diagnostics.push(DiagnosticItem {
+                    severity: DiagnosticSeverity::Error.as_str().to_string(),
+                    message: format!("Cannot find name '{name}'. Did you forget to import it?"),
+                    start_line,
+                    end_line,
+                    start_column: start_col,
+                    end_column: end_col,
+                    source: "codelens".to_string(),
+                    code: Some("unresolved-reference".to_string()),
+                });
+            }
         }
     }
 

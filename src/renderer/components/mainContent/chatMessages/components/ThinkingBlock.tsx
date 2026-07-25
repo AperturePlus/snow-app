@@ -32,6 +32,14 @@ export const ThinkingBlock = ({
   const bodyRef = useRef<HTMLDivElement>(null);
   // Tracks whether auto-scroll should be active (user hasn't scrolled away)
   const autoScrollRef = useRef(true);
+  // Mirror isExpanded into a ref so the ResizeObserver callback can read the
+  // latest value without re-creating the observer on every toggle. In the
+  // collapsed (fixed-height) view we always pin to the newest content,
+  // regardless of whether the user scrolled up.
+  const isExpandedRef = useRef(isExpanded);
+  useEffect(() => {
+    isExpandedRef.current = isExpanded;
+  }, [isExpanded]);
 
   // Check if content overflows the fixed height, and if auto-scroll is active,
   // keep the thinking view pinned to the newest content. Both concerns are
@@ -42,7 +50,9 @@ export const ThinkingBlock = ({
     const el = scrollRef.current;
     if (!el) return;
     setIsOverflow(el.scrollHeight > THINKING_FIXED_HEIGHT);
-    if (autoScrollRef.current) {
+    // In the collapsed (fixed-height) view, always pin to the newest content.
+    // In the expanded view, respect the user's scroll position.
+    if (!isExpandedRef.current || autoScrollRef.current) {
       el.scrollTop = el.scrollHeight;
     }
   }, []);

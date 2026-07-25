@@ -8201,9 +8201,10 @@ input {
 }
 
 .input-field-editable.drag-over {
-  outline: 2px dashed var(--accent-color, #3b82f6);
+  outline: 2px dashed var(--text-primary);
   outline-offset: -2px;
   border-radius: var(--radius-md);
+  background: var(--focus-ring);
 }
 
 /* ===== File Chip (input + message) ===== */
@@ -8251,6 +8252,15 @@ input {
 .commit-chip:hover {
   border-color: #f05032;
   color: #f05032;
+}
+
+.change-chip {
+  cursor: default;
+}
+
+.change-chip:hover {
+  border-color: #f59e0b;
+  color: #f59e0b;
 }
 
 .image-chip-preview {
@@ -12982,16 +12992,12 @@ input {
   gap: 8px;
   padding: 0 12px;
   min-height: 28px;
-  cursor: grab;
   white-space: nowrap;
-}
-
-.git-graph-row:active {
-  cursor: grabbing;
 }
 
 .git-graph-row:hover {
   background: var(--bg-hover);
+  cursor: pointer;
 }
 
 .git-graph-row.selected {

@@ -502,6 +502,7 @@ export const GitControl = ({
       {viewMode === "changes" ? (
         <>
           <GitFileList
+            repoPath={repoPath}
             files={unstagedFiles}
             section="unstaged"
             selectedPaths={selectedPaths}
@@ -513,6 +514,7 @@ export const GitControl = ({
           />
 
           <GitFileList
+            repoPath={repoPath}
             files={stagedFiles}
             section="staged"
             selectedPaths={selectedPaths}
