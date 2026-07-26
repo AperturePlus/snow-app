@@ -15919,36 +15919,30 @@ input {
   flex-shrink: 0;
 }
 
+/* Edit mode mirrors the view mode layout: this is the single scroll container,
+   and a `.file-viewer-code` flex row inside it holds the gutter plus the editor
+   at full content height, so the line numbers scroll together with the code. */
 .file-viewer-edit-scroll {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
-  position: relative;
-  display: flex;
+  overflow-y: scroll;
+  overflow-x: hidden;
   background: var(--bg-primary);
 }
 
 .file-viewer-line-numbers--edit {
-  overflow: hidden;
   pointer-events: none;
 }
 
-/* Editor wrapper also carries `.file-viewer-code` so the shared highlight.js
-   theme (`:is(..., .file-viewer-code, ...) .hljs-*`) applies to the highlight
-   layer. Reset the layout properties that `.file-viewer-code` sets so the
-   library's overlay (absolute textarea over a relative <pre>) stays aligned. */
+/* Wrapper around the react-simple-code-editor container. The library grows its
+   inner container with the content (an absolutely positioned transparent
+   textarea overlaid on the highlighted <pre>), while `.file-viewer-edit-scroll`
+   provides the scrolling — both layers always move together. Font metrics are
+   inherited from the parent `.file-viewer-code` row so the caret stays aligned
+   with the highlight and with the gutter. */
 .file-viewer-editor-wrap {
-  display: block;
   flex: 1;
   min-width: 0;
-  min-height: 0;
-  margin: 0;
-  padding: 0;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.6;
-  background: var(--bg-primary);
-  overflow: hidden;
 }
 
 /* The library overlays a transparent <textarea> on the highlighted <pre>. They

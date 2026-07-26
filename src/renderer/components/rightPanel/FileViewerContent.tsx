@@ -120,7 +120,6 @@ export function FileViewerContent({
 
   const originalContentRef = useRef("");
   const onDirtyChangeRef = useRef(onDirtyChange);
-  const lineNumbersRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     onDirtyChangeRef.current = onDirtyChange;
@@ -311,24 +310,16 @@ export function FileViewerContent({
     [dirty, saving, handleSave, handleExitEditMode]
   );
 
-  // Focus the editor when entering edit mode, and sync line numbers with the
-  // textarea scroll position.
+  // Focus the editor when entering edit mode. No scroll syncing is needed for
+  // the gutter: it lives inside `.file-viewer-edit-scroll` alongside the code,
+  // so both scroll together as one piece of content.
   useEffect(() => {
     if (!editMode) return;
     const textarea = document.getElementById(EDITOR_TEXTAREA_ID);
     if (textarea instanceof HTMLTextAreaElement) {
       textarea.focus();
     }
-    const onScroll = () => {
-      if (lineNumbersRef.current && textarea) {
-        lineNumbersRef.current.scrollTop = textarea.scrollTop;
-      }
-    };
-    textarea?.addEventListener("scroll", onScroll);
-    return () => {
-      textarea?.removeEventListener("scroll", onScroll);
-    };
-  }, [editMode, editedContent]);
+  }, [editMode]);
 
   const renderCodeBlock = () => {
     const { html } = highlightedCode;
@@ -349,27 +340,28 @@ export function FileViewerContent({
 
   const renderEditBlock = () => (
     <div className="file-viewer-edit-scroll">
-      <code
-        ref={lineNumbersRef}
-        className="file-viewer-line-numbers file-viewer-line-numbers--edit"
-        aria-hidden="true"
-      >
-        {editLineNumbers}
-      </code>
-      <div className="file-viewer-code file-viewer-editor-wrap">
-        <Editor
-          value={editedContent}
-          onValueChange={handleValueChange}
-          highlight={highlightCode}
-          onKeyDown={handleEditorKeyDown}
-          textareaId={EDITOR_TEXTAREA_ID}
-          textareaClassName="file-viewer-edit-textarea"
-          preClassName="hljs"
-          padding={{ top: 12, right: 14, bottom: 12, left: 10 }}
-          tabSize={2}
-          insertSpaces
-          spellCheck={false}
-        />
+      <div className="file-viewer-code">
+        <code
+          className="file-viewer-line-numbers file-viewer-line-numbers--edit"
+          aria-hidden="true"
+        >
+          {editLineNumbers}
+        </code>
+        <div className="file-viewer-editor-wrap">
+          <Editor
+            value={editedContent}
+            onValueChange={handleValueChange}
+            highlight={highlightCode}
+            onKeyDown={handleEditorKeyDown}
+            textareaId={EDITOR_TEXTAREA_ID}
+            textareaClassName="file-viewer-edit-textarea"
+            preClassName="hljs"
+            padding={{ top: 0, right: 14, bottom: 0, left: 10 }}
+            tabSize={2}
+            insertSpaces
+            spellCheck={false}
+          />
+        </div>
       </div>
     </div>
   );
