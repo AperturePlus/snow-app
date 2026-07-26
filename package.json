@@ -2,6 +2,7 @@
   "name": "snow-app",
   "version": "0.1.0",
   "description": "High-performance cross-platform desktop app scaffold powered by Electron, React, TypeScript, and Rust.",
+  "author": "MayDay",
   "private": true,
   "type": "module",
   "main": "out/main/index.js",
@@ -100,9 +101,6 @@
       "target": [
         "dmg",
         "zip"
-      ],
-      "arch": [
-        "universal"
       ]
     },
     "win": {
