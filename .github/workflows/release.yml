@@ -24,7 +24,7 @@ jobs:
             arch: arm64
             rust_targets: aarch64-apple-darwin
             build_args: "--mac dmg zip --arm64"
-          - os: macos-13
+          - os: macos-15-intel
             platform: darwin
             arch: x64
             rust_targets: x86_64-apple-darwin
