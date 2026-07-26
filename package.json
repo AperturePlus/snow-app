@@ -107,7 +107,8 @@
       ]
     },
     "win": {
-      "icon": "resources/icon.ico"
+      "icon": "resources/icon.ico",
+      "artifactName": "Snow-App-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -117,7 +118,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Snow App",
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Snow-App-Setup-${version}.${ext}"
     },
     "linux": {
       "icon": "resources/icon.png",

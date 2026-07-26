@@ -125,19 +125,20 @@ export const initAutoUpdater = (mainWindow: BrowserWindow): void => {
     });
   });
 
-  // 启动时异步检查更新（仅打包环境）
-  if (app.isPackaged) {
-    setTimeout(() => {
-      autoUpdater.checkForUpdates().catch((error) => {
-        snowLog.error({
-          module: "updater",
-          func: "initAutoUpdater",
-          message: "Auto check for updates failed",
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-    }, 3000);
+  // 启动时异步检查更新（dev 与打包环境均检查）
+  if (!app.isPackaged) {
+    autoUpdater.forceDevUpdateConfig = true;
   }
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch((error) => {
+      snowLog.error({
+        module: "updater",
+        func: "initAutoUpdater",
+        message: "Auto check for updates failed",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }, 3000);
 
   // 用户点击"立即更新" → 开始下载
   ipcMain.handle("updater:download-update", async () => {
