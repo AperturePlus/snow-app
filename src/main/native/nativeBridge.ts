@@ -69,6 +69,14 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to write Plan mode")
         ),
+      getRequestLogging: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to read Request logging")
+        ),
+      setRequestLogging: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write Request logging")
+        ),
       getPrivacySettings: () =>
         Promise.reject(
           new Error("Rust native bridge is required to read privacy settings")
@@ -380,6 +388,12 @@ export const loadNativeBridge = (): NativeBridge => {
       renameConversation: () =>
         Promise.reject(
           new Error("Rust native bridge is required to rename conversation")
+        ),
+      updateConversationEmoji: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to update conversation emoji"
+          )
         ),
       deleteConversation: () =>
         Promise.reject(

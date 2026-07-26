@@ -790,6 +790,8 @@ export type NativeBridge = {
   setYoloMode: (enabled: boolean) => Promise<void>;
   getPlanMode: () => Promise<boolean>;
   setPlanMode: (enabled: boolean) => Promise<void>;
+  getRequestLogging: () => Promise<boolean>;
+  setRequestLogging: (enabled: boolean) => Promise<void>;
   getPrivacySettings: () => Promise<PrivacySettings>;
   setPrivacySettings: (settings: PrivacySettings) => Promise<void>;
   getThemeSettings: () => Promise<ThemeSettings>;
@@ -972,6 +974,10 @@ export type NativeBridge = {
     status: string
   ) => Promise<void>;
   renameConversation: (conversationId: string, title: string) => Promise<void>;
+  updateConversationEmoji: (
+    conversationId: string,
+    emoji: string
+  ) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
   appendToolMessage: (conversationId: string, content: string) => Promise<void>;
   listChatMessages: (conversationId: string) => Promise<ChatMessageRecord[]>;

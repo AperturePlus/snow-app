@@ -238,6 +238,19 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
     }
   );
   ipcMain.handle(
+    "chat-conversations:update-emoji",
+    async (_event, conversationId: unknown, emoji: unknown) => {
+      if (typeof conversationId !== "string" || !conversationId.trim()) {
+        throw new Error("Conversation ID is required to update emoji");
+      }
+      if (typeof emoji !== "string") {
+        throw new Error("Emoji is required to update conversation emoji");
+      }
+
+      await native.updateConversationEmoji(conversationId.trim(), emoji.trim());
+    }
+  );
+  ipcMain.handle(
     "chat-conversations:delete",
     async (_event, conversationId: unknown) => {
       if (typeof conversationId !== "string" || !conversationId.trim()) {

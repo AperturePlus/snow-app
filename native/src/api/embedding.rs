@@ -67,6 +67,17 @@ pub async fn embed_batch(
     let headers = build_headers(config);
     let body = build_request_body(config, inputs);
 
+    if let Ok(database_path) = crate::storage::ensure_database_file() {
+        let request_json = serde_json::to_string(&body).unwrap_or_default();
+        crate::storage::services::app_logs::maybe_log_api_request(
+            database_path,
+            "embedding".to_string(),
+            endpoint.clone(),
+            request_json,
+        )
+        .await;
+    }
+
     let response = client
         .post(&endpoint)
         .headers(headers)

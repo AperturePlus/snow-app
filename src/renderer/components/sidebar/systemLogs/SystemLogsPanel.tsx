@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Copy,
   RefreshCw,
   Trash2,
   X,
 } from "lucide-react";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
+import { ConfirmDialog } from "../../common/ConfirmDialog";
 import { UsageDateFilter } from "../usageSettings/UsageDateFilter";
 import { useI18n } from "../../../i18n";
 import type { AppLogPage, AppLogRecord } from "../../../../preload";
@@ -149,6 +152,12 @@ export function SystemLogsPanel({
   const [confirmingClear, setConfirmingClear] = useState(false);
   const clearTimerRef = useRef<number | null>(null);
 
+  const [requestLoggingEnabled, setRequestLoggingEnabled] = useState(false);
+  const [showRequestLoggingDialog, setShowRequestLoggingDialog] =
+    useState(false);
+  const [copiedRowLabel, setCopiedRowLabel] = useState<string | null>(null);
+  const copyResetTimerRef = useRef<number | null>(null);
+
   const [datePreset, setDatePreset] = useState<UsageDatePreset>("today");
   const [sinceDate, setSinceDate] = useState<string>(() =>
     formatDateForInput(getPresetRange("today", new Date()).since)
@@ -226,8 +235,60 @@ export function SystemLogsPanel({
       if (clearTimerRef.current !== null) {
         window.clearTimeout(clearTimerRef.current);
       }
+      if (copyResetTimerRef.current !== null) {
+        window.clearTimeout(copyResetTimerRef.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    void window.snow
+      .getRequestLogging()
+      .then(setRequestLoggingEnabled)
+      .catch(() => undefined);
+  }, []);
+
+  const applyRequestLogging = useCallback(
+    async (next: boolean) => {
+      const prev = requestLoggingEnabled;
+      setRequestLoggingEnabled(next);
+      try {
+        await window.snow.setRequestLogging(next);
+        setNotice(
+          next
+            ? t("settings.systemLogsRequestLoggingEnabled", {
+                defaultValue: "Request logging enabled.",
+              })
+            : t("settings.systemLogsRequestLoggingDisabled", {
+                defaultValue: "Request logging disabled.",
+              })
+        );
+      } catch (e) {
+        setRequestLoggingEnabled(prev);
+        setError(
+          e instanceof Error
+            ? e.message
+            : t("settings.systemLogsRequestLoggingError", {
+                defaultValue: "Failed to toggle request logging.",
+              })
+        );
+      }
+    },
+    [requestLoggingEnabled, t]
+  );
+
+  const handleRequestLoggingToggle = useCallback(() => {
+    if (requestLoggingEnabled) {
+      void applyRequestLogging(false);
+      return;
+    }
+    setShowRequestLoggingDialog(true);
+  }, [requestLoggingEnabled, applyRequestLogging]);
+
+  const confirmRequestLogging = useCallback(() => {
+    setShowRequestLoggingDialog(false);
+    void applyRequestLogging(true);
+  }, [applyRequestLogging]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
@@ -250,6 +311,18 @@ export function SystemLogsPanel({
       }
       return next;
     });
+  }, []);
+
+  const handleCopyText = useCallback((text: string, label: string) => {
+    navigator.clipboard.writeText(text).catch(() => undefined);
+    setCopiedRowLabel(label);
+    if (copyResetTimerRef.current !== null) {
+      window.clearTimeout(copyResetTimerRef.current);
+    }
+    copyResetTimerRef.current = window.setTimeout(() => {
+      setCopiedRowLabel(null);
+      copyResetTimerRef.current = null;
+    }, 2000);
   }, []);
 
   const handleClear = useCallback(async () => {
@@ -436,6 +509,48 @@ export function SystemLogsPanel({
         onUntilDateChange={handleUntilDateChange}
       />
 
+      <div className="system-logs-request-logging-row">
+        <label className="toggle-switch">
+          <input
+            type="checkbox"
+            checked={requestLoggingEnabled}
+            onChange={handleRequestLoggingToggle}
+          />
+          <span className="toggle-slider" />
+          <span className="system-logs-request-logging-label">
+            {t("settings.systemLogsRequestLogging", {
+              defaultValue: "Request logging",
+            })}
+          </span>
+        </label>
+        <span className="settings-item-description">
+          {t("settings.systemLogsRequestLoggingDescription", {
+            defaultValue:
+              "Record the full raw request JSON of every API call. Very high disk usage.",
+          })}
+        </span>
+      </div>
+
+      <ConfirmDialog
+        open={showRequestLoggingDialog}
+        variant="warning"
+        title={t("settings.systemLogsRequestLoggingDialogTitle", {
+          defaultValue: "Enable request logging?",
+        })}
+        message={t("settings.systemLogsRequestLoggingWarning", {
+          defaultValue:
+            "Request logging records the full raw request JSON of every API call. This has very high disk usage and is not recommended for non-expert users.",
+        })}
+        confirmLabel={t("settings.systemLogsRequestLoggingConfirm", {
+          defaultValue: "Enable",
+        })}
+        cancelLabel={t("settings.systemLogsRequestLoggingCancel", {
+          defaultValue: "Cancel",
+        })}
+        onConfirm={confirmRequestLogging}
+        onCancel={() => setShowRequestLoggingDialog(false)}
+      />
+
       <div className="system-logs-stream-section">
         <div className="system-logs-stream-meta">
           <span className="settings-item-description">
@@ -521,9 +636,32 @@ export function SystemLogsPanel({
                     <div className="system-logs-entry-detail">
                       {rows.map((row) => (
                         <div key={row.label} className="system-logs-detail-row">
-                          <span className="system-logs-detail-label">
-                            {row.label}
-                          </span>
+                          <div className="system-logs-detail-label-row">
+                            <span className="system-logs-detail-label">
+                              {row.label}
+                            </span>
+                            <button
+                              type="button"
+                              className={`system-logs-detail-copy-btn${
+                                copiedRowLabel === row.label ? " copied" : ""
+                              }`}
+                              onClick={() =>
+                                handleCopyText(row.value, row.label)
+                              }
+                              aria-label={t("settings.systemLogsCopy", {
+                                defaultValue: "Copy",
+                              })}
+                              title={t("settings.systemLogsCopy", {
+                                defaultValue: "Copy",
+                              })}
+                            >
+                              {copiedRowLabel === row.label ? (
+                                <Check size={12} strokeWidth={1.8} />
+                              ) : (
+                                <Copy size={12} strokeWidth={1.8} />
+                              )}
+                            </button>
+                          </div>
                           <span className="system-logs-detail-value">
                             {row.value}
                           </span>

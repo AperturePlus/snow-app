@@ -53,6 +53,8 @@ fn build_request(image_data_url: &str) -> ResponsesApiRequest {
                 role: "system".to_string(),
                 content: PALETTE_SYSTEM_PROMPT.to_string(),
                 tool_results_json: None,
+                thinking: None,
+                thinking_blocks_json: None,
             },
             ResponsesApiMessage {
                 role: "user".to_string(),
@@ -61,6 +63,8 @@ fn build_request(image_data_url: &str) -> ResponsesApiRequest {
                     image_data_url
                 ),
                 tool_results_json: None,
+                thinking: None,
+                thinking_blocks_json: None,
             },
         ],
         // Force the advanced model (expected to support vision) for this task.

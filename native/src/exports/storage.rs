@@ -68,6 +68,20 @@ pub async fn set_yolo_mode(enabled: bool) -> napi::Result<()> {
         .map_err(map_spawn_error)?
 }
 
+#[napi]
+pub async fn get_request_logging() -> napi::Result<bool> {
+    tokio::task::spawn_blocking(crate::storage::get_request_logging)
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn set_request_logging(enabled: bool) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::set_request_logging(enabled))
+        .await
+        .map_err(map_spawn_error)?
+}
+
 #[napi(object)]
 pub struct PrivacyApiConfigNapi {
     pub url: String,
@@ -922,10 +936,25 @@ pub async fn update_conversation_status(
 }
 
 #[napi]
-pub async fn rename_conversation(conversation_id: String, title: String) -> napi::Result<()> {
+pub async fn rename_conversation(
+    conversation_id: String,
+    title: String,
+) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || crate::storage::rename_conversation(conversation_id, title))
         .await
         .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn update_conversation_emoji(
+    conversation_id: String,
+    emoji: String,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::update_conversation_emoji(conversation_id, emoji)
+    })
+    .await
+    .map_err(map_spawn_error)?
 }
 
 #[napi]

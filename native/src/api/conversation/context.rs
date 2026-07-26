@@ -32,6 +32,8 @@ pub fn prepare_context_request(
             content: "Create a durable context handoff for the next assistant. Output only the handoff document in Markdown. Preserve concrete objectives, user requirements, decisions, architecture constraints, relevant files and symbols, completed changes, current state, pending tasks, exact commands or errors, edge cases, and the next recommended steps. Be concise but do not omit information required to continue the work correctly. Do not call tools and do not address the user conversationally.".to_string(),
             tool_calls_json: None,
             tool_results_json: None,
+            thinking: None,
+            thinking_blocks_json: None,
         }]
     } else {
         normalize_messages(request.messages)
@@ -98,6 +100,8 @@ pub fn prepare_context_request(
                 content: system_prompt,
                 tool_calls_json: None,
                 tool_results_json: None,
+                thinking: None,
+                thinking_blocks_json: None,
             },
         );
     }
@@ -126,6 +130,8 @@ fn normalize_messages(messages: &[ChatContextMessage]) -> Vec<ChatContextMessage
                 content: content.to_string(),
                 tool_calls_json: message.tool_calls_json.clone(),
                 tool_results_json: message.tool_results_json.clone(),
+                thinking: message.thinking.clone(),
+                thinking_blocks_json: message.thinking_blocks_json.clone(),
             })
         })
         .collect()

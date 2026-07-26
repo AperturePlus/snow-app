@@ -19,7 +19,7 @@ use crate::api::conversation::{
     ConversationContextRequest,
 };
 use crate::api::retry::{RetryOptions, should_retry, wait_before_retry};
-use crate::storage::services::app_logs::{log_api_error, log_api_warning};
+use crate::storage::services::app_logs::{log_api_error, log_api_warning, maybe_log_api_request};
 use crate::storage::services::chat_conversations::{
     store_chat_exchange, ChatContextMessage, ChatTokenUsage, StoreChatExchangeInput,
 };
@@ -33,6 +33,16 @@ pub struct ResponsesApiMessage {
     /// Format: `[{"name":"...","callId":"...","result":"..."}]`
     /// When present, providers use this directly instead of parsing content text.
     pub tool_results_json: Option<String>,
+    /// Reasoning/thinking text for role="assistant" messages produced by a
+    /// previous AI response. When present, Chat Completions providers emit it
+    /// as `reasoning_content` and Gemini emits it as a `thought` text part.
+    /// Anthropic thinking blocks require a cryptographic signature (not
+    /// available here), so this field is ignored by the Anthropic provider.
+    pub thinking: Option<String>,
+    /// JSON array of complete Anthropic thinking blocks (each with
+    /// type/thinking/signature). Only used by the Anthropic provider to
+    /// round-trip thinking blocks verbatim.
+    pub thinking_blocks_json: Option<String>,
 }
 
 #[napi(object)]
@@ -168,6 +178,8 @@ async fn create_response_async(
             content: message.content.clone(),
             tool_calls_json: None,
             tool_results_json: message.tool_results_json.clone(),
+            thinking: message.thinking.clone(),
+            thinking_blocks_json: message.thinking_blocks_json.clone(),
         })
         .collect::<Vec<_>>();
     let prepared_request = prepare_context_request(ConversationContextRequest {
@@ -227,6 +239,15 @@ async fn create_response_async(
         &prepared_request.user_system_prompts,
     )?;
     let retry_options = RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
+    let request_payload_json = serde_json::to_string(&payload).unwrap_or_default();
+    maybe_log_api_request(
+        database_path.clone(),
+        "responses".to_string(),
+        base_url.clone(),
+        request_payload_json,
+    )
+    .await;
+
     let streamed_response = match collect_streaming_response(&client, payload, on_chunk, &cancel_token, &retry_options).await {
         Ok(result) => result,
         Err(error) => {
@@ -278,6 +299,7 @@ async fn create_response_async(
                 raw_response_json: &raw_response_json,
                 token_usage: streamed_response.token_usage,
                 response_thinking: &streamed_response.thinking,
+                response_thinking_blocks_json: &streamed_response.reasoning_items_json,
                 tool_calls_json: &streamed_response.tool_calls_json,
                 directory_id: request.directory_id.as_deref().unwrap_or(""),
                 context_compaction: request.context_compaction.unwrap_or(false),
@@ -381,7 +403,6 @@ fn build_responses_payload(
     }
 
     let skip_image_parsing = request.skip_context.unwrap_or(false);
-    let has_user_system_prompts = !user_system_prompts.is_empty();
     let mut builtin_system_parts = Vec::new();
     let mut input = Vec::new();
 
@@ -403,7 +424,7 @@ fn build_responses_payload(
                     input.push(json!({
                         "type": "message",
                         "role": "user",
-                        "content": result,
+                        "content": [{"type": "input_text", "text": result}],
                     }));
                 } else {
                     input.push(json!({
@@ -416,7 +437,24 @@ fn build_responses_payload(
             continue;
         }
 
-        if content.is_empty() && message.tool_calls_json.is_none() {
+        let has_thinking = message
+            .thinking
+            .as_deref()
+            .map(|t| !t.is_empty())
+            .unwrap_or(false);
+
+        // Parse persisted reasoning items (with encrypted_content) so they
+        // can be emitted as independent top-level items. store:false means
+        // the server does not retain reasoning, so we must round-trip it.
+        let reasoning_items: Vec<Value> = message
+            .thinking_blocks_json
+            .as_deref()
+            .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+            .and_then(|v| v.as_array().map(|a| a.clone()))
+            .unwrap_or_default();
+        let has_reasoning = !reasoning_items.is_empty();
+
+        if content.is_empty() && message.tool_calls_json.is_none() && !has_thinking && !has_reasoning {
             continue;
         }
 
@@ -426,26 +464,51 @@ fn build_responses_payload(
                 if let Ok(parsed) = serde_json::from_str::<Value>(tool_calls_raw) {
                     if let Some(calls) = parsed.as_array() {
                         if !calls.is_empty() {
-                            // Emit text content first if present
+                            // Emit persisted reasoning items as independent
+                            // top-level items before the assistant message.
+                            for item in &reasoning_items {
+                                input.push(item.clone());
+                            }
+                            // Emit assistant message with text content.
                             if !content.is_empty() {
                                 input.push(json!({
                                     "type": "message",
                                     "role": "assistant",
-                                    "content": content,
+                                    "content": [{"type": "output_text", "text": content}],
                                 }));
                             }
-                            // Emit each tool call as a function_call item
+                            // Emit each tool call as a function_call item.
+                            // Handles both Responses flat format (call_id /
+                            // name / arguments at top level) and Chat
+                            // Completions nested format (id / function.name /
+                            // function.arguments).
                             for call in calls {
-                                let call_id = call.get("id").and_then(Value::as_str).unwrap_or("");
-                                let function = call.get("function");
-                                let name = function
-                                    .and_then(|f| f.get("name"))
+                                let call_id = call
+                                    .get("call_id")
                                     .and_then(Value::as_str)
-                                    .unwrap_or("");
-                                let arguments = function
-                                    .and_then(|f| f.get("arguments"))
+                                    .or_else(|| call.get("id").and_then(Value::as_str))
+                                    .unwrap_or("")
+                                    .to_string();
+                                let name = call
+                                    .get("name")
                                     .and_then(Value::as_str)
-                                    .unwrap_or("{}");
+                                    .or_else(|| {
+                                        call.get("function")
+                                            .and_then(|f| f.get("name"))
+                                            .and_then(Value::as_str)
+                                    })
+                                    .unwrap_or("")
+                                    .to_string();
+                                let arguments = call
+                                    .get("arguments")
+                                    .and_then(Value::as_str)
+                                    .or_else(|| {
+                                        call.get("function")
+                                            .and_then(|f| f.get("arguments"))
+                                            .and_then(Value::as_str)
+                                    })
+                                    .unwrap_or("{}")
+                                    .to_string();
                                 input.push(json!({
                                     "type": "function_call",
                                     "call_id": call_id,
@@ -460,7 +523,7 @@ fn build_responses_payload(
             }
         }
 
-        // --- System/developer messages ---
+        // --- System/developer messages: collect into instructions ---
         if role == "system" || role == "developer" {
             if content.is_empty() {
                 continue;
@@ -470,70 +533,72 @@ fn build_responses_payload(
         }
 
         // --- Regular user/assistant messages ---
-        if content.is_empty() {
+        if content.is_empty() && !has_thinking && !has_reasoning {
             continue;
         }
-        let content = if skip_image_parsing {
-            Value::String(content.to_string())
-        } else {
-            let parsed_content = parse_chat_message_content(content, database_path)?;
-            if parsed_content.images.is_empty() {
-                Value::String(parsed_content.text)
+
+        let has_images = !skip_image_parsing
+            && parse_chat_message_content(content, database_path)
+                .map(|p| !p.images.is_empty())
+                .unwrap_or(false);
+
+        // Emit persisted reasoning items as independent top-level items
+        // before the assistant message (store:false requires manual
+        // round-trip of encrypted_content).
+        if role == "assistant" {
+            for item in &reasoning_items {
+                input.push(item.clone());
+            }
+        }
+
+        // Build content blocks: user uses input_text, assistant uses output_text.
+        let mut content_blocks = Vec::new();
+
+        if !content.is_empty() {
+            if skip_image_parsing || !has_images {
+                let block_type = if role == "assistant" { "output_text" } else { "input_text" };
+                content_blocks.push(json!({"type": block_type, "text": content}));
             } else {
-                let mut parts = Vec::new();
+                let parsed_content = parse_chat_message_content(content, database_path)?;
                 if !parsed_content.text.is_empty() {
-                    parts.push(json!({ "type": "input_text", "text": parsed_content.text }));
+                    let block_type = if role == "assistant" { "output_text" } else { "input_text" };
+                    content_blocks.push(json!({"type": block_type, "text": parsed_content.text}));
                 }
-                parts.extend(parsed_content.images.iter().map(|image| {
-                    json!({
+                for image in &parsed_content.images {
+                    content_blocks.push(json!({
                         "type": "input_image",
                         "image_url": image.data_url,
-                    })
-                }));
-                Value::Array(parts)
+                    }));
+                }
             }
-        };
+        }
 
         input.push(json!({
             "type": "message",
             "role": normalize_message_role(role),
-            "content": content,
+            "content": content_blocks,
         }));
     }
 
-    // When user system prompts are present, emit them as a `system` message
-    // with multiple content blocks and demote the built-in prompt to a
-    // leading `user` message (Snow CLI PR #127).
-    if has_user_system_prompts {
-        let user_prompt_blocks: Vec<Value> = user_system_prompts
-            .iter()
-            .map(|text| json!({ "type": "input_text", "text": text }))
-            .collect();
-        let system_message = json!({
-            "type": "message",
-            "role": "system",
-            "content": user_prompt_blocks,
-        });
-        input.insert(0, system_message);
+    // Build `instructions` field. User-configured system prompts take
+    // precedence; otherwise the built-in system prompt parts are used. When
+    // user system prompts are present, the built-in prompt is demoted to a
+    // leading user message (Snow CLI PR #127).
+    let mut instructions: Option<String> = None;
+    if !user_system_prompts.is_empty() {
+        instructions = Some(user_system_prompts.join("\n\n"));
 
         if !builtin_system_parts.is_empty() {
             let builtin_text = builtin_system_parts.join("\n\n");
             let builtin_message = json!({
                 "type": "message",
                 "role": "user",
-                "content": builtin_text,
+                "content": [{"type": "input_text", "text": builtin_text}],
             });
-            input.insert(1, builtin_message);
+            input.insert(0, builtin_message);
         }
     } else if !builtin_system_parts.is_empty() {
-        // No user prompts: keep built-in prompt as a `system` message.
-        let builtin_text = builtin_system_parts.join("\n\n");
-        let system_message = json!({
-            "type": "message",
-            "role": "system",
-            "content": builtin_text,
-        });
-        input.insert(0, system_message);
+        instructions = Some(builtin_system_parts.join("\n\n"));
     }
 
     if input.is_empty() {
@@ -545,7 +610,12 @@ fn build_responses_payload(
         "input": input,
         "stream": true,
         "store": false,
+        "include": ["reasoning.encrypted_content"],
     });
+
+    if let Some(ref instructions) = instructions {
+        payload["instructions"] = json!(instructions);
+    }
 
     payload["temperature"] = json!(0.7);
 
@@ -573,24 +643,6 @@ fn build_responses_payload(
             payload["prompt_cache_key"] = json!(conv_id);
         }
     }
-
-    // TEMP: log full request payload for tool-call verification
-    let _ = crate::storage::services::app_logs::insert_app_log(
-        database_path,
-        &crate::storage::services::app_logs::AppLogInput {
-            level: "DEBUG".to_string(),
-            module: "api".to_string(),
-            func: "build_responses_payload".to_string(),
-            line: None,
-            message: "Request payload".to_string(),
-            input: Some(serde_json::to_string(&payload).unwrap_or_default()),
-            output: None,
-            duration: None,
-            context: None,
-            error: None,
-            source: "main".to_string(),
-        },
-    );
 
     Ok(payload)
 }
@@ -638,6 +690,11 @@ struct StreamingResponseResult {
     id: String,
     content: String,
     thinking: String,
+    /// JSON array of reasoning output items captured from
+    /// `response.output_item.done` events (each containing type=reasoning,
+    /// summary, and encrypted_content). Persisted so the next request can
+    /// round-trip reasoning verbatim when store:false.
+    reasoning_items_json: String,
     model: String,
     status: String,
     token_usage: ChatTokenUsage,
@@ -669,6 +726,7 @@ async fn collect_streaming_response(
                 id: String::new(),
                 content: String::new(),
                 thinking: String::new(),
+                reasoning_items_json: "[]".to_string(),
                 model: String::new(),
                 status: String::from("cancelled"),
                 token_usage: ChatTokenUsage {
@@ -693,6 +751,7 @@ async fn collect_streaming_response(
                     id: String::new(),
                     content: String::new(),
                     thinking: String::new(),
+                    reasoning_items_json: "[]".to_string(),
                     model: String::new(),
                     status: String::from("cancelled"),
                     token_usage: ChatTokenUsage {
@@ -748,6 +807,10 @@ async fn collect_streaming_response(
     let mut content_chunks = Vec::new();
     let mut thinking_chunks = Vec::new();
     let mut tool_calls = Vec::new();
+    // Capture reasoning output items (type=reasoning with encrypted_content)
+    // from `response.output_item.done` events so they can be round-tripped
+    // verbatim on the next request when store:false.
+    let mut reasoning_items: Vec<Value> = Vec::new();
     let mut tool_parse_errors: Vec<String> = Vec::new();
     // Streaming tool-call accumulator: maps output_item index -> (item_json, accumulated_arguments).
     // When the stream ends abruptly (network error, server disconnect) before
@@ -940,6 +1003,17 @@ async fn collect_streaming_response(
                         }
                     }
                     "response.output_item.done" => {
+                        // Capture reasoning items (with encrypted_content)
+                        // for round-tripping when store:false.
+                        if let Some(item) = event.get("item") {
+                            let item_type = item
+                                .get("type")
+                                .and_then(Value::as_str)
+                                .unwrap_or_default();
+                            if item_type == "reasoning" {
+                                reasoning_items.push(item.clone());
+                            }
+                        }
                         collect_tool_calls(event.get("item"), &mut tool_calls);
                         // Remove from the streaming map once finalized.
                         if let Some(index) = event
@@ -1053,11 +1127,14 @@ async fn collect_streaming_response(
     let content = content_chunks.join("").trim().to_string();
     let thinking = thinking_chunks.join("").trim().to_string();
     let tool_calls_json = serde_json::to_string(&tool_calls).unwrap_or_else(|_| "[]".to_string());
+    let reasoning_items_json =
+        serde_json::to_string(&reasoning_items).unwrap_or_else(|_| "[]".to_string());
 
     Ok(StreamingResponseResult {
         id: response_id,
         content,
         thinking,
+        reasoning_items_json,
         model: response_model,
         status: response_status,
         token_usage,

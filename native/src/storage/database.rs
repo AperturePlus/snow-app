@@ -282,6 +282,7 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            directory_id TEXT NOT NULL DEFAULT '',
            forked_from_conversation_id TEXT NOT NULL DEFAULT '',
            fork_message_count INTEGER NOT NULL DEFAULT 0,
+           emoji TEXT NOT NULL DEFAULT '',
            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
@@ -320,6 +321,7 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            status TEXT NOT NULL DEFAULT 'sent',
            raw_json TEXT NOT NULL DEFAULT '{}',
            thinking TEXT NOT NULL DEFAULT '',
+           thinking_blocks_json TEXT NOT NULL DEFAULT '[]',
            tool_calls_json TEXT NOT NULL DEFAULT '[]',
            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
            FOREIGN KEY(conversation_id) REFERENCES chat_conversations(conversation_id) ON DELETE CASCADE
@@ -410,15 +412,7 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
     // module so the schema lives next to its CRUD functions.
     services::codebase_embed_sessions::ensure_sessions_table(connection)?;
 
-    // Migration: add total_duration_ms column to chat_conversations for
-    // databases created before user_version 19. Safe to ignore "duplicate
-    // column" errors when the column already exists.
-    let _ = connection.execute(
-        "ALTER TABLE chat_conversations ADD COLUMN total_duration_ms INTEGER NOT NULL DEFAULT 0",
-        [],
-    );
-
-    connection.pragma_update(None, "user_version", 19)?;
+    connection.pragma_update(None, "user_version", 21)?;
 
     Ok(())
 }

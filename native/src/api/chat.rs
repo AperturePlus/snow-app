@@ -19,7 +19,7 @@ use crate::api::responses::{
     TokenUsage,
 };
 
-use crate::storage::services::app_logs::{log_api_error, log_api_warning};
+use crate::storage::services::app_logs::{log_api_error, log_api_warning, maybe_log_api_request};
 use crate::storage::services::chat_conversations::{
     store_chat_exchange, ChatContextMessage, ChatTokenUsage, StoreChatExchangeInput,
 };
@@ -29,6 +29,7 @@ use crate::api::retry::{
 };
 use crate::api::sse::find_sse_separator;
 use crate::storage::ApiConfigRecord;
+
 pub async fn create_chat_completion_response_stream(
     request: ResponsesApiRequest,
     database_path: PathBuf,
@@ -82,6 +83,8 @@ async fn create_chat_completion_response_async(
             content: message.content.clone(),
             tool_calls_json: None,
             tool_results_json: message.tool_results_json.clone(),
+            thinking: message.thinking.clone(),
+            thinking_blocks_json: message.thinking_blocks_json.clone(),
         })
         .collect::<Vec<_>>();
     let prepared_request = prepare_context_request(ConversationContextRequest {
@@ -133,6 +136,16 @@ async fn create_chat_completion_response_async(
     let retry_options = RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
     let stream_idle_timeout_sec =
         resolve_stream_idle_timeout_sec(api_config.stream_idle_timeout_sec);
+
+    let request_payload_json = serde_json::to_string(&payload).unwrap_or_default();
+    maybe_log_api_request(
+        database_path.clone(),
+        "chat".to_string(),
+        endpoint.clone(),
+        request_payload_json,
+    )
+    .await;
+
     let streamed_response = match collect_chat_completions_stream(
         &client,
         &endpoint,
@@ -196,6 +209,7 @@ async fn create_chat_completion_response_async(
                 raw_response_json: &raw_response_json,
                 token_usage: streamed_response.token_usage,
                 response_thinking: &streamed_response.thinking,
+                response_thinking_blocks_json: "[]",
                 tool_calls_json: &streamed_response.tool_calls_json,
                 directory_id: request.directory_id.as_deref().unwrap_or(""),
                 context_compaction: request.context_compaction.unwrap_or(false),
@@ -311,6 +325,14 @@ fn build_chat_completions_payload(
                         } else {
                             assistant_msg["content"] = Value::Null;
                         }
+                        // Round-trip reasoning_content for DeepSeek/OpenAI
+                        // thinking models so the AI retains its prior
+                        // reasoning across turns.
+                        if let Some(ref thinking) = message.thinking {
+                            if !thinking.is_empty() {
+                                assistant_msg["reasoning_content"] = json!(thinking);
+                            }
+                        }
                         payload_messages.push(assistant_msg);
                         continue;
                     }
@@ -356,10 +378,20 @@ fn build_chat_completions_payload(
             }
         };
 
-        payload_messages.push(json!({
+        let mut msg = json!({
             "role": normalize_message_role(role),
             "content": content,
-        }));
+        });
+        // Round-trip reasoning_content for DeepSeek/OpenAI thinking models
+        // so the AI retains its prior reasoning across turns.
+        if role == "assistant" {
+            if let Some(ref thinking) = message.thinking {
+                if !thinking.is_empty() {
+                    msg["reasoning_content"] = json!(thinking);
+                }
+            }
+        }
+        payload_messages.push(msg);
     }
 
     // When user system prompts are present, emit them as a single `system`
@@ -424,24 +456,6 @@ fn build_chat_completions_payload(
             payload["tools"] = tools;
         }
     }
-
-    // TEMP: log full request payload for tool-call verification
-    let _ = crate::storage::services::app_logs::insert_app_log(
-        database_path,
-        &crate::storage::services::app_logs::AppLogInput {
-            level: "DEBUG".to_string(),
-            module: "api".to_string(),
-            func: "build_chat_completions_payload".to_string(),
-            line: None,
-            message: "Request payload".to_string(),
-            input: Some(serde_json::to_string(&payload).unwrap_or_default()),
-            output: None,
-            duration: None,
-            context: None,
-            error: None,
-            source: "main".to_string(),
-        },
-    );
 
     Ok(payload)
 }

@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../../../i18n";
 import type { ChatConversationRecord } from "../../../../preload";
 import { ChatItemMenu, type ExportFormat } from "./ChatItemMenu";
+import { EmojiPicker } from "./EmojiPicker";
 import { formatTimeLabel, parseDbTimestamp } from "./chatTimeGroup";
 
 type ChatItemProps = {
@@ -23,6 +24,7 @@ type ChatItemProps = {
   activeSubAgentConversationId?: string;
   onPin: () => void;
   onRename: (newTitle: string) => Promise<void>;
+  onSetEmoji: (emoji: string) => Promise<void>;
   onDelete: () => void;
   onExport: (format: ExportFormat) => void;
   onSelect?: () => void;
@@ -38,6 +40,7 @@ export function ChatItem({
   activeSubAgentConversationId,
   onPin,
   onRename,
+  onSetEmoji,
   onDelete,
   onExport,
   onSelect,
@@ -48,9 +51,11 @@ export function ChatItem({
   const [editingValue, setEditingValue] = useState("");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const editInputRef = useRef<HTMLInputElement>(null);
   const isSubmittingRef = useRef(false);
   const cancelledRef = useRef(false);
+  const iconRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     if (isEditing && editInputRef.current) {
@@ -126,6 +131,7 @@ export function ChatItem({
 
   const isPinned = conversation.status === "pin";
   const isForked = conversation.forkedFromConversationId !== "";
+  const hasEmoji = conversation.emoji.trim() !== "";
   const displayName =
     conversation.summary ||
     conversation.title ||
@@ -144,6 +150,18 @@ export function ChatItem({
       return;
     }
     onSelect?.();
+  };
+
+  // icon hover 立即显示 emoji picker，CSS 动画负责平滑弹出
+  const handleIconMouseEnter = (): void => {
+    if (isStreaming) {
+      return;
+    }
+    setIsEmojiPickerOpen(true);
+  };
+
+  const handleEmojiSelect = async (emoji: string): Promise<void> => {
+    await onSetEmoji(emoji);
   };
 
   const handleToggleExpand = (event: React.MouseEvent): void => {
@@ -189,12 +207,30 @@ export function ChatItem({
       }}
     >
       <span
+        ref={iconRef}
         className={`chat-item-icon${isStreaming ? " streaming" : ""}${
           isCompleted && !isStreaming ? " completed" : ""
-        }${isForked ? " forked" : ""}${hasSubAgents ? " has-sub-agents" : ""}`}
+        }${isForked ? " forked" : ""}${hasSubAgents ? " has-sub-agents" : ""}${
+          hasEmoji ? " has-emoji" : ""
+        }`}
+        onMouseEnter={handleIconMouseEnter}
+        onClick={(event) => {
+          // 点击 icon 时阻止选中会话，仅切换 emoji picker
+          event.stopPropagation();
+          if (!isStreaming) {
+            setIsEmojiPickerOpen((prev) => !prev);
+          }
+        }}
+        role="button"
+        tabIndex={-1}
+        aria-label={t("sidebar.chatItemIconLabel", {
+          defaultValue: "Change conversation icon",
+        })}
       >
         {isStreaming ? (
           <Loader2 size={11} className="spin" />
+        ) : hasEmoji ? (
+          <span className="chat-item-emoji">{conversation.emoji}</span>
         ) : isForked ? (
           <GitFork size={11} />
         ) : (
@@ -202,6 +238,14 @@ export function ChatItem({
         )}
         {isCompleted && !isStreaming && <span className="chat-item-badge" />}
       </span>
+      {isEmojiPickerOpen && !isStreaming && (
+        <EmojiPicker
+          triggerRef={iconRef}
+          currentEmoji={conversation.emoji}
+          onSelect={(emoji) => void handleEmojiSelect(emoji)}
+          onClose={() => setIsEmojiPickerOpen(false)}
+        />
+      )}
       <div className="chat-item-content">
         {isEditing ? (
           <input

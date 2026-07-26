@@ -49,6 +49,12 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   ipcMain.handle("settings:set-plan-mode", (_event, enabled: boolean) =>
     native.setPlanMode(enabled)
   );
+  ipcMain.handle("settings:get-request-logging", () =>
+    native.getRequestLogging()
+  );
+  ipcMain.handle("settings:set-request-logging", (_event, enabled: boolean) =>
+    native.setRequestLogging(enabled)
+  );
   ipcMain.handle("settings:get-privacy-settings", () =>
     native.getPrivacySettings()
   );

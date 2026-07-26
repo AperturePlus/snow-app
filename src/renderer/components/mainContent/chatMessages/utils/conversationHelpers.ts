@@ -185,6 +185,33 @@ const normalizeToolCallId = (
   return undefined;
 };
 
+/**
+ * Format structured tool results into the `[Tool: identifier]\n<result>`
+ * text format that is persisted as the `content` of tool messages in the
+ * database. `buildConversationMessages` (history replay) and the Rust
+ * `extract_tool_result` helper both parse this format to reconstruct the
+ * link between a tool call and its result, so the content MUST stay in sync
+ * with the regex in `buildConversationMessages`.
+ *
+ * The identifier is `name#callId` when a callId is available, otherwise just
+ * `name`. Segments are joined with `\n\n`.
+ */
+export const formatToolResultsContent = (
+  structuredResults: ReadonlyArray<{
+    name: string;
+    callId: string;
+    result: string;
+  }>
+): string =>
+  structuredResults
+    .map((entry) => {
+      const identifier = entry.callId
+        ? `${entry.name}#${entry.callId}`
+        : entry.name;
+      return `[Tool: ${identifier}]\n${entry.result}`;
+    })
+    .join("\n\n");
+
 export const parseToolCalls = (
   toolCallsJson: string | undefined
 ): ToolCallInfo[] => {

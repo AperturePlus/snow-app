@@ -21,7 +21,7 @@ use crate::api::responses::{
 };
 use crate::api::retry::{RetryOptions, should_retry, wait_before_retry};
 use crate::api::sse::find_sse_separator;
-use crate::storage::services::app_logs::{log_api_error, log_api_warning};
+use crate::storage::services::app_logs::{log_api_error, log_api_warning, maybe_log_api_request};
 use crate::storage::services::chat_conversations::{
     store_chat_exchange, ChatContextMessage, ChatTokenUsage, StoreChatExchangeInput,
 };
@@ -93,6 +93,8 @@ async fn create_gemini_response_async(
             content: message.content.clone(),
             tool_calls_json: None,
             tool_results_json: message.tool_results_json.clone(),
+            thinking: message.thinking.clone(),
+            thinking_blocks_json: message.thinking_blocks_json.clone(),
         })
         .collect::<Vec<_>>();
     let prepared_request = prepare_context_request(ConversationContextRequest {
@@ -142,6 +144,15 @@ async fn create_gemini_response_async(
         &prepared_request.user_system_prompts,
     )?;
     let retry_options = RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
+    let request_payload_json = serde_json::to_string(&payload).unwrap_or_default();
+    maybe_log_api_request(
+        database_path.clone(),
+        "gemini".to_string(),
+        endpoint.clone(),
+        request_payload_json,
+    )
+    .await;
+
     let streamed_response = match collect_gemini_stream(
         &client,
         &endpoint,
@@ -194,6 +205,7 @@ async fn create_gemini_response_async(
                 raw_response_json: &raw_response_json,
                 token_usage: streamed_response.token_usage,
                 response_thinking: &streamed_response.thinking,
+                response_thinking_blocks_json: "[]",
                 tool_calls_json: &streamed_response.tool_calls_json,
                 directory_id: request.directory_id.as_deref().unwrap_or(""),
                 context_compaction: request.context_compaction.unwrap_or(false),
@@ -312,6 +324,13 @@ fn build_gemini_payload(
                     crate::api::conversation::tool_messages::tool_calls_as_gemini_parts(tool_calls_raw);
                 if !function_call_parts.is_empty() {
                     let mut parts = Vec::new();
+                    // Round-trip thinking as a thought text part so Gemini
+                    // retains its prior reasoning across turns.
+                    if let Some(ref thinking) = message.thinking {
+                        if !thinking.is_empty() {
+                            parts.push(json!({ "text": thinking, "thought": true }));
+                        }
+                    }
                     if !content.is_empty() {
                         parts.push(json!({ "text": content }));
                     }
@@ -425,24 +444,6 @@ fn build_gemini_payload(
             payload["tools"] = tools;
         }
     }
-
-    // TEMP: log full request payload for tool-call verification
-    let _ = crate::storage::services::app_logs::insert_app_log(
-        database_path,
-        &crate::storage::services::app_logs::AppLogInput {
-            level: "DEBUG".to_string(),
-            module: "api".to_string(),
-            func: "build_gemini_payload".to_string(),
-            line: None,
-            message: "Request payload".to_string(),
-            input: Some(serde_json::to_string(&payload).unwrap_or_default()),
-            output: None,
-            duration: None,
-            context: None,
-            error: None,
-            source: "main".to_string(),
-        },
-    );
 
     Ok(payload)
 }

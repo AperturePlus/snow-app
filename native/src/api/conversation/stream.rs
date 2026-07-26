@@ -63,6 +63,8 @@ pub async fn create_response_stream(
             content: message.content.clone(),
             tool_calls_json: None,
             tool_results_json: message.tool_results_json.clone(),
+            thinking: message.thinking.clone(),
+            thinking_blocks_json: message.thinking_blocks_json.clone(),
         })
         .collect::<Vec<_>>();
     let failure_conversation_id = request.conversation_id.clone();

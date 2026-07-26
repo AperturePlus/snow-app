@@ -29,7 +29,7 @@ use crate::api::retry::{
     RetryOptions,
 };
 use crate::api::sse::find_sse_separator;
-use crate::storage::services::app_logs::{log_api_error, log_api_warning};
+use crate::storage::services::app_logs::{log_api_error, log_api_warning, maybe_log_api_request};
 use crate::storage::services::chat_conversations::{
     store_chat_exchange, ChatContextMessage, ChatTokenUsage, StoreChatExchangeInput,
 };
@@ -107,6 +107,8 @@ async fn create_anthropic_response_async(
             content: message.content.clone(),
             tool_calls_json: None,
             tool_results_json: message.tool_results_json.clone(),
+            thinking: message.thinking.clone(),
+            thinking_blocks_json: message.thinking_blocks_json.clone(),
         })
         .collect::<Vec<_>>();
     let prepared_request = prepare_context_request(ConversationContextRequest {
@@ -155,6 +157,16 @@ async fn create_anthropic_response_async(
     let retry_options = RetryOptions::from_config(api_config.max_retries, api_config.retry_base_delay_ms);
     let stream_idle_timeout_sec =
         resolve_stream_idle_timeout_sec(api_config.stream_idle_timeout_sec);
+
+    let request_payload_json = serde_json::to_string(&payload).unwrap_or_default();
+    maybe_log_api_request(
+        database_path.clone(),
+        "anthropic".to_string(),
+        endpoint.clone(),
+        request_payload_json,
+    )
+    .await;
+
     let streamed_response = match collect_anthropic_stream(
         &client,
         &endpoint,
@@ -218,6 +230,7 @@ async fn create_anthropic_response_async(
                 raw_response_json: &raw_response_json,
                 token_usage: streamed_response.token_usage,
                 response_thinking: &streamed_response.thinking,
+                response_thinking_blocks_json: &streamed_response.thinking_blocks_json,
                 tool_calls_json: &streamed_response.tool_calls_json,
                 directory_id: request.directory_id.as_deref().unwrap_or(""),
                 context_compaction: request.context_compaction.unwrap_or(false),
@@ -336,11 +349,24 @@ fn build_anthropic_payload(
 
         // --- Assistant messages with tool_calls ---
         if role == "assistant" {
+            // Parse persisted thinking blocks (with signatures) so they can
+            // be round-tripped verbatim to the Anthropic API, preserving
+            // thinking continuity across turns.
+            let thinking_blocks: Vec<Value> = message
+                .thinking_blocks_json
+                .as_deref()
+                .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+                .and_then(|v| v.as_array().map(|a| a.clone()))
+                .unwrap_or_default();
+
             if let Some(ref tool_calls_raw) = message.tool_calls_json {
                 let tool_use_blocks =
                     crate::api::conversation::tool_messages::tool_calls_as_anthropic_blocks(tool_calls_raw);
                 if !tool_use_blocks.is_empty() {
                     let mut content_blocks = Vec::new();
+                    // Thinking blocks must come first so the API can verify
+                    // the signature chain before processing text/tool_use.
+                    content_blocks.extend(thinking_blocks.iter().cloned());
                     if !content.is_empty() {
                         content_blocks.push(json!({ "type": "text", "text": content }));
                     }
@@ -351,6 +377,18 @@ fn build_anthropic_payload(
                     }));
                     continue;
                 }
+            }
+            // Fall through: assistant message without tool_calls but with
+            // thinking blocks needs an array-format content so the thinking
+            // blocks can be included.
+            if !thinking_blocks.is_empty() && !content.is_empty() {
+                let mut content_blocks: Vec<Value> = thinking_blocks;
+                content_blocks.push(json!({ "type": "text", "text": content }));
+                anthropic_messages.push(json!({
+                    "role": "assistant",
+                    "content": content_blocks,
+                }));
+                continue;
             }
         }
 
@@ -525,24 +563,6 @@ fn build_anthropic_payload(
         }
     }
 
-    // TEMP: log full request payload for tool-call verification
-    let _ = crate::storage::services::app_logs::insert_app_log(
-        database_path,
-        &crate::storage::services::app_logs::AppLogInput {
-            level: "DEBUG".to_string(),
-            module: "api".to_string(),
-            func: "build_anthropic_payload".to_string(),
-            line: None,
-            message: "Request payload".to_string(),
-            input: Some(serde_json::to_string(&payload).unwrap_or_default()),
-            output: None,
-            duration: None,
-            context: None,
-            error: None,
-            source: "main".to_string(),
-        },
-    );
-
     Ok(payload)
 }
 
@@ -578,6 +598,10 @@ struct AnthropicStreamResult {
     id: String,
     content: String,
     thinking: String,
+    /// JSON array of complete thinking blocks (each with type/thinking/signature)
+    /// captured from the stream. Persisted so the assistant turn can be
+    /// round-tripped back to the Anthropic API verbatim on the next request.
+    thinking_blocks_json: String,
     model: String,
     status: String,
     token_usage: ChatTokenUsage,
@@ -610,6 +634,7 @@ async fn collect_anthropic_stream(
     let mut raw_events: Vec<Value> = Vec::new();
     let mut content_chunks: Vec<String> = Vec::new();
     let mut thinking_chunks: Vec<String> = Vec::new();
+    let mut thinking_blocks: Vec<Value> = Vec::new();
     let mut tool_calls: Vec<Value> = Vec::new();
     let mut tool_call_positions_by_index: HashMap<usize, usize> = HashMap::new();
     let mut tool_input_json_by_index: HashMap<usize, String> = HashMap::new();
@@ -637,6 +662,7 @@ async fn collect_anthropic_stream(
                     id: String::new(),
                     content: String::new(),
                     thinking: String::new(),
+                    thinking_blocks_json: "[]".to_string(),
                     model: String::new(),
                     status: String::from("cancelled"),
                     token_usage: ChatTokenUsage::default(),
@@ -660,6 +686,7 @@ async fn collect_anthropic_stream(
                         id: String::new(),
                         content: String::new(),
                         thinking: String::new(),
+                        thinking_blocks_json: "[]".to_string(),
                         model: String::new(),
                         status: String::from("cancelled"),
                         token_usage: ChatTokenUsage::default(),
@@ -798,6 +825,7 @@ async fn collect_anthropic_stream(
                             raw_events.clear();
                             content_chunks.clear();
                             thinking_chunks.clear();
+                            thinking_blocks.clear();
                             tool_calls.clear();
                             tool_call_positions_by_index.clear();
                             tool_input_json_by_index.clear();
@@ -856,6 +884,7 @@ async fn collect_anthropic_stream(
                             &mut raw_events,
                             &mut content_chunks,
                             &mut thinking_chunks,
+                            &mut thinking_blocks,
                             &mut tool_calls,
                             &mut tool_call_positions_by_index,
                             &mut tool_input_json_by_index,
@@ -924,6 +953,7 @@ async fn collect_anthropic_stream(
                 &mut raw_events,
                 &mut content_chunks,
                 &mut thinking_chunks,
+                &mut thinking_blocks,
                 &mut tool_calls,
                 &mut tool_call_positions_by_index,
                 &mut tool_input_json_by_index,
@@ -961,6 +991,7 @@ async fn collect_anthropic_stream(
     let content = content_chunks.join("").trim().to_string();
     let thinking = thinking_chunks.join("").trim().to_string();
     let tool_calls_json = serde_json::to_string(&tool_calls).unwrap_or_else(|_| "[]".to_string());
+    let thinking_blocks_json = serde_json::to_string(&thinking_blocks).unwrap_or_else(|_| "[]".to_string());
 
     // Anthropic returns input_tokens, cache_creation_input_tokens, and
     // cache_read_input_tokens as disjoint values. Normalize so input_tokens
@@ -973,6 +1004,7 @@ async fn collect_anthropic_stream(
         id: response_id,
         content,
         thinking,
+        thinking_blocks_json,
         model: response_model,
         status: response_status,
         token_usage,
@@ -989,6 +1021,7 @@ fn process_anthropic_sse_event_block(
     raw_events: &mut Vec<Value>,
     content_chunks: &mut Vec<String>,
     thinking_chunks: &mut Vec<String>,
+    thinking_blocks: &mut Vec<Value>,
     tool_calls: &mut Vec<Value>,
     tool_call_positions_by_index: &mut HashMap<usize, usize>,
     tool_input_json_by_index: &mut HashMap<usize, String>,
@@ -1042,6 +1075,7 @@ fn process_anthropic_sse_event_block(
             &event,
             content_chunks,
             thinking_chunks,
+            thinking_blocks,
             tool_calls,
             tool_call_positions_by_index,
             tool_input_json_by_index,
@@ -1080,6 +1114,7 @@ fn process_anthropic_sse_event_block(
                 &event,
                 content_chunks,
                 thinking_chunks,
+                thinking_blocks,
                 tool_calls,
                 tool_call_positions_by_index,
                 tool_input_json_by_index,
@@ -1100,6 +1135,7 @@ fn process_anthropic_event(
     event: &Value,
     content_chunks: &mut Vec<String>,
     thinking_chunks: &mut Vec<String>,
+    thinking_blocks: &mut Vec<Value>,
     tool_calls: &mut Vec<Value>,
     tool_call_positions_by_index: &mut HashMap<usize, usize>,
     tool_input_json_by_index: &mut HashMap<usize, String>,
@@ -1151,6 +1187,12 @@ fn process_anthropic_event(
                         tool_call_positions_by_index.insert(index, tool_calls.len());
                     }
                     tool_calls.push(content_block.clone());
+                } else if block_type == "thinking" || block_type == "redacted_thinking" {
+                    // Capture the raw thinking block so it can be round-tripped
+                    // back to the API verbatim on the next request (with its
+                    // signature intact). thinking_delta and signature_delta
+                    // events that follow will mutate the last block in-place.
+                    thinking_blocks.push(content_block.clone());
                 }
             }
         }
@@ -1211,6 +1253,43 @@ fn process_anthropic_event(
                     }
                     "thinking_delta" => {
                         push_trimmed_string(delta.get("thinking"), thinking_chunks);
+                        // Append the thinking text to the last thinking block
+                        // so the block stays complete for round-tripping.
+                        if let Some(thinking_block) = thinking_blocks.last_mut() {
+                            if let Some(text) = delta.get("thinking").and_then(Value::as_str) {
+                                if !text.is_empty() {
+                                    if let Some(obj) = thinking_block.as_object_mut() {
+                                        let existing = obj
+                                            .get("thinking")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or_default();
+                                        obj.insert(
+                                            "thinking".to_string(),
+                                            Value::String(format!("{existing}{text}")),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    "signature_delta" => {
+                        // Write the cryptographic signature into the last
+                        // thinking block. Anthropic requires thinking blocks
+                        // to carry their original signature when passed back.
+                        if let Some(signature) =
+                            delta.get("signature").and_then(Value::as_str)
+                        {
+                            if !signature.is_empty() {
+                                if let Some(thinking_block) = thinking_blocks.last_mut() {
+                                    if let Some(obj) = thinking_block.as_object_mut() {
+                                        obj.insert(
+                                            "signature".to_string(),
+                                            Value::String(signature.to_string()),
+                                        );
+                                    }
+                                }
+                            }
+                        }
                     }
                     "input_json_delta" => {
                         if let Some(index) = event

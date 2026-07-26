@@ -31,6 +31,10 @@ const DEFAULT_PLAN_MODE_SETTING_NAME: &str = "Plan mode";
 const DEFAULT_PLAN_MODE_SETTING_CODE: &str = "plan_mode";
 const DEFAULT_PLAN_MODE_SETTING_VALUE: &str = "false";
 
+const DEFAULT_REQUEST_LOGGING_SETTING_NAME: &str = "Request logging";
+const DEFAULT_REQUEST_LOGGING_SETTING_CODE: &str = "request_logging";
+const DEFAULT_REQUEST_LOGGING_SETTING_VALUE: &str = "false";
+
 const DEFAULT_PRIVACY_SETTING_NAME: &str = "Privacy settings";
 const DEFAULT_PRIVACY_SETTING_CODE: &str = "privacy_settings";
 const DEFAULT_PRIVACY_SETTING_VALUE: &str = "{\"enabled\":false,\"mode\":\"local\",\"api\":{\"url\":\"\",\"apiKey\":\"\",\"model\":\"openai/privacy-filter\"},\"toolResults\":{\"tools\":[\"filesystem-read\",\"grep-search\",\"bash-terminal-execute\"]}}";
@@ -246,6 +250,29 @@ pub fn set_plan_mode(database_path: &Path, enabled: bool) -> Result<()> {
         database_path,
         DEFAULT_PLAN_MODE_SETTING_NAME,
         DEFAULT_PLAN_MODE_SETTING_CODE,
+        if enabled { "true" } else { "false" },
+    )
+}
+
+pub fn get_request_logging(database_path: &Path) -> Result<bool> {
+    let Some(value) = get_system_setting_value(database_path, DEFAULT_REQUEST_LOGGING_SETTING_CODE)?
+    else {
+        return Ok(false);
+    };
+
+    value.parse::<bool>().map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to parse Request logging setting: {error}"),
+        )
+    })
+}
+
+pub fn set_request_logging(database_path: &Path, enabled: bool) -> Result<()> {
+    set_system_setting(
+        database_path,
+        DEFAULT_REQUEST_LOGGING_SETTING_NAME,
+        DEFAULT_REQUEST_LOGGING_SETTING_CODE,
         if enabled { "true" } else { "false" },
     )
 }
@@ -943,6 +970,12 @@ fn seed_default_settings_with_connection(connection: &Connection) -> rusqlite::R
         DEFAULT_PLAN_MODE_SETTING_NAME,
         DEFAULT_PLAN_MODE_SETTING_CODE,
         DEFAULT_PLAN_MODE_SETTING_VALUE,
+    )?;
+    insert_default_setting(
+        connection,
+        DEFAULT_REQUEST_LOGGING_SETTING_NAME,
+        DEFAULT_REQUEST_LOGGING_SETTING_CODE,
+        DEFAULT_REQUEST_LOGGING_SETTING_VALUE,
     )?;
     insert_default_setting(
         connection,

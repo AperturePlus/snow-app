@@ -328,6 +328,7 @@ pub struct ChatConversationRecord {
     pub cache_creation_input_tokens: i64,
     pub cache_read_input_tokens: i64,
     pub total_duration_ms: i64,
+    pub emoji: String,
 }
 
 #[napi(object)]
@@ -472,6 +473,16 @@ pub fn get_plan_mode() -> Result<bool> {
 pub fn set_plan_mode(enabled: bool) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::plan_settings::set_plan_mode(&database_path, enabled)
+}
+
+pub fn get_request_logging() -> Result<bool> {
+    let database_path = ensure_database_file()?;
+    services::request_logging_settings::get_request_logging(&database_path)
+}
+
+pub fn set_request_logging(enabled: bool) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::request_logging_settings::set_request_logging(&database_path, enabled)
 }
 
 pub fn get_privacy_settings() -> Result<services::system_settings::PrivacySettings> {
@@ -1111,6 +1122,18 @@ pub fn rename_conversation(
         &database_path,
         &conversation_id,
         &title,
+    )
+}
+
+pub fn update_conversation_emoji(
+    conversation_id: String,
+    emoji: String,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::update_conversation_emoji(
+        &database_path,
+        &conversation_id,
+        &emoji,
     )
 }
 

@@ -23,6 +23,17 @@ pub struct ChatContextMessage {
     /// `[{"name":"...","callId":"...","result":"..."}]`
     /// When present, providers use this directly instead of parsing content text.
     pub tool_results_json: Option<String>,
+    /// For assistant messages, the reasoning/thinking text produced by the
+    /// model. Chat Completions providers emit this as `reasoning_content`;
+    /// Gemini emits it as a `thought` text part. The plain text is NOT
+    /// round-tripped to Anthropic (which needs signed blocks); use
+    /// `thinking_blocks_json` for Anthropic round-tripping instead.
+    pub thinking: Option<String>,
+    /// JSON array of complete Anthropic thinking blocks (each with
+    /// type/thinking/signature). Only populated for assistant messages from
+    /// the Anthropic provider. Passed back verbatim to the Anthropic API so
+    /// thinking continuity is preserved across turns.
+    pub thinking_blocks_json: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -44,6 +55,7 @@ pub struct StoreChatExchangeInput<'a> {
     pub raw_response_json: &'a str,
     pub token_usage: ChatTokenUsage,
     pub response_thinking: &'a str,
+    pub response_thinking_blocks_json: &'a str,
     pub tool_calls_json: &'a str,
     pub directory_id: &'a str,
     pub context_compaction: bool,
@@ -82,7 +94,7 @@ pub fn load_context_messages(
     database::open_connection(database_path)
         .and_then(|connection| {
             let mut statement = connection.prepare(
-                "SELECT role, content, tool_calls_json
+                "SELECT role, content, tool_calls_json, raw_json, thinking, thinking_blocks_json
                    FROM chat_messages
                   WHERE conversation_id = ?1
                     AND id >= COALESCE(
@@ -97,23 +109,62 @@ pub fn load_context_messages(
                     AND (
                       content <> ''
                       OR (role = 'assistant' AND tool_calls_json <> '' AND tool_calls_json <> '[]')
+                      OR (role = 'assistant' AND thinking <> '')
                     )
                     AND NOT (role = 'assistant' AND status = 'error')
                   ORDER BY id ASC",
             )?;
 
             let rows = statement.query_map(params![conversation_id], |row| {
+                let role: String = row.get(0)?;
+                let content: String = row.get(1)?;
                 let tool_calls_raw: String = row.get(2)?;
+                let raw_json: String = row.get(3)?;
+                let thinking_raw: String = row.get(4)?;
+                let thinking_blocks_raw: String = row.get(5)?;
                 let tool_calls_json = if tool_calls_raw.is_empty() || tool_calls_raw == "[]" {
                     None
                 } else {
                     Some(tool_calls_raw)
                 };
+                // For tool messages, reconstruct tool_results_json from the
+                // raw_json column (where store_chat_exchange persists the
+                // structured [{name, callId, result}] array). Other message
+                // types leave this as None.
+                let tool_results_json = if role.trim() == "tool"
+                    && !raw_json.is_empty()
+                    && raw_json != "{}"
+                {
+                    Some(raw_json)
+                } else {
+                    None
+                };
+                // For assistant messages, restore the thinking text so
+                // providers can round-trip it as reasoning_content (Chat) or
+                // thought parts (Gemini).
+                let thinking = if thinking_raw.is_empty() {
+                    None
+                } else {
+                    Some(thinking_raw)
+                };
+                // For assistant messages, restore the complete Anthropic
+                // thinking blocks (with signatures) so the Anthropic provider
+                // can round-trip them verbatim on the next request.
+                let thinking_blocks_json = if role.trim() == "assistant"
+                    && !thinking_blocks_raw.is_empty()
+                    && thinking_blocks_raw != "[]"
+                {
+                    Some(thinking_blocks_raw)
+                } else {
+                    None
+                };
                 Ok(ChatContextMessage {
-                    role: row.get(0)?,
-                    content: row.get(1)?,
+                    role,
+                    content,
                     tool_calls_json,
-                    tool_results_json: None,
+                    tool_results_json,
+                    thinking,
+                    thinking_blocks_json,
                 })
             })?;
 
@@ -187,6 +238,7 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                     input.raw_response_json,
                     "",
                     "[]",
+                    "[]",
                     0,
                 )?;
             } else {
@@ -195,6 +247,16 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                         input.checkpoint_id
                     } else {
                         ""
+                    };
+                    // For tool messages, persist tool_results_json into the
+                    // raw_json column so load_context_messages can reconstruct
+                    // the structured (name, callId, result) tuples needed to
+                    // emit proper tool_call_id on the next request. Other
+                    // message types keep raw_json as "{}".
+                    let raw_json = if normalize_role(&message.role) == "tool" {
+                        message.tool_results_json.as_deref().unwrap_or("{}")
+                    } else {
+                        "{}"
                     };
                     insert_message(
                         &transaction,
@@ -205,8 +267,9 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                         checkpoint_id,
                         input.model,
                         "sent",
-                        "{}",
+                        raw_json,
                         "",
+                        "[]",
                         "[]",
                         index,
                     )?;
@@ -223,6 +286,7 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                     input.status,
                     input.raw_response_json,
                     input.response_thinking,
+                    input.response_thinking_blocks_json,
                     input.tool_calls_json,
                     input.request_messages.len(),
                 )?;
@@ -297,6 +361,8 @@ pub fn store_failed_chat_exchange(
                 content: content.to_string(),
                 tool_calls_json: message.tool_calls_json.clone(),
                 tool_results_json: message.tool_results_json.clone(),
+                thinking: message.thinking.clone(),
+                thinking_blocks_json: message.thinking_blocks_json.clone(),
             })
         })
         .collect::<Vec<_>>();
@@ -329,6 +395,7 @@ pub fn store_failed_chat_exchange(
             raw_response_json: "{}",
             token_usage: ChatTokenUsage::default(),
             response_thinking: "",
+            response_thinking_blocks_json: "[]",
             tool_calls_json: "[]",
             directory_id,
             context_compaction: false,
@@ -363,6 +430,7 @@ pub fn append_tool_message(
                 "sent",
                 "{}",
                 "",
+                "[]",
                 "[]",
                 0,
             )?;
@@ -437,7 +505,8 @@ pub fn list_chat_conversations(
                        '',
                        '',
                        '',
-                       0
+                       0,
+                       COALESCE(emoji, '')
                   FROM chat_conversations AS conversation
                  WHERE directory_id = ?1
                    AND status = 'active'
@@ -503,7 +572,8 @@ pub fn list_chat_conversations_paginated(
                        '',
                        '',
                        '',
-                       0
+                       0,
+                       COALESCE(emoji, '')
                   FROM chat_conversations AS conversation
                  WHERE directory_id = ?1
                    AND status = 'active'
@@ -648,7 +718,8 @@ pub fn list_pinned_conversations(
                        '',
                        '',
                        '',
-                       0
+                       0,
+                       COALESCE(emoji, '')
                   FROM chat_conversations AS conversation
                  WHERE directory_id = ?1
                    AND status = 'pin'
@@ -696,7 +767,8 @@ pub fn get_chat_conversation(
                             COALESCE(sub_agent.agent_name, ''),
                             COALESCE(sub_agent.run_status, ''),
                             COALESCE(sub_agent.error_message, ''),
-                            COALESCE(conversation.total_duration_ms, 0)
+                            COALESCE(conversation.total_duration_ms, 0),
+                            COALESCE(conversation.emoji, '')
                        FROM chat_conversations AS conversation
                        LEFT JOIN sub_agent_sessions AS sub_agent
                          ON sub_agent.conversation_id = conversation.conversation_id
@@ -739,7 +811,8 @@ pub fn list_sub_agent_conversations(
                         sub_agent.agent_name,
                         sub_agent.run_status,
                         sub_agent.error_message,
-                        COALESCE(conversation.total_duration_ms, 0)
+                        COALESCE(conversation.total_duration_ms, 0),
+                        COALESCE(conversation.emoji, '')
                    FROM sub_agent_sessions AS sub_agent
                    JOIN chat_conversations AS conversation
                      ON conversation.conversation_id = sub_agent.conversation_id
@@ -925,6 +998,26 @@ pub fn rename_conversation(
             )
         })
         .map_err(|error| database::database_error(database_path, "rename conversation", error))
+        .map(|_| ())
+}
+
+pub fn update_conversation_emoji(
+    database_path: &Path,
+    conversation_id: &str,
+    emoji: &str,
+) -> Result<()> {
+    let trimmed_emoji = emoji.trim();
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            connection.execute(
+                "UPDATE chat_conversations
+                    SET emoji = ?2,
+                        updated_at = datetime('now', 'localtime')
+                  WHERE conversation_id = ?1",
+                params![conversation_id, trimmed_emoji],
+            )
+        })
+        .map_err(|error| database::database_error(database_path, "update conversation emoji", error))
         .map(|_| ())
 }
 
@@ -1503,6 +1596,7 @@ fn insert_message(
     status: &str,
     raw_json: &str,
     thinking: &str,
+    thinking_blocks_json: &str,
     tool_calls_json: &str,
     index: usize,
 ) -> rusqlite::Result<()> {
@@ -1519,10 +1613,11 @@ fn insert_message(
            status,
            raw_json,
            thinking,
+           thinking_blocks_json,
            tool_calls_json,
            created_at
          ) VALUES (
-           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, datetime('now', 'localtime')
+           ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, datetime('now', 'localtime')
          )",
         params![
             database::create_snowflake_id(),
@@ -1536,6 +1631,7 @@ fn insert_message(
             status,
             raw_json,
             thinking.trim(),
+            thinking_blocks_json,
             tool_calls_json,
         ],
     )?;
@@ -1577,7 +1673,8 @@ fn map_chat_conversation_row(row: &Row<'_>) -> rusqlite::Result<ChatConversation
         sub_agent_name: row.get(19)?,
         sub_agent_status: row.get(20)?,
         sub_agent_error: row.get(21)?,
-        total_duration_ms: row.get(22)?
+        total_duration_ms: row.get(22)?,
+        emoji: row.get(23)?,
     })
 }
 

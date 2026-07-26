@@ -11,6 +11,7 @@ import {
   createMessageId,
   formatMessageTime,
   formatMcpToolResultForModel,
+  formatToolResultsContent,
   getErrorMessage,
   isUserQuestionCancellationResult,
   parseToolCalls,
@@ -153,6 +154,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             cacheCreationInputTokens: 0,
             cacheReadInputTokens: 0,
             totalDurationMs: 0,
+            emoji: "",
           },
           timestamp: Date.now(),
         });
@@ -708,7 +710,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             const subToolResultMessage: ChatConversationMessage = {
               id: createMessageId("tool"),
               role: "tool",
-              content: subToolResults.join("\n\n"),
+              content: formatToolResultsContent(subStructuredResults),
               timestamp: formatMessageTime(),
               status: "sent",
               toolName: subToolCalls.map((tc) => tc.name).join(", "),
@@ -738,7 +740,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             }[] = [
               {
                 role: "tool",
-                content: subToolResults.join("\n\n"),
+                content: formatToolResultsContent(subStructuredResults),
                 toolResultsJson: subToolResultsJson,
               },
             ];
@@ -1225,7 +1227,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           (decision) => decision.status === "rejected"
         );
 
-        const toolResults: string[] = [];
         const structuredToolResults: {
           name: string;
           callId: string;
@@ -1265,7 +1266,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 };
               })
             );
-            toolResults.push(skippedResult);
             structuredToolResults.push({
               name: toolCall.name,
               callId: toolCall.callId || "",
@@ -1647,7 +1647,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           }
 
           const modelToolResult = formatMcpToolResultForModel(result!);
-          toolResults.push(modelToolResult);
           structuredToolResults.push({
             name: toolCall.name,
             callId: toolCall.callId || "",
@@ -1661,7 +1660,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
 
         // Add tool results as a tool message for the next iteration
         const toolResultMessageId = createMessageId("tool");
-        const toolResultContent = toolResults.join("\n\n");
+        const toolResultContent = formatToolResultsContent(
+          structuredToolResults
+        );
         const toolResultMessage: ChatConversationMessage = {
           id: toolResultMessageId,
           role: "tool",

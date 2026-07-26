@@ -1,10 +1,11 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use rusqlite::{params, Row};
 
 use super::super::database;
+use super::system_settings;
 
 #[napi(object)]
 pub struct AppLogInput {
@@ -199,6 +200,55 @@ pub fn log_api_error(database_path: &Path, func: &str, message: &str, error: &st
             source: "main".to_string(),
         },
     );
+}
+
+/// Conditionally log a complete raw API request JSON when request logging
+/// is enabled. The check + insert are offloaded to `spawn_blocking` so the
+/// hot async API path is never blocked by SQLite I/O.
+///
+/// - `database_path`: path to the SQLite database file.
+/// - `provider`: short provider tag ("chat", "gemini", "responses",
+///   "anthropic", "embedding", "reranking").
+/// - `endpoint`: the full request URL.
+/// - `payload_json`: serialized request body JSON.
+///
+/// Failures (disabled flag read errors, insert errors) are silently
+/// discarded — request logging must never break the main request flow.
+pub async fn maybe_log_api_request(
+    database_path: PathBuf,
+    provider: String,
+    endpoint: String,
+    payload_json: String,
+) {
+    let db_path = database_path;
+    let provider = provider;
+    let endpoint = endpoint;
+    let payload_json = payload_json;
+
+    tokio::task::spawn_blocking(move || {
+        let enabled = system_settings::get_request_logging(&db_path).unwrap_or(false);
+        if !enabled {
+            return;
+        }
+        let _ = insert_app_log(
+            &db_path,
+            &AppLogInput {
+                level: "DEBUG".to_string(),
+                module: "api_request".to_string(),
+                func: provider,
+                line: None,
+                message: endpoint,
+                input: Some(payload_json),
+                output: None,
+                duration: None,
+                context: None,
+                error: None,
+                source: "main".to_string(),
+            },
+        );
+    })
+    .await
+    .ok();
 }
 
 fn map_log_row(row: &Row<'_>) -> rusqlite::Result<AppLogRecord> {

@@ -22,6 +22,7 @@ export type ChatConversationRecord = {
   cacheCreationInputTokens: number;
   cacheReadInputTokens: number;
   totalDurationMs: number;
+  emoji: string;
 };
 
 export type ChatConversationPage = {

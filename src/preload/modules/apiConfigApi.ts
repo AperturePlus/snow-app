@@ -78,6 +78,10 @@ export const apiConfigApi = {
     ipcRenderer.invoke("settings:get-plan-mode"),
   setPlanMode: (enabled: boolean): Promise<void> =>
     ipcRenderer.invoke("settings:set-plan-mode", enabled),
+  getRequestLogging: (): Promise<boolean> =>
+    ipcRenderer.invoke("settings:get-request-logging"),
+  setRequestLogging: (enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke("settings:set-request-logging", enabled),
   getPrivacySettings: (): Promise<PrivacySettings> =>
     ipcRenderer.invoke("settings:get-privacy-settings"),
   setPrivacySettings: (settings: PrivacySettings): Promise<void> =>
