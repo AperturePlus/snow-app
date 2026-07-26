@@ -247,7 +247,6 @@ impl BashService {
         // single kill(-pgid, SIGKILL).
         #[cfg(not(target_os = "windows"))]
         {
-            use std::os::unix::process::CommandExt;
             process.process_group(0);
         }
 
