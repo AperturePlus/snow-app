@@ -533,6 +533,39 @@ pub fn pull_changes(repo_path: &str) -> Result<GitPushPullResult> {
     }
 }
 
+/// Fetch from the remote without merging. Used by the UI to keep the
+/// ahead/behind counts (and thus the "remote has updates" indicator)
+/// fresh. Never throws: failures (offline, no remote, auth) are reported
+/// via `success: false` so background polling can ignore them silently.
+pub fn fetch_remote(repo_path: &str) -> Result<GitPushPullResult> {
+    if !is_git_repo(repo_path) {
+        return Ok(GitPushPullResult {
+            success: false,
+            message: "Not a git repository".to_string(),
+        });
+    }
+
+    // Skip repos without any remote configured — `git fetch` would fail.
+    let has_remote = !run_git(repo_path, &["remote"])?.trim().is_empty();
+    if !has_remote {
+        return Ok(GitPushPullResult {
+            success: true,
+            message: "No remote configured".to_string(),
+        });
+    }
+
+    match run_git(repo_path, &["fetch", "--quiet", "--prune"]) {
+        Ok(_) => Ok(GitPushPullResult {
+            success: true,
+            message: "Fetch successful".to_string(),
+        }),
+        Err(e) => Ok(GitPushPullResult {
+            success: false,
+            message: format!("{e}"),
+        }),
+    }
+}
+
 pub fn checkout_branch(repo_path: &str, branch_name: &str) -> Result<GitCheckoutResult> {
     // If the branch name contains '/', it's a remote tracking branch (e.g. "origin/main").
     // Running `git checkout origin/main` would enter detached HEAD state.

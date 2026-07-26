@@ -53,6 +53,20 @@ pub async fn git_pull(repo_path: String) -> napi::Result<GitPushPullResult> {
     crate::storage::services::git::pull_changes(&repo_path)
 }
 
+/// Fetch from the remote without merging. Runs on the blocking thread
+/// pool because `git fetch` performs network I/O and may take seconds —
+/// it must never block the async runtime.
+#[napi]
+pub async fn git_fetch(repo_path: String) -> napi::Result<GitPushPullResult> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::fetch_remote(&repo_path)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to fetch from remote: {join_error}"))
+    })?
+}
+
 #[napi]
 pub async fn git_checkout(repo_path: String, branch_name: String) -> napi::Result<GitCheckoutResult> {
     crate::storage::services::git::checkout_branch(&repo_path, &branch_name)

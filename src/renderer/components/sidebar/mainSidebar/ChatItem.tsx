@@ -7,7 +7,7 @@ import {
   CheckCircle2,
   Bot,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useI18n } from "../../../i18n";
 import type { ChatConversationRecord } from "../../../../preload";
@@ -152,12 +152,43 @@ export function ChatItem({
     onSelect?.();
   };
 
-  // icon hover 立即显示 emoji picker，CSS 动画负责平滑弹出
+  // emoji picker 悬停控制：鼠标离开图标/面板后延迟关闭，
+  // 留出跨越图标与面板间隙的缓冲时间；重新进入则取消关闭
+  const emojiCloseTimerRef = useRef<number | null>(null);
+
+  const cancelEmojiPickerClose = useCallback((): void => {
+    if (emojiCloseTimerRef.current !== null) {
+      window.clearTimeout(emojiCloseTimerRef.current);
+      emojiCloseTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleEmojiPickerClose = useCallback((): void => {
+    cancelEmojiPickerClose();
+    emojiCloseTimerRef.current = window.setTimeout(() => {
+      emojiCloseTimerRef.current = null;
+      setIsEmojiPickerOpen(false);
+    }, 200);
+  }, [cancelEmojiPickerClose]);
+
+  useEffect(() => cancelEmojiPickerClose, [cancelEmojiPickerClose]);
+
+  const handleEmojiPickerClose = (): void => {
+    cancelEmojiPickerClose();
+    setIsEmojiPickerOpen(false);
+  };
+
+  // icon hover 立即显示 emoji picker，定位在首帧即到位，CSS 仅做淡入
   const handleIconMouseEnter = (): void => {
     if (isStreaming) {
       return;
     }
+    cancelEmojiPickerClose();
     setIsEmojiPickerOpen(true);
+  };
+
+  const handleIconMouseLeave = (): void => {
+    scheduleEmojiPickerClose();
   };
 
   const handleEmojiSelect = async (emoji: string): Promise<void> => {
@@ -214,12 +245,10 @@ export function ChatItem({
           hasEmoji ? " has-emoji" : ""
         }`}
         onMouseEnter={handleIconMouseEnter}
+        onMouseLeave={handleIconMouseLeave}
         onClick={(event) => {
-          // 点击 icon 时阻止选中会话，仅切换 emoji picker
+          // 面板由悬停控制显隐，点击 icon 仅阻止选中会话
           event.stopPropagation();
-          if (!isStreaming) {
-            setIsEmojiPickerOpen((prev) => !prev);
-          }
         }}
         role="button"
         tabIndex={-1}
@@ -243,7 +272,9 @@ export function ChatItem({
           triggerRef={iconRef}
           currentEmoji={conversation.emoji}
           onSelect={(emoji) => void handleEmojiSelect(emoji)}
-          onClose={() => setIsEmojiPickerOpen(false)}
+          onClose={handleEmojiPickerClose}
+          onPanelMouseEnter={cancelEmojiPickerClose}
+          onPanelMouseLeave={scheduleEmojiPickerClose}
         />
       )}
       <div className="chat-item-content">

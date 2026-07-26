@@ -8,6 +8,7 @@ use crate::storage::services::chat_conversations::{
 use crate::storage::services::system_prompts::resolve_active_system_prompt_contents;
 use crate::storage::services::workspace_directories::get_workspace_directory_path;
 
+use super::tool_messages::ensure_tool_pairing;
 use super::{images::persist_inline_images_to_disk, ConversationContextRequest};
 
 pub struct PreparedConversationRequest {
@@ -47,6 +48,7 @@ pub fn prepare_context_request(
 
     // --- Lightweight mode: skip history loading and system-prompt injection ---
     if request.skip_context {
+        ensure_tool_pairing(&mut current_messages);
         return Ok(PreparedConversationRequest {
             conversation_id: String::new(),
             messages: current_messages.clone(),
@@ -107,6 +109,10 @@ pub fn prepare_context_request(
     }
 
     messages.extend(current_messages.iter().cloned());
+
+    // --- Tool-pairing guard: ensure no orphan tool calls or results reach the
+    //     AI API, which would reject the request outright. ---
+    ensure_tool_pairing(&mut messages);
 
     Ok(PreparedConversationRequest {
         conversation_id,

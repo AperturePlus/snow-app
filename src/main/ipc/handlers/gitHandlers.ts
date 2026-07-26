@@ -106,6 +106,13 @@ export const registerGitHandlers = (native: NativeBridge): void => {
     return native.gitPull(repoPath.trim());
   });
 
+  ipcMain.handle("git:fetch", async (_event, repoPath: unknown) => {
+    if (typeof repoPath !== "string" || !repoPath.trim()) {
+      throw new Error("Repository path is required");
+    }
+    return native.gitFetch(repoPath.trim());
+  });
+
   ipcMain.handle(
     "git:checkout",
     async (_event, repoPath: unknown, branchName: unknown) => {

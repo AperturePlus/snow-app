@@ -83,6 +83,8 @@ export const gitApi = {
     ipcRenderer.invoke("git:push", repoPath),
   gitPull: (repoPath: string): Promise<GitPushPullResult> =>
     ipcRenderer.invoke("git:pull", repoPath),
+  gitFetch: (repoPath: string): Promise<GitPushPullResult> =>
+    ipcRenderer.invoke("git:fetch", repoPath),
   gitCheckout: (
     repoPath: string,
     branchName: string

@@ -1067,6 +1067,7 @@ export type NativeBridge = {
   gitCommit: (repoPath: string, message: string) => Promise<GitCommitResult>;
   gitPush: (repoPath: string) => Promise<GitPushPullResult>;
   gitPull: (repoPath: string) => Promise<GitPushPullResult>;
+  gitFetch: (repoPath: string) => Promise<GitPushPullResult>;
   gitCheckout: (
     repoPath: string,
     branchName: string

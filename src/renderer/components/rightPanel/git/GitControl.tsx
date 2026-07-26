@@ -13,6 +13,7 @@ import { ConfirmDialog } from "../../common/ConfirmDialog";
 import type { GitFileStatus, GitStatusResult } from "../../../../preload";
 import { useI18n } from "../../../i18n";
 import { useGitStatus } from "./useGitStatus";
+import { useRemotePolling } from "./useRemotePolling";
 import { BranchSelector } from "./BranchSelector";
 import { GitFileList } from "./GitFileList";
 import { GitGraph } from "./GitGraph";
@@ -33,6 +34,10 @@ export const GitControl = ({
 }: GitControlProps): React.JSX.Element => {
   const { t } = useI18n();
   const { status, isLoading, error, refresh } = useGitStatus(repoPath);
+  // Keep ahead/behind counts fresh by periodically fetching from the
+  // remote; a successful fetch refreshes the status so the pull button
+  // badge reflects the latest remote state.
+  useRemotePolling(repoPath, refresh);
   const [commitMessage, setCommitMessage] = useState("");
   const [actionInProgress, setActionInProgress] = useState<
     | "commit"
@@ -444,12 +449,19 @@ export const GitControl = ({
             className="icon-btn git-action-btn"
             onClick={handlePull}
             disabled={actionInProgress !== null}
-            title={t("git.pull")}
+            title={
+              status.behind > 0
+                ? t("git.pullBehind", { values: { count: status.behind } })
+                : t("git.pull")
+            }
           >
             {actionInProgress === "pull" ? (
               <Loader2 size={14} strokeWidth={1.8} className="spin" />
             ) : (
               <ArrowDownToLine size={14} strokeWidth={1.8} />
+            )}
+            {status.behind > 0 && (
+              <span className="git-pull-badge" aria-hidden="true" />
             )}
           </button>
           <button

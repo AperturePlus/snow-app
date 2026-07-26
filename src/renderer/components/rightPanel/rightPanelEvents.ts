@@ -30,8 +30,14 @@ export type OpenFileDiffPreviewPayload = {
   changeType: "added" | "modified" | "deleted";
 };
 
+export type OpenBrowserTabPayload = {
+  /** 在右侧面板新建浏览器 tab 并导航到的 URL */
+  url: string;
+};
+
 type RightPanelEventMap = {
   "open-file-diff-preview": (payload: OpenFileDiffPreviewPayload) => void;
+  "open-browser-tab": (payload: OpenBrowserTabPayload) => void;
   "request-expand": () => void;
 };
 
@@ -39,6 +45,7 @@ type EventKey = keyof RightPanelEventMap;
 
 const listeners: {
   "open-file-diff-preview"?: Set<(payload: OpenFileDiffPreviewPayload) => void>;
+  "open-browser-tab"?: Set<(payload: OpenBrowserTabPayload) => void>;
   "request-expand"?: Set<() => void>;
 } = {};
 

@@ -8,3 +8,4 @@ export { GrepToolCall } from "./GrepToolCall";
 export { SubAgentToolCall } from "./SubAgentToolCall";
 export { CodebaseToolCall } from "./CodebaseToolCall";
 export { CodeLensToolCall } from "./CodeLensToolCall";
+export { WebSearchToolCall } from "./WebSearchToolCall";

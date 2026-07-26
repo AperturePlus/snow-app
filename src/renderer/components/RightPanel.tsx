@@ -18,6 +18,7 @@ import { FileDiffPreview } from "./common/FileDiffPreview";
 import { useBrowserMcpCommandBridge } from "./rightPanel/browser/useBrowserMcpCommandBridge";
 import {
   rightPanelEvents,
+  type OpenBrowserTabPayload,
   type OpenFileDiffPreviewPayload,
 } from "./rightPanel/rightPanelEvents";
 import { generateComparePatch } from "./common/GitDiffView";
@@ -225,6 +226,35 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         handleOpenFileDiffPreviewTab
       );
     }, [handleOpenFileDiffPreviewTab]);
+
+    // 工具调用组件（如 WebSearch）请求在应用内浏览器新建 tab 打开链接。
+    // 带短时去抖：同一 URL 600ms 内的重复触发（双击）只创建一个 tab。
+    const lastBrowserOpenRef = useRef<{ url: string; at: number }>({
+      url: "",
+      at: 0,
+    });
+
+    const handleOpenBrowserTabEvent = useCallback(
+      (payload: OpenBrowserTabPayload) => {
+        const url = payload.url.trim();
+        if (!url) {
+          return;
+        }
+        const now = Date.now();
+        const last = lastBrowserOpenRef.current;
+        if (last.url === url && now - last.at < 600) {
+          return;
+        }
+        lastBrowserOpenRef.current = { url, at: now };
+        handleOpenBrowserTab(url);
+        rightPanelEvents.emit("request-expand");
+      },
+      [handleOpenBrowserTab]
+    );
+
+    useEffect(() => {
+      return rightPanelEvents.on("open-browser-tab", handleOpenBrowserTabEvent);
+    }, [handleOpenBrowserTabEvent]);
 
     useImperativeHandle(
       ref,

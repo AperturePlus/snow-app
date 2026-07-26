@@ -11,6 +11,7 @@ import {
   SubAgentToolCall,
   CodebaseToolCall,
   CodeLensToolCall,
+  WebSearchToolCall,
 } from "../toolCalls";
 import { ToolCallNode } from "../toolCalls/shared/ToolCallNode";
 import { useI18n } from "../../../../i18n";
@@ -97,6 +98,13 @@ export const ToolCallItem = memo(
       toolCall.name === "codelens-file_outline"
     ) {
       return <CodeLensToolCall toolCall={toolCall} />;
+    }
+
+    if (
+      toolCall.name === "websearch-websearch-search" ||
+      toolCall.name === "websearch-websearch-fetch"
+    ) {
+      return <WebSearchToolCall toolCall={toolCall} />;
     }
 
     const effectiveStatus = hasResultError(toolCall.result)

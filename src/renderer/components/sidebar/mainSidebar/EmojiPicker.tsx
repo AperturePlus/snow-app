@@ -20,6 +20,10 @@ export type EmojiPickerProps = {
   onSelect: (emoji: string) => void;
   /** 关闭面板 */
   onClose: () => void;
+  /** 鼠标进入面板（用于悬停控制时取消延迟关闭） */
+  onPanelMouseEnter?: () => void;
+  /** 鼠标离开面板（用于悬停控制时调度延迟关闭） */
+  onPanelMouseLeave?: () => void;
 };
 
 type PanelPosition = {
@@ -37,6 +41,46 @@ const VIEWPORT_MARGIN = 8;
  * 避免引入完整 emoji 数据集，保持包体积精简。如需扩展可在此处追加。
  */
 const EMOJI_GROUPS: Array<{ key: string; emojis: EmojiEntry[] }> = [
+  {
+    key: "status",
+    emojis: [
+      { char: "✅", keywords: ["check", "done", "yes", "success", "pass", "ok"] },
+      { char: "✔️", keywords: ["check", "mark", "ok", "done"] },
+      { char: "☑️", keywords: ["ballot", "check", "box", "vote"] },
+      { char: "❌", keywords: ["cross", "no", "wrong", "error", "fail", "reject"] },
+      { char: "❎", keywords: ["cross", "button", "no", "deny"] },
+      { char: "⚠️", keywords: ["warning", "alert", "caution", "danger"] },
+      { char: "🚫", keywords: ["ban", "prohibit", "deny", "reject", "block", "forbidden"] },
+      { char: "⛔", keywords: ["no", "entry", "forbidden", "stop"] },
+      { char: "🛑", keywords: ["stop", "halt", "sign"] },
+      { char: "ℹ️", keywords: ["info", "information", "about"] },
+      { char: "❓", keywords: ["question", "help", "unknown"] },
+      { char: "❗", keywords: ["exclamation", "alert", "important"] },
+      { char: "❕", keywords: ["exclamation", "white"] },
+      { char: "❔", keywords: ["question", "white"] },
+      { char: "‼️", keywords: ["exclamation", "double", "urgent"] },
+      { char: "⁉️", keywords: ["exclamation", "question", "surprise"] },
+      { char: "💯", keywords: ["100", "hundred", "perfect", "score"] },
+      { char: "🆗", keywords: ["ok", "okay", "button"] },
+      { char: "🆖", keywords: ["ng", "no", "good", "bad", "button"] },
+      { char: "🆙", keywords: ["up", "button", "new"] },
+      { char: "🆕", keywords: ["new", "button"] },
+      { char: "🆓", keywords: ["free", "button"] },
+      { char: "🆒", keywords: ["cool", "button"] },
+      { char: "📛", keywords: ["badge", "name", "tag"] },
+      { char: "🔞", keywords: ["18", "restricted", "adult"] },
+      { char: "♻️", keywords: ["recycle", "reuse", "green"] },
+      { char: "🔴", keywords: ["circle", "red", "offline", "busy", "error"] },
+      { char: "🟠", keywords: ["circle", "orange", "away"] },
+      { char: "🟡", keywords: ["circle", "yellow", "pending", "idle"] },
+      { char: "🟢", keywords: ["circle", "green", "online", "active", "success"] },
+      { char: "🔵", keywords: ["circle", "blue", "info"] },
+      { char: "🟣", keywords: ["circle", "purple"] },
+      { char: "🟤", keywords: ["circle", "brown"] },
+      { char: "⚫", keywords: ["circle", "black", "off"] },
+      { char: "⚪", keywords: ["circle", "white", "neutral"] },
+    ],
+  },
   {
     key: "smileys",
     emojis: [
@@ -439,8 +483,6 @@ const EMOJI_GROUPS: Array<{ key: string; emojis: EmojiEntry[] }> = [
       { char: "🎊", keywords: ["confetti", "party"] },
       { char: "🎈", keywords: ["balloon", "party"] },
       { char: "🎁", keywords: ["gift", "present"] },
-      { char: "✅", keywords: ["check", "done", "yes"] },
-      { char: "❌", keywords: ["cross", "no", "wrong"] },
       { char: "❤️", keywords: ["love", "heart", "red"] },
       { char: "🧡", keywords: ["heart", "orange"] },
       { char: "💛", keywords: ["heart", "yellow"] },
@@ -450,12 +492,9 @@ const EMOJI_GROUPS: Array<{ key: string; emojis: EmojiEntry[] }> = [
       { char: "🖤", keywords: ["heart", "black"] },
       { char: "🤍", keywords: ["heart", "white"] },
       { char: "💔", keywords: ["heart", "broken"] },
-      { char: "💯", keywords: ["100", "hundred", "perfect"] },
       { char: "💢", keywords: ["angry"] },
       { char: "💣", keywords: ["bomb"] },
       { char: "💤", keywords: ["sleep", "zzz"] },
-      { char: "❓", keywords: ["question"] },
-      { char: "❗", keywords: ["exclamation"] },
       { char: "💬", keywords: ["speech", "chat"] },
       { char: "💭", keywords: ["thought"] },
     ],
@@ -463,6 +502,7 @@ const EMOJI_GROUPS: Array<{ key: string; emojis: EmojiEntry[] }> = [
 ];
 
 const GROUP_LABEL_KEYS: Record<string, string> = {
+  status: "sidebar.emojiGroupStatus",
   smileys: "sidebar.emojiGroupSmileys",
   gestures: "sidebar.emojiGroupGestures",
   people: "sidebar.emojiGroupPeople",
@@ -475,6 +515,7 @@ const GROUP_LABEL_KEYS: Record<string, string> = {
 };
 
 const GROUP_DEFAULT_LABELS: Record<string, string> = {
+  status: "Status",
   smileys: "Smileys",
   gestures: "Gestures",
   people: "People",
@@ -489,11 +530,19 @@ const GROUP_DEFAULT_LABELS: Record<string, string> = {
 /** 将所有 emoji 展平为一维数组，用于搜索 */
 const ALL_EMOJIS: EmojiEntry[] = EMOJI_GROUPS.flatMap((g) => g.emojis);
 
+/**
+ * 全局单例锁：同一时刻只允许一个 picker 面板存在。
+ * 悬停连续掠过多个图标时，新面板挂载会先关闭上一个，避免多面板并存。
+ */
+let activePickerClose: (() => void) | null = null;
+
 export function EmojiPicker({
   triggerRef,
   currentEmoji,
   onSelect,
   onClose,
+  onPanelMouseEnter,
+  onPanelMouseLeave,
 }: EmojiPickerProps): React.JSX.Element {
   const { t } = useI18n();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -509,30 +558,36 @@ export function EmojiPicker({
     }
 
     const triggerRect = trigger.getBoundingClientRect();
-    const panelRect = panel
-      ? panel.getBoundingClientRect()
-      : { width: 280, height: 360 };
+    // 使用 offsetWidth/offsetHeight 测量，不受入场动画 scale 变换影响
+    const panelWidth = panel ? panel.offsetWidth : 280;
+    const panelHeight = panel ? panel.offsetHeight : 360;
 
+    // 水平：优先显示在图标右侧，空间不足时翻转到左侧
     const spaceRight = window.innerWidth - triggerRect.right - VIEWPORT_MARGIN;
-    const preferredLeft =
-      spaceRight >= panelRect.width + PANEL_GAP
-        ? triggerRect.right + PANEL_GAP
-        : triggerRect.left - panelRect.width - PANEL_GAP;
+    const opensRight = spaceRight >= panelWidth + PANEL_GAP;
+    const preferredLeft = opensRight
+      ? triggerRect.right + PANEL_GAP
+      : triggerRect.left - panelWidth - PANEL_GAP;
 
+    // 垂直：优先向下展开（顶边对齐图标顶边）；
+    // 图标靠近列表底部、下方空间不足时翻转为向上展开（底边对齐图标底边）
+    const spaceBelow = window.innerHeight - triggerRect.top - VIEWPORT_MARGIN;
+    const opensDown = spaceBelow >= panelHeight;
+    const preferredTop = opensDown
+      ? triggerRect.top
+      : triggerRect.bottom - panelHeight;
+
+    // 兜底钳制：视口极小上下都放不下时，仍保证面板完整可见
     const maxTop = Math.max(
       VIEWPORT_MARGIN,
-      window.innerHeight - panelRect.height - VIEWPORT_MARGIN
+      window.innerHeight - panelHeight - VIEWPORT_MARGIN
     );
-    const preferredTop = triggerRect.top;
 
     return {
       top: Math.min(Math.max(preferredTop, VIEWPORT_MARGIN), maxTop),
       left: Math.min(
         Math.max(preferredLeft, VIEWPORT_MARGIN),
-        Math.max(
-          VIEWPORT_MARGIN,
-          window.innerWidth - panelRect.width - VIEWPORT_MARGIN
-        )
+        Math.max(VIEWPORT_MARGIN, window.innerWidth - panelWidth - VIEWPORT_MARGIN)
       ),
     };
   }, [triggerRef]);
@@ -560,18 +615,22 @@ export function EmojiPicker({
     };
   }, [updatePosition, triggerRef]);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent): void => {
-      const target = event.target as Node;
-      if (
-        panelRef.current?.contains(target) ||
-        triggerRef.current?.contains(target)
-      ) {
-        return;
-      }
-      onClose();
-    };
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
+  // 挂载时注册为全局唯一面板，并关闭此前仍存在的实例
+  useEffect(() => {
+    activePickerClose?.();
+    const closeSelf = (): void => onCloseRef.current();
+    activePickerClose = closeSelf;
+    return () => {
+      if (activePickerClose === closeSelf) {
+        activePickerClose = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -579,13 +638,30 @@ export function EmojiPicker({
       }
     };
 
-    document.addEventListener("mousedown", handleClickOutside);
     document.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [onClose]);
+
+  // 焦点离开面板时关闭（覆盖"点击搜索框输入后鼠标已移开"的场景）
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) {
+      return;
+    }
+    const handleFocusOut = (event: FocusEvent): void => {
+      const next = event.relatedTarget as Node | null;
+      if (next && panel.contains(next)) {
+        return;
+      }
+      onCloseRef.current();
+    };
+    panel.addEventListener("focusout", handleFocusOut);
+    return () => {
+      panel.removeEventListener("focusout", handleFocusOut);
+    };
+  }, []);
 
   // 搜索过滤：匹配关键词或 emoji 字符本身
   const filteredGroups = useMemo(() => {
@@ -619,6 +695,18 @@ export function EmojiPicker({
     searchInputRef.current?.focus();
   };
 
+  const handlePanelMouseEnter = (): void => {
+    onPanelMouseEnter?.();
+  };
+
+  const handlePanelMouseLeave = (): void => {
+    // 焦点仍在面板内（如正在搜索框输入）时，鼠标移开也保持打开
+    if (panelRef.current?.contains(document.activeElement)) {
+      return;
+    }
+    onPanelMouseLeave?.();
+  };
+
   const hasResults = filteredGroups.length > 0;
 
   return createPortal(
@@ -632,6 +720,8 @@ export function EmojiPicker({
       })}
       onClick={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
+      onMouseEnter={handlePanelMouseEnter}
+      onMouseLeave={handlePanelMouseLeave}
     >
       <div className="emoji-picker-header">
         <span className="emoji-picker-title">
@@ -662,7 +752,6 @@ export function EmojiPicker({
           placeholder={t("sidebar.emojiSearchPlaceholder", {
             defaultValue: "Search emoji...",
           })}
-          autoFocus
         />
         {searchQuery && (
           <button

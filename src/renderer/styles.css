@@ -1310,18 +1310,16 @@ input {
   box-shadow: var(--island-shadow, 0 4px 16px rgba(0, 0, 0, 0.12));
   z-index: 9999;
   overflow: hidden;
-  transform-origin: top left;
-  animation: emoji-picker-appear 0.14s ease-out;
+  animation: emoji-picker-appear 0.12s ease-out;
 }
 
+/* 仅淡入，不做任何位移/缩放：面板出现时即处于最终定位 */
 @keyframes emoji-picker-appear {
   from {
     opacity: 0;
-    transform: scale(0.92);
   }
   to {
     opacity: 1;
-    transform: scale(1);
   }
 }
 
@@ -6713,10 +6711,17 @@ input {
 
 .tcn-chevron {
   flex-shrink: 0;
-  margin-left: auto;
-  transition: transform 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    opacity 0.15s ease,
+    color 0.15s ease;
   color: var(--text-tertiary);
   opacity: 0.6;
+}
+
+.tcn-header:hover .tcn-chevron {
+  opacity: 1;
+  color: var(--text-secondary);
 }
 
 .tcn[open] > .tcn-header .tcn-chevron {
@@ -7863,6 +7868,457 @@ input {
 }
 
 .tool-call-grep-pending-running {
+  color: var(--accent-blue-text);
+  background: var(--accent-blue-bg);
+}
+
+/* WebSearch Tool Call */
+.tool-call-websearch-body {
+  gap: 10px;
+}
+
+.tool-call-websearch-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+}
+
+.tool-call-websearch-count svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.tool-call-websearch-count-active {
+  color: var(--accent-blue-text);
+  background: var(--accent-blue-bg);
+}
+
+.tool-call-websearch-count-image {
+  color: var(--accent-amber-text);
+  background: var(--accent-amber-bg);
+}
+
+.tool-call-websearch-params {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-call-websearch-param-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.tool-call-websearch-param-item svg {
+  display: block;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.tool-call-websearch-param-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.tool-call-websearch-param-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  user-select: text;
+}
+
+/* code 变体（query）需要覆盖 .ai-message code 的通用样式 */
+.tool-call-websearch code.tool-call-websearch-param-value {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: normal;
+  word-break: break-all;
+}
+
+.tool-call-websearch-param-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.tool-call-websearch-param-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+}
+
+/* 搜索结果列表（SERP 风格） */
+.tool-call-websearch-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 420px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.tool-call-websearch-result {
+  /* 与 grep 分组一致：禁止收缩，容器整体滚动 */
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.tool-call-websearch-result:hover {
+  border-color: var(--accent-blue);
+  background: var(--bg-secondary);
+}
+
+.tool-call-websearch-result-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.tool-call-websearch-result-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  user-select: none;
+}
+
+.tool-call-websearch-result-title {
+  /* button 重置 */
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  /* 布局 */
+  display: inline-flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  color: var(--accent-blue-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.tool-call-websearch-result-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-call-websearch-result-title:hover .tool-call-websearch-result-title-text {
+  text-decoration: underline;
+}
+
+.tool-call-websearch-result-title:focus-visible,
+.tool-call-websearch-page-link:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
+}
+
+/* 悬停出现的外链小按钮（在系统浏览器打开） */
+.tool-call-websearch-external {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.tool-call-websearch-result:hover .tool-call-websearch-external,
+.tool-call-websearch-page:hover .tool-call-websearch-external,
+.tool-call-websearch-external:focus-visible {
+  opacity: 1;
+}
+
+.tool-call-websearch-external:hover {
+  background: var(--bg-active);
+  color: var(--accent-blue-text);
+}
+
+.tool-call-websearch-external:active {
+  transform: scale(0.92);
+}
+
+.tool-call-websearch-external:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
+}
+
+.tool-call-websearch-result-url {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  /* 与标题文字对齐（序号 16px + 间距 7px） */
+  margin-left: 23px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.tool-call-websearch-result-url svg {
+  display: block;
+  flex-shrink: 0;
+  color: var(--accent-green-text);
+}
+
+.tool-call-websearch-result-url span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+
+.tool-call-websearch-result-snippet {
+  margin: 0 0 0 23px;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  user-select: text;
+}
+
+/* 抓取结果：页面信息卡 */
+.tool-call-websearch-page {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+}
+
+.tool-call-websearch-page-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.tool-call-websearch-page-title svg {
+  display: block;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.tool-call-websearch-page-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+
+.tool-call-websearch-page-link-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tool-call-websearch-page-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  color: var(--accent-blue-text);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tool-call-websearch-page-link svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.tool-call-websearch-page-link span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  user-select: text;
+}
+
+.tool-call-websearch-page-link:hover span {
+  text-decoration: underline;
+}
+
+/* 抓取结果：图片内联预览 */
+.tool-call-websearch-image {
+  display: flex;
+  justify-content: center;
+  padding: 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+}
+
+.tool-call-websearch-image img {
+  max-width: 100%;
+  max-height: 320px;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+}
+
+/* 抓取结果：正文预览 + 完整内容折叠 */
+.tool-call-websearch-preview-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-call-websearch-section-label {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.tool-call-websearch-preview {
+  margin: 0;
+  max-height: 170px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.tool-call-websearch-full {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-call-websearch-full > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  user-select: none;
+  transition: color 0.15s ease;
+}
+
+.tool-call-websearch-full > summary:hover {
+  color: var(--text-secondary);
+}
+
+.tool-call-websearch-truncated {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+  font-size: 10.5px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* 空结果 / 等待状态 */
+.tool-call-websearch-empty,
+.tool-call-websearch-pending {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+}
+
+.tool-call-websearch-empty svg,
+.tool-call-websearch-pending svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.tool-call-websearch-pending-running {
   color: var(--accent-blue-text);
   background: var(--accent-blue-bg);
 }
@@ -11202,6 +11658,7 @@ input {
 }
 
 .git-action-btn {
+  position: relative;
   width: 26px;
   height: 26px;
 }
@@ -11213,6 +11670,32 @@ input {
 .git-action-btn.active {
   background: var(--bg-active);
   color: var(--text-primary);
+}
+
+/* Red notification dot on the pull button when the remote is ahead */
+.git-pull-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-red);
+  box-shadow: 0 0 0 1.5px var(--bg-primary);
+  pointer-events: none;
+  animation: git-pull-badge-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes git-pull-badge-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 0.7;
+  }
 }
 
 .git-sync-status {

@@ -503,6 +503,9 @@ export const loadNativeBridge = (): NativeBridge => {
       gitPull: () => {
         throw new Error("Rust native bridge is required for git pull");
       },
+      gitFetch: () => {
+        throw new Error("Rust native bridge is required for git fetch");
+      },
       gitCheckout: () => {
         throw new Error("Rust native bridge is required for git checkout");
       },
