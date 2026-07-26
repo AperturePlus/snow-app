@@ -3,6 +3,7 @@ import type {
   ThemePalette,
   ThemeSettings,
   ThemeMode,
+  ThemeStreamCursor,
 } from "./types";
 import { DEFAULT_THEME_PRESET_ID, getPresetById } from "./themePresets";
 import { themeBgUrl } from "../../../utils/themeBgUrl";
@@ -223,6 +224,13 @@ export const DEFAULT_THEME_SETTINGS: ThemeSettings = {
     opacity: 0.2,
     blur: 0,
   },
+  fontFamily: "",
+  streamCursor: {
+    iconType: "dot",
+    lucideName: "",
+    svgPath: "",
+    iconSize: 14,
+  },
 };
 
 export function emptyPalette(): ThemePalette {
@@ -299,6 +307,35 @@ export function normalizeThemeBackground(
   };
 }
 
+export function normalizeThemeStreamCursor(value: unknown): ThemeStreamCursor {
+  const source = isRecord(value) ? value : {};
+  const rawType = toText(source.iconType) || "dot";
+  const iconType: ThemeStreamCursor["iconType"] =
+    rawType === "lucide" || rawType === "custom" ? rawType : "dot";
+  const lucideName = toText(source.lucideName);
+  const svgPath = toText(source.svgPath);
+  const rawSize =
+    typeof source.iconSize === "number" && Number.isFinite(source.iconSize)
+      ? source.iconSize
+      : 14;
+  const iconSize = Math.max(8, Math.min(48, rawSize));
+  // 根据类型清理无关字段，与 Rust 端 normalize 逻辑保持一致。
+  if (iconType === "dot") {
+    return { iconType, lucideName: "", svgPath: "", iconSize };
+  }
+  if (iconType === "lucide") {
+    if (!lucideName) {
+      return { iconType: "dot", lucideName: "", svgPath: "", iconSize };
+    }
+    return { iconType, lucideName, svgPath: "", iconSize };
+  }
+  // iconType === "custom"
+  if (!svgPath) {
+    return { iconType: "dot", lucideName: "", svgPath: "", iconSize };
+  }
+  return { iconType, lucideName: "", svgPath, iconSize };
+}
+
 export function normalizeThemeSettings(value: unknown): ThemeSettings {
   const source = isRecord(value) ? value : {};
   const rawMode = toText(source.mode) || "system";
@@ -310,6 +347,8 @@ export function normalizeThemeSettings(value: unknown): ThemeSettings {
     presetId,
     custom: normalizeCustomTheme(source.custom),
     background: normalizeThemeBackground(source.background),
+    fontFamily: toText(source.fontFamily),
+    streamCursor: normalizeThemeStreamCursor(source.streamCursor),
   };
 }
 
@@ -351,6 +390,45 @@ export function applyThemeModeToDocument(mode: ThemeMode): "light" | "dark" {
   document.documentElement.setAttribute("data-theme", effective);
   document.documentElement.style.setProperty("color-scheme", effective);
   return effective;
+}
+
+/**
+ * 将自定义字体应用到 document 根元素。传入空字符串时移除自定义字体，
+ * 回退到 CSS 中定义的默认字体栈。
+ */
+export function applyFontFamilyToDocument(fontFamily: string): void {
+  const root = document.documentElement;
+  const trimmed = fontFamily.trim();
+  if (trimmed) {
+    root.style.setProperty("--app-font-family", trimmed);
+  } else {
+    root.style.removeProperty("--app-font-family");
+  }
+}
+
+/**
+ * 将流式光标配置应用到 document 根元素。
+ * - dot：清除 lucide 和自定义 SVG 相关属性
+ * - lucide：设置 data-stream-cursor="lucide" 和 data-stream-cursor-lucide 属性
+ * - custom：设置 data-stream-cursor="custom" 和 --stream-cursor-svg CSS 变量
+ */
+export function applyStreamCursorToDocument(cursor: ThemeStreamCursor): void {
+  const root = document.documentElement;
+  root.removeAttribute("data-stream-cursor");
+  root.removeAttribute("data-stream-cursor-lucide");
+  root.style.removeProperty("--stream-cursor-svg");
+  root.style.setProperty("--stream-cursor-size", `${cursor.iconSize}px`);
+
+  if (cursor.iconType === "lucide" && cursor.lucideName) {
+    root.setAttribute("data-stream-cursor", "lucide");
+    root.setAttribute("data-stream-cursor-lucide", cursor.lucideName);
+  } else if (cursor.iconType === "custom" && cursor.svgPath) {
+    root.setAttribute("data-stream-cursor", "custom");
+    root.style.setProperty(
+      "--stream-cursor-svg",
+      `url("${themeBgUrl(cursor.svgPath)}")`
+    );
+  }
 }
 
 export function isValidHex(value: string): boolean {
@@ -450,6 +528,10 @@ export const applyThemeCacheToDocument = (): "light" | "dark" | null => {
   applyThemeModeToDocument(settings.mode);
   const palette = resolveActivePalette(settings, isDark);
   applyPaletteToDocument(palette);
+
+  // 应用自定义字体和流式光标配置。
+  applyFontFamilyToDocument(settings.fontFamily);
+  applyStreamCursorToDocument(settings.streamCursor);
 
   // 同步背景图层 CSS 变量，避免启动时背景图延迟出现。
   const bg = settings.background;

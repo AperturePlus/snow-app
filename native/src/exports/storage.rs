@@ -19,7 +19,7 @@ use crate::storage::services::privacy_settings::{
     PrivacyApiConfig, PrivacySettings, PrivacyToolResultsConfig,
 };
 use crate::storage::services::theme_settings::{
-    CustomTheme, ThemeBackground, ThemePalette, ThemeSettings,
+    CustomTheme, ThemeBackground, ThemePalette, ThemeSettings, ThemeStreamCursor,
 };
 
 // ============================================================================
@@ -305,11 +305,43 @@ impl From<ThemeBackgroundNapi> for ThemeBackground {
 }
 
 #[napi(object)]
+pub struct ThemeStreamCursorNapi {
+    pub icon_type: String,
+    pub lucide_name: String,
+    pub svg_path: String,
+    pub icon_size: f64,
+}
+
+impl From<ThemeStreamCursor> for ThemeStreamCursorNapi {
+    fn from(c: ThemeStreamCursor) -> Self {
+        ThemeStreamCursorNapi {
+            icon_type: c.icon_type,
+            lucide_name: c.lucide_name,
+            svg_path: c.svg_path,
+            icon_size: c.icon_size,
+        }
+    }
+}
+
+impl From<ThemeStreamCursorNapi> for ThemeStreamCursor {
+    fn from(c: ThemeStreamCursorNapi) -> Self {
+        ThemeStreamCursor {
+            icon_type: c.icon_type,
+            lucide_name: c.lucide_name,
+            svg_path: c.svg_path,
+            icon_size: c.icon_size,
+        }
+    }
+}
+
+#[napi(object)]
 pub struct ThemeSettingsNapi {
     pub mode: String,
     pub preset_id: String,
     pub custom: CustomThemeNapi,
     pub background: ThemeBackgroundNapi,
+    pub font_family: String,
+    pub stream_cursor: ThemeStreamCursorNapi,
 }
 
 impl From<ThemeSettings> for ThemeSettingsNapi {
@@ -319,6 +351,8 @@ impl From<ThemeSettings> for ThemeSettingsNapi {
             preset_id: s.preset_id,
             custom: s.custom.into(),
             background: s.background.into(),
+            font_family: s.font_family,
+            stream_cursor: s.stream_cursor.into(),
         }
     }
 }
@@ -330,6 +364,8 @@ impl From<ThemeSettingsNapi> for ThemeSettings {
             preset_id: s.preset_id,
             custom: s.custom.into(),
             background: s.background.into(),
+            font_family: s.font_family,
+            stream_cursor: s.stream_cursor.into(),
         }
     }
 }
@@ -360,6 +396,20 @@ pub async fn save_theme_background_image(source_path: String) -> napi::Result<St
 #[napi]
 pub async fn delete_theme_background_image(image_path: String) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || crate::storage::delete_theme_background_image(image_path))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn save_theme_stream_cursor_svg(source_path: String) -> napi::Result<String> {
+    tokio::task::spawn_blocking(move || crate::storage::save_theme_stream_cursor_svg(source_path))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn delete_theme_stream_cursor_svg(svg_path: String) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::delete_theme_stream_cursor_svg(svg_path))
         .await
         .map_err(map_spawn_error)?
 }

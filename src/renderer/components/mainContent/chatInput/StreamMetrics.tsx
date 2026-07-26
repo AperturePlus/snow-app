@@ -1,4 +1,4 @@
-import { ArrowDown, Clock, Gauge, Timer } from "lucide-react";
+import { ArrowDown, Clock, Gauge, Pause, Play, Timer } from "lucide-react";
 import { memo, useEffect, useState } from "react";
 
 export type StreamMetricsProps = {
@@ -10,6 +10,12 @@ export type StreamMetricsProps = {
    *  accumulating elapsed timer so it survives conversation switches between
    *  parallel streaming sessions. 0 when the loop is finished. */
   startedAt: number;
+  /** Whether the agent loop is currently paused. */
+  isPaused: boolean;
+  /** Pause the agent loop (only valid while streaming and not already paused). */
+  onPause: () => void;
+  /** Resume a paused agent loop. */
+  onResume: () => void;
 };
 
 const formatTokenCount = (count: number): string =>
@@ -50,6 +56,11 @@ const formatTokPerSec = (tokens: number, elapsedMs: number): string => {
  * `elapsedMs` (which resets on every createResponseStream call) and lets
  * each parallel streaming conversation carry its own anchor, so switching
  * between them no longer resets the timer.
+ *
+ * The pause/resume button is rendered on the left edge of the bar. It
+ * allows the user to pause the agent loop before the next iteration
+ * (i.e. before the next AI response) and resume it later. The button is
+ * per-session because the pause controller is keyed by conversation id.
  */
 export const StreamMetrics = memo(
   ({
@@ -57,6 +68,9 @@ export const StreamMetrics = memo(
     elapsedMs,
     ttftMs,
     startedAt,
+    isPaused,
+    onPause,
+    onResume,
   }: StreamMetricsProps): React.JSX.Element => {
     const hasTtft = typeof ttftMs === "number" && ttftMs > 0;
     const isActive = typeof startedAt === "number" && startedAt > 0;
@@ -91,6 +105,22 @@ export const StreamMetrics = memo(
 
     return (
       <span className="stream-metrics">
+        <button
+          type="button"
+          className={`stream-metrics-pause-btn${
+            isPaused ? " is-paused" : ""
+          }`}
+          aria-label={isPaused ? "Resume" : "Pause"}
+          title={isPaused ? "Resume" : "Pause"}
+          onClick={isPaused ? onResume : onPause}
+        >
+          {isPaused ? (
+            <Play size={11} fill="currentColor" />
+          ) : (
+            <Pause size={11} fill="currentColor" />
+          )}
+        </button>
+        <span className="stream-metrics-sep" />
         <span
           className={`stream-metrics-metric stream-metrics-elapsed${
             isActive ? " is-active" : ""

@@ -81,6 +81,9 @@ export type ConversationSessionState = {
   summary: string;
   isStreaming: boolean;
   isAborting: boolean;
+  /** True when the user paused the agent loop. The loop checks this at the
+   *  start of each iteration and blocks until resumed or cancelled. */
+  isPaused: boolean;
   isLoadingOlderMessages: boolean;
   hasMoreMessages: boolean;
   isInitialHistoryLoaded: boolean;
@@ -125,6 +128,14 @@ export type ConversationSessionRef = {
   directoryId?: string;
   checkpointIds: string[];
   hasAutoCompacted: boolean;
+};
+
+/** Per-session pause controller stored in pauseControllerRef. When `paused`
+ *  is true, the agent loop awaits on `resolve` before proceeding to the next
+ *  iteration. `resolve` is set back to null once the promise is settled. */
+export type PauseController = {
+  paused: boolean;
+  resolve: (() => void) | null;
 };
 
 export type RollbackTodoItem = {
@@ -235,6 +246,9 @@ export type ConversationContextValue = {
   pendingUserQuestionRef: RefValue<Map<string, PendingUserQuestion>>;
   userQuestionTargetRef: RefValue<Map<string, UserQuestionTarget>>;
   activeApiConfigRef: RefValue<ApiConfigRecord | null>;
+  /** Per-session pause controllers. Each entry controls whether the agent
+   *  loop for that session should block before its next iteration. */
+  pauseControllerRef: RefValue<Map<string, PauseController>>;
 
   // State setters
   setSessions: Dispatch<
@@ -337,7 +351,10 @@ export type UseChatConversationResult = {
   refreshConversations: () => void;
   isStreaming: boolean;
   isAborting: boolean;
+  isPaused: boolean;
   handleAbort: () => void;
+  handlePause: () => void;
+  handleResume: () => void;
   abortConversation: (conversationId: string) => void;
   handleForkConversation: (
     conversationId: string,

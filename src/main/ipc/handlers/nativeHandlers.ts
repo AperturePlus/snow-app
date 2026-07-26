@@ -94,6 +94,24 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       return native.deleteThemeBackgroundImage(imagePath);
     }
   );
+  ipcMain.handle(
+    "theme:save-stream-cursor-svg",
+    (_event, sourcePath: unknown) => {
+      if (typeof sourcePath !== "string" || !sourcePath.trim()) {
+        throw new Error("Stream cursor SVG source path is required");
+      }
+      return native.saveThemeStreamCursorSvg(sourcePath);
+    }
+  );
+  ipcMain.handle(
+    "theme:delete-stream-cursor-svg",
+    (_event, svgPath: unknown) => {
+      if (typeof svgPath !== "string") {
+        throw new Error("Stream cursor SVG path must be a string");
+      }
+      return native.deleteThemeStreamCursorSvg(svgPath);
+    }
+  );
   ipcMain.handle("codebase:get-project-scope", (_event, projectId: unknown) => {
     if (typeof projectId !== "string" || !projectId.trim()) {
       throw new Error("Project id is required");

@@ -5,10 +5,13 @@ import { pathToFileURL } from "node:url";
 import { THEME_BG_SCHEME, themeBgUrl } from "../../renderer/utils/themeBgUrl";
 
 /**
- * 背景图允许的根目录。协议处理器只允许读取该目录下的文件，
+ * 背景图/流式光标 SVG 允许的根目录列表。协议处理器只允许读取这些目录下的文件，
  * 防止渲染进程通过构造 URL 读取任意本地文件。
  */
-const ALLOWED_DIR = join(homedir(), ".snowapp", "backgrounds");
+const ALLOWED_DIRS = [
+  join(homedir(), ".snowapp", "backgrounds"),
+  join(homedir(), ".snowapp", "stream-cursors"),
+];
 
 let registered = false;
 
@@ -37,10 +40,11 @@ export const registerThemeBgProtocol = (): void => {
       const encodedPath = url.pathname.replace(/^\//, "");
       const filePath = decodeURIComponent(encodedPath);
 
-      // 安全检查：只允许读取 ALLOWED_DIR 下的文件。
+      // 安全检查：只允许读取 ALLOWED_DIRS 下的文件。
       const normalized = join(filePath);
-      if (!normalized.startsWith(ALLOWED_DIR)) {
-        return new Response("Forbidden: path outside backgrounds directory", {
+      const isAllowed = ALLOWED_DIRS.some((dir) => normalized.startsWith(dir));
+      if (!isAllowed) {
+        return new Response("Forbidden: path outside allowed directories", {
           status: 403,
         });
       }
@@ -50,7 +54,7 @@ export const registerThemeBgProtocol = (): void => {
       return response;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return new Response(`Failed to load theme background: ${message}`, {
+      return new Response(`Failed to load theme resource: ${message}`, {
         status: 500,
       });
     }

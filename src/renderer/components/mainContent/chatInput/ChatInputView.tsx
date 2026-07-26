@@ -116,6 +116,9 @@ export const ChatInputView = ({
     streamElapsedMs,
     streamTtftMs,
     streamStartedAt,
+    isPaused,
+    handlePause,
+    handleResume,
   } = useChatConversationContext();
   const isDraggingOverRef = useRef(false);
   const [isMentionOpen, setIsMentionOpen] = useState(false);
@@ -872,6 +875,9 @@ export const ChatInputView = ({
               elapsedMs={streamElapsedMs}
               ttftMs={streamTtftMs}
               startedAt={streamStartedAt}
+              isPaused={isPaused}
+              onPause={handlePause}
+              onResume={handleResume}
             />
           </div>
         ) : null}

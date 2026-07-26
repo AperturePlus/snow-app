@@ -135,6 +135,7 @@ export const useConversationManagement = (
             summary: nextTitle,
             isStreaming: false,
             isAborting: false,
+            isPaused: false,
             isLoadingOlderMessages: false,
             hasMoreMessages: page.hasMore,
             isInitialHistoryLoaded: true,
@@ -284,6 +285,20 @@ export const useConversationManagement = (
 
     rejectAllToolAuthorizations();
     rejectPendingUserQuestions(key);
+
+    // Wake up the pause checkpoint so the blocked agent loop can observe
+    // the cancellation and exit. Without this, a paused loop would hang
+    // forever because it is awaiting the pause promise.
+    const pauseController = ctx.pauseControllerRef.current.get(key);
+    if (pauseController) {
+      pauseController.paused = false;
+      const resolve = pauseController.resolve;
+      pauseController.resolve = null;
+      if (resolve) {
+        resolve();
+      }
+    }
+
     ref.isAbortRequested = true;
     ref.isSending = false;
     ref.runId += 1;
@@ -308,6 +323,8 @@ export const useConversationManagement = (
     ctx.updateSessionField(key, "isStreaming", false);
     ctx.updateSessionField(key, "streamStartedAt", 0);
     ctx.updateSessionField(key, "isAborting", false);
+    ctx.updateSessionField(key, "isPaused", false);
+    ctx.pauseControllerRef.current.delete(key);
     ctx.removeStreamingId(key);
 
     if (ref.streamId) {
@@ -319,6 +336,7 @@ export const useConversationManagement = (
     rejectPendingUserQuestions,
     ctx.updateSessionMessages,
     ctx.updateSessionField,
+    ctx.pauseControllerRef,
   ]);
 
   const abortConversation = useCallback(

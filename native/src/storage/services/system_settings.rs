@@ -42,7 +42,7 @@ const DEFAULT_PRIVACY_SETTING_VALUE: &str = "{\"enabled\":false,\"mode\":\"local
 const DEFAULT_THEME_SETTING_NAME: &str = "Theme settings";
 const DEFAULT_THEME_SETTING_CODE: &str = "theme_settings";
 // 默认主题：跟随系统 + snow 预设 + 无背景图 + 100% 不透明
-const DEFAULT_THEME_SETTING_VALUE: &str = "{\"mode\":\"system\",\"presetId\":\"snow\",\"custom\":{\"light\":{\"bgPrimary\":\"#ffffff\",\"bgSecondary\":\"#f9fafb\",\"bgTertiary\":\"#f3f4f6\",\"bgHover\":\"#f3f4f6\",\"bgActive\":\"#e5e7eb\",\"chromeBg\":\"#f8fafc\",\"appBg\":\"#eef2f7\",\"borderColor\":\"#e5e7eb\",\"borderLight\":\"#f3f4f6\",\"borderSubtle\":\"#d1d5db\",\"textPrimary\":\"#111827\",\"textSecondary\":\"#374151\",\"textTertiary\":\"#6b7280\",\"textMuted\":\"#9ca3af\",\"accentGreen\":\"#22c55e\",\"accentGreenBg\":\"#dcfce7\",\"accentGreenText\":\"#166534\",\"accentRed\":\"#ef4444\",\"accentRedBg\":\"#fee2e2\",\"accentRedText\":\"#991b1b\",\"accentBlue\":\"#3b82f6\",\"accentBlueBg\":\"#dbeafe\",\"accentBlueText\":\"#1d4ed8\",\"onSolid\":\"#ffffff\",\"selectionBg\":\"rgba(59, 130, 246, 0.2)\",\"focusRing\":\"rgba(17, 24, 39, 0.06)\"},\"dark\":{\"bgPrimary\":\"#0a0a0a\",\"bgSecondary\":\"#111111\",\"bgTertiary\":\"#1a1a1a\",\"bgHover\":\"#1f1f1f\",\"bgActive\":\"#2a2a2a\",\"chromeBg\":\"#141414\",\"appBg\":\"#050505\",\"borderColor\":\"#2b2b2b\",\"borderLight\":\"#202020\",\"borderSubtle\":\"#3a3a3a\",\"textPrimary\":\"#f5f5f5\",\"textSecondary\":\"#d4d4d4\",\"textTertiary\":\"#a3a3a3\",\"textMuted\":\"#737373\",\"accentGreen\":\"#4ade80\",\"accentGreenBg\":\"rgba(34, 197, 94, 0.18)\",\"accentGreenText\":\"#86efac\",\"accentRed\":\"#f87171\",\"accentRedBg\":\"rgba(239, 68, 68, 0.18)\",\"accentRedText\":\"#fca5a5\",\"accentBlue\":\"#58a6ff\",\"accentBlueBg\":\"rgba(59, 130, 246, 0.18)\",\"accentBlueText\":\"#93c5fd\",\"onSolid\":\"#0a0a0a\",\"selectionBg\":\"rgba(88, 166, 255, 0.28)\",\"focusRing\":\"rgba(212, 212, 212, 0.14)\"}},\"background\":{\"enabled\":false,\"imagePath\":\"\",\"opacity\":1.0,\"blur\":0}}";
+const DEFAULT_THEME_SETTING_VALUE: &str = "{\"mode\":\"system\",\"presetId\":\"snow\",\"custom\":{\"light\":{\"bgPrimary\":\"#ffffff\",\"bgSecondary\":\"#f9fafb\",\"bgTertiary\":\"#f3f4f6\",\"bgHover\":\"#f3f4f6\",\"bgActive\":\"#e5e7eb\",\"chromeBg\":\"#f8fafc\",\"appBg\":\"#eef2f7\",\"borderColor\":\"#e5e7eb\",\"borderLight\":\"#f3f4f6\",\"borderSubtle\":\"#d1d5db\",\"textPrimary\":\"#111827\",\"textSecondary\":\"#374151\",\"textTertiary\":\"#6b7280\",\"textMuted\":\"#9ca3af\",\"accentGreen\":\"#22c55e\",\"accentGreenBg\":\"#dcfce7\",\"accentGreenText\":\"#166534\",\"accentRed\":\"#ef4444\",\"accentRedBg\":\"#fee2e2\",\"accentRedText\":\"#991b1b\",\"accentBlue\":\"#3b82f6\",\"accentBlueBg\":\"#dbeafe\",\"accentBlueText\":\"#1d4ed8\",\"onSolid\":\"#ffffff\",\"selectionBg\":\"rgba(59, 130, 246, 0.2)\",\"focusRing\":\"rgba(17, 24, 39, 0.06)\"},\"dark\":{\"bgPrimary\":\"#0a0a0a\",\"bgSecondary\":\"#111111\",\"bgTertiary\":\"#1a1a1a\",\"bgHover\":\"#1f1f1f\",\"bgActive\":\"#2a2a2a\",\"chromeBg\":\"#141414\",\"appBg\":\"#050505\",\"borderColor\":\"#2b2b2b\",\"borderLight\":\"#202020\",\"borderSubtle\":\"#3a3a3a\",\"textPrimary\":\"#f5f5f5\",\"textSecondary\":\"#d4d4d4\",\"textTertiary\":\"#a3a3a3\",\"textMuted\":\"#737373\",\"accentGreen\":\"#4ade80\",\"accentGreenBg\":\"rgba(34, 197, 94, 0.18)\",\"accentGreenText\":\"#86efac\",\"accentRed\":\"#f87171\",\"accentRedBg\":\"rgba(239, 68, 68, 0.18)\",\"accentRedText\":\"#fca5a5\",\"accentBlue\":\"#58a6ff\",\"accentBlueBg\":\"rgba(59, 130, 246, 0.18)\",\"accentBlueText\":\"#93c5fd\",\"onSolid\":\"#0a0a0a\",\"selectionBg\":\"rgba(88, 166, 255, 0.28)\",\"focusRing\":\"rgba(212, 212, 212, 0.14)\"}},\"background\":{\"enabled\":false,\"imagePath\":\"\",\"opacity\":1.0,\"blur\":0},\"fontFamily\":\"\",\"streamCursor\":{\"iconType\":\"dot\",\"lucideName\":\"\",\"svgPath\":\"\",\"iconSize\":14.0}}";
 
 const PROJECT_MCP_SETTING_NAME: &str = "Project MCP scope";
 const PROJECT_MCP_SETTING_CODE_PREFIX: &str = "project_mcp_scope_";
@@ -477,7 +477,59 @@ impl ThemeBackground {
     }
 }
 
-/// 完整主题设置：模式 + 预设 ID + 自定义调色板 + 背景图。
+/// 流式光标配置。icon_type 决定渲染形态：
+/// - "dot"：默认脉动圆点
+/// - "lucide"：使用内置 lucide 图标，由 lucide_name 指定
+/// - "custom"：使用用户上传的 SVG，由 svg_path 指定文件路径
+/// icon_type 为 "lucide" 时 svg_path 应为空；为 "custom" 时 lucide_name 应为空。
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ThemeStreamCursor {
+    pub icon_type: String,
+    pub lucide_name: String,
+    pub svg_path: String,
+    pub icon_size: f64,
+}
+
+impl ThemeStreamCursor {
+    fn normalize(&mut self) {
+        self.icon_type = self.icon_type.trim().to_string();
+        if !matches!(self.icon_type.as_str(), "dot" | "lucide" | "custom") {
+            self.icon_type = "dot".to_string();
+        }
+        self.lucide_name = self.lucide_name.trim().to_string();
+        self.svg_path = self.svg_path.trim().to_string();
+        // 图标尺寸范围 8~48，默认 14。
+        if !self.icon_size.is_finite() || self.icon_size < 8.0 {
+            self.icon_size = 14.0;
+        } else if self.icon_size > 48.0 {
+            self.icon_size = 48.0;
+        }
+        // 根据类型清理无关字段，避免持久化数据与实际渲染形态不一致。
+        match self.icon_type.as_str() {
+            "dot" => {
+                self.lucide_name.clear();
+                self.svg_path.clear();
+            }
+            "lucide" => {
+                self.svg_path.clear();
+                if self.lucide_name.is_empty() {
+                    // 退化到默认脉动圆点。
+                    self.icon_type = "dot".to_string();
+                }
+            }
+            "custom" => {
+                self.lucide_name.clear();
+                if self.svg_path.is_empty() {
+                    self.icon_type = "dot".to_string();
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// 完整主题设置：模式 + 预设 ID + 自定义调色板 + 背景图 + 字体 + 流式光标。
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ThemeSettings {
@@ -485,6 +537,8 @@ pub struct ThemeSettings {
     pub preset_id: String,
     pub custom: CustomTheme,
     pub background: ThemeBackground,
+    pub font_family: String,
+    pub stream_cursor: ThemeStreamCursor,
 }
 
 impl ThemeSettings {
@@ -499,6 +553,8 @@ impl ThemeSettings {
         }
         self.custom.normalize();
         self.background.normalize();
+        self.font_family = self.font_family.trim().to_string();
+        self.stream_cursor.normalize();
     }
 }
 

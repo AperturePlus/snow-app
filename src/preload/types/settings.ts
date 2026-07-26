@@ -75,11 +75,20 @@ export type ThemeBackground = {
   blur: number;
 };
 
+export type ThemeStreamCursor = {
+  iconType: string;
+  lucideName: string;
+  svgPath: string;
+  iconSize: number;
+};
+
 export type ThemeSettings = {
   mode: ThemeMode;
   presetId: string;
   custom: CustomTheme;
   background: ThemeBackground;
+  fontFamily: string;
+  streamCursor: ThemeStreamCursor;
 };
 
 export type DetectedTerminal = {

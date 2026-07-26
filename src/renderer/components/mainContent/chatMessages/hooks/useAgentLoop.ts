@@ -86,6 +86,11 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         sessionRef.runId = currentRunId;
       }
 
+      // Reset pause state for a fresh send — the previous run may have
+      // been paused and aborted without cleaning up the controller.
+      ctx.updateSessionField(sessionKey, "isPaused", false);
+      ctx.pauseControllerRef.current.delete(sessionKey);
+
       const userMessage: ChatConversationMessage = {
         id: createMessageId("user"),
         role: "user",
@@ -862,6 +867,21 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
 
         if (isRunCancelled(effectiveKey)) {
           return;
+        }
+
+        // Pause checkpoint: before sending the next AI request, check whether
+        // the user paused this session. If paused, block here until resumed
+        // or cancelled. This is the natural boundary — the previous response
+        // has already been fully rendered, and no new streaming has started.
+        const pauseController =
+          ctx.pauseControllerRef.current.get(effectiveKey);
+        if (pauseController?.paused) {
+          await new Promise<void>((resolve) => {
+            pauseController.resolve = resolve;
+          });
+          if (isRunCancelled(effectiveKey)) {
+            return;
+          }
         }
 
         // Reset the real-time token probe at the start of each agent-loop
@@ -1928,6 +1948,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           ctx.updateSessionField(finalSessionKey, "isStreaming", false);
           ctx.updateSessionField(finalSessionKey, "streamStartedAt", 0);
           ctx.updateSessionField(finalSessionKey, "isAborting", false);
+          ctx.updateSessionField(finalSessionKey, "isPaused", false);
+          // Clear the pause controller so a stale resolve callback from a
+          // previous run cannot accidentally unblock a future iteration.
+          ctx.pauseControllerRef.current.delete(finalSessionKey);
           ctx.removeStreamingId(finalSessionKey);
 
           // Flush pending messages queued while this session was busy.

@@ -41,11 +41,26 @@ export type ThemeBackground = {
   blur: number;
 };
 
+/**
+ * 流式光标配置。iconType 决定渲染形态：
+ * - "dot"：默认脉动圆点
+ * - "lucide"：使用内置 lucide 图标，由 lucideName 指定
+ * - "custom"：使用用户上传的 SVG，由 svgPath 指定文件路径
+ */
+export type ThemeStreamCursor = {
+  iconType: "dot" | "lucide" | "custom";
+  lucideName: string;
+  svgPath: string;
+  iconSize: number;
+};
+
 export type ThemeSettings = {
   mode: ThemeMode;
   presetId: string;
   custom: CustomTheme;
   background: ThemeBackground;
+  fontFamily: string;
+  streamCursor: ThemeStreamCursor;
 };
 
 export type ThemePreset = {

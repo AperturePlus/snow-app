@@ -105,6 +105,18 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to delete theme background image"
           )
         ),
+      saveThemeStreamCursorSvg: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to save theme stream cursor SVG"
+          )
+        ),
+      deleteThemeStreamCursorSvg: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to delete theme stream cursor SVG"
+          )
+        ),
       listToolApprovalProjectApprovedTools: () =>
         Promise.reject(
           new Error("Rust native bridge is required to read tool approvals")

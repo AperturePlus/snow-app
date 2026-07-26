@@ -798,6 +798,8 @@ export type NativeBridge = {
   setThemeSettings: (settings: ThemeSettings) => Promise<void>;
   saveThemeBackgroundImage: (sourcePath: string) => Promise<string>;
   deleteThemeBackgroundImage: (imagePath: string) => Promise<void>;
+  saveThemeStreamCursorSvg: (sourcePath: string) => Promise<string>;
+  deleteThemeStreamCursorSvg: (svgPath: string) => Promise<void>;
   getCodebaseProjectScopeSettings: (
     projectId: string
   ) => Promise<CodebaseProjectScopeSettings>;

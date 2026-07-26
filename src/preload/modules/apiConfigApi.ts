@@ -96,6 +96,12 @@ export const apiConfigApi = {
     ipcRenderer.invoke("theme:save-background-image", sourcePath),
   deleteThemeBackgroundImage: (imagePath: string): Promise<void> =>
     ipcRenderer.invoke("theme:delete-background-image", imagePath),
+  selectThemeStreamCursorSvg: (dialogTitle?: string): Promise<string | null> =>
+    ipcRenderer.invoke("theme:select-stream-cursor-svg", dialogTitle),
+  saveThemeStreamCursorSvg: (sourcePath: string): Promise<string> =>
+    ipcRenderer.invoke("theme:save-stream-cursor-svg", sourcePath),
+  deleteThemeStreamCursorSvg: (svgPath: string): Promise<void> =>
+    ipcRenderer.invoke("theme:delete-stream-cursor-svg", svgPath),
   setThemeBackgroundColor: (color: string): Promise<void> =>
     ipcRenderer.invoke("theme:set-background-color", color),
   listToolApprovalProjectApprovedTools: (

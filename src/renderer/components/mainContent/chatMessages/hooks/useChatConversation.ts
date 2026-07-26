@@ -4,6 +4,7 @@ import type { ApiConfigRecord } from "../../../../../preload";
 
 import type {
   ConversationContextValue,
+  PauseController,
   UseChatConversationResult,
 } from "../utils/conversationTypes";
 import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
@@ -125,6 +126,11 @@ export const useChatConversation = (
   yoloModeRef.current = yoloMode;
   planModeRef.current = planMode;
 
+  // --- Pause controller ---
+  // Per-session pause flags. When paused, the agent loop awaits the
+  // `resolve` callback before proceeding to the next iteration.
+  const pauseControllerRef = useRef<Map<string, PauseController>>(new Map());
+
   // --- Load active API config once ---
   useEffect(() => {
     let disposed = false;
@@ -186,6 +192,7 @@ export const useChatConversation = (
     pendingUserQuestionRef,
     userQuestionTargetRef,
     activeApiConfigRef,
+    pauseControllerRef,
 
     setSessions,
     setActiveConversationId,
@@ -297,6 +304,43 @@ export const useChatConversation = (
     [toolAuthApi]
   );
 
+  // --- Pause / Resume ---
+  // handlePause marks the active session as paused. The agent loop checks
+  // the pause controller at the start of each iteration and blocks on a
+  // promise until handleResume is called or the loop is cancelled.
+  const handlePause = useCallback((): void => {
+    const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+    const ref = ctx.sessionsRefData.current.get(key);
+    if (!ref?.isSending) {
+      return;
+    }
+    let controller = ctx.pauseControllerRef.current.get(key);
+    if (!controller) {
+      controller = { paused: false, resolve: null };
+      ctx.pauseControllerRef.current.set(key, controller);
+    }
+    if (controller.paused) {
+      return;
+    }
+    controller.paused = true;
+    ctx.updateSessionField(key, "isPaused", true);
+  }, [ctx]);
+
+  const handleResume = useCallback((): void => {
+    const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+    const controller = ctx.pauseControllerRef.current.get(key);
+    if (!controller || !controller.paused) {
+      return;
+    }
+    controller.paused = false;
+    ctx.updateSessionField(key, "isPaused", false);
+    const resolve = controller.resolve;
+    controller.resolve = null;
+    if (resolve) {
+      resolve();
+    }
+  }, [ctx]);
+
   return {
     messages: activeSession?.messages ?? [],
     summary: activeSession?.summary ?? "",
@@ -333,7 +377,10 @@ export const useChatConversation = (
     refreshConversations: conversationManagementApi.refreshConversations,
     isStreaming: activeSession?.isStreaming ?? false,
     isAborting: activeSession?.isAborting ?? false,
+    isPaused: activeSession?.isPaused ?? false,
     handleAbort: conversationManagementApi.handleAbort,
+    handlePause,
+    handleResume,
     abortConversation: conversationManagementApi.abortConversation,
     handleForkConversation: conversationManagementApi.handleForkConversation,
     draftToRestore,

@@ -6,7 +6,9 @@ import { Modal } from "../common/Modal";
 import { useI18n } from "../../i18n";
 import { getPresetById } from "./themeSettings/themePresets";
 import {
+  applyFontFamilyToDocument,
   applyPaletteToDocument,
+  applyStreamCursorToDocument,
   applyThemeModeToDocument,
   DEFAULT_THEME_SETTINGS,
   MAX_BACKGROUND_OPACITY,
@@ -21,14 +23,17 @@ import type {
   ThemePalette,
   ThemeSettings,
   ThemeSettingsPanelProps,
+  ThemeStreamCursor,
 } from "./themeSettings/types";
 import { themeBgUrl } from "../../utils/themeBgUrl";
 import { ThemeAiColorModal } from "./themeSettings/ThemeAiColorModal";
 import { ThemeBackgroundSection } from "./themeSettings/ThemeBackgroundSection";
 import { ThemeColorEditor } from "./themeSettings/ThemeColorEditor";
+import { ThemeFontSection } from "./themeSettings/ThemeFontSection";
 import { ThemeModeSelector } from "./themeSettings/ThemeModeSelector";
 import { ThemePresetGrid } from "./themeSettings/ThemePresetGrid";
 import { ThemePreview } from "./themeSettings/ThemePreview";
+import { ThemeStreamCursorSection } from "./themeSettings/ThemeStreamCursorSection";
 
 type EditorTab = "light" | "dark";
 
@@ -113,6 +118,10 @@ export function ThemeSettingsPanel({
     applyThemeModeToDocument(form.mode);
     const palette = resolveActivePalette(form, effectiveDark);
     applyPaletteToDocument(palette);
+
+    // 预览字体和流式光标配置。
+    applyFontFamilyToDocument(form.fontFamily);
+    applyStreamCursorToDocument(form.streamCursor);
 
     // 同步窗口背景色到主进程，使 Electron 窗口背景跟随预览。
     const bgPrimary = palette.bgPrimary;
@@ -284,6 +293,90 @@ export function ThemeSettingsPanel({
 
   const handleBackgroundChange = (background: ThemeBackground): void => {
     setForm((previous: ThemeSettings) => ({ ...previous, background }));
+  };
+
+  const handleFontChange = (fontFamily: string): void => {
+    setForm((previous: ThemeSettings) => ({ ...previous, fontFamily }));
+  };
+
+  const handleStreamCursorChange = (streamCursor: ThemeStreamCursor): void => {
+    setForm((previous: ThemeSettings) => ({ ...previous, streamCursor }));
+  };
+
+  const handleSelectSvg = async (): Promise<void> => {
+    setIsBusy(true);
+    setError("");
+    setStatus("");
+    try {
+      const title = t("settings.themeStreamCursorSelectDialogTitle", {
+        defaultValue: "Select stream cursor SVG",
+      });
+      const sourcePath = await window.snow.selectThemeStreamCursorSvg(title);
+      if (!sourcePath) {
+        return;
+      }
+      // 替换 SVG 时先删除旧文件，避免冗余文件堆积。
+      const previousSvgPath = form.streamCursor.svgPath;
+      if (previousSvgPath) {
+        await window.snow
+          .deleteThemeStreamCursorSvg(previousSvgPath)
+          .catch(() => {
+            // 旧文件删除失败不阻塞新 SVG 上传。
+          });
+      }
+      const savedPath = await window.snow.saveThemeStreamCursorSvg(sourcePath);
+      setForm((previous: ThemeSettings) => ({
+        ...previous,
+        streamCursor: {
+          iconType: "custom",
+          lucideName: "",
+          svgPath: savedPath,
+          iconSize: previous.streamCursor.iconSize,
+        },
+      }));
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : t("settings.themeStreamCursorSaveError", {
+              defaultValue: "Failed to save stream cursor SVG",
+            })
+      );
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleRemoveSvg = async (): Promise<void> => {
+    const svgPath = form.streamCursor.svgPath;
+    if (!svgPath) {
+      return;
+    }
+    setIsBusy(true);
+    setError("");
+    setStatus("");
+    try {
+      await window.snow.deleteThemeStreamCursorSvg(svgPath);
+      setForm((previous: ThemeSettings) => ({
+        ...previous,
+        streamCursor: {
+          iconType: "dot",
+          lucideName: "",
+          svgPath: "",
+          iconSize: previous.streamCursor.iconSize,
+        },
+      }));
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : t("settings.themeStreamCursorDeleteError", {
+              defaultValue: "Failed to delete stream cursor SVG",
+            })
+      );
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const handleSelectImage = async (): Promise<void> => {
@@ -602,6 +695,21 @@ export function ThemeSettingsPanel({
             onChange={handleBackgroundChange}
             onSelectImage={handleSelectImage}
             onRemoveImage={handleRemoveImage}
+          />
+
+          <ThemeFontSection
+            fontFamily={form.fontFamily}
+            disabled={busy}
+            onChange={handleFontChange}
+          />
+
+          <ThemeStreamCursorSection
+            cursor={form.streamCursor}
+            disabled={busy}
+            busy={isBusy}
+            onChange={handleStreamCursorChange}
+            onSelectSvg={handleSelectSvg}
+            onRemoveSvg={handleRemoveSvg}
           />
 
           <div className="api-settings-form-section">

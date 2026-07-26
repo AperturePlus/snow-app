@@ -41,6 +41,7 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
             summary: "",
             isStreaming: false,
             isAborting: false,
+            isPaused: false,
             isLoadingOlderMessages: false,
             hasMoreMessages: false,
             isInitialHistoryLoaded: true,

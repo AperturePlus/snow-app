@@ -1025,6 +1025,23 @@ export const en = {
   "settings.themeBackgroundOpacity": "Opacity",
   "settings.themeBackgroundBlur": "Blur",
   "settings.themeBackgroundSaveError": "Failed to save background image",
+  "settings.themeFontTitle": "Font",
+  "settings.themeFontInfo":
+    "Set the application font. Choose a common font or enter a custom CSS font-family value.",
+  "settings.themeFontPlaceholder": "e.g. Inter, sans-serif",
+  "settings.themeFontSystemDefault": "System default",
+  "settings.themeStreamCursorTitle": "Streaming indicator",
+  "settings.themeStreamCursorInfo":
+    "Customize the indicator shown while the AI is generating a response.",
+  "settings.themeStreamCursorTypeDot": "Pulsing dot",
+  "settings.themeStreamCursorTypeLucide": "Built-in icon",
+  "settings.themeStreamCursorTypeCustom": "Custom SVG",
+  "settings.themeStreamCursorSelectSvg": "Select SVG",
+  "settings.themeStreamCursorSelectDialogTitle": "Select stream cursor SVG",
+  "settings.themeStreamCursorRemoveSvg": "Remove",
+  "settings.themeStreamCursorSaveError": "Failed to save stream cursor SVG",
+  "settings.themeStreamCursorDeleteError": "Failed to delete stream cursor SVG",
+  "settings.themeStreamCursorSize": "Icon size",
   "settings.themeAiColorButton": "AI palette",
   "settings.themeAiColorButtonTitle":
     "Generate a palette from the background image",

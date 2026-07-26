@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  applyFontFamilyToDocument,
   applyPaletteToDocument,
+  applyStreamCursorToDocument,
   applyThemeModeToDocument,
   DEFAULT_THEME_SETTINGS,
   normalizeThemeSettings,
@@ -36,6 +38,10 @@ export const useTheme = (): {
       applyThemeModeToDocument(settings.mode);
       const palette = resolveActivePalette(settings, isDark);
       applyPaletteToDocument(palette);
+
+      // 应用自定义字体和流式光标配置。
+      applyFontFamilyToDocument(settings.fontFamily);
+      applyStreamCursorToDocument(settings.streamCursor);
 
       // 将主题快照写入 localStorage，供下次启动时在 React 渲染前同步应用，
       // 消除从 Rust 后端异步加载主题期间的白屏闪烁。
