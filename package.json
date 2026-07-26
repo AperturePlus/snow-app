@@ -2,7 +2,10 @@
   "name": "snow-app",
   "version": "0.1.0",
   "description": "High-performance cross-platform desktop app scaffold powered by Electron, React, TypeScript, and Rust.",
-  "author": "MayDay",
+  "author": {
+    "name": "MayDay",
+    "email": "mufasa@snow.app"
+  },
   "private": true,
   "type": "module",
   "main": "out/main/index.js",
@@ -117,7 +120,8 @@
       "deleteAppDataOnUninstall": false
     },
     "linux": {
-      "icon": "resources/icon.png"
+      "icon": "resources/icon.png",
+      "maintainer": "MayDay <mufasa@snow.app>"
     }
   },
   "allowScripts": {
