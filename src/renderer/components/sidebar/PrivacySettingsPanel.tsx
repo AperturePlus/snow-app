@@ -10,13 +10,14 @@ import {
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { useI18n } from "../../i18n";
 import { CustomSelect } from "../common/CustomSelect";
+import { useDebouncedAutoSave } from "../../hooks/useDebouncedAutoSave";
 import type { PrivacyApiConfig, PrivacySettings } from "../../../preload";
 
 const PRIVACY_TOOL_LEGACY_MAP: Record<string, string> = {
-  "mcp__filesystem__read": "filesystem-read",
-  "mcp__grep__search": "grep-search",
+  mcp__filesystem__read: "filesystem-read",
+  mcp__grep__search: "grep-search",
   "mcp__bash__terminal-execute": "bash-terminal-execute",
-  "mcp__codebase__search": "codebase-search",
+  mcp__codebase__search: "codebase-search",
   "mcp__websearch__websearch-search": "websearch-websearch-search",
   "mcp__websearch__websearch-fetch": "websearch-websearch-fetch",
 };
@@ -33,11 +34,7 @@ const DEFAULT_PRIVACY_SETTINGS: PrivacySettings = {
     model: "openai/privacy-filter",
   },
   toolResults: {
-    tools: [
-      "filesystem-read",
-      "grep-search",
-      "bash-terminal-execute",
-    ],
+    tools: ["filesystem-read", "grep-search", "bash-terminal-execute"],
   },
 };
 
@@ -87,6 +84,24 @@ const TOOL_OPTIONS: ToolOption[] = [
 
 const SAVE_DEBOUNCE_MS = 600;
 
+/**
+ * 计算待保存的隐私设置值。
+ * 返回 null 表示无需保存（加载中 / 与上次保存一致）。
+ */
+function computePrivacySaveValue(
+  form: PrivacySettings,
+  lastSaved: PrivacySettings,
+  isLoading: boolean
+): PrivacySettings | null {
+  if (isLoading) {
+    return null;
+  }
+  if (JSON.stringify(form) === JSON.stringify(lastSaved)) {
+    return null;
+  }
+  return form;
+}
+
 type PrivacySettingsPanelProps = {
   onClose?: () => void;
 };
@@ -104,16 +119,11 @@ export function PrivacySettingsPanel({
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const isMountedRef = useRef(true);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
     };
   }, []);
 
@@ -223,23 +233,12 @@ export function PrivacySettingsPanel({
     [t]
   );
 
-  // 修改即保存：表单变化后 debounce 保存。
-  useEffect(() => {
-    if (isLoading) {
-      return;
-    }
-    if (JSON.stringify(form) === JSON.stringify(lastSaved)) {
-      return;
-    }
-
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-    }
-    saveTimerRef.current = setTimeout(() => {
-      saveTimerRef.current = null;
-      void saveSettings(form);
-    }, SAVE_DEBOUNCE_MS);
-  }, [form, isLoading, lastSaved, saveSettings]);
+  // 修改即保存：表单变化后 debounce 保存，卸载时立即冲刷避免丢失。
+  const saveValue = useMemo(
+    () => computePrivacySaveValue(form, lastSaved, isLoading),
+    [form, lastSaved, isLoading]
+  );
+  useDebouncedAutoSave(saveValue, saveSettings, SAVE_DEBOUNCE_MS);
 
   const handleReset = (): void => {
     setForm(DEFAULT_PRIVACY_SETTINGS);
@@ -504,7 +503,9 @@ const normalizePrivacySettings = (value: unknown): PrivacySettings => {
 
   const tools = Array.isArray(toolResultsSource.tools)
     ? toolResultsSource.tools
-        .map((tool) => (typeof tool === "string" ? migratePrivacyToolName(tool.trim()) : ""))
+        .map((tool) =>
+          typeof tool === "string" ? migratePrivacyToolName(tool.trim()) : ""
+        )
         .filter((tool) => tool.length > 0)
     : DEFAULT_PRIVACY_SETTINGS.toolResults.tools;
 

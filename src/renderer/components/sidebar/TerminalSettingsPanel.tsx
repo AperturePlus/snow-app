@@ -2,12 +2,14 @@ import { X } from "lucide-react";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
 } from "react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { useI18n } from "../../i18n";
+import { useDebouncedAutoSave } from "../../hooks/useDebouncedAutoSave";
 import { TerminalSettingsForm } from "./terminalSettings/TerminalSettingsForm";
 import { TerminalSettingsSummary } from "./terminalSettings/TerminalSettingsSummary";
 import {
@@ -49,16 +51,11 @@ export function TerminalSettingsPanel({
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const isMountedRef = useRef(true);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
     };
   }, []);
 
@@ -166,31 +163,24 @@ export function TerminalSettingsPanel({
     [t]
   );
 
-  // 修改即保存：表单变化后 debounce 保存，验证失败则不保存。
-  useEffect(() => {
+  // 修改即保存：表单变化后 debounce 保存，验证失败则不保存，卸载时立即冲刷避免丢失。
+  const saveValue = useMemo(() => {
     if (isLoading) {
-      return;
+      return null;
     }
     const validationError = validate(form);
     if (validationError) {
       setError((prev) => (prev === validationError ? prev : validationError));
-      return;
+      return null;
     }
     setError((prev) => (prev === "" ? prev : ""));
-
     const settings = toTerminalSettings(form);
     if (JSON.stringify(settings) === JSON.stringify(lastSaved)) {
-      return;
+      return null;
     }
-
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-    }
-    saveTimerRef.current = setTimeout(() => {
-      saveTimerRef.current = null;
-      void saveSettings(settings);
-    }, SAVE_DEBOUNCE_MS);
-  }, [form, isLoading, lastSaved, saveSettings, validate]);
+    return settings;
+  }, [form, isLoading, lastSaved, validate]);
+  useDebouncedAutoSave(saveValue, saveSettings, SAVE_DEBOUNCE_MS);
 
   const handleSelectExecutable = async () => {
     setIsSelectingExecutable(true);

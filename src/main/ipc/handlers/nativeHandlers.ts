@@ -1,4 +1,4 @@
-import { ipcMain } from "electron";
+import { ipcMain, nativeTheme } from "electron";
 import { randomUUID } from "node:crypto";
 import type {
   BashStreamChunk,
@@ -73,6 +73,13 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   ipcMain.handle("settings:set-theme-settings", (_event, settings: unknown) => {
     if (!settings || typeof settings !== "object") {
       throw new Error("Theme settings must be an object");
+    }
+    const themeSettings = settings as { mode?: unknown };
+    const mode = themeSettings.mode;
+    // 同步 nativeTheme.themeSource，使窗口 chrome 和 shouldUseDarkColors
+    // 立即跟随用户选择，而不是仅在启动时从后端读取。
+    if (mode === "light" || mode === "dark" || mode === "system") {
+      nativeTheme.themeSource = mode;
     }
     return native.setThemeSettings(settings as never);
   });
