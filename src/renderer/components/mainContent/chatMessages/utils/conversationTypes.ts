@@ -114,6 +114,18 @@ export type ConversationSessionState = {
 
 export type ConversationSessionRef = {
   streamId: string | null;
+  /**
+   * The in-flight `createResponseStream` promise. Resolved after the Rust
+   * backend finishes `store_chat_exchange`. Rollback awaits this before
+   * issuing delete/truncate to avoid concurrent write-transaction races.
+   */
+  streamPromise: Promise<unknown> | null;
+  /**
+   * The in-flight `generateConversationSummary` promise. Resolved after the
+   * Rust backend finishes `update_conversation_summary`. Rollback awaits this
+   * before issuing delete/truncate to avoid concurrent write-transaction races.
+   */
+  summaryPromise: Promise<unknown> | null;
   isSending: boolean;
   isAbortRequested: boolean;
   /**
@@ -157,6 +169,10 @@ export type RollbackPreview = {
   isFirstMessage: boolean;
   isContextCompaction: boolean;
   todoItems: RollbackTodoItem[];
+  /** Captured at handleRollback time so confirmRollback can await it. */
+  streamPromise: Promise<unknown> | null;
+  /** Captured at handleRollback time so confirmRollback can await it. */
+  summaryPromise: Promise<unknown> | null;
 };
 
 export type ToolAuthorizationDecision =
@@ -366,7 +382,7 @@ export type UseChatConversationResult = {
   buildFromContent: (content: string) => void;
   handleRollback: (messageId: string) => void;
   rollbackPreview: RollbackPreview | null;
-  confirmRollback: (mode: RollbackMode) => void;
+  confirmRollback: (mode: RollbackMode) => Promise<void>;
   cancelRollback: () => void;
   yoloMode: boolean;
   isUpdatingYoloMode: boolean;

@@ -324,7 +324,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               subAssistantMessage,
             ]);
 
-            const subResponse = await window.snow.createResponseStream(
+            const subStreamPromise = window.snow.createResponseStream(
               {
                 messages: subMessages,
                 conversationId: subConvId,
@@ -402,10 +402,18 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 }
               }
             );
+            const subStreamRefBefore =
+              ctx.sessionsRefData.current.get(subConvId);
+            if (subStreamRefBefore) {
+              subStreamRefBefore.streamPromise = subStreamPromise;
+            }
+
+            const subResponse = await subStreamPromise;
 
             const subRef = ctx.sessionsRefData.current.get(subConvId);
             if (subRef) {
               subRef.streamId = null;
+              subRef.streamPromise = null;
             }
 
             if (ctx.sessionsRefData.current.get(subConvId)?.isAbortRequested) {
@@ -892,7 +900,11 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         ctx.updateSessionField(effectiveKey, "streamElapsedMs", 1);
         ctx.updateSessionField(effectiveKey, "streamTtftMs", 0);
 
-        const response = await window.snow.createResponseStream(
+        // Capture the stream promise so rollback can await it before issuing
+        // delete/truncate. Without this, the Rust store_chat_exchange write
+        // transaction races with the delete/truncate write transaction and
+        // can exceed the busy_timeout, producing "database is locked".
+        const streamPromise = window.snow.createResponseStream(
           {
             messages: requestMessages,
             model: options.model,
@@ -973,10 +985,17 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             }
           }
         );
+        const streamRefBefore = ctx.sessionsRefData.current.get(effectiveKey);
+        if (streamRefBefore) {
+          streamRefBefore.streamPromise = streamPromise;
+        }
+
+        const response = await streamPromise;
 
         const ref = ctx.sessionsRefData.current.get(effectiveKey);
         if (ref) {
           ref.streamId = null;
+          ref.streamPromise = null;
         }
 
         if (response.conversationId) {
@@ -1032,7 +1051,11 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           ) {
             summaryTriggered = true;
             const summaryConvId = response.conversationId;
-            void window.snow
+            // Track the summary promise so rollback can await it before
+            // issuing delete/truncate. The Rust backend writes
+            // update_conversation_summary at the end of this promise — if it
+            // races with deleteConversation, the database locks.
+            const summaryPromise = window.snow
               .generateConversationSummary(summaryConvId)
               .then((generatedSummary) => {
                 if (generatedSummary) {
@@ -1055,7 +1078,22 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               })
               .catch(() => {
                 // Summary generation failure should not block the conversation
+              })
+              .finally(() => {
+                const summaryRef =
+                  ctx.sessionsRefData.current.get(summaryConvId);
+                if (
+                  summaryRef &&
+                  summaryRef.summaryPromise === summaryPromise
+                ) {
+                  summaryRef.summaryPromise = null;
+                }
               });
+            const summaryRefForPromise =
+              ctx.sessionsRefData.current.get(summaryConvId);
+            if (summaryRefForPromise) {
+              summaryRefForPromise.summaryPromise = summaryPromise;
+            }
           }
         }
 

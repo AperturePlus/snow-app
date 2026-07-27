@@ -494,7 +494,7 @@ const ChatContentBody = ({
 
   const handleConfirmRollback = useCallback(
     (mode: RollbackMode): void => {
-      confirmRollback(mode);
+      void confirmRollback(mode);
     },
     [confirmRollback]
   );

@@ -37,14 +37,9 @@ export const useCompaction = (ctx: ConversationContextValue) => {
       // handoff was generated. Skip checkpoint creation for SSH directories
       // where local snapshots are not available.
       let checkpointId: string | undefined;
-      if (
-        ctx.directoryPath &&
-        !ctx.directoryPath.startsWith("ssh://")
-      ) {
+      if (ctx.directoryPath && !ctx.directoryPath.startsWith("ssh://")) {
         try {
-          checkpointId = await window.snow.createCheckpoint(
-            ctx.directoryPath
-          );
+          checkpointId = await window.snow.createCheckpoint(ctx.directoryPath);
           if (sessionRef) {
             sessionRef.checkpointIds = [
               ...sessionRef.checkpointIds,
@@ -58,7 +53,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
       }
 
       try {
-        const response = await window.snow.createResponseStream(
+        const compactionStreamPromise = window.snow.createResponseStream(
           {
             messages: [{ role: "user", content: "context handoff" }],
             model,
@@ -81,9 +76,17 @@ export const useCompaction = (ctx: ConversationContextValue) => {
           (streamId) => {
             if (sessionRef) {
               sessionRef.streamId = streamId;
+              sessionRef.streamPromise = compactionStreamPromise;
             }
           }
         );
+
+        const response = await compactionStreamPromise;
+
+        if (sessionRef) {
+          sessionRef.streamId = null;
+          sessionRef.streamPromise = null;
+        }
 
         const content = response.content.trim();
         if (!content) {

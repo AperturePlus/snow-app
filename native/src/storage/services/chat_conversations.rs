@@ -377,7 +377,7 @@ pub fn store_failed_chat_exchange(
     )?;
     let error_message = error_message.trim();
     let response_content = if error_message.is_empty() {
-        "AI 响应失败，请稍后重试。"
+        "AI response failed, please try again later."
     } else {
         error_message
     };

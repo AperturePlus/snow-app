@@ -16,6 +16,7 @@ type ProxyBrowserSettingsFormProps = {
     field: keyof ProxyBrowserSettingsFormValue,
     value: string
   ) => void;
+  onBlurSave: () => void;
   onReset: () => void;
   onSelectBrowserExecutable: () => void;
 };
@@ -26,6 +27,7 @@ export function ProxyBrowserSettingsForm({
   isSelectingBrowser,
   onUpdateField,
   onSetValue,
+  onBlurSave,
   onReset,
   onSelectBrowserExecutable,
 }: ProxyBrowserSettingsFormProps): React.JSX.Element {
@@ -57,7 +59,10 @@ export function ProxyBrowserSettingsForm({
               <input
                 type="checkbox"
                 checked={form.enabled}
-                onChange={onUpdateField("enabled")}
+                onChange={(event) => {
+                  onUpdateField("enabled")(event);
+                  onBlurSave();
+                }}
                 disabled={isBusy}
                 hidden
               />
@@ -77,6 +82,7 @@ export function ProxyBrowserSettingsForm({
               <input
                 value={form.port}
                 onChange={onUpdateField("port")}
+                onBlur={onBlurSave}
                 placeholder="7890"
                 type="number"
                 min={1}
@@ -91,7 +97,10 @@ export function ProxyBrowserSettingsForm({
               <CustomSelect
                 value={form.searchEngine}
                 options={SEARCH_ENGINE_OPTIONS}
-                onChange={(value) => onSetValue("searchEngine", value)}
+                onChange={(value) => {
+                  onSetValue("searchEngine", value);
+                  onBlurSave();
+                }}
                 disabled={isBusy}
               />
             </label>
@@ -113,6 +122,7 @@ export function ProxyBrowserSettingsForm({
                 <input
                   value={form.browserPath}
                   onChange={onUpdateField("browserPath")}
+                  onBlur={onBlurSave}
                   placeholder={t("settings.browserPathPlaceholder", {
                     defaultValue:
                       "Leave empty to auto-detect Chrome / Edge / Chromium",
@@ -153,6 +163,7 @@ export function ProxyBrowserSettingsForm({
               <input
                 value={form.browserDebugPort}
                 onChange={onUpdateField("browserDebugPort")}
+                onBlur={onBlurSave}
                 placeholder="9222"
                 type="number"
                 min={1}

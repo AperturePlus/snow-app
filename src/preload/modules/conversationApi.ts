@@ -105,6 +105,8 @@ export const conversationApi = {
     ),
   generateConversationSummary: (conversationId: string): Promise<string> =>
     ipcRenderer.invoke("chat-conversations:generate-summary", conversationId),
+  cancelConversationSummary: (conversationId: string): Promise<boolean> =>
+    ipcRenderer.invoke("chat-conversations:cancel-summary", conversationId),
   listSubAgentConversations: (
     parentConversationId: string
   ): Promise<ChatConversationRecord[]> =>

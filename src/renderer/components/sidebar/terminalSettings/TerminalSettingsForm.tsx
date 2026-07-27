@@ -19,6 +19,7 @@ type TerminalSettingsFormProps = {
   ) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
   onSetValue: (field: keyof TerminalSettingsFormValue, value: string) => void;
   onShellPathChange: (value: string) => void;
+  onBlurSave: () => void;
   onReset: () => void;
   onSelectExecutable: () => void;
 };
@@ -31,6 +32,7 @@ export function TerminalSettingsForm({
   onUpdateField,
   onSetValue,
   onShellPathChange,
+  onBlurSave,
   onReset,
   onSelectExecutable,
 }: TerminalSettingsFormProps): React.JSX.Element {
@@ -77,6 +79,7 @@ export function TerminalSettingsForm({
                 defaultValue: "No terminals detected",
               })}
               onChange={onShellPathChange}
+              onBlur={onBlurSave}
               onBrowse={onSelectExecutable}
             />
           </div>
@@ -100,6 +103,7 @@ export function TerminalSettingsForm({
               <input
                 value={form.fontFamily}
                 onChange={onUpdateField("fontFamily")}
+                onBlur={onBlurSave}
                 placeholder={t("settings.terminalFontFamilyPlaceholder", {
                   defaultValue: "e.g. Consolas, Monaco, monospace",
                 })}
@@ -113,6 +117,7 @@ export function TerminalSettingsForm({
               <input
                 value={form.fontSize}
                 onChange={onUpdateField("fontSize")}
+                onBlur={onBlurSave}
                 type="number"
                 min={6}
                 max={72}
@@ -128,7 +133,10 @@ export function TerminalSettingsForm({
               <CustomSelect
                 value={form.fontWeight}
                 options={FONT_WEIGHT_OPTIONS}
-                onChange={(value) => onSetValue("fontWeight", value)}
+                onChange={(value) => {
+                  onSetValue("fontWeight", value);
+                  onBlurSave();
+                }}
                 disabled={isBusy}
               />
             </label>
@@ -141,6 +149,7 @@ export function TerminalSettingsForm({
               <input
                 value={form.lineHeight}
                 onChange={onUpdateField("lineHeight")}
+                onBlur={onBlurSave}
                 type="number"
                 min={0.5}
                 max={3}
@@ -169,6 +178,7 @@ export function TerminalSettingsForm({
               <input
                 value={form.proxy}
                 onChange={onUpdateField("proxy")}
+                onBlur={onBlurSave}
                 placeholder={t("settings.terminalProxyPlaceholder", {
                   defaultValue:
                     "e.g. http://127.0.0.1:7890 (leave empty for none)",

@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use tokio_util::sync::CancellationToken;
 
 use crate::api::config::get_api_config_custom_headers;
 use crate::api::conversation::{
@@ -120,9 +121,31 @@ pub async fn generate_theme_palette(
 
     result
 }
+
+/// Generate a conversation summary (title) for the given conversation id.
+///
+/// Registers a cancellation token so the in-flight non-streaming HTTP
+/// request can be aborted via `cancel_conversation_summary`. When cancelled,
+/// the summary returns an empty string WITHOUT writing to the database,
+/// releasing the SQLite lock for a subsequent delete/truncate.
 #[napi(ts_return_type = "Promise<string>")]
 pub async fn generate_conversation_summary(conversation_id: String) -> napi::Result<String> {
-    generate_summary(conversation_id).await
+    let token = CancellationToken::new();
+    crate::api::cancel::register_summary(&conversation_id, token.clone());
+    let result = generate_summary(conversation_id.clone(), token).await;
+    crate::api::cancel::unregister_summary(&conversation_id);
+    result
+}
+
+/// Cancel an in-flight conversation summary generation.
+///
+/// Returns `true` if a summary was found and cancelled, `false` otherwise.
+/// Call this from `handleAbort` / `handleRollback` so the summary's
+/// `update_conversation_summary` write transaction is skipped before the
+/// delete/truncate runs, avoiding a "database is locked" race.
+#[napi]
+pub fn cancel_conversation_summary(conversation_id: String) -> napi::Result<bool> {
+    Ok(crate::api::cancel::cancel_summary(&conversation_id))
 }
 #[napi]
 pub async fn list_mcp_tools() -> napi::Result<Vec<McpToolDefinition>> {

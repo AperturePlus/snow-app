@@ -552,6 +552,8 @@ export const systemApi = {
     ipcRenderer.invoke("updater:install-update"),
   getUpdateStatus: (): Promise<UpdateStatus> =>
     ipcRenderer.invoke("updater:get-status"),
+  checkForUpdates: (): Promise<UpdateStatus> =>
+    ipcRenderer.invoke("updater:check-for-updates"),
   onUpdateStatusChanged: (
     callback: (status: UpdateStatus) => void
   ): (() => void) => {

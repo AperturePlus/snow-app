@@ -120,6 +120,8 @@ export const useConversationManagement = (
 
         ctx.sessionsRefData.current.set(trimmedId, {
           streamId: null,
+          streamPromise: null,
+          summaryPromise: null,
           isSending: false,
           isAbortRequested: false,
           runId: 0,
@@ -329,6 +331,15 @@ export const useConversationManagement = (
 
     if (ref.streamId) {
       void window.snow.abortResponseStream(ref.streamId);
+    }
+
+    // Cancel any in-flight summary generation so its
+    // update_conversation_summary write transaction is skipped. Without this,
+    // a cancel-then-rollback flow would wait on the summary promise (which may
+    // be stuck in an HTTP retry loop) and the database would remain locked
+    // when the rollback's delete/truncate runs.
+    if (key !== PENDING_SESSION_KEY) {
+      void window.snow.cancelConversationSummary(key);
     }
   }, [
     ctx.removeStreamingId,

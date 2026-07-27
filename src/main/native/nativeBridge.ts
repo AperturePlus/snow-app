@@ -435,6 +435,7 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to generate conversation summary"
           )
         ),
+      cancelConversationSummary: () => false,
       fetchAvailableModels: () =>
         Promise.reject(
           new Error("Rust native bridge is required to fetch available models")

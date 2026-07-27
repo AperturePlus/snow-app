@@ -88,6 +88,15 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
     }
   );
   ipcMain.handle(
+    "chat-conversations:cancel-summary",
+    (_event, conversationId: unknown) => {
+      if (typeof conversationId !== "string" || !conversationId.trim()) {
+        throw new Error("Conversation ID is required to cancel summary");
+      }
+      return native.cancelConversationSummary(conversationId.trim());
+    }
+  );
+  ipcMain.handle(
     "chat-conversations:append-tool-message",
     async (_event, conversationId: unknown, content: unknown) => {
       if (typeof conversationId !== "string" || !conversationId.trim()) {

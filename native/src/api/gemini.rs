@@ -19,7 +19,9 @@ use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback, ResponsesApiStreamChunk,
     TokenUsage,
 };
-use crate::api::retry::{RetryOptions, should_retry, wait_before_retry};
+use crate::api::retry::{
+    non_sse_response_error, RetryOptions, should_retry, wait_before_retry,
+};
 use crate::api::sse::find_sse_separator;
 use crate::storage::services::app_logs::{log_api_error, log_api_warning, maybe_log_api_request};
 use crate::storage::services::chat_conversations::{
@@ -769,6 +771,23 @@ async fn collect_gemini_stream(
     let content = content_chunks.join("").trim().to_string();
     let thinking = thinking_chunks.join("").trim().to_string();
     let tool_calls_json = serde_json::to_string(&tool_calls).unwrap_or_else(|_| "[]".to_string());
+
+    // Non-SSE response detection: the stream received bytes but none of them
+    // formed a valid SSE event. This happens when a relay returns HTTP 200
+    // with a JSON error body (e.g. quota exhausted) instead of a proper SSE
+    // stream. Gemini has no mid-stream reconnect loop, so we return the error
+    // directly — it propagates to the JS agent loop which handles retries.
+    if !stream_completed_normally
+        && response_status != "cancelled"
+        && content.is_empty()
+        && thinking.is_empty()
+        && tool_calls_json == "[]"
+        && raw_events.is_empty()
+        && !byte_buffer.is_empty()
+    {
+        let body = String::from_utf8_lossy(&byte_buffer).to_string();
+        return Err(non_sse_response_error(&body));
+    }
 
     Ok(GeminiStreamResult {
         id: response_id,

@@ -25,8 +25,8 @@ use crate::api::responses::{
     TokenUsage,
 };
 use crate::api::retry::{
-    resolve_stream_idle_timeout_sec, should_retry, stream_idle_timeout_error, wait_before_retry,
-    RetryOptions,
+    non_sse_response_error, resolve_stream_idle_timeout_sec, should_retry,
+    stream_idle_timeout_error, wait_before_retry, RetryOptions,
 };
 use crate::api::sse::find_sse_separator;
 use crate::storage::services::app_logs::{log_api_error, log_api_warning, maybe_log_api_request};
@@ -929,6 +929,66 @@ async fn collect_anthropic_stream(
         // error) and we proceed to finalize.
         if idle_reset {
             continue;
+        }
+
+        // Non-SSE response detection: the stream received bytes but none of
+        // them formed a valid SSE event. This happens when a relay returns
+        // HTTP 200 with a JSON error body (e.g. quota exhausted) instead of
+        // a proper SSE stream. Treat it as a retriable error so the request
+        // is re-issued, matching the idle-timeout recovery pattern.
+        if !stream_completed_normally
+            && response_status != "cancelled"
+            && raw_events.is_empty()
+            && content_chunks.is_empty()
+            && thinking_chunks.is_empty()
+            && tool_calls.is_empty()
+            && !byte_buffer.is_empty()
+        {
+            let body = String::from_utf8_lossy(&byte_buffer).to_string();
+            let error = non_sse_response_error(&body);
+
+            if !should_retry(&error, attempt, retry_options) {
+                return Err(error);
+            }
+
+            // Emit retry status to frontend
+            on_chunk.call(
+                ResponsesApiStreamChunk {
+                    content_delta: String::new(),
+                    thinking_delta: String::new(),
+                    content: String::new(),
+                    thinking: String::new(),
+                    retrying: true,
+                    retry_attempt: Some((attempt + 1) as i32),
+                    retry_error: Some(error.reason.clone()),
+                    stream_token_count: stream_token_count as i64,
+                    elapsed_ms: stream_start.elapsed().as_millis() as i64,
+                    ttft_ms,
+                },
+                ThreadsafeFunctionCallMode::NonBlocking,
+            );
+
+            match wait_before_retry(retry_options, cancel_token).await {
+                Ok(()) => {
+                    raw_events.clear();
+                    content_chunks.clear();
+                    thinking_chunks.clear();
+                    thinking_blocks.clear();
+                    tool_calls.clear();
+                    tool_call_positions_by_index.clear();
+                    tool_input_json_by_index.clear();
+                    tool_parse_errors.clear();
+                    byte_buffer.clear();
+                    response_id.clear();
+                    response_model.clear();
+                    response_status = String::from("completed");
+                    token_usage = ChatTokenUsage::default();
+                    stream_finished = false;
+                    attempt += 1;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
         }
 
         // Stream finalized — exit the outer loop.

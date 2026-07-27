@@ -1,4 +1,4 @@
-import { Download, NotebookText, Search, Settings } from "lucide-react";
+import { NotebookText, Search, Settings } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { useI18n } from "../../i18n";
@@ -11,7 +11,6 @@ import { GlobalSearchModal } from "./GlobalSearchModal";
 import { MemoModal } from "./MemoModal";
 import type { SidebarContentProps } from "./types";
 import type {
-  UpdateStatus,
   ConversationSearchResult,
   WorkspaceDirectoryRecord,
 } from "../../../preload";
@@ -27,36 +26,9 @@ export function MainSidebarContent({
   const { t } = useI18n();
   const { handleSelectConversation } = useChatConversationContext();
   const [isSwitchingDirectory, setIsSwitchingDirectory] = useState(false);
-  const [appVersion, setAppVersion] = useState<string>("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMemoOpen, setIsMemoOpen] = useState(false);
   const [pendingMemoCount, setPendingMemoCount] = useState(0);
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({
-    available: false,
-    version: null,
-    downloading: false,
-    progress: 0,
-    downloaded: false,
-    error: null,
-  });
-
-  useEffect(() => {
-    window.snow
-      .getAppVersion()
-      .then((version) => setAppVersion(version))
-      .catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    window.snow
-      .getUpdateStatus()
-      .then(setUpdateStatus)
-      .catch(() => undefined);
-    const unsubscribe = window.snow.onUpdateStatusChanged((status) => {
-      setUpdateStatus(status);
-    });
-    return unsubscribe;
-  }, []);
 
   // Load the pending memo count for the sidebar badge. It is refreshed
   // whenever the memo modal closes (the modal calls onPendingCountChange
@@ -78,14 +50,6 @@ export function MainSidebarContent({
   useEffect(() => {
     refreshPendingMemoCount();
   }, [refreshPendingMemoCount]);
-
-  const handleDownloadUpdate = (): void => {
-    void window.snow.downloadUpdate();
-  };
-
-  const handleInstallUpdate = (): void => {
-    void window.snow.installUpdate();
-  };
 
   const handleSearchSelectConversation = (
     conversation: ConversationSearchResult
@@ -177,48 +141,6 @@ export function MainSidebarContent({
             <Settings size={18} strokeWidth={1.8} />
             <span>{t("sidebar.settings", { defaultValue: "Settings" })}</span>
           </button>
-          {appVersion && (
-            <span className="sidebar-version-badge">v{appVersion}</span>
-          )}
-          {updateStatus.available &&
-            !updateStatus.downloading &&
-            !updateStatus.downloaded && (
-              <button
-                className="nav-item update-ready-btn"
-                onClick={handleDownloadUpdate}
-                type="button"
-              >
-                <Download size={16} strokeWidth={1.8} />
-                <span>
-                  {t("sidebar.updateAvailable", {
-                    defaultValue: "Update now",
-                  })}
-                </span>
-              </button>
-            )}
-          {updateStatus.available && updateStatus.downloading && (
-            <div className="nav-item update-downloading">
-              <Download size={16} strokeWidth={1.8} />
-              <span>
-                {t("sidebar.updateDownloading", {
-                  values: { percent: updateStatus.progress },
-                  defaultValue: `Downloading ${updateStatus.progress}%`,
-                })}
-              </span>
-            </div>
-          )}
-          {updateStatus.downloaded && (
-            <button
-              className="nav-item update-ready-btn"
-              onClick={handleInstallUpdate}
-              type="button"
-            >
-              <Download size={16} strokeWidth={1.8} />
-              <span>
-                {t("sidebar.updateReady", { defaultValue: "Restart to update" })}
-              </span>
-            </button>
-          )}
         </div>
       </div>
       <GlobalSearchModal

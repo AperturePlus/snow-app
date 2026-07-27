@@ -809,6 +809,12 @@ pub fn record_checkpoint_worktree_after(capture: CheckpointWorktreeCapture) -> R
 /// Restore only paths that were recorded by mutating tools after this checkpoint.
 pub fn restore_checkpoint(checkpoint_id: String, work_dir: String) -> Result<()> {
     let _guard = checkpoint_guard()?;
+    // If the manifest no longer exists (checkpoint was deleted or corrupted),
+    // there is nothing to restore. Return Ok so the rollback flow continues
+    // to delete messages without being blocked by a missing checkpoint.
+    if !checkpoint_manifest_exists(&checkpoint_id) {
+        return Ok(());
+    }
     let manifest = read_manifest(&checkpoint_id)?;
     let root = validate_manifest_work_dir(&manifest, &work_dir)?;
 
@@ -1040,6 +1046,9 @@ pub fn list_checkpoint_changes(
     work_dir: String,
 ) -> Result<Vec<CheckpointFileChange>> {
     let _guard = checkpoint_guard()?;
+    if !checkpoint_manifest_exists(&checkpoint_id) {
+        return Ok(Vec::new());
+    }
     let manifest = read_manifest(&checkpoint_id)?;
     let root = validate_manifest_work_dir(&manifest, &work_dir)?;
     let tracked = collect_tracked_entries(&manifest);
@@ -1079,6 +1088,9 @@ pub fn list_checkpoint_diffs(
     work_dir: String,
 ) -> Result<Vec<CheckpointFileDiff>> {
     let _guard = checkpoint_guard()?;
+    if !checkpoint_manifest_exists(&checkpoint_id) {
+        return Ok(Vec::new());
+    }
     let manifest = read_manifest(&checkpoint_id)?;
     let root = validate_manifest_work_dir(&manifest, &work_dir)?;
     let tracked = collect_tracked_entries(&manifest);

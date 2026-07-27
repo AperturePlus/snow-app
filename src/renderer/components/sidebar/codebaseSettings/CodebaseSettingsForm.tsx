@@ -13,6 +13,7 @@ type CodebaseSettingsFormProps = {
     field: keyof CodebaseSettingsFormValue
   ) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
   onSetValue: (field: keyof CodebaseSettingsFormValue, value: string) => void;
+  onBlurSave: () => void;
   onReset: () => void;
 };
 
@@ -21,6 +22,7 @@ export function CodebaseSettingsForm({
   isBusy,
   onUpdateField,
   onSetValue,
+  onBlurSave,
   onReset,
 }: CodebaseSettingsFormProps): React.JSX.Element {
   const { t } = useI18n();
@@ -37,6 +39,7 @@ export function CodebaseSettingsForm({
       <input
         value={String(form[field])}
         onChange={onUpdateField(field)}
+        onBlur={onBlurSave}
         placeholder={placeholder}
         type={type}
         min={min}
@@ -78,7 +81,10 @@ export function CodebaseSettingsForm({
               <CustomSelect
                 value={form.embeddingType}
                 options={EMBEDDING_TYPE_OPTIONS}
-                onChange={(value) => onSetValue("embeddingType", value)}
+                onChange={(value) => {
+                  onSetValue("embeddingType", value);
+                  onBlurSave();
+                }}
                 disabled={isBusy}
               />
             </label>

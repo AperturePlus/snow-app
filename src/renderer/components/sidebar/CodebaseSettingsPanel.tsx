@@ -2,14 +2,13 @@ import { Download, Loader2, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type ChangeEvent,
 } from "react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { useI18n } from "../../i18n";
-import { useDebouncedAutoSave } from "../../hooks/useDebouncedAutoSave";
+import { useBlurAutoSave } from "../../hooks/useBlurAutoSave";
 import { CodebaseSettingsForm } from "./codebaseSettings/CodebaseSettingsForm";
 import { CodebaseSettingsSummary } from "./codebaseSettings/CodebaseSettingsSummary";
 import {
@@ -28,8 +27,6 @@ import type {
   CodebaseSettingsForm as CodebaseSettingsFormValue,
   CodebaseSettingsPanelProps,
 } from "./codebaseSettings/types";
-
-const SAVE_DEBOUNCE_MS = 600;
 
 export function CodebaseSettingsPanel({
   onClose,
@@ -283,24 +280,15 @@ export function CodebaseSettingsPanel({
     [t]
   );
 
-  // 修改即保存：表单变化后 debounce 保存，验证失败则不保存，卸载时立即冲刷避免丢失。
-  const saveValue = useMemo(() => {
-    if (isLoading) {
-      return null;
-    }
-    const validationError = validate(form);
-    if (validationError) {
-      setError((prev) => (prev === validationError ? prev : validationError));
-      return null;
-    }
-    setError((prev) => (prev === "" ? prev : ""));
-    const settings = toCodebaseSettings(form);
-    if (JSON.stringify(settings) === JSON.stringify(lastSaved)) {
-      return null;
-    }
-    return settings;
-  }, [form, isLoading, lastSaved, validate]);
-  useDebouncedAutoSave(saveValue, saveSettings, SAVE_DEBOUNCE_MS);
+  // 失焦保存：输入框失焦或即时控件变更时立即保存，验证失败则不保存，卸载时立即冲刷避免丢失。
+  const commitSave = useBlurAutoSave(
+    form,
+    validate,
+    toCodebaseSettings,
+    lastSaved,
+    saveSettings,
+    setError
+  );
 
   const handleImport = async () => {
     setIsLoading(true);
@@ -398,6 +386,7 @@ export function CodebaseSettingsPanel({
         isBusy={isBusy}
         onUpdateField={updateField}
         onSetValue={setValue}
+        onBlurSave={commitSave}
         onReset={() => {
           const defaults = toCodebaseForm(DEFAULT_CODEBASE_SETTINGS);
           setForm(defaults);

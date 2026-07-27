@@ -11,6 +11,7 @@ type TerminalComboboxProps = {
   browseLabel: string;
   emptyText: string;
   onChange: (value: string) => void;
+  onBlur: () => void;
   onBrowse: () => void;
 };
 
@@ -23,6 +24,7 @@ export function TerminalCombobox({
   browseLabel,
   emptyText,
   onChange,
+  onBlur,
   onBrowse,
 }: TerminalComboboxProps): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -113,6 +115,7 @@ export function TerminalCombobox({
             onFocus={openDropdown}
             onClick={openDropdown}
             onKeyDown={handleKeyDown}
+            onBlur={onBlur}
             placeholder={placeholder}
             disabled={disabled}
             role="combobox"

@@ -18,7 +18,9 @@ use crate::api::conversation::{
     parse_chat_message_content, prepare_context_request, resolve_sub_agent_tools,
     ConversationContextRequest,
 };
-use crate::api::retry::{RetryOptions, should_retry, wait_before_retry};
+use crate::api::retry::{
+    non_sse_response_error, RetryOptions, should_retry, wait_before_retry,
+};
 use crate::storage::services::app_logs::{log_api_error, log_api_warning, maybe_log_api_request};
 use crate::storage::services::chat_conversations::{
     store_chat_exchange, ChatContextMessage, ChatTokenUsage, StoreChatExchangeInput,
@@ -1129,6 +1131,23 @@ async fn collect_streaming_response(
     let tool_calls_json = serde_json::to_string(&tool_calls).unwrap_or_else(|_| "[]".to_string());
     let reasoning_items_json =
         serde_json::to_string(&reasoning_items).unwrap_or_else(|_| "[]".to_string());
+
+    // Non-SSE response detection: the stream produced zero events. This
+    // happens when a relay returns HTTP 200 with a JSON error body (e.g.
+    // quota exhausted) instead of a proper SSE stream. The async_openai
+    // library may surface this as an empty stream rather than an error.
+    // Responses API has no mid-stream reconnect loop, so we return the
+    // error directly — it propagates to the JS agent loop for retry.
+    if !stream_completed_normally
+        && response_status != "cancelled"
+        && content.is_empty()
+        && thinking.is_empty()
+        && tool_calls_json == "[]"
+        && reasoning_items_json == "[]"
+        && raw_events.is_empty()
+    {
+        return Err(non_sse_response_error("stream ended with zero events"));
+    }
 
     Ok(StreamingResponseResult {
         id: response_id,

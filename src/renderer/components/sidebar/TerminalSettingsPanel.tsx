@@ -2,14 +2,13 @@ import { X } from "lucide-react";
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type ChangeEvent,
 } from "react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { useI18n } from "../../i18n";
-import { useDebouncedAutoSave } from "../../hooks/useDebouncedAutoSave";
+import { useBlurAutoSave } from "../../hooks/useBlurAutoSave";
 import { TerminalSettingsForm } from "./terminalSettings/TerminalSettingsForm";
 import { TerminalSettingsSummary } from "./terminalSettings/TerminalSettingsSummary";
 import {
@@ -29,8 +28,6 @@ import type {
   TerminalSettingsPanelProps,
   TerminalSettingsValue,
 } from "./terminalSettings/types";
-
-const SAVE_DEBOUNCE_MS = 600;
 
 export function TerminalSettingsPanel({
   onClose,
@@ -163,24 +160,15 @@ export function TerminalSettingsPanel({
     [t]
   );
 
-  // 修改即保存：表单变化后 debounce 保存，验证失败则不保存，卸载时立即冲刷避免丢失。
-  const saveValue = useMemo(() => {
-    if (isLoading) {
-      return null;
-    }
-    const validationError = validate(form);
-    if (validationError) {
-      setError((prev) => (prev === validationError ? prev : validationError));
-      return null;
-    }
-    setError((prev) => (prev === "" ? prev : ""));
-    const settings = toTerminalSettings(form);
-    if (JSON.stringify(settings) === JSON.stringify(lastSaved)) {
-      return null;
-    }
-    return settings;
-  }, [form, isLoading, lastSaved, validate]);
-  useDebouncedAutoSave(saveValue, saveSettings, SAVE_DEBOUNCE_MS);
+  // 失焦保存：输入框失焦或即时控件变更时立即保存，验证失败则不保存，卸载时立即冲刷避免丢失。
+  const commitSave = useBlurAutoSave(
+    form,
+    validate,
+    toTerminalSettings,
+    lastSaved,
+    saveSettings,
+    setError
+  );
 
   const handleSelectExecutable = async () => {
     setIsSelectingExecutable(true);
@@ -272,6 +260,7 @@ export function TerminalSettingsPanel({
             detectedTerminals={detectedTerminals}
             onUpdateField={updateField}
             onSetValue={setValue}
+            onBlurSave={commitSave}
             onShellPathChange={(path) =>
               setForm((previous) => ({ ...previous, shellPath: path }))
             }
