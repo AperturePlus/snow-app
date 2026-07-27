@@ -1,5 +1,5 @@
 import { app, BrowserWindow, Menu, nativeImage, nativeTheme } from "electron";
-import { APP_ICON_PATH, isMacOS } from "./constants";
+import { APP_ICON_PATH, APP_USER_MODEL_ID, isMacOS } from "./constants";
 import { initializeApplicationServices } from "./applicationServices";
 import { createWindow } from "./mainWindow";
 import { registerIpcHandlers } from "../ipc/registerIpcHandlers";
@@ -57,6 +57,11 @@ export const bootstrapApplication = (): void => {
   installGuestViewErrorFilter();
 
   app.name = "Snow App";
+
+  // Windows 上必须设置 AppUserModelID，否则系统通知会显示默认的
+  // "electron.app.Snow App" 包名形式，且无法正确归类到本应用。
+  // 需在 app.whenReady() 之前调用，保证 Notification 初始化时已生效。
+  app.setAppUserModelId(APP_USER_MODEL_ID);
 
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);

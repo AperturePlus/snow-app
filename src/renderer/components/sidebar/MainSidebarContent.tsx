@@ -180,46 +180,46 @@ export function MainSidebarContent({
           {appVersion && (
             <span className="sidebar-version-badge">v{appVersion}</span>
           )}
-        </div>
-        {updateStatus.available &&
-          !updateStatus.downloading &&
-          !updateStatus.downloaded && (
+          {updateStatus.available &&
+            !updateStatus.downloading &&
+            !updateStatus.downloaded && (
+              <button
+                className="nav-item update-ready-btn"
+                onClick={handleDownloadUpdate}
+                type="button"
+              >
+                <Download size={16} strokeWidth={1.8} />
+                <span>
+                  {t("sidebar.updateAvailable", {
+                    defaultValue: "Update now",
+                  })}
+                </span>
+              </button>
+            )}
+          {updateStatus.available && updateStatus.downloading && (
+            <div className="nav-item update-downloading">
+              <Download size={16} strokeWidth={1.8} />
+              <span>
+                {t("sidebar.updateDownloading", {
+                  values: { percent: updateStatus.progress },
+                  defaultValue: `Downloading ${updateStatus.progress}%`,
+                })}
+              </span>
+            </div>
+          )}
+          {updateStatus.downloaded && (
             <button
               className="nav-item update-ready-btn"
-              onClick={handleDownloadUpdate}
+              onClick={handleInstallUpdate}
               type="button"
             >
               <Download size={16} strokeWidth={1.8} />
               <span>
-                {t("sidebar.updateAvailable", {
-                  defaultValue: "Update now",
-                })}
+                {t("sidebar.updateReady", { defaultValue: "Restart to update" })}
               </span>
             </button>
           )}
-        {updateStatus.available && updateStatus.downloading && (
-          <div className="nav-item update-downloading">
-            <Download size={16} strokeWidth={1.8} />
-            <span>
-              {t("sidebar.updateDownloading", {
-                values: { percent: updateStatus.progress },
-                defaultValue: `Downloading ${updateStatus.progress}%`,
-              })}
-            </span>
-          </div>
-        )}
-        {updateStatus.downloaded && (
-          <button
-            className="nav-item update-ready-btn"
-            onClick={handleInstallUpdate}
-            type="button"
-          >
-            <Download size={16} strokeWidth={1.8} />
-            <span>
-              {t("sidebar.updateReady", { defaultValue: "Restart to update" })}
-            </span>
-          </button>
-        )}
+        </div>
       </div>
       <GlobalSearchModal
         open={isSearchOpen}

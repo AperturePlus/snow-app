@@ -1,4 +1,5 @@
-import { Loader2, Save, Wrench, X } from "lucide-react";
+import { Loader2, Save, Search, Wrench, X } from "lucide-react";
+import { useMemo, useState } from "react";
 import { useI18n } from "../../../i18n";
 import { CustomSelect } from "../../common/CustomSelect";
 import { McpKeyValueEditor } from "./McpKeyValueEditor";
@@ -60,6 +61,18 @@ export function McpSettingsEditor({
 }: McpSettingsEditorProps): React.JSX.Element {
   const { t } = useI18n();
   const isHttp = draft.transportType === "http";
+  const [toolFilter, setToolFilter] = useState("");
+
+  const filteredTools = useMemo(() => {
+    if (!tools) return undefined;
+    const trimmed = toolFilter.trim().toLowerCase();
+    if (!trimmed) return tools;
+    return tools.filter(
+      (tool) =>
+        tool.name.toLowerCase().includes(trimmed) ||
+        (tool.description || "").toLowerCase().includes(trimmed)
+    );
+  }, [tools, toolFilter]);
 
   return (
     <form
@@ -229,16 +242,46 @@ export function McpSettingsEditor({
           </button>
         </div>
 
-        {tools &&
-          (tools.length === 0 ? (
-            <div className="system-prompt-empty compact">
-              {t("settings.mcpToolDetailsEmpty", {
-                defaultValue: "This server did not return any tools.",
+{tools && tools.length > 0 && (
+          <div className="mcp-tool-details-search">
+            <Search size={12} strokeWidth={1.9} />
+            <input
+              type="text"
+              value={toolFilter}
+              onChange={(event) => setToolFilter(event.target.value)}
+              placeholder={t("settings.mcpToolFilterPlaceholder", {
+                defaultValue: "Filter tools by name or description",
               })}
+            />
+            {toolFilter && (
+              <button
+                type="button"
+                className="mcp-tool-details-search-clear"
+                onClick={() => setToolFilter("")}
+                title={t("settings.mcpToolFilterClear", {
+                  defaultValue: "Clear filter",
+                })}
+              >
+                <X size={12} strokeWidth={1.9} />
+              </button>
+            )}
+          </div>
+        )}
+
+        {filteredTools &&
+          (filteredTools.length === 0 ? (
+            <div className="mcp-tool-details-empty">
+              {toolFilter
+                ? t("settings.mcpToolFilterEmpty", {
+                    defaultValue: "No tools match the current filter.",
+                  })
+                : t("settings.mcpToolDetailsEmpty", {
+                    defaultValue: "This server did not return any tools.",
+                  })}
             </div>
           ) : (
             <div className="mcp-tool-details-list">
-              {tools.map((tool) => (
+              {filteredTools.map((tool) => (
                 <details className="mcp-tool-detail-item" key={tool.name}>
                   <summary>
                     <strong>{tool.name}</strong>

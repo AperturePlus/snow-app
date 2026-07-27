@@ -13,6 +13,7 @@ import {
   setMermaidView,
   watchThemeForMermaid,
 } from "./mermaidRenderer";
+import { rightPanelEvents } from "../../../rightPanel/rightPanelEvents";
 
 /**
  * Singleton Web Worker that performs markdown-it + highlight.js rendering off
@@ -256,6 +257,21 @@ export const MarkdownBlock = memo(
 
     const handleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
       const target = e.target as HTMLElement;
+
+      // --- 普通链接拦截 ---
+      // markdown-it 默认渲染出的 <a> 没有 target，点击会走 Electron 默认行为
+      // （主进程 setWindowOpenHandler 转交系统浏览器）。这里统一拦截，改为在
+      // 右侧面板的应用内浏览器中新建 tab 打开，与 WebSearchToolCall 行为一致。
+      // 仅处理 http(s) 链接，非 http(s) 的（如 mailto:）保持默认行为。
+      const anchor = target.closest("a") as HTMLAnchorElement | null;
+      if (anchor) {
+        const href = anchor.getAttribute("href") ?? "";
+        if (/^https?:\/\//i.test(href)) {
+          e.preventDefault();
+          rightPanelEvents.emit("open-browser-tab", { url: href });
+          return;
+        }
+      }
 
       // --- Mermaid block interactions ---
       const mermaidBlock = target.closest(

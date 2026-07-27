@@ -1,6 +1,6 @@
 {
   "name": "snow-app",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "High-performance cross-platform desktop app scaffold powered by Electron, React, TypeScript, and Rust.",
   "author": {
     "name": "MayDay",
@@ -101,6 +101,7 @@
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "resources/icon.icns",
+      "artifactName": "Snow-App-${version}.${ext}",
       "target": [
         "dmg",
         "zip"

@@ -132,29 +132,55 @@ fn validate_question_args(args: &Value) -> napi::Result<NormalizedQuestion> {
         )
     })?;
 
-    let question = object
-        .get("question")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            Error::new(
+    let question = match object.get("question") {
+        None | Some(Value::Null) => {
+            return Err(Error::new(
                 Status::InvalidArg,
                 "question is required for askUserQuestion".to_string(),
-            )
-        })?
-        .to_string();
-
-    let raw_options = object
-        .get("options")
-        .and_then(Value::as_array)
-        .ok_or_else(|| {
+            ));
+        }
+        Some(Value::String(s)) => s.clone(),
+        Some(value) => coerce_scalar_to_string(value).ok_or_else(|| {
             Error::new(
                 Status::InvalidArg,
-                "options must be an array of at least two strings".to_string(),
+                format!(
+                    "question must be a string (received {})",
+                    value_type_name(value)
+                ),
             )
-        })?;
-    let options = normalize_string_array(raw_options, "options")?;
+        })?,
+    };
+    let question = question.trim().to_string();
+    if question.is_empty() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "question must not be empty for askUserQuestion".to_string(),
+        ));
+    }
+
+    let raw_options = match object.get("options") {
+        None | Some(Value::Null) => {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "options is required for askUserQuestion".to_string(),
+            ));
+        }
+        Some(Value::Array(arr)) => arr.clone(),
+        Some(value) => {
+            if is_scalar_value(value) {
+                vec![value.clone()]
+            } else {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!(
+                        "options must be an array of strings (received {})",
+                        value_type_name(value)
+                    ),
+                ));
+            }
+        }
+    };
+    let options = normalize_string_array(&raw_options, "options")?;
 
     if options.len() < 2 {
         return Err(Error::new(
@@ -280,16 +306,46 @@ fn optional_string_array(value: Option<&Value>, field: &str) -> napi::Result<Vec
     }
 }
 
+fn is_scalar_value(value: &Value) -> bool {
+    matches!(
+        value,
+        Value::String(_) | Value::Number(_) | Value::Bool(_)
+    )
+}
+
+fn coerce_scalar_to_string(value: &Value) -> Option<String> {
+    match value {
+        Value::String(s) => Some(s.clone()),
+        Value::Number(n) => Some(n.to_string()),
+        Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
+}
+
+fn value_type_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "boolean",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
+
 fn normalize_string_array(values: &[Value], field: &str) -> napi::Result<Vec<String>> {
     let mut normalized = Vec::with_capacity(values.len());
     for value in values {
-        let item = value.as_str().ok_or_else(|| {
+        let coerced = coerce_scalar_to_string(value).ok_or_else(|| {
             Error::new(
                 Status::InvalidArg,
-                format!("{field} must contain only strings"),
+                format!(
+                    "{field} must contain only strings, numbers, or booleans (received {})",
+                    value_type_name(value)
+                ),
             )
         })?;
-        let trimmed = item.trim();
+        let trimmed = coerced.trim();
         if trimmed.is_empty() {
             return Err(Error::new(
                 Status::InvalidArg,

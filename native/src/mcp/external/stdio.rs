@@ -48,6 +48,12 @@ impl StdioMcpClient {
             .stderr(Stdio::piped())
             .kill_on_drop(true);
 
+        #[cfg(target_os = "windows")]
+        {
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
+
         let mut child = command.spawn().map_err(|error| {
             Error::from_reason(format!(
                 "Failed to start external MCP server {}: {error}",
