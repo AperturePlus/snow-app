@@ -5,7 +5,7 @@ pub mod services;
 use std::{
     fs,
     path::PathBuf,
-    sync::Once,
+    sync::{Mutex, Once, OnceLock},
 };
 
 use napi::bindgen_prelude::*;
@@ -407,13 +407,8 @@ pub struct MemoCountSummary {
 static INTERRUPT_MARK_INIT: Once = Once::new();
 
 pub fn initialize_app_storage() -> Result<AppStorageInfo> {
-    let storage_dir = ensure_storage_dir()?;
-    let database_path = paths::database_file_path(&storage_dir);
-    database::ensure_database(&database_path)?;
-    services::system_settings::seed_default_settings(&database_path)?;
-    services::api_configs::seed_default_api_config(&database_path)?;
-    services::sub_agent_configs::seed_default_sub_agent_configs(&database_path)?;
-    services::sensitive_command_configs::seed_default_sensitive_command_configs(&database_path)?;
+    let database_path = ensure_database_file()?;
+    let storage_dir = paths::app_storage_dir()?;
 
     // Mark any embedding sessions that were still "running" or "paused" when
     // the app was last closed as "interrupted". This should only run ONCE per
@@ -1350,7 +1345,44 @@ pub fn clear_app_logs() -> Result<u32> {
     services::app_logs::clear_app_logs(&database_path)
 }
 
+/// Cached database path after the first successful initialization.
+static DATABASE_PATH_CACHE: OnceLock<PathBuf> = OnceLock::new();
+
+/// Serializes the first-time initialization so that even if multiple
+/// `spawn_blocking` tasks call `ensure_database_file()` concurrently at
+/// startup, only one thread actually performs schema creation and seeding.
+/// All others block on this mutex, wake up, find the cache populated, and
+/// return immediately.
+static DATABASE_INIT_MUTEX: Mutex<()> = Mutex::new(());
+
+/// Ensures the `.snowapp` storage directory and database schema exist.
+///
+/// Uses double-checked locking:
+/// 1. **Fast path** (no lock): if the cache is already populated, return
+///    immediately — this is the hot path for the 80+ API entry points.
+/// 2. **Slow path** (mutex-guarded): acquire the mutex, then re-check the
+///    cache. If still empty, perform the one-time initialization (create
+///    directory, set WAL, create tables, seed defaults) and store the path.
+///
+/// This guarantees the heavy initialization runs **exactly once** per
+/// process lifetime, regardless of how many threads race in.
 pub fn ensure_database_file() -> Result<PathBuf> {
+    // Fast path: cache hit — no lock, no I/O.
+    if let Some(cached) = DATABASE_PATH_CACHE.get() {
+        return Ok(cached.clone());
+    }
+
+    // Slow path: acquire the init mutex so only one thread initializes.
+    let _guard = DATABASE_INIT_MUTEX.lock().map_err(|_| {
+        Error::from_reason("Snow App database initialization mutex poisoned")
+    })?;
+
+    // Re-check after acquiring the lock — the thread that held the mutex
+    // before us may have already populated the cache.
+    if let Some(cached) = DATABASE_PATH_CACHE.get() {
+        return Ok(cached.clone());
+    }
+
     let storage_dir = ensure_storage_dir()?;
     let database_path = paths::database_file_path(&storage_dir);
     database::ensure_database(&database_path)?;
@@ -1358,6 +1390,9 @@ pub fn ensure_database_file() -> Result<PathBuf> {
     services::api_configs::seed_default_api_config(&database_path)?;
     services::sub_agent_configs::seed_default_sub_agent_configs(&database_path)?;
     services::sensitive_command_configs::seed_default_sensitive_command_configs(&database_path)?;
+
+    // Store into the cache so all future calls hit the fast path.
+    let _ = DATABASE_PATH_CACHE.set(database_path.clone());
     Ok(database_path)
 }
 

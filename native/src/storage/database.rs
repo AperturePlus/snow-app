@@ -101,9 +101,12 @@ fn wait_next_millis(last_timestamp_ms: u64) -> u64 {
 /// to ensure consistent concurrency behaviour across the codebase.
 pub fn open_connection(database_path: impl AsRef<Path>) -> rusqlite::Result<Connection> {
     let connection = Connection::open(database_path)?;
+    // busy_timeout MUST be set before any pragma that acquires a write lock
+    // (e.g. journal_mode=WAL). Otherwise concurrent connections will get
+    // "database is locked" immediately instead of waiting.
+    connection.busy_timeout(Duration::from_secs(5))?;
     connection.pragma_update(None, "journal_mode", "WAL")?;
     connection.pragma_update(None, "synchronous", "NORMAL")?;
-    connection.busy_timeout(Duration::from_secs(5))?;
     Ok(connection)
 }
 
