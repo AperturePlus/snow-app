@@ -4,59 +4,41 @@ use serde_json::Value;
 
 use crate::storage::services::chat_conversations::ChatContextMessage;
 
-/// Convert stored OpenAI-format tool_calls_json into Anthropic tool_use content blocks.
+/// Convert stored tool_calls_json (any provider format) into Anthropic
+/// tool_use content blocks.
+///
+/// The storage layer persists whichever native format the originating
+/// provider returned, so this function must accept all of them:
+/// - **OpenAI Chat**: `{"id":"...","type":"function","function":{"name":"...","arguments":"..."}}`
+/// - **OpenAI Responses**: `{"type":"function_call","call_id":"...","name":"...","arguments":"..."}`
+/// - **Anthropic**: `{"type":"tool_use","id":"...","name":"...","input":{...}}`
+/// - **Gemini**: `{"functionCall":{"name":"...","args":{...}}}`
 pub fn tool_calls_as_anthropic_blocks(tool_calls_json: &str) -> Vec<Value> {
-    let Ok(parsed) = serde_json::from_str::<Value>(tool_calls_json) else {
-        return Vec::new();
-    };
-    let Some(array) = parsed.as_array() else {
-        return Vec::new();
-    };
-
-    array
-        .iter()
-        .filter_map(|call| {
-            let id = call.get("id")?.as_str()?.to_string();
-            let function = call.get("function")?;
-            let name = function.get("name")?.as_str()?.to_string();
-            let arguments_str = function.get("arguments")?.as_str().unwrap_or("{}");
-            let input: Value =
-                serde_json::from_str(arguments_str).unwrap_or_else(|_| serde_json::json!({}));
-
-            Some(serde_json::json!({
+    normalize_tool_calls(tool_calls_json)
+        .into_iter()
+        .map(|entry| {
+            serde_json::json!({
                 "type": "tool_use",
-                "id": id,
-                "name": name,
-                "input": input,
-            }))
+                "id": entry.id,
+                "name": entry.name,
+                "input": entry.input,
+            })
         })
         .collect()
 }
 
-/// Convert stored OpenAI-format tool_calls_json into Gemini functionCall parts.
+/// Convert stored tool_calls_json (any provider format) into Gemini
+/// functionCall parts.
 pub fn tool_calls_as_gemini_parts(tool_calls_json: &str) -> Vec<Value> {
-    let Ok(parsed) = serde_json::from_str::<Value>(tool_calls_json) else {
-        return Vec::new();
-    };
-    let Some(array) = parsed.as_array() else {
-        return Vec::new();
-    };
-
-    array
-        .iter()
-        .filter_map(|call| {
-            let function = call.get("function")?;
-            let name = function.get("name")?.as_str()?.to_string();
-            let arguments_str = function.get("arguments")?.as_str().unwrap_or("{}");
-            let args: Value =
-                serde_json::from_str(arguments_str).unwrap_or_else(|_| serde_json::json!({}));
-
-            Some(serde_json::json!({
+    normalize_tool_calls(tool_calls_json)
+        .into_iter()
+        .map(|entry| {
+            serde_json::json!({
                 "functionCall": {
-                    "name": name,
-                    "args": args,
+                    "name": entry.name,
+                    "args": entry.input,
                 }
-            }))
+            })
         })
         .collect()
 }
@@ -75,11 +57,22 @@ pub fn parse_tool_results_json(raw: &str) -> Vec<(String, String, String)> {
         .collect()
 }
 
-/// Extract (id, name) entries from a serialized tool_calls JSON array.
-/// Supports both the OpenAI Chat nested format
-/// (`{"id":"...","function":{"name":"..."}}`) and the Responses flat format
-/// (`{"call_id":"...","name":"..."}`).
-fn extract_tool_call_entries(tool_calls_json: &str) -> Vec<(String, String)> {
+/// A provider-agnostic representation of a single tool call extracted from
+/// the stored `tool_calls_json`. All conversion functions go through this
+/// intermediate type so they automatically support every provider format.
+struct NormalizedToolCall {
+    id: String,
+    name: String,
+    input: Value,
+}
+
+/// Normalize a serialized tool_calls JSON array into [`NormalizedToolCall`]
+/// entries, accepting any provider's native format:
+/// - **OpenAI Chat**: `{"id":"...","type":"function","function":{"name":"...","arguments":"..."}}`
+/// - **OpenAI Responses**: `{"type":"function_call","call_id":"...","name":"...","arguments":"..."}`
+/// - **Anthropic**: `{"type":"tool_use","id":"...","name":"...","input":{...}}`
+/// - **Gemini**: `{"functionCall":{"name":"...","args":{...}}}`
+fn normalize_tool_calls(tool_calls_json: &str) -> Vec<NormalizedToolCall> {
     let Ok(parsed) = serde_json::from_str::<Value>(tool_calls_json) else {
         return Vec::new();
     };
@@ -90,6 +83,8 @@ fn extract_tool_call_entries(tool_calls_json: &str) -> Vec<(String, String)> {
     array
         .iter()
         .filter_map(|call| {
+            // --- id ---
+            // OpenAI Chat / Anthropic use "id"; OpenAI Responses uses "call_id".
             let id = call
                 .get("id")
                 .and_then(Value::as_str)
@@ -98,6 +93,11 @@ fn extract_tool_call_entries(tool_calls_json: &str) -> Vec<(String, String)> {
             if id.is_empty() {
                 return None;
             }
+
+            // --- name ---
+            // OpenAI Chat nests under "function.name"; the other providers
+            // use a top-level "name". Gemini nests under
+            // "functionCall.name".
             let name = call
                 .get("name")
                 .and_then(Value::as_str)
@@ -106,10 +106,56 @@ fn extract_tool_call_entries(tool_calls_json: &str) -> Vec<(String, String)> {
                         .and_then(|f| f.get("name"))
                         .and_then(Value::as_str)
                 })
+                .or_else(|| {
+                    call.get("functionCall")
+                        .and_then(|f| f.get("name"))
+                        .and_then(Value::as_str)
+                })
                 .unwrap_or("unknown_tool")
                 .to_string();
-            Some((id, name))
+
+            // --- input ---
+            // Anthropic stores an object under "input". OpenAI Chat /
+            // Responses store a JSON string under "arguments". Gemini stores
+            // an object under "functionCall.args".
+            let input = if let Some(input_val) = call.get("input") {
+                if input_val.is_object() {
+                    input_val.clone()
+                } else if let Some(s) = input_val.as_str() {
+                    serde_json::from_str(s).unwrap_or_else(|_| serde_json::json!({}))
+                } else {
+                    serde_json::json!({})
+                }
+            } else if let Some(arguments) = call.get("arguments") {
+                // OpenAI Responses sometimes stores arguments as a parsed
+                // object; OpenAI Chat stores them as a JSON string.
+                if arguments.is_object() {
+                    arguments.clone()
+                } else if let Some(s) = arguments.as_str() {
+                    serde_json::from_str(s).unwrap_or_else(|_| serde_json::json!({}))
+                } else {
+                    serde_json::json!({})
+                }
+            } else if let Some(args) = call
+                .get("functionCall")
+                .and_then(|f| f.get("args"))
+            {
+                args.clone()
+            } else {
+                serde_json::json!({})
+            };
+
+            Some(NormalizedToolCall { id, name, input })
         })
+        .collect()
+}
+
+/// Extract (id, name) entries from a serialized tool_calls JSON array.
+/// Supports all provider formats via [`normalize_tool_calls`].
+fn extract_tool_call_entries(tool_calls_json: &str) -> Vec<(String, String)> {
+    normalize_tool_calls(tool_calls_json)
+        .into_iter()
+        .map(|entry| (entry.id, entry.name))
         .collect()
 }
 

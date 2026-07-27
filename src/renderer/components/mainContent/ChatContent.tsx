@@ -10,15 +10,17 @@ import type { WorkspaceDirectoryRecord } from "../../../preload";
 import { useAutoScrollPreference } from "../../hooks/useAutoScrollPreference";
 import { useI18n } from "../../i18n";
 import { ChatInput } from "./ChatInput";
-import { PixelLogo } from "../common/PixelLogo";
+import { EmptyChatGreeting } from "./EmptyChatGreeting";
 import { ChatMessageList, useChatConversationContext } from "./chatMessages";
 import { RollbackConfirmDialog } from "./chatMessages/dialogs/RollbackConfirmDialog";
 import { CompactionStream } from "./chatMessages/components/CompactionStream";
 import type { ChatInputSendOptions } from "./chatInput/types";
+import type { MainContentView } from "./types";
 import type { RollbackMode } from "./chatMessages/utils/conversationTypes";
 
 type ChatContentProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
+  onNavigateToView?: (view: MainContentView) => void;
 };
 
 type PendingScrollRestore = {
@@ -33,6 +35,7 @@ const SHOW_SCROLL_TO_BOTTOM_THRESHOLD = 160;
 
 const ChatContentBody = ({
   activeDirectory,
+  onNavigateToView,
 }: ChatContentProps): React.JSX.Element => {
   const {
     messages,
@@ -565,21 +568,10 @@ const ChatContentBody = ({
             />
           </>
         ) : (
-          <div className="chat-empty-greeting">
-            <div className="chat-empty-greeting-brand">
-              <PixelLogo className="chat-empty-greeting-logo" />
-            </div>
-            <p className="chat-empty-greeting-title">
-              {activeDirectory
-                ? t("chat.greetingWithProject", {
-                    defaultValue: "What would you like to work on in {{name}}?",
-                    values: { name: activeDirectory.name },
-                  })
-                : t("chat.greetingNoProject", {
-                    defaultValue: "Select a workspace project to get started.",
-                  })}
-            </p>
-          </div>
+          <EmptyChatGreeting
+            activeDirectory={activeDirectory}
+            onNavigateToView={onNavigateToView}
+          />
         )}
       </div>
 
@@ -643,6 +635,12 @@ const ChatContentBody = ({
 
 export const ChatContent = ({
   activeDirectory,
+  onNavigateToView,
 }: ChatContentProps): React.JSX.Element => {
-  return <ChatContentBody activeDirectory={activeDirectory} />;
+  return (
+    <ChatContentBody
+      activeDirectory={activeDirectory}
+      onNavigateToView={onNavigateToView}
+    />
+  );
 };

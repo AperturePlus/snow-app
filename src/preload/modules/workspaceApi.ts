@@ -69,6 +69,17 @@ export const workspaceApi = {
       ipcRenderer.removeListener("workspace-directories:changed", handler);
     };
   },
+  onWorkspaceDirectoryListChanged: (callback: () => void): (() => void) => {
+    const handler = (): void => {
+      callback();
+    };
+
+    ipcRenderer.on("workspace-directory-list:changed", handler);
+
+    return () => {
+      ipcRenderer.removeListener("workspace-directory-list:changed", handler);
+    };
+  },
   searchFiles: (dirPath: string, query: string): Promise<FileSearchResult[]> =>
     ipcRenderer.invoke("workspace-directories:search-files", dirPath, query),
   selectFiles: (

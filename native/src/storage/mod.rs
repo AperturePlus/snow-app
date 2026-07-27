@@ -1390,6 +1390,7 @@ pub fn ensure_database_file() -> Result<PathBuf> {
     services::api_configs::seed_default_api_config(&database_path)?;
     services::sub_agent_configs::seed_default_sub_agent_configs(&database_path)?;
     services::sensitive_command_configs::seed_default_sensitive_command_configs(&database_path)?;
+    services::workspace_directories::seed_default_workspace_directory(&database_path)?;
 
     // Store into the cache so all future calls hit the fast path.
     let _ = DATABASE_PATH_CACHE.set(database_path.clone());

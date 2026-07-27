@@ -171,12 +171,21 @@ export function WorkspaceDirectoryList({
                   </span>
                   {getDirectoryIcon(directory)}
                   <span className="list-label">{directory.name}</span>
-                  <span className="list-meta">{directory.kind}</span>
+                  <span className="list-meta">
+                    {directory.kind === "ssh"
+                      ? t("sidebar.directoryKindSsh", {
+                          defaultValue: "SSH",
+                        })
+                      : t("sidebar.directoryKindLocal", {
+                          defaultValue: "Local",
+                        })}
+                  </span>
                   <span className="workspace-directory-index">
                     {index + 1}/{totalCount}
                   </span>
                 </button>
                 <WorkspaceDirectoryMenu
+                  canDelete={directory.source !== "builtin"}
                   disabled={isActionLocked}
                   onDelete={() => onDelete(directory.directoryId)}
                   onOpenChange={(isOpen) =>

@@ -11,6 +11,7 @@ import { createPortal } from "react-dom";
 import { useI18n } from "../../../i18n";
 
 type WorkspaceDirectoryMenuProps = {
+  canDelete?: boolean;
   disabled?: boolean;
   onDelete: () => void;
   onOpenChange?: (isOpen: boolean) => void;
@@ -26,6 +27,7 @@ const MENU_GAP = 4;
 const VIEWPORT_MARGIN = 8;
 
 export function WorkspaceDirectoryMenu({
+  canDelete = true,
   disabled,
   onDelete,
   onOpenChange,
@@ -234,18 +236,22 @@ export function WorkspaceDirectoryMenu({
                       })}
                     </span>
                   </button>
-                  <button
-                    type="button"
-                    className="workspace-directory-menu-item danger"
-                    disabled={disabled}
-                    onClick={handleDeleteClick}
-                    role="menuitem"
-                  >
-                    <Trash2 size={13} />
-                    <span>
-                      {t("sidebar.deleteDirectory", { defaultValue: "Delete" })}
-                    </span>
-                  </button>
+                  {canDelete ? (
+                    <button
+                      type="button"
+                      className="workspace-directory-menu-item danger"
+                      disabled={disabled}
+                      onClick={handleDeleteClick}
+                      role="menuitem"
+                    >
+                      <Trash2 size={13} />
+                      <span>
+                        {t("sidebar.deleteDirectory", {
+                          defaultValue: "Delete",
+                        })}
+                      </span>
+                    </button>
+                  ) : null}
                 </>
               )}
             </div>,

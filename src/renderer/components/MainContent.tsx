@@ -76,7 +76,10 @@ export const MainContent = ({
       ) : activeView === "system-logs" ? (
         <SystemLogsPanel onClose={() => onSelectView("chat")} />
       ) : (
-        <ChatContent activeDirectory={activeDirectory} />
+        <ChatContent
+          activeDirectory={activeDirectory}
+          onNavigateToView={onSelectView}
+        />
       )}
     </main>
   );

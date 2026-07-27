@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::Path;
 
 use napi::bindgen_prelude::*;
@@ -119,6 +120,23 @@ pub fn reorder_workspace_directories(
 pub fn delete_workspace_directory(database_path: &Path, directory_id: &str) -> Result<()> {
     database::open_connection(database_path)
         .and_then(|mut connection| {
+            // 内置默认工作目录（source = "builtin"）不允许删除，
+            // 保证系统始终至少有一个可用目录供会话记录挂载。
+            let source: Option<String> = connection
+                .query_row(
+                    "SELECT source FROM workspace_directories WHERE directory_id = ?1",
+                    [directory_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+
+            if source.as_deref() == Some(DEFAULT_WORKSPACE_SOURCE) {
+                return Err(rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                    Some("Cannot delete the built-in default workspace directory".to_string()),
+                ));
+            }
+
             let transaction = connection.transaction()?;
             transaction.execute(
                 "DELETE FROM workspace_directories WHERE directory_id = ?1",
@@ -247,6 +265,94 @@ fn upsert_workspace_directory_with_connection(
             item.sort_order,
             item.source,
         ],
+    )?;
+
+    Ok(())
+}
+
+const DEFAULT_WORKSPACE_DIR_NAME: &str = "workspace";
+const DEFAULT_WORKSPACE_DISPLAY_NAME: &str = "Default";
+const DEFAULT_WORKSPACE_SOURCE: &str = "builtin";
+
+/// 在 `~/.snowapp/workspace` 下创建内置默认工作目录，并在数据库中幂等插入一条
+/// `source = "builtin"` 的 local 工作目录记录。确保即便用户未手动添加任何目录，
+/// 会话记录（依赖 directory_id）等也能正常挂载与加载。
+pub fn seed_default_workspace_directory(database_path: &Path) -> Result<()> {
+    let storage_dir = crate::storage::paths::app_storage_dir()?;
+    let default_workspace_path = storage_dir.join(DEFAULT_WORKSPACE_DIR_NAME);
+    fs::create_dir_all(&default_workspace_path).map_err(|error| {
+        Error::from_reason(format!(
+            "Failed to create default workspace directory at '{}': {error}",
+            default_workspace_path.display()
+        ))
+    })?;
+
+    let default_path_str = default_workspace_path.to_string_lossy().to_string();
+    let directory_id = format!("local:{}", default_path_str);
+
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            seed_default_workspace_directory_with_connection(
+                &connection,
+                &directory_id,
+                &default_path_str,
+            )
+        })
+        .map_err(|error| {
+            database::database_error(database_path, "seed default workspace directory", error)
+        })
+}
+
+fn seed_default_workspace_directory_with_connection(
+    connection: &Connection,
+    directory_id: &str,
+    path: &str,
+) -> rusqlite::Result<()> {
+    connection.execute(
+        "INSERT INTO workspace_directories (
+           id,
+           directory_id,
+           name,
+           path,
+           kind,
+           is_active,
+           sort_order,
+           source,
+           created_at,
+           updated_at
+         )
+         SELECT ?1, ?2, ?3, ?4, 'local', 1, 0, ?5,
+                datetime('now', 'localtime'), datetime('now', 'localtime')
+         WHERE NOT EXISTS (SELECT 1 FROM workspace_directories)",
+        params![
+            database::create_snowflake_id(),
+            directory_id,
+            DEFAULT_WORKSPACE_DISPLAY_NAME,
+            path,
+            DEFAULT_WORKSPACE_SOURCE,
+        ],
+    )?;
+
+    ensure_one_active_directory(connection)
+}
+
+fn ensure_one_active_directory(connection: &Connection) -> rusqlite::Result<()> {
+    connection.execute(
+        "UPDATE workspace_directories
+            SET is_active = 1,
+                updated_at = datetime('now', 'localtime')
+          WHERE directory_id = (
+            SELECT directory_id
+              FROM workspace_directories
+             ORDER BY sort_order ASC, id ASC
+             LIMIT 1
+          )
+          AND NOT EXISTS (
+            SELECT 1
+              FROM workspace_directories
+             WHERE is_active = 1
+          )",
+        [],
     )?;
 
     Ok(())

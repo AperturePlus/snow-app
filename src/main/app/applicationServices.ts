@@ -1,6 +1,4 @@
-import { app } from "electron";
 import type { AppStorageInfo, NativeBridge } from "../native/types";
-import { createWorkspaceDirectoryInput } from "../settings/workspaceDirectories";
 import { markStorageReady, markStorageFailed } from "./storageReady";
 import { snowLog } from "../../utils/snowLogger";
 
@@ -10,9 +8,6 @@ const ensureDefaultWorkspaceDirectory = async (
   const directories = await native.listWorkspaceDirectories();
 
   if (directories.length === 0) {
-    await native.upsertWorkspaceDirectory(
-      createWorkspaceDirectoryInput(app.getPath("home"), "local", 0)
-    );
     return;
   }
 

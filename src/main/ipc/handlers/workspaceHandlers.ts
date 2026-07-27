@@ -7,6 +7,18 @@ import {
 } from "../../settings/workspaceDirectories";
 import { startDirectoryWatch, stopDirectoryWatch } from "../../utils/fsWatcher";
 
+const broadcastDirectoryListChanged = (): void => {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (
+      !window.isDestroyed() &&
+      window.webContents &&
+      !window.webContents.isDestroyed()
+    ) {
+      window.webContents.send("workspace-directory-list:changed");
+    }
+  }
+};
+
 export const registerWorkspaceHandlers = (native: NativeBridge): void => {
   ipcMain.handle("workspace-directories:list", () =>
     native.listWorkspaceDirectories()
@@ -18,7 +30,9 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
       await native.upsertWorkspaceDirectory(
         normalizeWorkspaceDirectory(item, existingCount)
       );
-      return native.listWorkspaceDirectories();
+      const directories = await native.listWorkspaceDirectories();
+      broadcastDirectoryListChanged();
+      return directories;
     }
   );
   ipcMain.handle(
@@ -29,7 +43,9 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
       }
 
       await native.activateWorkspaceDirectory(directoryId.trim());
-      return native.listWorkspaceDirectories();
+      const directories = await native.listWorkspaceDirectories();
+      broadcastDirectoryListChanged();
+      return directories;
     }
   );
   ipcMain.handle(
@@ -46,7 +62,9 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
         }
       }
 
-      return native.listWorkspaceDirectories();
+      const result = await native.listWorkspaceDirectories();
+      broadcastDirectoryListChanged();
+      return result;
     }
   );
   ipcMain.handle(
@@ -57,7 +75,9 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
       }
 
       await native.deleteWorkspaceDirectory(directoryId.trim());
-      return native.listWorkspaceDirectories();
+      const directories = await native.listWorkspaceDirectories();
+      broadcastDirectoryListChanged();
+      return directories;
     }
   );
   ipcMain.handle(

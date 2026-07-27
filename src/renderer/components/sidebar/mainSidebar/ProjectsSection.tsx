@@ -193,7 +193,7 @@ export function ProjectsSection({
     });
   }, [workspaceDirectories.length]);
 
-  const loadWorkspaceDirectories = async (): Promise<void> => {
+  const loadWorkspaceDirectories = useCallback(async (): Promise<void> => {
     setDirectoryError(null);
 
     try {
@@ -210,11 +210,23 @@ export function ProjectsSection({
     } finally {
       setIsLoadingDirectories(false);
     }
-  };
+  }, [t]);
 
   useEffect(() => {
     void loadWorkspaceDirectories();
-  }, []);
+  }, [loadWorkspaceDirectories]);
+
+  // Refresh the directory list whenever another part of the app (e.g. the
+  // empty-chat greeting card or the SSH wizard) adds/activates/deletes a
+  // workspace directory. The main process broadcasts
+  // "workspace-directory-list:changed" after every mutation, so subscribing
+  // here keeps the sidebar in sync without coupling components together.
+  useEffect(() => {
+    const unsubscribe = window.snow.onWorkspaceDirectoryListChanged(() => {
+      void loadWorkspaceDirectories();
+    });
+    return unsubscribe;
+  }, [loadWorkspaceDirectories]);
 
   useEffect(() => {
     setDirectoryPage(1);
