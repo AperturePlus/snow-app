@@ -288,6 +288,24 @@ export const en = {
   "toolCall.userQuestion.cancelled": "Answer cancelled",
   "toolCall.userQuestion.submit": "Submit answer",
   "toolCall.userQuestion.submitted": "Answer submitted",
+  "toolCall.planApproval.name": "plan approval",
+  "toolCall.planApproval.action": "Request plan execution",
+  "toolCall.planApproval.title": "Approve execution of the current plan?",
+  "toolCall.planApproval.description":
+    "Approval unlocks file creation and replacement edits for this task.",
+  "toolCall.planApproval.status.waiting": "Waiting for approval",
+  "toolCall.planApproval.status.approved": "Approved",
+  "toolCall.planApproval.status.declined": "Keep planning",
+  "toolCall.planApproval.status.error": "Approval failed",
+  "toolCall.planApproval.preparing": "Preparing approval request...",
+  "toolCall.planApproval.waitingHint":
+    "The AI can modify project files only after explicit approval.",
+  "toolCall.planApproval.approvedHint":
+    "This task is approved and the plan can now be executed.",
+  "toolCall.planApproval.declinedHint":
+    "The plan was not approved; the AI will keep planning without modifying project files.",
+  "toolCall.planApproval.continuePlanning": "Keep planning",
+  "toolCall.planApproval.approve": "Approve and execute",
   "toolCall.grep.name": "grep",
   "toolCall.grep.pattern": "Pattern",
   "toolCall.grep.path": "Path",
@@ -1157,6 +1175,28 @@ export const en = {
   "settings.terminalProxyPlaceholder":
     "e.g. http://127.0.0.1:7890 (leave empty for none)",
   "settings.saveTerminalSettings": "Save settings",
+  "settings.keyboardShortcuts": "Keyboard shortcuts",
+  "settings.keyboardShortcutsInfo":
+    "Configure keyboard shortcuts. Each shortcut can be enabled independently and toggled to only work when the app is focused.",
+  "settings.shortcutCancelSession": "Interrupt current session",
+  "settings.shortcutOpenSearch": "Open global search",
+  "settings.shortcutOpenMemo": "Open memos",
+  "settings.shortcutOpenTodo": "Open todo list",
+  "settings.shortcutCycleProject": "Cycle through projects",
+  "settings.shortcutOpenExplorer": "Open current project explorer",
+  "settings.shortcutEnabled": "Enabled",
+  "settings.shortcutForegroundOnly": "Foreground only",
+  "settings.shortcutForegroundOnlyNote":
+    'When "Foreground only" is on, the shortcut only works while the app window is focused. When off, it works as long as the process is running (limited to app-focused scenarios in the current implementation).',
+  "settings.shortcutListTitle": "Shortcut list",
+  "settings.shortcutListInfo":
+    "Toggle each shortcut on or off, and click the key to rebind it.",
+  "settings.shortcutClickToRebind": "Click to rebind",
+  "settings.shortcutRecording": "Press a key combination...",
+  "settings.shortcutRecordingHint":
+    "Press a key combo to bind, or Esc to cancel",
+  "settings.shortcutConflict": "Conflicts with: {{actions}}",
+  "settings.shortcutReset": "Reset to default",
   "settings.privacySettings": "Privacy settings",
   "settings.privacySettingsInfo": "Redact sensitive data from tool results.",
   "settings.privacyTitle": "Privacy settings",
@@ -1652,4 +1692,12 @@ export const en = {
   "settings.systemLogsRequestLoggingDialogTitle": "Enable request logging?",
   "settings.systemLogsRequestLoggingConfirm": "Enable",
   "settings.systemLogsRequestLoggingCancel": "Cancel",
+  "settings.systemLogsRequestLoggingDuration": "Auto-disable after",
+  "settings.systemLogsRequestLoggingMinutes": "min",
+  "settings.systemLogsRequestLoggingAutoOffHint":
+    "Logging stops automatically when the timer ends — no need to turn it off manually.",
+  "settings.systemLogsRequestLoggingCountdownTitle":
+    "Request logging will auto-disable when the timer ends",
+  "settings.systemLogsRequestLoggingExpired":
+    "Request logging auto-disabled (timer expired).",
 } satisfies Record<string, string>;

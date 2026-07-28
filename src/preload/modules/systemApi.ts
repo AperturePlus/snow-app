@@ -498,7 +498,9 @@ export const systemApi = {
     sensitiveAuthorizationToken?: string,
     onChunk?: (chunk: BashStreamChunk) => void,
     interactionId?: string,
-    subAgentAllowedTools?: string[]
+    subAgentAllowedTools?: string[],
+    planMode?: boolean,
+    planApproved?: boolean
   ): Promise<string> => {
     const streamId = createMcpToolStreamId();
     ensureMcpToolChunkListener();
@@ -518,7 +520,9 @@ export const systemApi = {
         sensitiveAuthorizationToken,
         streamId,
         interactionId ?? streamId,
-        subAgentAllowedTools
+        subAgentAllowedTools,
+        planMode,
+        planApproved
       )
       .finally(() => {
         mcpToolChunkCallbacks.delete(streamId);

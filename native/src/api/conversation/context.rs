@@ -6,6 +6,7 @@ use crate::storage::services::chat_conversations::{
     load_context_messages, resolve_conversation_id, ChatContextMessage,
 };
 use crate::storage::services::system_prompts::resolve_active_system_prompt_contents;
+use crate::storage::services::system_settings::get_system_setting_value;
 use crate::storage::services::workspace_directories::get_workspace_directory_path;
 
 use super::tool_messages::ensure_tool_pairing;
@@ -85,10 +86,11 @@ pub fn prepare_context_request(
     // Plan Mode: replace the built-in system prompt with the Plan Mode prompt
     // that instructs the AI to analyze, plan, and get user approval before
     // executing any changes.
+    let shell_type = resolve_default_shell(request.database_path);
     let system_prompt = if request.plan_mode {
-        build_plan_mode_system_prompt(&working_directory)
+        build_plan_mode_system_prompt(&working_directory, &shell_type)
     } else {
-        build_system_prompt(&working_directory)
+        build_system_prompt(&working_directory, &shell_type)
     };
     let has_existing_system = messages
         .iter()
@@ -141,4 +143,18 @@ fn normalize_messages(messages: &[ChatContextMessage]) -> Vec<ChatContextMessage
             })
         })
         .collect()
+}
+
+/// Read the user's configured default shell type from the terminal settings
+/// stored in the database. Returns the shell identifier (e.g. "powershell",
+/// "cmd", "gitbash", "wsl") or an empty string when unavailable.
+fn resolve_default_shell(database_path: &std::path::Path) -> String {
+    let raw = match get_system_setting_value(database_path, "terminal_settings") {
+        Ok(Some(value)) => value,
+        _ => return String::new(),
+    };
+    serde_json::from_str::<serde_json::Value>(&raw)
+        .ok()
+        .and_then(|json| json.get("defaultShell").and_then(|v| v.as_str().map(String::from)))
+        .unwrap_or_default()
 }

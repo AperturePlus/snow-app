@@ -12,7 +12,17 @@ const HOOKS_SETTING_NAME: &str = "Hooks config";
 const HOOKS_GLOBAL_SETTING_CODE: &str = "hooks_global";
 const HOOKS_PROJECT_SETTING_CODE_PREFIX: &str = "hooks_project_";
 
-const SUPPORTED_HOOK_TYPES: &[&str] = &["onUserMessage"];
+const SUPPORTED_HOOK_TYPES: &[&str] = &[
+    "onUserMessage",
+    "beforeToolCall",
+    "toolConfirmation",
+    "afterToolCall",
+    "onSubAgentComplete",
+    "beforeCompress",
+    "onSessionStart",
+    "onStop",
+    "beforeSubAgentStart",
+];
 
 pub fn list_hook_configs(
     database_path: &Path,

@@ -1,6 +1,6 @@
 [package]
 name = "snow_native"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 license = "MIT"
 
@@ -49,6 +49,9 @@ tree-sitter-json = "0.23"
 tree-sitter-yaml = "0.7"
 tree-sitter-bash = "0.23"
 tree-sitter-lua = "0.5"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
 
 [build-dependencies]
 napi-build = "2.2.3"

@@ -6,11 +6,12 @@ import {
   ChevronRight,
   Copy,
   RefreshCw,
+  Timer,
   Trash2,
   X,
 } from "lucide-react";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
-import { ConfirmDialog } from "../../common/ConfirmDialog";
+import { Modal } from "../../common/Modal";
 import { UsageDateFilter } from "../usageSettings/UsageDateFilter";
 import { useI18n } from "../../../i18n";
 import type { AppLogPage, AppLogRecord } from "../../../../preload";
@@ -18,6 +19,21 @@ import type { UsageDatePreset } from "../usageSettings/types";
 
 const PAGE_SIZE = 50;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+// 请求日志开启时长（分钟）：默认 10，最小 3，最大 60。
+const DURATION_MIN = 3;
+const DURATION_MAX = 60;
+const DURATION_PRESETS = [3, 5, 10, 15, 30, 60];
+
+const formatCountdown = (ms: number): string => {
+  const totalSeconds = Math.ceil(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(
+    2,
+    "0"
+  )}`;
+};
 
 type LogLevelFilter = "" | "DEBUG" | "INFO" | "WARN" | "ERROR";
 
@@ -155,6 +171,9 @@ export function SystemLogsPanel({
   const [requestLoggingEnabled, setRequestLoggingEnabled] = useState(false);
   const [showRequestLoggingDialog, setShowRequestLoggingDialog] =
     useState(false);
+  const [durationMinutes, setDurationMinutes] = useState(10);
+  const [loggingExpiresAt, setLoggingExpiresAt] = useState<number | null>(null);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [copiedRowLabel, setCopiedRowLabel] = useState<string | null>(null);
   const copyResetTimerRef = useRef<number | null>(null);
 
@@ -241,30 +260,53 @@ export function SystemLogsPanel({
     };
   }, []);
 
+  // 挂载时读取开关与过期时间；过期的遗留状态（开着但无有效过期时间）立即复位。
   useEffect(() => {
-    void window.snow
-      .getRequestLogging()
-      .then(setRequestLoggingEnabled)
-      .catch(() => undefined);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [enabled, expiry] = await Promise.all([
+          window.snow.getRequestLogging(),
+          window.snow.getRequestLoggingExpiry(),
+        ]);
+        if (cancelled) return;
+        const now = Date.now();
+        setNowMs(now);
+        if (enabled && (expiry <= 0 || expiry <= now)) {
+          setRequestLoggingEnabled(false);
+          setLoggingExpiresAt(null);
+          void window.snow.setRequestLogging(false).catch(() => undefined);
+          void window.snow.setRequestLoggingExpiry(0).catch(() => undefined);
+          return;
+        }
+        setRequestLoggingEnabled(enabled);
+        setLoggingExpiresAt(enabled && expiry > 0 ? expiry : null);
+      } catch {
+        /* 读取失败保持默认关闭状态 */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const applyRequestLogging = useCallback(
-    async (next: boolean) => {
-      const prev = requestLoggingEnabled;
-      setRequestLoggingEnabled(next);
+  const disableRequestLogging = useCallback(
+    async (expired: boolean) => {
+      setRequestLoggingEnabled(false);
+      setLoggingExpiresAt(null);
       try {
-        await window.snow.setRequestLogging(next);
+        await window.snow.setRequestLogging(false);
+        await window.snow.setRequestLoggingExpiry(0);
         setNotice(
-          next
-            ? t("settings.systemLogsRequestLoggingEnabled", {
-                defaultValue: "Request logging enabled.",
+          expired
+            ? t("settings.systemLogsRequestLoggingExpired", {
+                defaultValue: "Request logging auto-disabled (timer expired).",
               })
             : t("settings.systemLogsRequestLoggingDisabled", {
                 defaultValue: "Request logging disabled.",
               })
         );
       } catch (e) {
-        setRequestLoggingEnabled(prev);
         setError(
           e instanceof Error
             ? e.message
@@ -274,21 +316,59 @@ export function SystemLogsPanel({
         );
       }
     },
-    [requestLoggingEnabled, t]
+    [t]
   );
+
+  // 倒计时：每秒刷新显示；到点自动关闭（即使 Rust 后端也会强制停写，这里负责 UI 复位）。
+  useEffect(() => {
+    if (!requestLoggingEnabled || loggingExpiresAt === null) return;
+    const tick = () => {
+      const now = Date.now();
+      setNowMs(now);
+      if (now >= loggingExpiresAt) {
+        void disableRequestLogging(true);
+      }
+    };
+    tick();
+    const intervalId = window.setInterval(tick, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [requestLoggingEnabled, loggingExpiresAt, disableRequestLogging]);
 
   const handleRequestLoggingToggle = useCallback(() => {
     if (requestLoggingEnabled) {
-      void applyRequestLogging(false);
+      void disableRequestLogging(false);
       return;
     }
     setShowRequestLoggingDialog(true);
-  }, [requestLoggingEnabled, applyRequestLogging]);
+  }, [requestLoggingEnabled, disableRequestLogging]);
 
-  const confirmRequestLogging = useCallback(() => {
+  const confirmRequestLogging = useCallback(async () => {
     setShowRequestLoggingDialog(false);
-    void applyRequestLogging(true);
-  }, [applyRequestLogging]);
+    const expiresAt = Date.now() + durationMinutes * 60_000;
+    setRequestLoggingEnabled(true);
+    setLoggingExpiresAt(expiresAt);
+    setNowMs(Date.now());
+    try {
+      // 先写过期时间再开开关，避免“开关已开但还没有过期时间”的空窗。
+      await window.snow.setRequestLoggingExpiry(expiresAt);
+      await window.snow.setRequestLogging(true);
+      setNotice(
+        t("settings.systemLogsRequestLoggingEnabled", {
+          defaultValue: "Request logging enabled.",
+        })
+      );
+    } catch (e) {
+      setRequestLoggingEnabled(false);
+      setLoggingExpiresAt(null);
+      setError(
+        e instanceof Error
+          ? e.message
+          : t("settings.systemLogsRequestLoggingError", {
+              defaultValue: "Failed to toggle request logging.",
+            })
+      );
+    }
+  }, [durationMinutes, t]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
@@ -523,6 +603,20 @@ export function SystemLogsPanel({
             })}
           </span>
         </label>
+        {requestLoggingEnabled && loggingExpiresAt !== null && (
+          <span
+            className="system-logs-countdown-badge"
+            title={t("settings.systemLogsRequestLoggingCountdownTitle", {
+              defaultValue:
+                "Request logging will auto-disable when the timer ends.",
+            })}
+          >
+            <Timer size={12} strokeWidth={1.9} />
+            <span className="system-logs-countdown-time">
+              {formatCountdown(Math.max(0, loggingExpiresAt - nowMs))}
+            </span>
+          </span>
+        )}
         <span className="settings-item-description">
           {t("settings.systemLogsRequestLoggingDescription", {
             defaultValue:
@@ -531,25 +625,97 @@ export function SystemLogsPanel({
         </span>
       </div>
 
-      <ConfirmDialog
+      <Modal
         open={showRequestLoggingDialog}
-        variant="warning"
         title={t("settings.systemLogsRequestLoggingDialogTitle", {
           defaultValue: "Enable request logging?",
         })}
-        message={t("settings.systemLogsRequestLoggingWarning", {
+        description={t("settings.systemLogsRequestLoggingWarning", {
           defaultValue:
             "Request logging records the full raw request JSON of every API call. This has very high disk usage and is not recommended for non-expert users.",
         })}
-        confirmLabel={t("settings.systemLogsRequestLoggingConfirm", {
-          defaultValue: "Enable",
-        })}
-        cancelLabel={t("settings.systemLogsRequestLoggingCancel", {
+        closeLabel={t("settings.systemLogsRequestLoggingCancel", {
           defaultValue: "Cancel",
         })}
-        onConfirm={confirmRequestLogging}
-        onCancel={() => setShowRequestLoggingDialog(false)}
-      />
+        onClose={() => setShowRequestLoggingDialog(false)}
+        className="request-logging-modal"
+        footer={
+          <>
+            <button
+              type="button"
+              className="confirm-dialog-btn cancel"
+              onClick={() => setShowRequestLoggingDialog(false)}
+            >
+              {t("settings.systemLogsRequestLoggingCancel", {
+                defaultValue: "Cancel",
+              })}
+            </button>
+            <button
+              type="button"
+              className="confirm-dialog-btn confirm"
+              onClick={() => void confirmRequestLogging()}
+            >
+              {t("settings.systemLogsRequestLoggingConfirm", {
+                defaultValue: "Enable",
+              })}
+            </button>
+          </>
+        }
+      >
+        <div className="request-logging-duration">
+          <div className="request-logging-duration-head">
+            <span className="request-logging-duration-label">
+              {t("settings.systemLogsRequestLoggingDuration", {
+                defaultValue: "Auto-disable after",
+              })}
+            </span>
+            <span className="request-logging-duration-value">
+              {durationMinutes}
+              <em>
+                {t("settings.systemLogsRequestLoggingMinutes", {
+                  defaultValue: "min",
+                })}
+              </em>
+            </span>
+          </div>
+          <div className="request-logging-duration-presets">
+            {DURATION_PRESETS.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                className={`request-logging-duration-preset${
+                  durationMinutes === preset ? " active" : ""
+                }`}
+                onClick={() => setDurationMinutes(preset)}
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
+          <input
+            type="range"
+            className="request-logging-duration-slider"
+            min={DURATION_MIN}
+            max={DURATION_MAX}
+            step={1}
+            value={durationMinutes}
+            onChange={(event) => setDurationMinutes(Number(event.target.value))}
+            aria-label={t("settings.systemLogsRequestLoggingDuration", {
+              defaultValue: "Auto-disable after",
+            })}
+          />
+          <div className="request-logging-duration-scale">
+            <span>{DURATION_MIN}</span>
+            <span>{DURATION_MAX}</span>
+          </div>
+          <p className="request-logging-duration-hint">
+            {t("settings.systemLogsRequestLoggingAutoOffHint", {
+              defaultValue:
+                "Logging stops automatically when the timer ends — no need to turn it off manually.",
+            })}
+          </p>
+        </div>
+      </Modal>
 
       <div className="system-logs-stream-section">
         <div className="system-logs-stream-meta">

@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -12,11 +11,14 @@ import { RightPanel, type RightPanelRef } from "./components/RightPanel";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { WindowControls } from "./components/WindowControls";
-import { ChatConversationProvider } from "./components/mainContent/chatMessages";
+import { ChatConversationProvider, useChatConversationContext } from "./components/mainContent/chatMessages";
 import type { MainContentView } from "./components/mainContent/types";
 import { SshConnectWizard } from "./components/sidebar/mainSidebar/SshConnectWizard";
 import { ConfirmDialog } from "./components/common/ConfirmDialog";
 import { rightPanelEvents } from "./components/rightPanel/rightPanelEvents";
+import { KeyboardShortcutsProvider, useKeyboardShortcutsSettings } from "./components/KeyboardShortcutsProvider";
+import { shortcutEvents } from "./components/shortcutEvents";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useI18n } from "./i18n";
 import { useTheme } from "./hooks/useTheme";
 import type { WorkspaceDirectoryRecord } from "../preload";
@@ -41,6 +43,64 @@ type PanelSizeStyle = CSSProperties & {
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max);
 
+/**
+ * 快捷键处理器桥接组件。
+ *
+ * 此组件运行在 KeyboardShortcutsProvider 和 ChatConversationProvider 内部，
+ * 负责：
+ * 1. 调用 useKeyboardShortcuts() 启动 document keydown 监听
+ * 2. 注册 6 个快捷键动作的处理器：
+ *    - cancelSession：直接调用 handleAbort
+ *    - 其余 5 个：通过 shortcutEvents 事件总线分发到各目标组件
+ *
+ * 注册通过 registerHandler 完成，handler 使用 ref 保持最新值。
+ */
+const ShortcutHandlerBridge = (): null => {
+  const { registerHandler } = useKeyboardShortcutsSettings();
+  const { handleAbort } = useChatConversationContext();
+
+  // 使用 ref 持有最新的 handleAbort，避免每次渲染都重新注册 handler
+  const handleAbortRef = useRef(handleAbort);
+  useEffect(() => {
+    handleAbortRef.current = handleAbort;
+  }, [handleAbort]);
+
+  useEffect(() => {
+    const unsubCancel = registerHandler("cancelSession", () => {
+      handleAbortRef.current();
+    });
+    const unsubSearch = registerHandler("openSearch", () => {
+      shortcutEvents.emit("toggle-search");
+    });
+    const unsubMemo = registerHandler("openMemo", () => {
+      shortcutEvents.emit("toggle-memo");
+    });
+    const unsubTodo = registerHandler("openTodo", () => {
+      shortcutEvents.emit("toggle-todo");
+    });
+    const unsubCycle = registerHandler("cycleProject", () => {
+      shortcutEvents.emit("cycle-project");
+    });
+    const unsubExplorer = registerHandler("openProjectExplorer", () => {
+      shortcutEvents.emit("open-project-explorer");
+    });
+
+    return () => {
+      unsubCancel();
+      unsubSearch();
+      unsubMemo();
+      unsubTodo();
+      unsubCycle();
+      unsubExplorer();
+    };
+  }, [registerHandler]);
+
+  // 启动快捷键引擎的 document keydown 监听
+  useKeyboardShortcuts();
+
+  return null;
+};
+
 export const App = (): React.JSX.Element => {
   const rightPanelRef = useRef<RightPanelRef>(null);
   const [activeMainView, setActiveMainView] = useState<MainContentView>("chat");
@@ -60,17 +120,6 @@ export const App = (): React.JSX.Element => {
   const isWindows = navigator.userAgent.includes("Win");
   const { t } = useI18n();
   useTheme();
-
-  // 首次渲染 commit 到 DOM 后，立即移除 index.html 中的 boot-loader。
-  // boot-loader 与 #root 互为兄弟节点，React 渲染不会清空它，
-  // 因此需要主动移除。使用 useLayoutEffect 确保在浏览器绘制前完成，
-  // 避免 App 内容与 boot-loader 同时可见的瞬间。
-  useLayoutEffect(() => {
-    const el = document.getElementById("boot-loader");
-    if (el) {
-      el.remove();
-    }
-  }, []);
 
   // 监听主进程的关闭请求：所有关闭路径（标题栏按钮、Alt+F4、任务栏）
   // 都会在主进程被拦截并回推 window:close-requested，此处弹出二次确认。
@@ -255,11 +304,13 @@ export const App = (): React.JSX.Element => {
   };
 
   return (
-    <ChatConversationProvider
-      directoryId={activeDirectory?.directoryId}
-      directoryPath={activeDirectory?.path}
-    >
-      <div className={shellClasses} style={panelSizeStyle}>
+    <KeyboardShortcutsProvider>
+      <ChatConversationProvider
+        directoryId={activeDirectory?.directoryId}
+        directoryPath={activeDirectory?.path}
+      >
+        <ShortcutHandlerBridge />
+        <div className={shellClasses} style={panelSizeStyle}>
         {isWindows && <WindowControls />}
         <TopBar
           isSidebarCollapsed={isSidebarCollapsed}
@@ -334,7 +385,8 @@ export const App = (): React.JSX.Element => {
           onCancel={handleCancelClose}
           variant="warning"
         />
-      </div>
-    </ChatConversationProvider>
+        </div>
+      </ChatConversationProvider>
+    </KeyboardShortcutsProvider>
   );
 };

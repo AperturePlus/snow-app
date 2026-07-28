@@ -217,6 +217,21 @@ export type ThemeSettings = {
   background: ThemeBackground;
 };
 
+export type KeyboardShortcutConfig = {
+  key: string;
+  enabled: boolean;
+  foregroundOnly: boolean;
+};
+
+export type KeyboardShortcutsSettings = {
+  cancelSession: KeyboardShortcutConfig;
+  openSearch: KeyboardShortcutConfig;
+  openMemo: KeyboardShortcutConfig;
+  openTodo: KeyboardShortcutConfig;
+  cycleProject: KeyboardShortcutConfig;
+  openProjectExplorer: KeyboardShortcutConfig;
+};
+
 export type CodebaseEmbedProgress = {
   phase: string;
   totalFiles: number;
@@ -797,10 +812,16 @@ export type NativeBridge = {
   setPlanMode: (enabled: boolean) => Promise<void>;
   getRequestLogging: () => Promise<boolean>;
   setRequestLogging: (enabled: boolean) => Promise<void>;
+  getRequestLoggingExpiry: () => Promise<number>;
+  setRequestLoggingExpiry: (expiresAtMs: number) => Promise<void>;
   getPrivacySettings: () => Promise<PrivacySettings>;
   setPrivacySettings: (settings: PrivacySettings) => Promise<void>;
   getThemeSettings: () => Promise<ThemeSettings>;
   setThemeSettings: (settings: ThemeSettings) => Promise<void>;
+  getKeyboardShortcutsSettings: () => Promise<KeyboardShortcutsSettings>;
+  setKeyboardShortcutsSettings: (
+    settings: KeyboardShortcutsSettings
+  ) => Promise<void>;
   saveThemeBackgroundImage: (sourcePath: string) => Promise<string>;
   deleteThemeBackgroundImage: (imagePath: string) => Promise<void>;
   saveThemeStreamCursorSvg: (sourcePath: string) => Promise<string>;
@@ -1057,7 +1078,9 @@ export type NativeBridge = {
     onRemoteWorkspaceCommand: (
       command: RemoteWorkspaceCommand
     ) => Promise<string>,
-    subAgentAllowedTools: string[] | undefined
+    subAgentAllowedTools: string[] | undefined,
+    planMode: boolean | undefined,
+    planApproved: boolean | undefined
   ) => Promise<string>;
   engineInfo: () => string;
   sum: (a: number, b: number) => number;

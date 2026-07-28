@@ -82,7 +82,7 @@ export function ProxyBrowserSettingsForm({
               <input
                 value={form.port}
                 onChange={onUpdateField("port")}
-                onBlur={onBlurSave}
+                onBlur={() => onBlurSave()}
                 placeholder="7890"
                 type="number"
                 min={1}
@@ -122,7 +122,7 @@ export function ProxyBrowserSettingsForm({
                 <input
                   value={form.browserPath}
                   onChange={onUpdateField("browserPath")}
-                  onBlur={onBlurSave}
+                  onBlur={() => onBlurSave()}
                   placeholder={t("settings.browserPathPlaceholder", {
                     defaultValue:
                       "Leave empty to auto-detect Chrome / Edge / Chromium",
@@ -163,7 +163,7 @@ export function ProxyBrowserSettingsForm({
               <input
                 value={form.browserDebugPort}
                 onChange={onUpdateField("browserDebugPort")}
-                onBlur={onBlurSave}
+                onBlur={() => onBlurSave()}
                 placeholder="9222"
                 type="number"
                 min={1}

@@ -2,6 +2,7 @@ import { memo } from "react";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import {
   AskUserQuestionToolCall,
+  PlanModeApprovalToolCall,
   BashToolCall,
   FilesystemReadToolCall,
   FilesystemEditToolCall,
@@ -59,6 +60,10 @@ export const ToolCallItem = memo(
       return <AskUserQuestionToolCall toolCall={toolCall} />;
     }
 
+    if (toolCall.name === "plan-mode-requestApproval") {
+      return <PlanModeApprovalToolCall toolCall={toolCall} />;
+    }
+
     if (toolCall.name === "filesystem-read") {
       return <FilesystemReadToolCall toolCall={toolCall} />;
     }
@@ -114,10 +119,7 @@ export const ToolCallItem = memo(
     const hasBody = Boolean(formattedArgs || toolCall.result);
 
     return (
-      <ToolCallNode
-        toolName={toolCall.name}
-        status={effectiveStatus}
-      >
+      <ToolCallNode toolName={toolCall.name} status={effectiveStatus}>
         {hasBody ? (
           <>
             {formattedArgs ? (

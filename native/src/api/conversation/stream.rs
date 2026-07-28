@@ -24,6 +24,12 @@ pub async fn create_response_stream(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .is_some();
+    if is_sub_agent {
+        // Plan Mode belongs exclusively to the main conversation. Keep the
+        // provider prompt and request-scoped tool injection in normal mode for
+        // every sub-agent, even if a caller accidentally forwards plan_mode.
+        request.plan_mode = Some(false);
+    }
     let sub_agent_config_profile = request
         .sub_agent_config_profile
         .as_deref()

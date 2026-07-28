@@ -56,6 +56,13 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   ipcMain.handle("settings:set-request-logging", (_event, enabled: boolean) =>
     native.setRequestLogging(enabled)
   );
+  ipcMain.handle("settings:get-request-logging-expiry", () =>
+    native.getRequestLoggingExpiry()
+  );
+  ipcMain.handle(
+    "settings:set-request-logging-expiry",
+    (_event, expiresAtMs: number) => native.setRequestLoggingExpiry(expiresAtMs)
+  );
   ipcMain.handle("settings:get-privacy-settings", () =>
     native.getPrivacySettings()
   );
@@ -84,6 +91,18 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     }
     return native.setThemeSettings(settings as never);
   });
+  ipcMain.handle("settings:get-keyboard-shortcuts", () =>
+    native.getKeyboardShortcutsSettings()
+  );
+  ipcMain.handle(
+    "settings:set-keyboard-shortcuts",
+    (_event, settings: unknown) => {
+      if (!settings || typeof settings !== "object") {
+        throw new Error("Keyboard shortcuts settings must be an object");
+      }
+      return native.setKeyboardShortcutsSettings(settings as never);
+    }
+  );
   ipcMain.handle(
     "theme:save-background-image",
     (_event, sourcePath: unknown) => {
@@ -568,7 +587,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       sensitiveAuthorizationToken: unknown,
       streamId: unknown,
       interactionId: unknown,
-      subAgentAllowedTools: unknown
+      subAgentAllowedTools: unknown,
+      planMode: unknown,
+      planApproved: unknown
     ) => {
       if (typeof toolFullName !== "string" || !toolFullName.trim()) {
         throw new Error("Tool full name is required");
@@ -610,6 +631,12 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       if (typeof interactionId !== "string" || !interactionId.trim()) {
         throw new Error("Tool interaction ID is required");
       }
+      if (planMode !== undefined && typeof planMode !== "boolean") {
+        throw new Error("Plan Mode state must be a boolean");
+      }
+      if (planApproved !== undefined && typeof planApproved !== "boolean") {
+        throw new Error("Plan approval state must be a boolean");
+      }
 
       const normalizedStreamId = streamId.trim();
       const normalizedInteractionId = interactionId.trim();
@@ -642,7 +669,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         (question: UserQuestionCommand) =>
           dispatchUserQuestion(event.sender, question, normalizedInteractionId),
         (command) => dispatchRemoteWorkspaceCommand(command),
-        normalizedSubAgentAllowedTools
+        normalizedSubAgentAllowedTools,
+        planMode as boolean | undefined,
+        planApproved as boolean | undefined
       );
     }
   );

@@ -2,6 +2,7 @@ import { Folder, Loader2, Plus, Server } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "../../../i18n";
+import { shortcutEvents } from "../../shortcutEvents";
 import type {
   WorkspaceDirectoryInput,
   WorkspaceDirectoryKind,
@@ -489,6 +490,48 @@ export function ProjectsSection({
 
     onSwitchToExplorer?.(directory.directoryId);
   };
+
+  // 基于当前位置自上而下循环切换项目。
+  // 找到当前激活目录的索引，切换到下一个（末尾则回到第一个）。
+  const handleCycleProject = useCallback(() => {
+    if (workspaceDirectories.length === 0) return;
+    // 切换中或保存中时不响应，避免状态混乱
+    if (isSwitchingDirectory || isSavingDirectory || isReorderingDirectories) {
+      return;
+    }
+
+    const currentIndex = activeDirectory
+      ? workspaceDirectories.findIndex(
+          (d) => d.directoryId === activeDirectory.directoryId
+        )
+      : -1;
+
+    // 无当前激活目录时切换到第一个
+    if (currentIndex === -1) {
+      void handleActivateDirectory(workspaceDirectories[0].directoryId);
+      return;
+    }
+
+    const nextIndex = (currentIndex + 1) % workspaceDirectories.length;
+    const nextDirectory = workspaceDirectories[nextIndex];
+    if (nextDirectory && nextDirectory.directoryId !== activeDirectory?.directoryId) {
+      void handleActivateDirectory(nextDirectory.directoryId);
+    }
+  }, [
+    workspaceDirectories,
+    activeDirectory,
+    isSwitchingDirectory,
+    isSavingDirectory,
+    isReorderingDirectories,
+    handleActivateDirectory,
+  ]);
+
+  // 订阅快捷键事件：Ctrl/Cmd+` 循环切换项目
+  useEffect(() => {
+    return shortcutEvents.on("cycle-project", () => {
+      handleCycleProject();
+    });
+  }, [handleCycleProject]);
 
   return (
     <div className="sidebar-section">

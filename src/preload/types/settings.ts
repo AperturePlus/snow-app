@@ -94,7 +94,7 @@ export type ThemeSettings = {
 export type DetectedTerminal = {
   name: string;
   path: string;
-  family: "powershell" | "cmd" | "posix";
+  family: "powershell" | "cmd" | "wsl" | "posix";
 };
 
 export type CodebaseSettingsInput = {
@@ -324,3 +324,33 @@ export type ProjectSensitiveCommandConfigRecord =
     isPreset: boolean;
     source: string;
   };
+
+// ===== Keyboard shortcuts =====
+
+export type KeyboardShortcutAction =
+  | "cancelSession"
+  | "openSearch"
+  | "openMemo"
+  | "openTodo"
+  | "cycleProject"
+  | "openProjectExplorer";
+
+export type KeyboardShortcutConfig = {
+  /**
+   * 平台无关的规范化按键绑定。
+   * `mod` 代表平台主修饰键（macOS=Cmd，其他=Ctrl），主键用小写。
+   * 例如 `mod+f`、`escape`、`mod+backtick`。
+   */
+  key: string;
+  enabled: boolean;
+  foregroundOnly: boolean;
+};
+
+export type KeyboardShortcutsSettings = {
+  cancelSession: KeyboardShortcutConfig;
+  openSearch: KeyboardShortcutConfig;
+  openMemo: KeyboardShortcutConfig;
+  openTodo: KeyboardShortcutConfig;
+  cycleProject: KeyboardShortcutConfig;
+  openProjectExplorer: KeyboardShortcutConfig;
+};

@@ -748,7 +748,7 @@ export function ProjectExplorerContent({
   );
 
   // 拖拽搜索结果（从文件名区域触发）：若有选中行则发送选中行的
-  // 聚合 FileTag 列表；否则发送该文件全部行号的单个 FileTag。
+  // 聚合 FileTag 列表；否则视为整个文件引用，不携带行号。
   const handleSearchResultDragStart = useCallback(
     (event: React.DragEvent, result: FileSearchResult) => {
       const selectedTags = buildSelectedFileTags();
@@ -760,13 +760,9 @@ export function ProjectExplorerContent({
         event.dataTransfer.effectAllowed = "copy";
         return;
       }
-      const lines =
-        result.lineMatches.length > 0
-          ? result.lineMatches.map((m) => m.line)
-          : undefined;
       event.dataTransfer.setData(
         "application/json",
-        JSON.stringify({ type: "file-tags", tags: [{ path: result.path, name: result.name, isDirectory: false, lines }] })
+        JSON.stringify({ type: "file-tags", tags: [{ path: result.path, name: result.name, isDirectory: false }] })
       );
       event.dataTransfer.effectAllowed = "copy";
     },

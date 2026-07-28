@@ -35,6 +35,13 @@ const DEFAULT_REQUEST_LOGGING_SETTING_NAME: &str = "Request logging";
 const DEFAULT_REQUEST_LOGGING_SETTING_CODE: &str = "request_logging";
 const DEFAULT_REQUEST_LOGGING_SETTING_VALUE: &str = "false";
 
+// 请求日志自动关闭时间（Unix epoch 毫秒）。0 表示未设置。
+// 开启请求日志时必须同时写入该值，到期后 Rust 写入路径会拒绝记录并自动复位开关，
+// 避免用户忘记关闭导致持续大量写盘。
+const DEFAULT_REQUEST_LOGGING_EXPIRY_SETTING_NAME: &str = "Request logging expiry";
+const DEFAULT_REQUEST_LOGGING_EXPIRY_SETTING_CODE: &str = "request_logging_expires_at";
+const DEFAULT_REQUEST_LOGGING_EXPIRY_SETTING_VALUE: &str = "0";
+
 const DEFAULT_PRIVACY_SETTING_NAME: &str = "Privacy settings";
 const DEFAULT_PRIVACY_SETTING_CODE: &str = "privacy_settings";
 const DEFAULT_PRIVACY_SETTING_VALUE: &str = "{\"enabled\":false,\"mode\":\"local\",\"api\":{\"url\":\"\",\"apiKey\":\"\",\"model\":\"openai/privacy-filter\"},\"toolResults\":{\"tools\":[\"filesystem-read\",\"grep-search\",\"bash-terminal-execute\"]}}";
@@ -274,6 +281,30 @@ pub fn set_request_logging(database_path: &Path, enabled: bool) -> Result<()> {
         DEFAULT_REQUEST_LOGGING_SETTING_NAME,
         DEFAULT_REQUEST_LOGGING_SETTING_CODE,
         if enabled { "true" } else { "false" },
+    )
+}
+
+pub fn get_request_logging_expiry(database_path: &Path) -> Result<i64> {
+    let Some(value) =
+        get_system_setting_value(database_path, DEFAULT_REQUEST_LOGGING_EXPIRY_SETTING_CODE)?
+    else {
+        return Ok(0);
+    };
+
+    value.parse::<i64>().map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to parse Request logging expiry setting: {error}"),
+        )
+    })
+}
+
+pub fn set_request_logging_expiry(database_path: &Path, expires_at_ms: i64) -> Result<()> {
+    set_system_setting(
+        database_path,
+        DEFAULT_REQUEST_LOGGING_EXPIRY_SETTING_NAME,
+        DEFAULT_REQUEST_LOGGING_EXPIRY_SETTING_CODE,
+        &expires_at_ms.to_string(),
     )
 }
 
@@ -1035,6 +1066,12 @@ fn seed_default_settings_with_connection(connection: &Connection) -> rusqlite::R
     )?;
     insert_default_setting(
         connection,
+        DEFAULT_REQUEST_LOGGING_EXPIRY_SETTING_NAME,
+        DEFAULT_REQUEST_LOGGING_EXPIRY_SETTING_CODE,
+        DEFAULT_REQUEST_LOGGING_EXPIRY_SETTING_VALUE,
+    )?;
+    insert_default_setting(
+        connection,
         DEFAULT_PRIVACY_SETTING_NAME,
         DEFAULT_PRIVACY_SETTING_CODE,
         DEFAULT_PRIVACY_SETTING_VALUE,
@@ -1045,6 +1082,9 @@ fn seed_default_settings_with_connection(connection: &Connection) -> rusqlite::R
         DEFAULT_THEME_SETTING_CODE,
         DEFAULT_THEME_SETTING_VALUE,
     )?;
+
+    // Seed keyboard shortcuts default settings (enabled + foregroundOnly).
+    super::keyboard_shortcuts::seed_default_keyboard_shortcuts(connection)?;
 
     Ok(())
 }

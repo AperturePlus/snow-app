@@ -248,7 +248,7 @@ pub async fn write_interactive_stdin(
 }
 
 #[napi(
-    ts_args_type = "toolFullName: string, argsJson: string, projectId: string | undefined, checkpointIds: string[] | undefined, checkpointWorkDir: string | undefined, sensitiveAuthorizationToken: string | undefined, onChunk: (chunk: BashStreamChunk) => void, onBrowserCommand: (command: BrowserCommand) => Promise<string>, onUserQuestion: (question: UserQuestionCommand) => Promise<string>, onRemoteWorkspaceCommand: (command: RemoteWorkspaceCommand) => Promise<string>, subAgentAllowedTools: string[] | undefined",
+    ts_args_type = "toolFullName: string, argsJson: string, projectId: string | undefined, checkpointIds: string[] | undefined, checkpointWorkDir: string | undefined, sensitiveAuthorizationToken: string | undefined, onChunk: (chunk: BashStreamChunk) => void, onBrowserCommand: (command: BrowserCommand) => Promise<string>, onUserQuestion: (question: UserQuestionCommand) => Promise<string>, onRemoteWorkspaceCommand: (command: RemoteWorkspaceCommand) => Promise<string>, subAgentAllowedTools: string[] | undefined, planMode: boolean | undefined, planApproved: boolean | undefined",
     ts_return_type = "Promise<string>"
 )]
 pub async fn call_mcp_tool(
@@ -263,6 +263,8 @@ pub async fn call_mcp_tool(
     on_user_question: UserQuestionCallback,
     on_remote_workspace_command: RemoteWorkspaceCallback,
     sub_agent_allowed_tools: Option<Vec<String>>,
+    plan_mode: Option<bool>,
+    plan_approved: Option<bool>,
 ) -> napi::Result<String> {
     call_tool(
         tool_full_name,
@@ -276,6 +278,8 @@ pub async fn call_mcp_tool(
         on_user_question,
         on_remote_workspace_command,
         sub_agent_allowed_tools,
+        plan_mode.unwrap_or(false),
+        plan_approved.unwrap_or(false),
     )
     .await
 }

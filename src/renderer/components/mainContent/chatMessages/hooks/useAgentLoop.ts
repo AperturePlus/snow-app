@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { ChatInputSendOptions } from "../../chatInput/types";
 import type {
   ChatConversationMessage,
@@ -18,8 +18,26 @@ import {
   updateFirstMatchingToolCall,
   validateToolCall,
 } from "../utils/conversationHelpers";
-import { evaluatePlanGate, isPlanApprovalResult } from "../utils/planModeGate";
 import { calculateAutoCompressThresholdTokens } from "../../../sidebar/apiSettings/autoCompressThreshold";
+import { resolveHookOutcome } from "./hookOutcome";
+const PLAN_APPROVAL_TOOL_NAME = "plan-mode-requestApproval";
+const PARENT_PLAN_APPROVAL_REQUIRED = "PARENT_PLAN_APPROVAL_REQUIRED";
+
+const isStructuredPlanApproval = (
+  toolName: string,
+  result: string
+): boolean => {
+  if (toolName !== PLAN_APPROVAL_TOOL_NAME) {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    return parsed.approved === true;
+  } catch {
+    return false;
+  }
+};
 
 export type UseAgentLoopParams = {
   ctx: ConversationContextValue;
@@ -39,10 +57,15 @@ export type UseAgentLoopParams = {
 export const useAgentLoop = (params: UseAgentLoopParams) => {
   const { ctx, requestToolAuthorizations } = params;
 
-  // Plan Mode approval state: per-session flag indicating the user has
-  // explicitly approved the plan via askUserQuestion. Reset whenever planMode
-  // is toggled or a new conversation starts.
-  const planApprovedRef = useRef(false);
+  // Plan approval is isolated per main-conversation session so parallel chats
+  // cannot borrow each other's approval. Disabling Plan Mode re-locks all runs.
+  const planApprovedSessionKeysRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!ctx.planMode) {
+      planApprovedSessionKeysRef.current.clear();
+    }
+  }, [ctx.planMode]);
 
   const handleSendMessage = useCallback(
     (message: string, options: ChatInputSendOptions) => {
@@ -65,9 +88,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       const isFirstMessage = ctx.activeConversationIdRef.current === undefined;
       const sessionDirId = existingRef?.directoryId ?? ctx.directoryId;
 
-      // Reset Plan Mode approval state for each new user message. The user
-      // must re-approve the plan for every new task.
-      planApprovedRef.current = false;
+      // Reset only this session's approval for the new user task. Other
+      // conversations may still be executing their independently approved plan.
+      planApprovedSessionKeysRef.current.delete(sessionKey);
 
       // Sending a new message cancels any prior "new chat" intent — the
       // user is now interacting with this session, so the UI should follow
@@ -331,6 +354,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 directoryId: dirId,
                 subAgentToolsJson,
                 subAgentConfigProfile: subAgentConfigProfile || undefined,
+                // Sub-agents always use their own normal-mode prompt and tool set.
+                // Parent Plan Mode is enforced separately at Rust tool execution.
+                planMode: false,
               },
               (chunk) => {
                 if (
@@ -512,6 +538,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               callId: string;
               result: string;
             }[] = [];
+            let parentPlanApprovalRequired = false;
+
             for (
               let subToolIndex = 0;
               subToolIndex < subToolCalls.length;
@@ -677,10 +705,17 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                     );
                   },
                   subToolCall.interactionId,
-                  allowedTools
+                  allowedTools,
+                  // These booleans carry only the parent conversation's Rust
+                  // write-gate state; they do not enable Plan Mode for the sub-agent.
+                  ctx.planModeRef.current,
+                  planApprovedSessionKeysRef.current.has(parentConversationId)
                 );
               } catch (err) {
                 const errorMessage = getErrorMessage(err);
+                if (errorMessage.includes(PARENT_PLAN_APPROVAL_REQUIRED)) {
+                  parentPlanApprovalRequired = true;
+                }
                 // Recover partial streaming output for terminal-execute
                 // so the sub-agent (and ultimately the parent AI loop)
                 // receives the partial output together with the error.
@@ -740,6 +775,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 callId: subToolCall.callId || "",
                 result: subModelResult,
               });
+
+              if (parentPlanApprovalRequired) {
+                break;
+              }
             }
 
             const subToolResultMessage: ChatConversationMessage = {
@@ -755,6 +794,15 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               ...currentMessages,
               subToolResultMessage,
             ]);
+
+            // A sub-agent cannot obtain Plan approval. Stop immediately and return
+            // control to the main loop instead of feeding the denial back into a
+            // recursive sub-agent iteration that could repeatedly retry the write.
+            if (parentPlanApprovalRequired) {
+              ctx.pendingQueueRef.current.delete(subConvId);
+              ctx.setActivePendingMessages([]);
+              return "Sub-agent stopped because the main conversation must approve the Plan Mode plan before delegated writes can run.";
+            }
 
             // 非 YOLO 模式：当本批次所有工具均被用户拒绝时，sub-agent 流程
             // 直接结束，不再向模型追加工具结果或发起新一轮请求。部分拒绝时
@@ -1313,6 +1361,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           result: string;
         }[] = [];
         let userQuestionCancelled = false;
+        let hookAborted = false;
+        let hookAbortMessage = "";
+        const pendingHookWarnings: string[] = [];
         for (let toolIndex = 0; toolIndex < toolCalls.length; toolIndex++) {
           const toolCall = toolCalls[toolIndex];
           if (isRunCancelled(effectiveKey)) {
@@ -1357,51 +1408,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           let result: string | undefined;
           const authorizationDecision = authorizationDecisions[toolIndex];
 
-          // Plan Mode gate: block mutating tools until the user explicitly
-          // approves the plan via askUserQuestion. Read-only tools and writes
-          // to .snow/plan/** are allowed.
-          const planGate = evaluatePlanGate({
-            planMode: ctx.planModeRef.current,
-            planApproved: planApprovedRef.current,
-            toolName: toolCall.name,
-            args: (() => {
-              try {
-                return JSON.parse(toolCall.arguments);
-              } catch {
-                return undefined;
-              }
-            })(),
-          });
-          if (!planGate.allow) {
-            result = JSON.stringify({
-              success: false,
-              error: "PLAN_GATE_BLOCKED",
-              message: planGate.message,
-              toolName: toolCall.name,
-            });
-
-            ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
-              currentMessages.map((currentMessage) => {
-                if (currentMessage.id !== currentAssistantMessageId) {
-                  return currentMessage;
-                }
-
-                return {
-                  ...currentMessage,
-                  toolCalls: updateFirstMatchingToolCall(
-                    currentMessage.toolCalls,
-                    toolCall,
-                    ["pending", "running"],
-                    (currentToolCall) => ({
-                      ...currentToolCall,
-                      status: "error" as const,
-                      result,
-                    })
-                  ),
-                };
-              })
-            );
-          } else if (authorizationDecision.status === "rejected") {
+          if (authorizationDecision.status === "rejected") {
             const rejectionReason =
               authorizationDecision.reason || "User declined tool execution";
             result = JSON.stringify({
@@ -1508,9 +1515,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                     );
                 }
 
-                const isUserQuestionTool =
-                  toolCall.name === "user-interaction-askUserQuestion";
-                if (isUserQuestionTool) {
+                const isInteractiveQuestionTool =
+                  toolCall.name === "user-interaction-askUserQuestion" ||
+                  toolCall.name === PLAN_APPROVAL_TOOL_NAME;
+                if (isInteractiveQuestionTool) {
                   ctx.userQuestionTargetRef.current.set(
                     toolCall.interactionId,
                     {
@@ -1531,7 +1539,11 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                       sessionDirId ?? ctx.directoryId ?? ""
                     );
                   } else {
-                    // Execute beforeToolCall hooks (with matcher) before calling the tool
+                    // Execute beforeToolCall hooks (with matcher) before calling the tool.
+                    // Unified exit-code semantics:
+                    //   0 = pass (stdout may auto-respond to interactive tools)
+                    //   1 = warn (warning collected, tool still executes)
+                    //   2+ = abort (AI loop fully interrupted)
                     try {
                       const beforeHookContext = JSON.stringify({
                         toolName: toolCall.name,
@@ -1543,13 +1555,27 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                         projectId: sessionDirId ?? undefined,
                         contextJson: beforeHookContext,
                       });
-                      if (beforeHookResult.blocked) {
-                        result = JSON.stringify({
-                          success: false,
-                          error:
-                            beforeHookResult.blockMessage ||
-                            "Tool call blocked by beforeToolCall hook",
-                        });
+                      const outcome = resolveHookOutcome(beforeHookResult);
+
+                      if (outcome.kind === "abort") {
+                        hookAborted = true;
+                        hookAbortMessage = outcome.message;
+                        break;
+                      }
+
+                      // Interactive tools (askUserQuestion / plan approval) can be
+                      // auto-answered by the hook's stdout when the hook passes,
+                      // bypassing the blocking user-interaction round-trip.
+                      if (
+                        outcome.kind === "pass" &&
+                        outcome.output &&
+                        isInteractiveQuestionTool
+                      ) {
+                        result = outcome.output;
+                      }
+
+                      if (outcome.kind === "warn") {
+                        pendingHookWarnings.push(outcome.message);
                       }
                     } catch {
                       // Hook execution failed — continue with tool call
@@ -1637,11 +1663,18 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                               })
                           );
                         },
-                        toolCall.interactionId
+                        toolCall.interactionId,
+                        undefined,
+                        ctx.planModeRef.current,
+                        planApprovedSessionKeysRef.current.has(effectiveKey)
                       );
                     }
 
-                    // Execute afterToolCall hooks (with matcher) after the tool call completes
+                    // Execute afterToolCall hooks (with matcher) after the tool call completes.
+                    // Unified exit-code semantics:
+                    //   0 = pass (stdout context appended to the tool result)
+                    //   1 = warn (warning collected, result unchanged)
+                    //   2+ = abort (AI loop fully interrupted)
                     if (result !== undefined) {
                       try {
                         const afterHookContext = JSON.stringify({
@@ -1655,13 +1688,18 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                           projectId: sessionDirId ?? undefined,
                           contextJson: afterHookContext,
                         });
-                        if (afterHookResult.blocked) {
-                          result = JSON.stringify({
-                            success: false,
-                            error:
-                              afterHookResult.blockMessage ||
-                              "Tool result blocked by afterToolCall hook",
-                          });
+                        const outcome = resolveHookOutcome(afterHookResult);
+
+                        if (outcome.kind === "abort") {
+                          hookAborted = true;
+                          hookAbortMessage = outcome.message;
+                          break;
+                        }
+
+                        if (outcome.kind === "warn") {
+                          pendingHookWarnings.push(outcome.message);
+                        } else if (outcome.kind === "pass" && outcome.context) {
+                          result = `${result}\n\n[Hook Context]\n${outcome.context}`;
                         }
                       } catch {
                         // Hook execution failed — keep original result
@@ -1669,7 +1707,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                     }
                   } // end of else (non-sub-agent tool call)
                 } finally {
-                  if (isUserQuestionTool) {
+                  if (isInteractiveQuestionTool) {
                     ctx.userQuestionTargetRef.current.delete(
                       toolCall.interactionId
                     );
@@ -1743,15 +1781,14 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             userQuestionCancelled = true;
           }
 
-          // Plan Mode: detect explicit plan approval from askUserQuestion
-          // results. When the user approves the plan, set planApprovedRef to
-          // true so subsequent tool calls are no longer blocked by the gate.
+          // Only the dedicated Plan Mode tool's structured approved=true result
+          // can unlock Rust filesystem writes for this conversation's task.
           if (
             ctx.planModeRef.current &&
-            !planApprovedRef.current &&
-            isPlanApprovalResult(toolCall.name, result!)
+            !planApprovedSessionKeysRef.current.has(effectiveKey) &&
+            isStructuredPlanApproval(toolCall.name, result!)
           ) {
-            planApprovedRef.current = true;
+            planApprovedSessionKeysRef.current.add(effectiveKey);
           }
 
           const modelToolResult = formatMcpToolResultForModel(result!);
@@ -1766,11 +1803,44 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           }
         }
 
+        // Hook abort (exit code 2+): fully interrupt the AI loop and surface
+        // the hook's error message. No tool results are sent to the model.
+        if (hookAborted) {
+          const abortContent = `[Hook Abort] ${hookAbortMessage}`;
+          ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
+            currentMessages.map((currentMessage) =>
+              currentMessage.id === currentAssistantMessageId
+                ? {
+                    ...currentMessage,
+                    content: abortContent,
+                    timestamp: formatMessageTime(),
+                    status: "error",
+                    isRetrying: false,
+                  }
+                : currentMessage
+            )
+          );
+          ctx.pendingQueueRef.current.delete(effectiveKey);
+          ctx.setActivePendingMessages([]);
+          if (response.conversationId) {
+            await window.snow.appendToolMessage(
+              response.conversationId,
+              abortContent
+            );
+          }
+          return;
+        }
+
         // Add tool results as a tool message for the next iteration
         const toolResultMessageId = createMessageId("tool");
-        const toolResultContent = formatToolResultsContent(
+        let toolResultContent = formatToolResultsContent(
           structuredToolResults
         );
+        // Inject collected hook warnings (exit code 1) so the model sees them
+        // alongside the tool results.
+        if (pendingHookWarnings.length > 0) {
+          toolResultContent += `\n\n[Hook Warnings]\n${pendingHookWarnings.join("\n")}`;
+        }
         const toolResultMessage: ChatConversationMessage = {
           id: toolResultMessageId,
           role: "tool",
@@ -1946,8 +2016,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         }
 
         // Execute onUserMessage hooks before sending the message to the AI.
-        // Hooks run in the Rust backend (spawn_blocking) and may modify the
-        // message content via soft signal (exit code 1) or block it (exit >= 2).
+        // Unified exit-code semantics:
+        //   0 = pass (stdout injected as [Hook Context])
+        //   1 = warn (warning text injected as [Hook Warning])
+        //   2+ = abort (AI loop interrupted, error shown to user)
         try {
           const hookContext = JSON.stringify({
             message: trimmed,
@@ -1960,15 +2032,15 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             projectId: sessionDirId ?? undefined,
             contextJson: hookContext,
           });
-          if (hookResult.blocked) {
+          const outcome = resolveHookOutcome(hookResult);
+
+          if (outcome.kind === "abort") {
             ctx.updateSessionMessages(finalSessionKey, (currentMessages) =>
               currentMessages.map((currentMessage) =>
                 currentMessage.id === assistantMessageId
                   ? {
                       ...currentMessage,
-                      content:
-                        hookResult.blockMessage ||
-                        "Message blocked by onUserMessage hook",
+                      content: outcome.message,
                       timestamp: formatMessageTime(),
                       status: "error",
                       isRetrying: false,
@@ -1978,14 +2050,14 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             );
             return;
           }
-          // Collect additional context from hook results (context/command output)
-          const additionalContext = hookResult.results
-            .map((r) => r.additionalContext)
-            .filter((ctx): ctx is string => Boolean(ctx))
-            .join("\n");
-          const effectiveMessage = additionalContext
-            ? `${trimmed}\n\n[Hook Context]\n${additionalContext}`
-            : trimmed;
+
+          let effectiveMessage = trimmed;
+          if (outcome.kind === "warn") {
+            effectiveMessage = `${trimmed}\n\n[Hook Warning]\n${outcome.message}`;
+          } else if (outcome.kind === "pass" && outcome.context) {
+            effectiveMessage = `${trimmed}\n\n[Hook Context]\n${outcome.context}`;
+          }
+
           await runAgentLoop(
             assistantMessageId,
             [{ role: "user", content: effectiveMessage }],

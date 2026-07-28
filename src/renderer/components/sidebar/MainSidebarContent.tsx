@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useI18n } from "../../i18n";
 import { useChatConversationContext } from "../mainContent/chatMessages";
+import { shortcutEvents } from "../shortcutEvents";
 import type { MainContentView } from "../mainContent/types";
 import { ChatsSection } from "./mainSidebar/ChatsSection";
 import { PinnedSection } from "./mainSidebar/PinnedSection";
@@ -85,6 +86,21 @@ export function MainSidebarContent({
 
   const handleInstallUpdate = useCallback((): void => {
     void window.snow.installUpdate();
+  }, []);
+
+  // 订阅快捷键事件：Ctrl/Cmd+F 切换搜索 modal，Ctrl/Cmd+B 切换备忘录 modal。
+  // 快捷键引擎通过 shortcutEvents 总线触发，此组件持有 modal open 状态。
+  useEffect(() => {
+    const unsubSearch = shortcutEvents.on("toggle-search", () => {
+      setIsSearchOpen((prev) => !prev);
+    });
+    const unsubMemo = shortcutEvents.on("toggle-memo", () => {
+      setIsMemoOpen((prev) => !prev);
+    });
+    return () => {
+      unsubSearch();
+      unsubMemo();
+    };
   }, []);
 
   const handleSearchSelectConversation = (

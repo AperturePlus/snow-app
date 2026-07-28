@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useRef } from "react";
 
 /**
- * 失焦保存 Hook：输入框失焦或即时控件变更时立即保存，避免边输入边保存打断输入。
+ * 失焦保存 Hook：输入框真正失焦或即时控件完成选择时立即保存，避免边输入边保存打断输入。
  *
  * 工作原理：
- * 1. `commit` 读取最新的 form/validate/toSettings/lastSaved（通过 ref 持有最新引用，
- *    不依赖 render 闭包），校验通过且与 lastSaved 不同时立即调用 saveFn 持久化。
- * 2. 文本/数字输入框在 onBlur 时调用 commit；checkbox / select / combobox 等
- *    即时控件在 onChange 后调用 commit（它们没有失焦语义，变更即应保存）。
+ * 1. `commit(nextForm?)` 校验并持久化表单。不传参时读取最新的 form（通过 ref 持有，
+ *    不依赖 render 闭包）；传入 nextForm 时直接使用该值——用于下拉选择等场景，
+ *    此时 setState 尚未重渲染，ref 中的 form 仍是旧值，必须显式传入新表单才能保存选中结果。
+ * 2. 文本/数字输入框在真正 onBlur 时调用 commit（焦点移入同组下拉控件不算失焦，
+ *    由调用方守卫）；select / combobox 等即时控件在完成选择后携带新值调用 commit。
  * 3. 组件卸载时若仍有未保存的脏数据，立即冲刷，避免切换菜单丢失。
  *
- * 与 useDebouncedAutoSave 的区别：不使用定时器，完全由失焦/变更事件驱动，
+ * 与 useDebouncedAutoSave 的区别：不使用定时器，完全由失焦/选择事件驱动，
  * 输入过程中不会触发保存，彻底消除“输入到一半被定时器打断”的问题。
  *
  * @param form         当前表单值
@@ -27,7 +28,7 @@ export function useBlurAutoSave<TForm, TSettings>(
   lastSaved: TSettings,
   saveFn: (settings: TSettings) => void,
   setError: (updater: (prev: string) => string) => void
-): () => void {
+): (nextForm?: TForm) => void {
   // 始终持有最新的引用，避免闭包陈旧。
   const formRef = useRef(form);
   const validateRef = useRef(validate);
@@ -51,8 +52,8 @@ export function useBlurAutoSave<TForm, TSettings>(
     };
   }, []);
 
-  const commit = useCallback(() => {
-    const currentForm = formRef.current;
+  const commit = useCallback((nextForm?: TForm) => {
+    const currentForm = nextForm ?? formRef.current;
     const validationError = validateRef.current(currentForm);
 
     if (validationError) {

@@ -5,7 +5,9 @@ use std::time::{Duration, Instant};
 
 use uuid::Uuid;
 
-use crate::exports::terminal::{load_terminal_shell_path, resolve_login_path, resolve_shell_and_args};
+use crate::exports::terminal::{
+    detect_shell_family, load_terminal_shell_path, resolve_login_path, resolve_shell_and_args,
+};
 
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
@@ -94,9 +96,7 @@ impl BashService {
 }
 
 const SERVER_ID: &str = "bash";
-const MAX_OUTPUT_LENGTH: usize = 10000;
 const DEFAULT_TIMEOUT_MS: u64 = 30000;
-const OUTPUT_TRUNCATED_MARKER: &str = "... (output truncated)";
 const SENSITIVE_AUTHORIZATION_TTL: Duration = Duration::from_secs(60);
 
 struct SensitiveCommandAuthorization {
@@ -318,10 +318,18 @@ impl BashService {
         }
 
         let shell_path = load_terminal_shell_path().await?;
-        let (shell, shell_args) = resolve_shell_and_args(&shell_path, &command).await?;
+        let (shell, shell_args) =
+            resolve_shell_and_args(&shell_path, &command, Some(&working_directory)).await?;
 
-        // resolve_login_path 返回 None，跳过注入。
-        let login_path = resolve_login_path().await;
+        // resolve_login_path 在 Windows 上返回注册表中的 Windows PATH（分号分隔的
+        // Windows 路径）。这对 powershell/cmd 有用，但注入给 WSL 会破坏 Linux 的 PATH
+        //（Linux 用冒号分隔）。WSL 通过 `bash -lc` 自行从 .profile 加载 Linux PATH，
+        // 因此跳过注入。
+        let login_path = if detect_shell_family(&shell) == "wsl" {
+            None
+        } else {
+            resolve_login_path().await
+        };
 
         let mut process = Command::new(&shell);
         process
@@ -539,7 +547,6 @@ where
     let mut output = Vec::new();
     let mut buffer = [0_u8; 4096];
     let mut pending_utf8 = Vec::new();
-    let mut was_truncated = false;
 
     loop {
         let read = match reader.read(&mut buffer).await {
@@ -547,22 +554,9 @@ where
             Ok(read) => read,
         };
 
-        let remaining = MAX_OUTPUT_LENGTH.saturating_sub(output.len());
-        let accepted = remaining.min(read);
-        if accepted > 0 {
-            output.extend_from_slice(&buffer[..accepted]);
-            pending_utf8.extend_from_slice(&buffer[..accepted]);
-            emit_complete_utf8_chunks(&on_chunk, stream, &mut pending_utf8);
-        }
-
-        if accepted < read && !was_truncated {
-            was_truncated = true;
-            emit_stream_chunk(
-                &on_chunk,
-                stream,
-                OUTPUT_TRUNCATED_MARKER.to_string(),
-            );
-        }
+        output.extend_from_slice(&buffer[..read]);
+        pending_utf8.extend_from_slice(&buffer[..read]);
+        emit_complete_utf8_chunks(&on_chunk, stream, &mut pending_utf8);
     }
 
     if !pending_utf8.is_empty() {
@@ -573,12 +567,7 @@ where
         );
     }
 
-    let mut text = String::from_utf8_lossy(&output).into_owned();
-    text = strip_ansi_codes(&text);
-    if was_truncated {
-        text.push_str(OUTPUT_TRUNCATED_MARKER);
-    }
-    text
+    strip_ansi_codes(&String::from_utf8_lossy(&output))
 }
 
 fn emit_complete_utf8_chunks(

@@ -13,7 +13,6 @@ use tokio::process::Command;
 use crate::exports::terminal::{load_terminal_shell_path, resolve_shell_and_args};
 use crate::storage::services::hooks_configs;
 
-const MAX_OUTPUT_LENGTH: usize = 10_000;
 const DEFAULT_TIMEOUT_MS: u64 = 5_000;
 
 #[napi(object)]
@@ -336,10 +335,12 @@ async fn execute_command_action(
     };
 
     // 复用终端设置：读取 system_settings.terminal_settings 的 shellPath，
-    // 按 shell family 构造启动参数（PowerShell 注入 UTF-8 编码、cmd 带 chcp 65001），
+    // 按 shell family 构造启动参数（PowerShell 注入 UTF-8 编码、cmd 带 chcp 65001，
+    // WSL 用 --cd 传递工作目录 + bash -lc 加载 Linux PATH），
     // 避免硬编码 cmd /C 导致的中文路径乱码问题。
     let shell_path = load_terminal_shell_path().await?;
-    let (shell, shell_args) = resolve_shell_and_args(&shell_path, command).await?;
+    let cwd_str = cwd.as_deref().and_then(Path::to_str);
+    let (shell, shell_args) = resolve_shell_and_args(&shell_path, command, cwd_str).await?;
 
     let mut shell_command = Command::new(&shell);
     shell_command
@@ -423,8 +424,8 @@ async fn execute_command_action(
 
     let (status, stdout_bytes, stderr_bytes) = output;
     let exit_code = status.code().unwrap_or(-1);
-    let stdout = truncate_output(&String::from_utf8_lossy(&stdout_bytes));
-    let stderr = truncate_output(&String::from_utf8_lossy(&stderr_bytes));
+    let stdout = String::from_utf8_lossy(&stdout_bytes).into_owned();
+    let stderr = String::from_utf8_lossy(&stderr_bytes).into_owned();
 
     let success = exit_code == 0;
     let additional_context = if success && !stdout.is_empty() {
@@ -479,19 +480,6 @@ fn execute_context_action(action: &HookActionDef) -> Result<HookActionResultReco
         error: None,
         additional_context,
     })
-}
-
-fn truncate_output(output: &str) -> String {
-    if output.len() <= MAX_OUTPUT_LENGTH {
-        return output.to_string();
-    }
-
-    let half = MAX_OUTPUT_LENGTH / 2;
-    format!(
-        "{}\n...(output truncated)...\n{}",
-        &output[..half],
-        &output[output.len() - half..]
-    )
 }
 
 fn extract_additional_context(output: &str) -> Option<String> {

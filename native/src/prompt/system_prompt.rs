@@ -12,15 +12,18 @@ const DEFAULT_ROLE_TEXT: &str = "You are Snow AI, an intelligent desktop assista
 /// `working_directory` is the resolved filesystem path of the active workspace directory.
 /// When empty, the working-directory section is omitted entirely.
 ///
+/// `shell_type` is the user's configured default shell (e.g. "powershell", "cmd", "gitbash", "wsl").
+/// It drives the platform-specific command guidance so the AI uses correct commands.
+///
 /// ROLE.md injection (mirrors snow-cli behaviour):
 /// - Project scope ROLE.md > Global scope ROLE.md > default prompt.
 /// - If the active role is marked as "override", its content **replaces** the entire
 ///   system prompt template; only platform/working-dir/time sections are appended.
 /// - Otherwise the ROLE.md content replaces the default role text inside the template.
-pub fn build_system_prompt(working_directory: &str) -> String {
+pub fn build_system_prompt(working_directory: &str, shell_type: &str) -> String {
     let time_info = get_current_time_info();
     let working_dir_section = get_working_directory_section(working_directory);
-    let platform_section = get_platform_section();
+    let platform_section = get_platform_section(shell_type);
 
     match read_active_role(working_directory) {
         // Override mode: role content replaces the entire template.
@@ -173,25 +176,62 @@ fn get_working_directory_section(working_directory: &str) -> String {
     )
 }
 
-fn get_platform_section() -> String {
+/// Build the platform-specific command requirements section based on the
+/// user's configured shell type and the current OS/architecture.
+fn get_platform_section(shell_type: &str) -> String {
     let os = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
 
-    let platform_name = match os {
+    let os_label = match os {
+        "windows" => "Windows",
         "macos" => "macOS",
         "linux" => "Linux",
-        "windows" => "Windows",
         other => other,
     };
 
-    let shell_info = if os == "windows" {
-        "- Use: PowerShell cmdlets (`Remove-Item`, `Copy-Item`, `Move-Item`, `Get-Content`, etc.)\n- Shell operators: `;`, `&&`, `||` (PowerShell 7+)"
-    } else {
-        "- Use: `rm`, `cp`, `mv`, `grep`, `cat`, `ls`, `mkdir`, `rmdir`, `find`, `sed`, `awk`\n- Supports: `&&`, `||`, pipes `|`, redirection `>`, `<`, `>>`"
+    let (shell_label, guidance) = match shell_type {
+        "cmd" => (
+            "CMD (cmd.exe)",
+            "- Use: Windows CMD built-in commands (`del`, `copy`, `move`, `type`, `dir`, etc.)\n\
+             - Shell operators: `&`, `&&`, `||`\n\
+             - Path separator: `\\`\n\
+             - No PowerShell cmdlets — use CMD equivalents (e.g. `del` not `Remove-Item`)",
+        ),
+        "gitbash" => (
+            "Git Bash (MSYS2/MinGW)",
+            "- Use: Unix/POSIX commands (`rm`, `cp`, `mv`, `cat`, `ls`, `grep`, etc.)\n\
+             - Shell operators: `;`, `&&`, `||`, `|`\n\
+             - Path separator: `/` (forward slash)\n\
+             - Supports bash scripting syntax",
+        ),
+        "wsl" => (
+            "WSL (Windows Subsystem for Linux)",
+            "- Use: Linux commands (`rm`, `cp`, `mv`, `cat`, `ls`, `grep`, etc.)\n\
+             - Shell operators: `;`, `&&`, `||`, `|`\n\
+             - Path separator: `/` (forward slash)\n\
+             - Windows drives accessible via `/mnt/c/`, `/mnt/d/`, etc.\n\
+             - Supports full bash/zsh scripting syntax",
+        ),
+        // On non-Windows platforms, default to POSIX shell guidance.
+        _ if os != "windows" => (
+            "POSIX Shell",
+            "- Use: `rm`, `cp`, `mv`, `grep`, `cat`, `ls`, `mkdir`, `rmdir`, `find`, `sed`, `awk`\n\
+             - Supports: `&&`, `||`, pipes `|`, redirection `>`, `<`, `>>`",
+        ),
+        // Default on Windows: PowerShell
+        _ => (
+            "PowerShell",
+            "- Use: PowerShell cmdlets (`Remove-Item`, `Copy-Item`, `Move-Item`, `Get-Content`, etc.)\n\
+             - Shell operators: `;`, `&&`, `||` (PowerShell 7+)\n\
+             - Path separator: `\\` or `/` (both work)",
+        ),
     };
 
     format!(
-        "## Platform-Specific Command Requirements\n\n**Current Environment: {platform_name} ({arch})**\n\n{shell_info}"
+        "## Platform-Specific Command Requirements\n\n\
+         **Current Environment: {os_label} ({arch})**\n\
+         **Active Shell: {shell_label}**\n\n\
+         {guidance}"
     )
 }
 

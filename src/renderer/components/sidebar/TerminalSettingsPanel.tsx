@@ -160,7 +160,8 @@ export function TerminalSettingsPanel({
     [t]
   );
 
-  // 失焦保存：输入框失焦或即时控件变更时立即保存，验证失败则不保存，卸载时立即冲刷避免丢失。
+  // 失焦保存：输入框真正失焦、下拉控件完成选择时立即保存（选择时携带新值调用），
+  // 验证失败则不保存，卸载时立即冲刷避免丢失。
   const commitSave = useBlurAutoSave(
     form,
     validate,
@@ -184,6 +185,7 @@ export function TerminalSettingsPanel({
 
       if (selectedPath) {
         setForm((previous) => ({ ...previous, shellPath: selectedPath }));
+        commitSave({ ...form, shellPath: selectedPath });
       }
     } catch (e) {
       setError(

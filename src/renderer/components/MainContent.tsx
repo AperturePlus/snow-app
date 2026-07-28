@@ -11,6 +11,7 @@ import { SubAgentSettingsPanel } from "./sidebar/SubAgentSettingsPanel";
 import { SystemPromptSettingsPanel } from "./sidebar/SystemPromptSettingsPanel";
 import { TerminalSettingsPanel } from "./sidebar/TerminalSettingsPanel";
 import { ThemeSettingsPanel } from "./sidebar/ThemeSettingsPanel";
+import { KeyboardShortcutsSettingsPanel } from "./sidebar/KeyboardShortcutsSettingsPanel";
 import { UsageSettingsPanel } from "./sidebar/usageSettings/UsageSettingsPanel";
 import { SystemLogsPanel } from "./sidebar/systemLogs/SystemLogsPanel";
 import { ChatContent } from "./mainContent/ChatContent";
@@ -71,6 +72,8 @@ export const MainContent = ({
         <ThemeSettingsPanel onClose={() => onSelectView("chat")} />
       ) : activeView === "privacy-settings" ? (
         <PrivacySettingsPanel onClose={() => onSelectView("chat")} />
+      ) : activeView === "keyboard-shortcuts-settings" ? (
+        <KeyboardShortcutsSettingsPanel onClose={() => onSelectView("chat")} />
       ) : activeView === "usage-settings" ? (
         <UsageSettingsPanel onClose={() => onSelectView("chat")} />
       ) : activeView === "system-logs" ? (

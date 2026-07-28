@@ -39,7 +39,7 @@ export function CodebaseSettingsForm({
       <input
         value={String(form[field])}
         onChange={onUpdateField(field)}
-        onBlur={onBlurSave}
+        onBlur={() => onBlurSave()}
         placeholder={placeholder}
         type={type}
         min={min}

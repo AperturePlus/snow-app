@@ -17,12 +17,9 @@
     <title>Snow App</title>
   </head>
   <body>
-    <!-- boot-loader 作为 #root 的兄弟元素，而非子元素。
-         React 18 的 createRoot(#root).render() 首次渲染会清空 #root 的全部内容，
-         若 boot-loader 位于 #root 内部，会在 App commit 到 DOM 之前就被移除，
-         导致用户看到一段空白窗口。移到外部后由 App 首次渲染后再主动移除。 -->
-    <div id="boot-loader" aria-hidden="true">
-      <div class="boot-logo-wrap">
+    <div id="root">
+      <div id="boot-loader">
+        <div class="boot-logo-wrap">
           <svg
             class="boot-logo-svg"
             width="235"
@@ -187,14 +184,12 @@
             <div class="boot-progress-bar"></div>
           </div>
         </div>
+      </div>
     </div>
-    <!-- #root 与 #boot-loader 互为兄弟节点，保持为空，由 React 挂载 -->
-    <div id="root"></div>
     <style>
       #boot-loader {
         position: fixed;
         inset: 0;
-        z-index: 9999;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -211,7 +206,6 @@
         align-items: center;
       }
       .boot-logo-svg {
-        will-change: filter;
         filter: drop-shadow(0 0 6px rgba(125, 211, 252, 0.45));
         animation: boot-glow 2.4s ease-in-out infinite alternate;
       }

@@ -283,6 +283,22 @@ export const zhTW = {
   "toolCall.userQuestion.cancelled": "回答已取消",
   "toolCall.userQuestion.submit": "提交回答",
   "toolCall.userQuestion.submitted": "回答已提交",
+  "toolCall.planApproval.name": "計畫審批",
+  "toolCall.planApproval.action": "申請執行計畫",
+  "toolCall.planApproval.title": "是否批准執行目前計畫？",
+  "toolCall.planApproval.description":
+    "批准後，本次任務中的檔案建立與替換編輯操作將被解鎖。",
+  "toolCall.planApproval.status.waiting": "等待審批",
+  "toolCall.planApproval.status.approved": "已批准",
+  "toolCall.planApproval.status.declined": "繼續規劃",
+  "toolCall.planApproval.status.error": "審批失敗",
+  "toolCall.planApproval.preparing": "正在準備審批請求...",
+  "toolCall.planApproval.waitingHint": "只有明確批准後，AI 才能修改專案檔案。",
+  "toolCall.planApproval.approvedHint": "本次任務已獲批准，可以開始執行計畫。",
+  "toolCall.planApproval.declinedHint":
+    "計畫未獲批准，AI 將繼續規劃且無法修改專案檔案。",
+  "toolCall.planApproval.continuePlanning": "繼續規劃",
+  "toolCall.planApproval.approve": "批准並執行",
   "toolCall.grep.name": "grep",
   "toolCall.grep.pattern": "匹配模式",
   "toolCall.grep.path": "搜尋路徑",
@@ -1570,4 +1586,11 @@ export const zhTW = {
   "settings.systemLogsRequestLoggingDialogTitle": "開啟請求日誌？",
   "settings.systemLogsRequestLoggingConfirm": "開啟",
   "settings.systemLogsRequestLoggingCancel": "取消",
+  "settings.systemLogsRequestLoggingDuration": "自動關閉時長",
+  "settings.systemLogsRequestLoggingMinutes": "分鐘",
+  "settings.systemLogsRequestLoggingAutoOffHint":
+    "到點後自動關閉，無需手動操作。",
+  "settings.systemLogsRequestLoggingCountdownTitle":
+    "請求日誌將在計時結束後自動關閉",
+  "settings.systemLogsRequestLoggingExpired": "請求日誌已到時自動關閉。",
 } satisfies Record<string, string>;

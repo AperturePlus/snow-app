@@ -7,14 +7,15 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "v0.1.5"
+        description: "v0.1.6"
         required: true
         type: string
       release_notes:
         description: |
-          - Fixed the bug where the tool could not be used in remote directories
-          - Fixed the bug where quick rollback caused database locking
-          - Optimized the code structure of 4 request schemes
+          - Fix WSL connection
+          - Fix autosave timing problem
+          - Add shortcut key system
+          - Optimize Plan mode
 
         required: false
         type: string

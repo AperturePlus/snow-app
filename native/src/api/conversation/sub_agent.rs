@@ -7,6 +7,8 @@ use crate::mcp::tools::{collect_all_mcp_tools, collect_allowed_mcp_tools, McpToo
 /// present and non-empty, the tools are filtered by the configured whitelist
 /// via `collect_allowed_mcp_tools`. Otherwise all project-scoped tools are
 /// collected via `collect_all_mcp_tools` (the normal main-conversation path).
+/// The dedicated Plan Mode approval tool is injected only into Plan Mode main
+/// conversation requests and is never added to a sub-agent whitelist implicitly.
 pub async fn resolve_sub_agent_tools(
     request: &ResponsesApiRequest,
 ) -> Result<Vec<McpTool>> {
@@ -19,6 +21,12 @@ pub async fn resolve_sub_agent_tools(
             )
             .await
         }
-        _ => collect_all_mcp_tools(request.directory_id.as_deref()).await,
+        _ => {
+            collect_all_mcp_tools(
+                request.directory_id.as_deref(),
+                request.plan_mode.unwrap_or(false),
+            )
+            .await
+        }
     }
 }
