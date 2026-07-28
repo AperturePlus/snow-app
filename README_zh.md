@@ -1,5 +1,13 @@
 # Snow App
 
+> [!WARNING] > **macOS 用户注意：** 如果安装后打开时提示"已损坏"或"无法打开"，请在终端执行以下命令：
+>
+> ```bash
+> sudo xattr -rd com.apple.quarantine /Applications/Snow\ App.app
+> ```
+>
+> 执行后按回车输入锁屏密码，以解除隔离属性。
+
 > 基于 Electron、React、TypeScript 和 Rust 构建的高性能跨平台桌面应用。
 
 [English](./README.md)
@@ -23,19 +31,19 @@ Snow App 是一款面向开发者的桌面应用，将 AI 对话、终端模拟�
 
 ## 技术栈
 
-| 层级 | 技术 |
-|------|------|
-| 外壳 | Electron 37 |
-| 前端 | React 19, TypeScript 5.9 |
-| 打包器 | electron-vite (Vite 4) |
-| 原生模块 | Rust 2021 Edition (napi-rs 3) |
-| 应用打包 | electron-builder 26 |
-| 终端 | node-pty, xterm.js 6 |
-| SSH | ssh2 |
-| 存储 | rusqlite (SQLite, 内置) |
-| AI/HTTP | async-openai, reqwest |
+| 层级     | 技术                                          |
+| -------- | --------------------------------------------- |
+| 外壳     | Electron 37                                   |
+| 前端     | React 19, TypeScript 5.9                      |
+| 打包器   | electron-vite (Vite 4)                        |
+| 原生模块 | Rust 2021 Edition (napi-rs 3)                 |
+| 应用打包 | electron-builder 26                           |
+| 终端     | node-pty, xterm.js 6                          |
+| SSH      | ssh2                                          |
+| 存储     | rusqlite (SQLite, 内置)                       |
+| AI/HTTP  | async-openai, reqwest                         |
 | Markdown | markdown-it, streaming-markdown, highlight.js |
-| 图标 | lucide-react |
+| 图标     | lucide-react                                  |
 
 ## 项目结构
 
@@ -123,15 +131,15 @@ npm run check
 
 ## 可用脚本
 
-| 脚本 | 说明 |
-|------|------|
-| `npm run dev` | 启动开发服务器（支持 HMR） |
-| `npm run build` | 构建 Rust 原生模块 + Vite 打包 |
-| `npm run build:app` | 构建 + 生成可分发包 |
-| `npm run build:rust` | 仅构建 Rust 原生模块 |
-| `npm run check` | TypeScript + Rust 类型检查 |
-| `npm run check:ts` | 仅 TypeScript 类型检查 |
-| `npm run preview` | 预览生产构建 |
+| 脚本                 | 说明                           |
+| -------------------- | ------------------------------ |
+| `npm run dev`        | 启动开发服务器（支持 HMR）     |
+| `npm run build`      | 构建 Rust 原生模块 + Vite 打包 |
+| `npm run build:app`  | 构建 + 生成可分发包            |
+| `npm run build:rust` | 仅构建 Rust 原生模块           |
+| `npm run check`      | TypeScript + Rust 类型检查     |
+| `npm run check:ts`   | 仅 TypeScript 类型检查         |
+| `npm run preview`    | 预览生产构建                   |
 
 ## 原生模块
 
