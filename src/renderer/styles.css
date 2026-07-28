@@ -845,6 +845,15 @@ input {
   backdrop-filter: var(--backdrop-blur-lg);
   overflow: hidden;
   transition: width 0.18s ease, min-width 0.18s ease, opacity 0.12s ease;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.sidebar input,
+.sidebar textarea,
+.sidebar [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
 }
 .sidebar.collapsed {
   width: 0;

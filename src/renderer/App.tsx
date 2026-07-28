@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -59,6 +60,17 @@ export const App = (): React.JSX.Element => {
   const isWindows = navigator.userAgent.includes("Win");
   const { t } = useI18n();
   useTheme();
+
+  // 首次渲染 commit 到 DOM 后，立即移除 index.html 中的 boot-loader。
+  // boot-loader 与 #root 互为兄弟节点，React 渲染不会清空它，
+  // 因此需要主动移除。使用 useLayoutEffect 确保在浏览器绘制前完成，
+  // 避免 App 内容与 boot-loader 同时可见的瞬间。
+  useLayoutEffect(() => {
+    const el = document.getElementById("boot-loader");
+    if (el) {
+      el.remove();
+    }
+  }, []);
 
   // 监听主进程的关闭请求：所有关闭路径（标题栏按钮、Alt+F4、任务栏）
   // 都会在主进程被拦截并回推 window:close-requested，此处弹出二次确认。
