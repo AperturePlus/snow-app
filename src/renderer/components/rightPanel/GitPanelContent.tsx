@@ -18,8 +18,10 @@ const clamp = (value: number, min: number, max: number): number =>
 export function GitPanelContent({
   activeDirectory,
   onOpenInTab,
+  onOpenFile,
 }: RightPanelContentProps & {
   onOpenInTab?: OpenDiffTabCallback;
+  onOpenFile?: (filePath: string, fileName: string) => void;
 }): React.JSX.Element {
   const { t } = useI18n();
   const [selectedFile, setSelectedFile] = useState<GitFileStatus | null>(null);
@@ -101,6 +103,7 @@ export function GitPanelContent({
           repoPath={repoPath}
           onFileSelect={setSelectedFile}
           onStatusChange={setGitStatus}
+          onOpenFile={onOpenFile}
         />
       </div>
 

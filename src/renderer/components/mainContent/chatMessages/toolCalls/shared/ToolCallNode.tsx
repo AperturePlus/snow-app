@@ -1,5 +1,5 @@
 import { ChevronRight, Loader2 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { ToolCategory } from "./ToolNameBadge";
 import { ToolNameBadge } from "./ToolNameBadge";
 
@@ -46,6 +46,16 @@ export const ToolCallNode = ({
 }: ToolCallNodeProps): React.JSX.Element => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const isRunning = status === "running";
+
+  // When defaultOpen changes from false to true (e.g. an interactive
+  // session starts), automatically expand the node so the body — and
+  // therefore the interactive input area — becomes visible without the
+  // user having to click the summary manually.
+  useEffect(() => {
+    if (defaultOpen) {
+      setIsOpen(true);
+    }
+  }, [defaultOpen]);
 
   const resolvedBadgeName = badgeName ?? shortName(toolName);
 

@@ -15,7 +15,8 @@ type SidebarProps = {
     filePath: string,
     fileName: string,
     isSsh?: boolean,
-    sshSessionId?: string | null
+    sshSessionId?: string | null,
+    focusLine?: number
   ) => void;
 };
 

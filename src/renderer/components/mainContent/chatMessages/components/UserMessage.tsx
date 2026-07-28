@@ -3,7 +3,10 @@ import { createPortal } from "react-dom";
 import { ChevronDown, ChevronUp, GitCommitHorizontal, GitCompare } from "lucide-react";
 import { UserMessageActions } from "./UserMessageActions";
 import type { UserMessageProps } from "../utils/types";
-import { parseContentSegments } from "../../chatInput/fileTagUtils";
+import {
+  formatLinesStr,
+  parseContentSegments,
+} from "../../chatInput/fileTagUtils";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
 
 const COLLAPSE_LINES = 6;
@@ -203,18 +206,28 @@ export const UserMessage = memo(
               }
 
               const { tag } = segment;
+              const linesStr =
+                !tag.isDirectory && tag.lines && tag.lines.length > 0
+                  ? formatLinesStr(tag.lines)
+                  : "";
+              const fileDisplayName = linesStr
+                ? `${tag.name}:${linesStr}`
+                : tag.name;
+              const fileChipTitle = linesStr
+                ? `${tag.path}:${linesStr}`
+                : tag.path;
               return (
                 <span
                   className="user-message-file-chip"
                   key={index}
-                  title={tag.path}
+                  title={fileChipTitle}
                 >
                   {getFileTypeIcon(tag.name, tag.isDirectory, false, {
                     size: 12,
                     className: "user-message-file-chip-icon",
                   })}
                   <span className="user-message-file-chip-name">
-                    {tag.name}
+                    {fileDisplayName}
                   </span>
                 </span>
               );

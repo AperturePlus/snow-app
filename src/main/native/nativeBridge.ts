@@ -576,6 +576,10 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to authorize sensitive commands"
           )
         ),
+      writeInteractiveStdin: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write interactive stdin")
+        ),
       callMcpTool: () =>
         Promise.reject(
           new Error("Rust native bridge is required to call MCP tools")

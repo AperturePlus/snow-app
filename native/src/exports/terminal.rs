@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -350,5 +351,66 @@ pub(crate) fn fallback_shell_args(command: &str) -> napi::Result<(String, Vec<St
         Ok(("cmd".to_string(), vec!["/C".to_string(), utf8_command]))
     } else {
         Ok(("sh".to_string(), vec!["-c".to_string(), command.to_string()]))
+    }
+}
+
+// ============================================================================
+// PATH 解析（修复 macOS GUI 应用 PATH 缺失问题）
+// ============================================================================
+
+/// 缓存登录 shell 解析出的 PATH，避免每次执行命令都 fork 一个 shell。
+/// Electron 应用进程生命周期内 PATH 变化极少，缓存是安全的。
+static LOGIN_PATH_CACHE: OnceLock<String> = OnceLock::new();
+
+pub(crate) async fn resolve_login_path() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        None
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Some(cached) = LOGIN_PATH_CACHE.get() {
+            if !cached.is_empty() {
+                return Some(cached.clone());
+            }
+        }
+
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            tokio::process::Command::new(&shell)
+                .args(["-l", "-i", "-c", "echo $PATH"])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .output(),
+        )
+        .await;
+
+        let path = match result {
+            Ok(Ok(output)) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                // 交互式 shell 可能会在 .zshrc 中往 stdout 打印额外内容
+                //（如 motd、nvm 提示等），echo $PATH 不一定在第一行。
+                // 取最后一个非空行作为 PATH 值。
+                let path = stdout
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .last()
+                    .unwrap_or("")
+                    .to_string();
+                if path.is_empty() {
+                    return None;
+                }
+                path
+            }
+            _ => return None,
+        };
+
+        let _ = LOGIN_PATH_CACHE.set(path.clone());
+        Some(path)
     }
 }

@@ -544,6 +544,19 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     }
   );
   ipcMain.handle(
+    "mcp:write-interactive-stdin",
+    async (_event, sessionId: unknown, input: unknown) => {
+      if (typeof sessionId !== "string" || !sessionId.trim()) {
+        throw new Error("Session ID is required");
+      }
+      if (typeof input !== "string") {
+        throw new Error("Input must be a string");
+      }
+
+      await native.writeInteractiveStdin(sessionId.trim(), input);
+    }
+  );
+  ipcMain.handle(
     "mcp:call-tool",
     async (
       event,

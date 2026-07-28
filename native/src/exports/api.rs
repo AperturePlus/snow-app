@@ -17,7 +17,10 @@ use crate::api::responses::{
 };
 use crate::api::summary::generate_conversation_summary as generate_summary;
 use crate::api::theme_palette::generate_theme_palette_stream;
-use crate::mcp::servers::bash::{authorize_sensitive_command as authorize_command, BashStreamCallback};
+use crate::mcp::servers::bash::{
+    authorize_sensitive_command as authorize_command,
+    write_interactive_stdin as write_interactive_stdin_impl, BashStreamCallback,
+};
 use crate::mcp::servers::browser::BrowserCommandCallback;
 use crate::mcp::servers::remote_workspace::RemoteWorkspaceCallback;
 use crate::mcp::servers::skills::{ProjectSkillDefinition, SkillDefinition, SkillsService};
@@ -234,6 +237,14 @@ pub async fn set_mcp_project_tool_enabled(
 #[napi]
 pub async fn authorize_sensitive_command(command: String, token: String) -> napi::Result<()> {
     authorize_command(command, token).await
+}
+
+#[napi]
+pub async fn write_interactive_stdin(
+    session_id: String,
+    input: String,
+) -> napi::Result<()> {
+    write_interactive_stdin_impl(session_id, input).await
 }
 
 #[napi(

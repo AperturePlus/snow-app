@@ -33,9 +33,8 @@ export type McpProjectServerStatus = {
   tools: McpProjectToolStatus[];
   error?: string;
 };
-
 export type BashStreamChunk = {
-  stream: "stdout" | "stderr";
+  stream: "stdout" | "stderr" | "interactive_session";
   data: string;
 };
 

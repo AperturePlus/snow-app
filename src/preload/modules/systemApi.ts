@@ -38,7 +38,9 @@ const createMcpToolStreamId = (): string =>
 const normalizeBashStreamChunk = (value: unknown): BashStreamChunk | null => {
   if (
     !isRecord(value) ||
-    (value.stream !== "stdout" && value.stream !== "stderr") ||
+    (value.stream !== "stdout" &&
+      value.stream !== "stderr" &&
+      value.stream !== "interactive_session") ||
     typeof value.data !== "string"
   ) {
     return null;
@@ -485,6 +487,8 @@ export const systemApi = {
   },
   issueSensitiveCommandAuthorization: (command: string): Promise<string> =>
     ipcRenderer.invoke("mcp:authorize-sensitive-command", command),
+  writeInteractiveStdin: (sessionId: string, input: string): Promise<void> =>
+    ipcRenderer.invoke("mcp:write-interactive-stdin", sessionId, input),
   callMcpTool: (
     toolFullName: string,
     argsJson: string,

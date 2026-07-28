@@ -22,6 +22,7 @@ type GitControlProps = {
   repoPath: string | undefined | null;
   onFileSelect: (file: GitFileStatus | null) => void;
   onStatusChange?: (status: GitStatusResult | null) => void;
+  onOpenFile?: (filePath: string, fileName: string) => void;
 };
 
 const isSelectedKey = (section: "staged" | "unstaged", path: string) =>
@@ -31,6 +32,7 @@ export const GitControl = ({
   repoPath,
   onFileSelect,
   onStatusChange,
+  onOpenFile,
 }: GitControlProps): React.JSX.Element => {
   const { t } = useI18n();
   const { status, isLoading, error, refresh } = useGitStatus(repoPath);
@@ -221,6 +223,23 @@ export const GitControl = ({
       onFileSelect(file);
     },
     [status, onFileSelect]
+  );
+
+  const handleOpenFile = useCallback(
+    (file: GitFileStatus) => {
+      if (!repoPath || !onOpenFile) {
+        return;
+      }
+      const base = repoPath.replace(/[\\/]+$/, "");
+      const absolutePath = `${base}/${file.path}`;
+      const lastSep = Math.max(
+        file.path.lastIndexOf("/"),
+        file.path.lastIndexOf("\\")
+      );
+      const fileName = lastSep === -1 ? file.path : file.path.slice(lastSep + 1);
+      onOpenFile(absolutePath, fileName);
+    },
+    [repoPath, onOpenFile]
   );
 
   const handleStageToggle = useCallback(
@@ -523,6 +542,7 @@ export const GitControl = ({
             onStageToggle={handleStageToggle}
             onStageAll={handleStageAll}
             onDiscard={handleDiscardRequest}
+            onOpenFile={handleOpenFile}
           />
 
           <GitFileList
@@ -534,6 +554,7 @@ export const GitControl = ({
             onFileSelect={handleFileSelect}
             onStageToggle={handleStageToggle}
             onUnstageAll={handleUnstageAll}
+            onOpenFile={handleOpenFile}
           />
 
           <div className="git-commit-section">

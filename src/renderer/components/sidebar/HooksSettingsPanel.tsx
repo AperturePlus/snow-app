@@ -9,7 +9,7 @@ import { useI18n } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { Modal } from "../common/Modal";
-import { HookRuleEditor } from "./hooksSettings/HookRuleEditor";
+import { HookRuleEditor, HookRuleEditorActions } from "./hooksSettings/HookRuleEditor";
 import { HooksSettingsList } from "./hooksSettings/HooksSettingsList";
 import { HooksSettingsSummary } from "./hooksSettings/HooksSettingsSummary";
 import {
@@ -590,6 +590,15 @@ export function HooksSettingsPanel({
         closeDisabled={isBusy}
         size="large"
         className="hooks-settings-editor-modal"
+        footer={
+          draft && (
+            <HookRuleEditorActions
+              isBusy={isBusy}
+              isSaving={isSaving}
+              onCancel={cancelDraft}
+            />
+          )
+        }
       >
         {draft && (
           <HookRuleEditor

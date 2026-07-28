@@ -623,6 +623,28 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                     if (!chunk.data) {
                       return;
                     }
+                    if (chunk.stream === "interactive_session") {
+                      ctx.updateSessionMessages(subConvId, (currentMessages) =>
+                        currentMessages.map((currentMessage) => {
+                          if (currentMessage.id !== subAssistantMessageId) {
+                            return currentMessage;
+                          }
+                          return {
+                            ...currentMessage,
+                            toolCalls: updateFirstMatchingToolCall(
+                              currentMessage.toolCalls,
+                              subToolCall,
+                              ["pending", "running"],
+                              (currentToolCall) => ({
+                                ...currentToolCall,
+                                interactiveSessionId: chunk.data,
+                              })
+                            ),
+                          };
+                        })
+                      );
+                      return;
+                    }
                     ctx.updateSessionMessages(subConvId, (currentMessages) =>
                       currentMessages.map((currentMessage) => {
                         if (currentMessage.id !== subAssistantMessageId) {
@@ -1545,6 +1567,34 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                         sensitiveAuthorizationToken,
                         (chunk) => {
                           if (!chunk.data) {
+                            return;
+                          }
+                          if (chunk.stream === "interactive_session") {
+                            ctx.updateSessionMessages(
+                              effectiveKey,
+                              (currentMessages) =>
+                                currentMessages.map((currentMessage) => {
+                                  if (
+                                    currentMessage.id !==
+                                    currentAssistantMessageId
+                                  ) {
+                                    return currentMessage;
+                                  }
+
+                                  return {
+                                    ...currentMessage,
+                                    toolCalls: updateFirstMatchingToolCall(
+                                      currentMessage.toolCalls,
+                                      toolCall,
+                                      ["pending", "running"],
+                                      (currentToolCall) => ({
+                                        ...currentToolCall,
+                                        interactiveSessionId: chunk.data,
+                                      })
+                                    ),
+                                  };
+                                })
+                            );
                             return;
                           }
 

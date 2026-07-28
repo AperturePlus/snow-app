@@ -1,4 +1,4 @@
-import { ArrowLeft, Download, RefreshCw } from "lucide-react";
+import { ArrowLeft, Download, LoaderCircle, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { localeLabels, useI18n, type Locale } from "../../i18n";
 import { SETTINGS_ITEMS } from "./settingsItems";
@@ -252,7 +252,7 @@ export function SettingsSidebarContent({
               {/* 下载中 */}
               {updateStatus.available && updateStatus.downloading && (
                 <div className="nav-item update-downloading">
-                  <Download size={16} strokeWidth={1.8} />
+                  <LoaderCircle size={16} strokeWidth={1.8} />
                   <span>
                     {t("settings.updateDownloading", {
                       values: { percent: updateStatus.progress },

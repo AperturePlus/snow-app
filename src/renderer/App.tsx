@@ -118,7 +118,8 @@ export const App = (): React.JSX.Element => {
       filePath: string,
       fileName: string,
       isSsh?: boolean,
-      sshSessionId?: string | null
+      sshSessionId?: string | null,
+      focusLine?: number
     ) => {
       if (isRightPanelCollapsed) {
         setIsRightPanelCollapsed(false);
@@ -128,7 +129,8 @@ export const App = (): React.JSX.Element => {
           filePath,
           fileName,
           isSsh,
-          sshSessionId
+          sshSessionId,
+          focusLine
         );
       });
     },

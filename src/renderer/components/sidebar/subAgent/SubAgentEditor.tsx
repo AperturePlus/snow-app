@@ -80,6 +80,7 @@ export function SubAgentEditor({
 
   return (
     <form
+      id="sub-agent-editor-form"
       className="api-settings-form-section sub-agent-editor-form"
       onSubmit={(event) => {
         event.preventDefault();
@@ -247,29 +248,46 @@ export function SubAgentEditor({
           </small>
         </div>
       </div>
-      <div className="api-settings-form-actions">
-        <button
-          className="api-settings-form-btn secondary"
-          onClick={onCancel}
-          type="button"
-          disabled={isBusy}
-        >
-          <X size={14} />
-          <span>{t("settings.cancel", { defaultValue: "Cancel" })}</span>
-        </button>
-        <button
-          className="api-settings-form-btn primary"
-          type="submit"
-          disabled={isBusy}
-        >
-          {isSaving ? (
-            <Loader2 size={14} className="spin" />
-          ) : (
-            <Save size={14} />
-          )}
-          <span>{t("settings.save", { defaultValue: "Save" })}</span>
-        </button>
-      </div>
     </form>
+  );
+}
+
+type SubAgentEditorActionsProps = {
+  isBusy: boolean;
+  isSaving: boolean;
+  onCancel: () => void;
+};
+
+export function SubAgentEditorActions({
+  isBusy,
+  isSaving,
+  onCancel,
+}: SubAgentEditorActionsProps): React.JSX.Element {
+  const { t } = useI18n();
+  return (
+    <>
+      <button
+        className="api-settings-form-btn secondary"
+        onClick={onCancel}
+        type="button"
+        disabled={isBusy}
+      >
+        <X size={14} />
+        <span>{t("settings.cancel", { defaultValue: "Cancel" })}</span>
+      </button>
+      <button
+        className="api-settings-form-btn primary"
+        type="submit"
+        form="sub-agent-editor-form"
+        disabled={isBusy}
+      >
+        {isSaving ? (
+          <Loader2 size={14} className="spin" />
+        ) : (
+          <Save size={14} />
+        )}
+        <span>{t("settings.save", { defaultValue: "Save" })}</span>
+      </button>
+    </>
   );
 }

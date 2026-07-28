@@ -234,13 +234,25 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         }
 
         let command = "";
+        let isInteractive = false;
         try {
           const parsed = JSON.parse(toolCall.arguments || "{}");
           if (typeof parsed?.command === "string") {
             command = parsed.command;
           }
+          if (typeof parsed?.isInteractive === "boolean") {
+            isInteractive = parsed.isInteractive;
+          }
         } catch {
           // ignore parse error
+        }
+
+        // Interactive commands skip the sensitive-command gate entirely
+        // because the user is expected to confirm every input in the
+        // interactive terminal UI — a separate confirmation dialog would
+        // be redundant.
+        if (isInteractive) {
+          return { status: "approved" };
         }
 
         if (!command) {

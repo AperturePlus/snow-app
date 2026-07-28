@@ -21,6 +21,7 @@ type FileViewerContentProps = {
   fileName: string;
   isSsh: boolean;
   sshSessionId?: string | null;
+  focusLine?: number;
   onDirtyChange?: (dirty: boolean) => void;
 };
 
@@ -101,6 +102,7 @@ export function FileViewerContent({
   fileName,
   isSsh,
   sshSessionId,
+  focusLine,
   onDirtyChange,
 }: FileViewerContentProps): React.JSX.Element {
   const { t } = useI18n();
@@ -120,6 +122,11 @@ export function FileViewerContent({
 
   const originalContentRef = useRef("");
   const onDirtyChangeRef = useRef(onDirtyChange);
+
+  // 代码视图滚动容器与高亮行相关状态。focusLine 由外部
+  // （搜索结果点击行）传入，加载完内容后滚动到该行并临时高亮。
+  const codeScrollRef = useRef<HTMLDivElement | null>(null);
+  const [highlightLine, setHighlightLine] = useState<number | null>(null);
 
   useEffect(() => {
     onDirtyChangeRef.current = onDirtyChange;
@@ -162,6 +169,57 @@ export function FileViewerContent({
   useEffect(() => {
     void loadFile();
   }, [loadFile]);
+
+  // focusLine 变化时滚动到目标行并高亮。仅在非编辑、非二进制/图片、
+  // 内容已加载且行号有效时生效。每次 focusLine 变化都会重新触发，
+  // 即使是同一文件的不同行点击。
+  useEffect(() => {
+    if (
+      focusLine == null ||
+      focusLine < 1 ||
+      loading ||
+      !content ||
+      content.isBinary ||
+      content.isImage ||
+      editMode
+    ) {
+      return;
+    }
+
+    const scrollEl = codeScrollRef.current;
+    if (!scrollEl) {
+      return;
+    }
+
+    // 测量单行高度：取 .file-viewer-code 的 line-height 计算值。
+    const codeEl = scrollEl.querySelector(".file-viewer-code");
+    if (!codeEl) {
+      return;
+    }
+    const style = window.getComputedStyle(codeEl);
+    const lineHeight = parseFloat(style.lineHeight);
+    const paddingTop = parseFloat(style.paddingTop) || 0;
+    if (!Number.isFinite(lineHeight) || lineHeight <= 0) {
+      return;
+    }
+
+    const lineCount = content.content.split("\n").length;
+    const targetLine = Math.min(focusLine, lineCount);
+    const targetTop = paddingTop + (targetLine - 1) * lineHeight;
+
+    // 滚动使目标行尽量落在视口上部约 1/3 处。
+    const viewportH = scrollEl.clientHeight;
+    scrollEl.scrollTop = Math.max(0, targetTop - viewportH / 3);
+
+    setHighlightLine(targetLine);
+    const timer = window.setTimeout(() => {
+      setHighlightLine(null);
+    }, 2400);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [focusLine, loading, content, editMode]);
 
   const highlightCode = useCallback(
     (code: string): string => {
@@ -323,9 +381,33 @@ export function FileViewerContent({
 
   const renderCodeBlock = () => {
     const { html } = highlightedCode;
+    // 计算高亮条位置。lineHeight 在 effect 中也测量过，这里为渲染
+    // 重新取一次（此时 DOM 已存在）。若取不到则不渲染高亮条。
+    let highlightStyle: React.CSSProperties | null = null;
+    if (highlightLine != null && codeScrollRef.current) {
+      const codeEl = codeScrollRef.current.querySelector(".file-viewer-code");
+      if (codeEl) {
+        const style = window.getComputedStyle(codeEl);
+        const lineHeight = parseFloat(style.lineHeight);
+        const paddingTop = parseFloat(style.paddingTop) || 0;
+        if (Number.isFinite(lineHeight) && lineHeight > 0) {
+          highlightStyle = {
+            top: `${paddingTop + (highlightLine - 1) * lineHeight}px`,
+            height: `${lineHeight}px`,
+          };
+        }
+      }
+    }
     return (
-      <div className="file-viewer-code-scroll">
+      <div className="file-viewer-code-scroll" ref={codeScrollRef}>
         <pre className="file-viewer-code">
+          {highlightStyle ? (
+            <span
+              className="file-viewer-line-highlight"
+              style={highlightStyle}
+              aria-hidden="true"
+            />
+          ) : null}
           <code className="file-viewer-line-numbers" aria-hidden="true">
             {viewLineNumbers}
           </code>

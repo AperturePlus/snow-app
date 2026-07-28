@@ -223,6 +223,8 @@ export const en = {
   "toolCall.bash.exitCode": "exit {{code}}",
   "toolCall.bash.timeout": "timeout",
   "toolCall.bash.countdown": "{{seconds}}s",
+  "toolCall.bash.interactive": "interactive",
+  "toolCall.bash.interactivePlaceholder": "Type input and press Enter...",
   "toolCall.bash.status.pending": "Pending",
   "toolCall.bash.status.running": "Running",
   "toolCall.bash.status.completed": "Completed",
@@ -1544,6 +1546,7 @@ export const en = {
   "git.noChanges": "No changes",
   "git.unstageFile": "Unstage file",
   "git.stageFile": "Stage file",
+  "git.openFile": "Open file",
   "git.discardFile": "Discard changes",
   "git.discardTitle": "Discard Changes",
   "git.discardConfirm":

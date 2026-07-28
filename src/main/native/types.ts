@@ -1043,6 +1043,7 @@ export type NativeBridge = {
     enabled: boolean
   ) => Promise<void>;
   authorizeSensitiveCommand: (command: string, token: string) => Promise<void>;
+  writeInteractiveStdin: (sessionId: string, input: string) => Promise<void>;
   callMcpTool: (
     toolFullName: string,
     argsJson: string,

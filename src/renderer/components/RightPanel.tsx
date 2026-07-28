@@ -42,7 +42,8 @@ export type RightPanelRef = {
     filePath: string,
     fileName: string,
     isSsh?: boolean,
-    sshSessionId?: string | null
+    sshSessionId?: string | null,
+    focusLine?: number
   ) => void;
 };
 
@@ -165,19 +166,32 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         filePath: string,
         fileName: string,
         isSsh: boolean,
-        sshSessionId?: string | null
+        sshSessionId?: string | null,
+        focusLine?: number
       ) => {
         const tabId = `file:${filePath}`;
         setTabs((prev) => {
           const existing = prev.find((t) => t.id === tabId);
           if (existing) {
-            return prev;
+            // 已存在 tab：仅更新 focusLine，不重建（避免重载文件内容）。
+            return prev.map((t) =>
+              t.id === tabId
+                ? {
+                    ...t,
+                    data: {
+                      ...(t.data as FileViewerTabData),
+                      focusLine,
+                    },
+                  }
+                : t
+            );
           }
           const fileData: FileViewerTabData = {
             filePath,
             fileName,
             isSsh,
             sshSessionId: sshSessionId ?? undefined,
+            focusLine,
           };
           const newTab: RightPanelTab = {
             id: tabId,
@@ -190,6 +204,15 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         setActiveTabId(tabId);
       },
       []
+    );
+
+    // Git 变更/暂存区文件「打开文件」按钮：以本地仓库文件（isSsh=false）
+    // 在右侧面板新建 file tab，通过 FileViewerContent 显示文件原文。
+    const handleOpenFileFromGit = useCallback(
+      (filePath: string, fileName: string) => {
+        handleOpenFileTab(filePath, fileName, false);
+      },
+      [handleOpenFileTab]
     );
 
     const handleOpenFileDiffPreviewTab = useCallback(
@@ -278,9 +301,16 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
           filePath: string,
           fileName: string,
           isSsh?: boolean,
-          sshSessionId?: string | null
+          sshSessionId?: string | null,
+          focusLine?: number
         ) => {
-          handleOpenFileTab(filePath, fileName, isSsh ?? false, sshSessionId);
+          handleOpenFileTab(
+            filePath,
+            fileName,
+            isSsh ?? false,
+            sshSessionId,
+            focusLine
+          );
         },
       }),
       [handleOpenTerminalTab, handleOpenBrowserTab, handleOpenFileTab]
@@ -309,9 +339,17 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         if (currentActive !== tabId) {
           return currentActive;
         }
-        return GIT_TAB_ID;
+        // 关闭当前激活的 tab：优先向左顺延选择相邻 tab，
+        // 仅当左侧没有其他 tab 时才回退到 Git tab。
+        const currentIndex = tabs.findIndex((t) => t.id === tabId);
+        if (currentIndex > 0) {
+          return tabs[currentIndex - 1].id;
+        }
+        // currentIndex === 0：左侧无 tab，回退到 Git tab（若存在）
+        const gitTab = tabs.find((t) => t.id === GIT_TAB_ID);
+        return gitTab ? GIT_TAB_ID : tabs[1]?.id ?? currentActive;
       });
-    }, []);
+    }, [tabs]);
 
     const tabListRef = useRef<HTMLDivElement>(null);
 
@@ -346,10 +384,11 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     const renderTabContent = (tab: RightPanelTab): React.ReactNode => {
       if (tab.type === "git") {
         return (
-          <GitPanelContent
-            activeDirectory={activeDirectory}
-            onOpenInTab={handleOpenDiffTab}
-          />
+        <GitPanelContent
+          activeDirectory={activeDirectory}
+          onOpenInTab={handleOpenDiffTab}
+          onOpenFile={handleOpenFileFromGit}
+        />
         );
       }
 
@@ -401,6 +440,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             fileName={fileData.fileName}
             isSsh={fileData.isSsh}
             sshSessionId={fileData.sshSessionId}
+            focusLine={fileData.focusLine}
             onDirtyChange={(dirty) =>
               setDirtyTabs((prev) => {
                 const next = new Set(prev);

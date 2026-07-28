@@ -38,6 +38,10 @@ export type ToolCallInfo = {
   /** Epoch milliseconds when the tool transitioned to "running".
    *  Used by the Bash tool UI to render a live timeout countdown. */
   startedAt?: number;
+  /** UUID assigned by the Rust backend when the bash command runs in
+   *  interactive mode (isInteractive=true).  The frontend uses this ID
+   *  to send user input to the process stdin via `writeInteractiveStdin`. */
+  interactiveSessionId?: string;
 };
 
 export type ChatConversationMessage = {

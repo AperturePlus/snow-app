@@ -37,6 +37,7 @@ export type FileViewerTabData = {
   fileName: string;
   isSsh: boolean;
   sshSessionId?: string | null;
+  focusLine?: number;
 };
 
 export type FileDiffPreviewTabData = {
