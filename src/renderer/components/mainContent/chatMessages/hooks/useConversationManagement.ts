@@ -74,6 +74,13 @@ export const useConversationManagement = (
       // intent so the UI follows the active conversation normally.
       ctx.setNewChatRequested(false);
 
+      // Reset Plan Mode when switching to a different conversation.
+      if (ctx.planModeRef.current) {
+        ctx.planModeRef.current = false;
+        ctx.setPlanModeState(false);
+        void window.snow.setPlanMode(false);
+      }
+
       if (hasLoadedCachedHistory) {
         ctx.updateSessionField(trimmedId, "hasNewContent", false);
         ctx.setCompletedConversationIds((prev) => {
@@ -161,7 +168,13 @@ export const useConversationManagement = (
         }
       }
     },
-    [ctx.setActiveId, ctx.updateSessionField, ctx.setNewChatRequested]
+    [
+      ctx.setActiveId,
+      ctx.updateSessionField,
+      ctx.setNewChatRequested,
+      ctx.planModeRef,
+      ctx.setPlanModeState,
+    ]
   );
 
   const loadOlderMessages = useCallback(async (): Promise<void> => {
@@ -260,6 +273,13 @@ export const useConversationManagement = (
     // auto-switching back to the migrated conversation once it finishes.
     ctx.setNewChatRequested(true);
 
+    // Reset Plan Mode so a new chat always starts with it disabled.
+    if (ctx.planModeRef.current) {
+      ctx.planModeRef.current = false;
+      ctx.setPlanModeState(false);
+      void window.snow.setPlanMode(false);
+    }
+
     // Clear stale pending session only if it is NOT actively streaming.
     // When the pending session is streaming, we keep it alive so the AI
     // loop continues in the background and eventually persists the
@@ -276,7 +296,12 @@ export const useConversationManagement = (
     }
 
     ctx.setActiveId(undefined);
-  }, [ctx.setActiveId, ctx.setNewChatRequested]);
+  }, [
+    ctx.setActiveId,
+    ctx.setNewChatRequested,
+    ctx.planModeRef,
+    ctx.setPlanModeState,
+  ]);
 
   const handleAbort = useCallback((): void => {
     const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
