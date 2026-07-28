@@ -17,6 +17,11 @@ export type SshDirectoryEntry = {
   size: number;
 };
 
+export type RemoteWorkspaceFileSearchOptions = {
+  query: string;
+  listChildren: boolean;
+};
+
 export type SshCredentialRecord = {
   profileKey: string;
   host: string;

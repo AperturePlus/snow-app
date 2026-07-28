@@ -383,10 +383,6 @@ export function ProjectExplorerContent({
       event: React.MouseEvent<HTMLDivElement>,
       entry: { name: string; path: string }
     ): void => {
-      if (isSsh) {
-        return;
-      }
-
       event.preventDefault();
       setSelectedPath(entry.path);
       setEntryContextMenu({
@@ -395,7 +391,7 @@ export function ProjectExplorerContent({
         position: { x: event.clientX, y: event.clientY },
       });
     },
-    [isSsh]
+    []
   );
 
   const handleRenameEntry = useCallback(
@@ -406,7 +402,15 @@ export function ProjectExplorerContent({
 
       setError(null);
       try {
-        await window.snow.renameWorkspaceEntry(rootPath, entryPath, newName);
+        if (isSsh && sshSessionIdRef.current) {
+          await window.snow.sshRenameEntry(
+            sshSessionIdRef.current,
+            entryPath,
+            newName
+          );
+        } else {
+          await window.snow.renameWorkspaceEntry(rootPath, entryPath, newName);
+        }
         setSelectedPath(null);
         handleRefresh();
       } catch (operationError) {
@@ -420,7 +424,7 @@ export function ProjectExplorerContent({
         throw operationError;
       }
     },
-    [handleRefresh, rootPath, t]
+    [handleRefresh, isSsh, rootPath, t]
   );
 
   const handleDeleteEntry = useCallback(
@@ -431,7 +435,11 @@ export function ProjectExplorerContent({
 
       setError(null);
       try {
-        await window.snow.deleteWorkspaceEntry(rootPath, entryPath);
+        if (isSsh && sshSessionIdRef.current) {
+          await window.snow.sshDeleteEntry(sshSessionIdRef.current, entryPath);
+        } else {
+          await window.snow.deleteWorkspaceEntry(rootPath, entryPath);
+        }
         setSelectedPath(null);
         handleRefresh();
       } catch (operationError) {
@@ -445,7 +453,7 @@ export function ProjectExplorerContent({
         throw operationError;
       }
     },
-    [handleRefresh, rootPath, t]
+    [handleRefresh, isSsh, rootPath, t]
   );
 
   const handleSearchChange = useCallback((value: string): void => {
@@ -830,7 +838,12 @@ export function ProjectExplorerContent({
                       if (hasChildren) {
                         void handleToggle(node.path);
                       } else {
-                        onOpenFile?.(node.path, node.name);
+                        onOpenFile?.(
+                          node.path,
+                          node.name,
+                          isSsh,
+                          sshSessionIdRef.current
+                        );
                       }
                     }}
                     onContextMenu={(event) =>

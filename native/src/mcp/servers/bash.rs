@@ -15,6 +15,10 @@ use tokio::process::Command;
 
 use super::super::service::McpService;
 use super::super::tools::McpTool;
+use super::remote_workspace::{
+    execute_remote_workspace_command, is_ssh_path, resolve_remote_project_workspace,
+    RemoteWorkspaceCallback,
+};
 
 pub struct BashService;
 
@@ -153,6 +157,7 @@ impl BashService {
         project_id: Option<&str>,
         sensitive_authorization_token: Option<&str>,
         on_chunk: BashStreamCallback,
+        on_remote_workspace_command: &RemoteWorkspaceCallback,
     ) -> napi::Result<Value> {
         let command = args
             .get("command")
@@ -220,6 +225,22 @@ impl BashService {
                 Status::GenericFailure,
                 error_payload.to_string(),
             ));
+        }
+
+        let remote_working_directory = if is_ssh_path(&working_directory) {
+            Some(working_directory.clone())
+        } else {
+            resolve_remote_project_workspace(project_id).await?
+        };
+        if let Some(remote_working_directory) = remote_working_directory {
+            let mut remote_args = args.clone();
+            remote_args["workingDirectory"] = Value::String(remote_working_directory);
+            return execute_remote_workspace_command(
+                on_remote_workspace_command,
+                "bash-terminal-execute",
+                &remote_args,
+            )
+            .await;
         }
 
         let shell_path = load_terminal_shell_path().await?;

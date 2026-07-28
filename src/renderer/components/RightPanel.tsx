@@ -38,7 +38,12 @@ const GIT_TAB_ID = "git";
 export type RightPanelRef = {
   openTerminal: (cwd: string) => void;
   openBrowser: (url?: string) => void;
-  openFile: (filePath: string, fileName: string) => void;
+  openFile: (
+    filePath: string,
+    fileName: string,
+    isSsh?: boolean,
+    sshSessionId?: string | null
+  ) => void;
 };
 
 type RightPanelProps = RightPanelContentProps & {
@@ -156,7 +161,12 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     );
 
     const handleOpenFileTab = useCallback(
-      (filePath: string, fileName: string) => {
+      (
+        filePath: string,
+        fileName: string,
+        isSsh: boolean,
+        sshSessionId?: string | null
+      ) => {
         const tabId = `file:${filePath}`;
         setTabs((prev) => {
           const existing = prev.find((t) => t.id === tabId);
@@ -166,7 +176,8 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
           const fileData: FileViewerTabData = {
             filePath,
             fileName,
-            isSsh: false,
+            isSsh,
+            sshSessionId: sshSessionId ?? undefined,
           };
           const newTab: RightPanelTab = {
             id: tabId,
@@ -202,9 +213,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         setTabs((prev) => {
           const existing = prev.find((t) => t.id === tabId);
           if (existing) {
-            return prev.map((t) =>
-              t.id === tabId ? { ...t, data } : t
-            );
+            return prev.map((t) => (t.id === tabId ? { ...t, data } : t));
           }
           const newTab: RightPanelTab = {
             id: tabId,
@@ -265,8 +274,13 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         openBrowser: (url?: string) => {
           handleOpenBrowserTab(url);
         },
-        openFile: (filePath: string, fileName: string) => {
-          handleOpenFileTab(filePath, fileName);
+        openFile: (
+          filePath: string,
+          fileName: string,
+          isSsh?: boolean,
+          sshSessionId?: string | null
+        ) => {
+          handleOpenFileTab(filePath, fileName, isSsh ?? false, sshSessionId);
         },
       }),
       [handleOpenTerminalTab, handleOpenBrowserTab, handleOpenFileTab]
@@ -447,7 +461,10 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                 >
                   <span className="right-panel-tab-title" title={tab.title}>
                     {dirtyTabs.has(tab.id) && (
-                      <span className="right-panel-tab-dirty-dot" aria-hidden="true" />
+                      <span
+                        className="right-panel-tab-dirty-dot"
+                        aria-hidden="true"
+                      />
                     )}
                     {tab.title}
                   </span>

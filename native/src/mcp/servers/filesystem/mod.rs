@@ -7,6 +7,9 @@ use serde_json::{json, Value};
 
 use super::super::service::McpService;
 use super::super::tools::McpTool;
+use super::remote_workspace::{
+    execute_remote_workspace_command, is_ssh_path, RemoteWorkspaceCallback,
+};
 
 mod office;
 
@@ -133,6 +136,30 @@ impl McpService for FilesystemService {
 }
 
 impl FilesystemService {
+    pub async fn execute_async(
+        &self,
+        tool_name: &str,
+        args: &Value,
+        on_remote_workspace_command: &RemoteWorkspaceCallback,
+    ) -> napi::Result<Value> {
+        let file_path = args.get("filePath").and_then(Value::as_str);
+        if file_path.is_some_and(is_ssh_path) {
+            return execute_remote_workspace_command(
+                on_remote_workspace_command,
+                &format!("filesystem-{tool_name}"),
+                args,
+            )
+            .await;
+        }
+
+        match tool_name {
+            "read" => self.execute_read(args),
+            "replace_edit" => self.execute_replace_edit(args),
+            "create" => self.execute_create(args),
+            _ => self.execute(tool_name, args),
+        }
+    }
+
     fn execute_read(&self, args: &Value) -> napi::Result<Value> {
         let file_path = args
             .get("filePath")

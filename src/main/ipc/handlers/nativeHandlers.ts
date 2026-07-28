@@ -22,6 +22,7 @@ import {
   resolveUserQuestion,
   USER_QUESTION_RESPONSE_CHANNEL,
 } from "../userQuestionBroker";
+import { dispatchRemoteWorkspaceCommand } from "../../ssh/remoteWorkspaceCommand";
 
 const MCP_TOOL_CHUNK_CHANNEL = "mcp:call-tool:chunk";
 
@@ -627,6 +628,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
           dispatchBrowserCommand(event.sender, command),
         (question: UserQuestionCommand) =>
           dispatchUserQuestion(event.sender, question, normalizedInteractionId),
+        (command) => dispatchRemoteWorkspaceCommand(command),
         normalizedSubAgentAllowedTools
       );
     }

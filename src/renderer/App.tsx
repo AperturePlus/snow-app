@@ -114,12 +114,22 @@ export const App = (): React.JSX.Element => {
   }, [isRightPanelCollapsed]);
 
   const handleOpenFile = useCallback(
-    (filePath: string, fileName: string) => {
+    (
+      filePath: string,
+      fileName: string,
+      isSsh?: boolean,
+      sshSessionId?: string | null
+    ) => {
       if (isRightPanelCollapsed) {
         setIsRightPanelCollapsed(false);
       }
       requestAnimationFrame(() => {
-        rightPanelRef.current?.openFile(filePath, fileName);
+        rightPanelRef.current?.openFile(
+          filePath,
+          fileName,
+          isSsh,
+          sshSessionId
+        );
       });
     },
     [isRightPanelCollapsed]

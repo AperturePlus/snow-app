@@ -24,7 +24,12 @@ use super::servers::bash::{BashService, BashStreamCallback};
 use super::servers::browser::{BrowserCommandCallback, BrowserService};
 use super::servers::codebase::CodebaseService;
 use super::servers::codelens::CodeLensService;
+use super::servers::filesystem::FilesystemService;
 use super::servers::grep::GrepService;
+use super::servers::remote_workspace::{
+    is_ssh_path, resolve_remote_project_workspace, resolve_remote_workspace_path,
+    RemoteWorkspaceCallback,
+};
 use super::servers::skills::SkillsService;
 use super::servers::todo::TodoService;
 use super::servers::user_interaction::{UserInteractionService, UserQuestionCallback};
@@ -681,6 +686,7 @@ pub async fn call_mcp_tool(
     on_chunk: BashStreamCallback,
     on_browser_command: BrowserCommandCallback,
     on_user_question: UserQuestionCallback,
+    on_remote_workspace_command: RemoteWorkspaceCallback,
     sub_agent_allowed_tools: Option<Vec<String>>,
 ) -> napi::Result<String> {
     // Sanitize: AI may copy "[Tool: server-tool#callId]" from conversation
@@ -705,24 +711,30 @@ pub async fn call_mcp_tool(
     }
 
     let args = parse_tool_args(&tool_full_name, &args_json)?;
+    let (args, uses_remote_workspace) =
+        prepare_remote_workspace_args(&tool_full_name, args, project_id.as_deref()).await?;
 
-    let checkpoint_tool_name = tool_full_name.clone();
-    let checkpoint_args = args.clone();
-    let checkpoint_capture = tokio::task::spawn_blocking(move || {
-        capture_checkpoint_before_tool(
-            &checkpoint_tool_name,
-            &checkpoint_args,
-            checkpoint_ids,
-            checkpoint_work_dir,
-        )
-    })
-    .await
-    .map_err(|error| {
-        Error::new(
-            Status::GenericFailure,
-            format!("Failed to capture checkpoint before tool execution: {error}"),
-        )
-    })??;
+    let checkpoint_capture = if uses_remote_workspace {
+        ToolCheckpointCapture::None
+    } else {
+        let checkpoint_tool_name = tool_full_name.clone();
+        let checkpoint_args = args.clone();
+        tokio::task::spawn_blocking(move || {
+            capture_checkpoint_before_tool(
+                &checkpoint_tool_name,
+                &checkpoint_args,
+                checkpoint_ids,
+                checkpoint_work_dir,
+            )
+        })
+        .await
+        .map_err(|error| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to capture checkpoint before tool execution: {error}"),
+            )
+        })??
+    };
 
     let returns_plain_text = tool_full_name == "skills-skill-execute";
     let masking_tool_name = tool_full_name.clone();
@@ -733,6 +745,7 @@ pub async fn call_mcp_tool(
                 project_id.as_deref(),
                 sensitive_authorization_token.as_deref(),
                 on_chunk,
+                &on_remote_workspace_command,
             )
             .await;
         if let ToolCheckpointCapture::Worktree(Some(capture)) = checkpoint_capture {
@@ -749,7 +762,19 @@ pub async fn call_mcp_tool(
         }
         terminal_result?
     } else if tool_full_name == "grep-search" {
-        GrepService::new().execute_search(&args).await?
+        GrepService::new()
+            .execute_search(&args, &on_remote_workspace_command)
+            .await?
+    } else if uses_remote_workspace {
+        let filesystem_tool = tool_full_name.strip_prefix("filesystem-").ok_or_else(|| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Unsupported remote workspace MCP tool: {tool_full_name}"),
+            )
+        })?;
+        FilesystemService::new()
+            .execute_async(filesystem_tool, &args, &on_remote_workspace_command)
+            .await?
     } else if tool_full_name == "todo-todo-manage" {
         TodoService::new().execute_async(&args).await?
     } else if tool_full_name == "websearch-websearch-search" {
@@ -829,6 +854,37 @@ pub async fn call_mcp_tool(
         )
     })?;
     super::privacy_mask::mask_tool_result_if_needed(&masking_tool_name, &serialized).await
+}
+
+async fn prepare_remote_workspace_args(
+    tool_full_name: &str,
+    mut args: Value,
+    project_id: Option<&str>,
+) -> napi::Result<(Value, bool)> {
+    let Some(path_field) = remote_workspace_path_field(tool_full_name) else {
+        return Ok((args, false));
+    };
+    let Some(path) = args.get(path_field).and_then(Value::as_str) else {
+        return Ok((args, false));
+    };
+    if is_ssh_path(path) {
+        return Ok((args, true));
+    }
+
+    let Some(workspace_path) = resolve_remote_project_workspace(project_id).await? else {
+        return Ok((args, false));
+    };
+    args[path_field] = Value::String(resolve_remote_workspace_path(&workspace_path, path));
+    Ok((args, true))
+}
+
+fn remote_workspace_path_field(tool_full_name: &str) -> Option<&'static str> {
+    match tool_full_name {
+        "filesystem-read" | "filesystem-replace_edit" | "filesystem-create" => Some("filePath"),
+        "grep-search" => Some("path"),
+        "bash-terminal-execute" => Some("workingDirectory"),
+        _ => None,
+    }
 }
 
 fn parse_tool_args(tool_full_name: &str, args_json: &str) -> napi::Result<Value> {

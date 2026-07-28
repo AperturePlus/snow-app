@@ -2,7 +2,7 @@ use std::path::Path;
 
 use chrono::Utc;
 use napi::bindgen_prelude::*;
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row, TransactionBehavior};
 
 use super::super::database;
 use super::super::{
@@ -1028,8 +1028,15 @@ pub fn delete_conversation(
     let mut connection = database::open_connection(database_path)
         .map_err(|error| database::database_error(database_path, "delete conversation", error))?;
 
+    // Acquire the writer reservation before reading child sessions. A deferred
+    // transaction would first establish a read snapshot and then try to upgrade
+    // on the initial DELETE. If a cancelled response finishes persisting between
+    // those steps, WAL reports SQLITE_BUSY_SNAPSHOT as "database is locked"
+    // even though that writer has already committed. BEGIN IMMEDIATE waits at
+    // transaction start and guarantees that all following reads and deletes use
+    // one writable snapshot.
     let transaction = connection
-        .transaction()
+        .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|error| database::database_error(database_path, "delete conversation", error))?;
     let mut conversation_ids = vec![conversation_id.to_string()];
     let child_ids = {
@@ -1446,8 +1453,11 @@ pub fn truncate_conversation_from_response(
 ) -> Result<()> {
     let mut connection = database::open_connection(database_path)
         .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
+    // Reserve the write transaction before locating the rollback boundary.
+    // This prevents a concurrent cancelled-stream commit from invalidating a
+    // deferred read snapshot before the first DELETE.
     let transaction = connection
-        .transaction()
+        .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|error| database::database_error(database_path, "truncate conversation", error))?;
 
     // Locate either an assistant response or a persisted context-compaction

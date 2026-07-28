@@ -172,6 +172,48 @@ export const listSshDirectory = (
   });
 };
 
+export const executeSshCommand = (
+  sessionId: string,
+  command: string
+): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const session = sessions.get(sessionId);
+    if (!session) {
+      reject(new Error("SSH session not found. Please reconnect."));
+      return;
+    }
+
+    session.client.exec(command, (err, stream) => {
+      if (err) {
+        reject(new Error(`Failed to execute remote command: ${err.message}`));
+        return;
+      }
+
+      const stdout: Buffer[] = [];
+      const stderr: Buffer[] = [];
+      stream.on("data", (chunk: Buffer) => stdout.push(chunk));
+      stream.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+      stream.on("close", (exitCode: number | null) => {
+        const errorOutput = Buffer.concat(stderr).toString("utf-8").trim();
+        if (exitCode !== 0) {
+          reject(
+            new Error(
+              errorOutput || `Remote command failed with exit code ${exitCode}`
+            )
+          );
+          return;
+        }
+        resolve(Buffer.concat(stdout).toString("utf-8"));
+      });
+      stream.on("error", (streamError: Error) => {
+        reject(
+          new Error(`Failed to execute remote command: ${streamError.message}`)
+        );
+      });
+    });
+  });
+};
+
 export const readSshFile = (
   sessionId: string,
   remotePath: string
@@ -225,6 +267,85 @@ export const writeSshFile = (
     });
 
     stream.end(Buffer.from(content, "utf-8"));
+  });
+};
+
+export const deleteSshFile = (
+  sessionId: string,
+  remotePath: string
+): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    const session = sessions.get(sessionId);
+    if (!session) {
+      reject(new Error("SSH session not found. Please reconnect."));
+      return;
+    }
+
+    session.sftp.unlink(remotePath, (err) => {
+      if (err) {
+        reject(new Error(`Failed to delete remote file: ${err.message}`));
+        return;
+      }
+      resolve();
+    });
+  });
+};
+
+export const renameSshFile = (
+  sessionId: string,
+  oldPath: string,
+  newPath: string
+): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    const session = sessions.get(sessionId);
+    if (!session) {
+      reject(new Error("SSH session not found. Please reconnect."));
+      return;
+    }
+
+    session.sftp.rename(oldPath, newPath, (err) => {
+      if (err) {
+        reject(new Error(`Failed to rename remote file: ${err.message}`));
+        return;
+      }
+      resolve();
+    });
+  });
+};
+
+export const deleteSshDirectory = (
+  sessionId: string,
+  remotePath: string
+): Promise<void> => {
+  // SFTP rmdir only works on empty directories. For recursive removal we
+  // shell out to `rm -rf` via the existing exec channel, which is the most
+  // reliable cross-platform approach on remote servers.
+  const quoted = `'${remotePath.replace(/'/g, `'\"'\"'`)}'`;
+  return executeSshCommand(sessionId, `rm -rf ${quoted}`).then(() => undefined);
+};
+
+export const statSshEntry = (
+  sessionId: string,
+  remotePath: string
+): Promise<import("ssh2").Stats | null> => {
+  return new Promise((resolve, reject) => {
+    const session = sessions.get(sessionId);
+    if (!session) {
+      reject(new Error("SSH session not found. Please reconnect."));
+      return;
+    }
+
+    session.sftp.stat(
+      remotePath,
+      (err: Error | undefined, stats: import("ssh2").Stats) => {
+        if (err) {
+          // Path may have been removed; return null instead of rejecting.
+          resolve(null);
+          return;
+        }
+        resolve(stats);
+      }
+    );
   });
 };
 

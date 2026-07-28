@@ -31,6 +31,17 @@ export type FileMentionPopupProps = {
   onDragStart?: (event: React.DragEvent<HTMLDivElement>, tag: FileTag) => void;
 };
 
+const isSshPath = (path: string): boolean => path.startsWith("ssh://");
+
+const getRelativePath = (path: string, rootPath: string): string => {
+  const normalizedRoot = rootPath.replace(/\/+$/, "");
+  const normalizedPath = path.replace(/\/+$/, "");
+
+  return normalizedPath.startsWith(`${normalizedRoot}/`)
+    ? normalizedPath.slice(normalizedRoot.length + 1)
+    : normalizedPath;
+};
+
 const toFileTag = (entry: FileSearchResult): FileTag => ({
   path: entry.path,
   name: entry.name,
@@ -94,65 +105,100 @@ export const FileMentionPopup = forwardRef<
 
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchSeqRef = useRef(0);
+  const loadSeqRef = useRef(0);
   const listRef = useRef<HTMLDivElement | null>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
   const lastQueryRef = useRef("");
   const preloadedEntriesRef = useRef<FileSearchResult[]>([]);
 
   const preloadRootEntries = useCallback(
-    async (dir: WorkspaceDirectoryRecord) => {
+    async (dir: WorkspaceDirectoryRecord, loadSeq: number): Promise<void> => {
       try {
-        const rawEntries = await window.snow.readDirectoryEntries(dir.path);
+        const rawEntries = isSshPath(dir.path)
+          ? await window.snow.searchRemoteWorkspaceFiles(dir.path, {
+              query: "",
+              listChildren: true,
+            })
+          : await window.snow.readDirectoryEntries(dir.path);
+
+        if (loadSeq !== loadSeqRef.current) {
+          return;
+        }
+
         const results: FileSearchResult[] = rawEntries
-          .filter((e) => !e.name.startsWith("."))
+          .filter((entry) => !entry.name.startsWith("."))
           .slice(0, 50)
-          .map((e) => ({
-            path: e.path,
-            relativePath: e.path.replace(dir.path + "/", ""),
-            name: e.name,
-            isDirectory: e.isDirectory,
+          .map((entry) => ({
+            path: entry.path,
+            relativePath: getRelativePath(entry.path, dir.path),
+            name: entry.name,
+            isDirectory: entry.isDirectory,
             matchedName: true,
             lineMatches: [],
           }));
         preloadedEntriesRef.current = results;
         setEntries(results);
         setSelectedIndex(0);
-        setIsLoadingInitial(false);
       } catch {
-        preloadedEntriesRef.current = [];
-        setEntries([]);
-        setIsLoadingInitial(false);
+        if (loadSeq === loadSeqRef.current) {
+          preloadedEntriesRef.current = [];
+          setEntries([]);
+        }
+      } finally {
+        if (loadSeq === loadSeqRef.current) {
+          setIsLoadingInitial(false);
+        }
       }
     },
     []
   );
 
   const loadDirectories = useCallback(async () => {
+    const loadSeq = ++loadSeqRef.current;
+
     try {
       const dirs = await window.snow.listWorkspaceDirectories();
+      if (loadSeq !== loadSeqRef.current) {
+        return;
+      }
+
       const active = dirs.find((d) => d.isActive) ?? dirs[0] ?? null;
       setActiveDirectory(active);
       if (active) {
-        await preloadRootEntries(active);
+        await preloadRootEntries(active, loadSeq);
       } else {
         setIsLoadingInitial(false);
       }
     } catch {
-      setActiveDirectory(null);
-      setIsLoadingInitial(false);
+      if (loadSeq === loadSeqRef.current) {
+        setActiveDirectory(null);
+        setIsLoadingInitial(false);
+      }
     }
   }, [preloadRootEntries]);
 
   useEffect(() => {
-    if (visible) {
-      setIsLoadingInitial(true);
-      preloadedEntriesRef.current = [];
-      void loadDirectories();
-      setEntries([]);
-      setSelectedIndex(0);
-      setCheckedPaths(new Set());
-      lastQueryRef.current = "";
+    if (!visible) {
+      ++loadSeqRef.current;
+      ++searchSeqRef.current;
+      return;
     }
+
+    setIsLoadingInitial(true);
+    preloadedEntriesRef.current = [];
+    void loadDirectories();
+    setEntries([]);
+    setSelectedIndex(0);
+    setCheckedPaths(new Set());
+    lastQueryRef.current = "";
+
+    return () => {
+      ++loadSeqRef.current;
+      ++searchSeqRef.current;
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+      }
+    };
   }, [visible, loadDirectories]);
 
   useEffect(() => {
@@ -167,6 +213,7 @@ export const FileMentionPopup = forwardRef<
     }
 
     if (!trimmed || !activeDirectory) {
+      ++searchSeqRef.current;
       setIsSearching(false);
       if (preloadedEntriesRef.current.length > 0) {
         setEntries(preloadedEntriesRef.current);
@@ -193,52 +240,12 @@ export const FileMentionPopup = forwardRef<
       const endsWithSlash = queryLower.endsWith("/");
 
       try {
-        let results: FileSearchResult[] = [];
-
-        if (endsWithSlash) {
-          const dirName = trimmed.slice(0, -1).trim();
-          if (dirName) {
-            try {
-              const searchResults = await window.snow.searchFiles(
-                activeDirectory.path,
-                dirName
-              );
-              const dirMatch = searchResults.find(
-                (r) =>
-                  r.isDirectory &&
-                  r.name.toLowerCase() === dirName.toLowerCase()
-              );
-              const targetPath =
-                dirMatch?.path ??
-                searchResults.find((r) => r.isDirectory && r.matchedName)?.path;
-              if (targetPath) {
-                const rawEntries = await window.snow.readDirectoryEntries(
-                  targetPath
-                );
-                results = rawEntries
-                  .filter((e) => !e.name.startsWith("."))
-                  .map((e) => ({
-                    path: e.path,
-                    relativePath: e.path.replace(
-                      activeDirectory.path + "/",
-                      ""
-                    ),
-                    name: e.name,
-                    isDirectory: e.isDirectory,
-                    matchedName: true,
-                    lineMatches: [],
-                  }));
-              }
-            } catch {
-              /* empty */
-            }
-          }
-        } else {
-          results = await window.snow.searchFiles(
-            activeDirectory.path,
-            trimmed
-          );
-        }
+        const results = isSshPath(activeDirectory.path)
+          ? await window.snow.searchRemoteWorkspaceFiles(activeDirectory.path, {
+              query: trimmed,
+              listChildren: false,
+            })
+          : await window.snow.searchFiles(activeDirectory.path, trimmed);
 
         if (seq !== searchSeqRef.current) {
           return;

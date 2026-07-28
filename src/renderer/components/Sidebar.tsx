@@ -11,7 +11,12 @@ type SidebarProps = {
   onActiveDirectoryChange?: SidebarContentProps["onActiveDirectoryChange"];
   onSelectMainView: SidebarContentProps["onSelectMainView"];
   onOpenSshWizard?: () => void;
-  onOpenFile?: (filePath: string, fileName: string) => void;
+  onOpenFile?: (
+    filePath: string,
+    fileName: string,
+    isSsh?: boolean,
+    sshSessionId?: string | null
+  ) => void;
 };
 
 export const Sidebar = ({

@@ -666,6 +666,11 @@ export type BrowserCommand = {
   argsJson: string;
 };
 
+export type RemoteWorkspaceCommand = {
+  operation: string;
+  argsJson: string;
+};
+
 export type BrowserCommandRequest = BrowserCommand & {
   commandId: string;
 };
@@ -1048,6 +1053,9 @@ export type NativeBridge = {
     onChunk: (chunk: BashStreamChunk) => void,
     onBrowserCommand: (command: BrowserCommand) => Promise<string>,
     onUserQuestion: (question: UserQuestionCommand) => Promise<string>,
+    onRemoteWorkspaceCommand: (
+      command: RemoteWorkspaceCommand
+    ) => Promise<string>,
     subAgentAllowedTools: string[] | undefined
   ) => Promise<string>;
   engineInfo: () => string;
