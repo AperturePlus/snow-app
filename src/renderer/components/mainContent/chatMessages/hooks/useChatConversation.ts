@@ -111,6 +111,17 @@ export const useChatConversation = (
         : never
     >()
   );
+  const pendingHookDecisionRef = useRef(
+    new Map<
+      string,
+      ConversationContextValue["pendingHookDecisionRef"]["current"] extends Map<
+        string,
+        infer V
+      >
+        ? V
+        : never
+    >()
+  );
   const userQuestionTargetRef = useRef(
     new Map<
       string,
@@ -190,6 +201,7 @@ export const useChatConversation = (
     alwaysApprovedToolsRef,
     pendingToolAuthorizationRef,
     pendingUserQuestionRef,
+    pendingHookDecisionRef,
     userQuestionTargetRef,
     activeApiConfigRef,
     pauseControllerRef,

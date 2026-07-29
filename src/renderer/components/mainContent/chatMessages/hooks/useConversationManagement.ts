@@ -11,6 +11,11 @@ import {
   buildConversationMessages,
   deleteCheckpoints,
 } from "../utils/conversationHelpers";
+import {
+  appendHookExecutionToMessage,
+  runHook,
+  toNonBlockingRecord,
+} from "./hookOutcome";
 
 export type UseConversationManagementParams = {
   ctx: ConversationContextValue;
@@ -167,6 +172,37 @@ export const useConversationManagement = (
           ctx.setIsLoadingInitialHistory(false);
         }
       }
+
+      // Execute onSessionStart hooks (fire-and-forget) when the user opens
+      // an existing conversation. These are diagnostic/audit hooks that run
+      // after the history is loaded — they cannot block the session switch.
+      const onSessionStartMessageId = ctx.sessionsRef.current[
+        trimmedId
+      ]?.messages.findLast((message) => message.role !== "tool")?.id;
+      const onSessionStartContext = JSON.stringify({
+        conversationId: trimmedId,
+        cwd: ctx.directoryPath ?? "",
+        directoryId: conversationDirId ?? "",
+      });
+      void runHook(
+        "onSessionStart",
+        conversationDirId ?? undefined,
+        onSessionStartContext
+      )
+        .then((hookResult) => {
+          if (hookResult) {
+            ctx.updateSessionMessages(trimmedId, (currentMessages) =>
+              appendHookExecutionToMessage(
+                currentMessages,
+                toNonBlockingRecord(hookResult.record),
+                onSessionStartMessageId
+              )
+            );
+          }
+        })
+        .catch(() => {
+          // onSessionStart hook failures must not block the session switch
+        });
     },
     [
       ctx.setActiveId,
@@ -312,6 +348,13 @@ export const useConversationManagement = (
 
     rejectAllToolAuthorizations();
     rejectPendingUserQuestions(key);
+    for (const [decisionId, pendingDecision] of ctx.pendingHookDecisionRef
+      .current) {
+      if (pendingDecision.sessionKey === key) {
+        ctx.pendingHookDecisionRef.current.delete(decisionId);
+        pendingDecision.resolve(false);
+      }
+    }
 
     // Wake up the pause checkpoint so the blocked agent loop can observe
     // the cancellation and exit. Without this, a paused loop would hang
@@ -378,6 +421,7 @@ export const useConversationManagement = (
   const abortConversation = useCallback(
     (conversationId: string): void => {
       const ref = ctx.sessionsRefData.current.get(conversationId);
+
       rejectAllToolAuthorizations();
       rejectPendingUserQuestions(conversationId);
       if (ref?.streamId) {

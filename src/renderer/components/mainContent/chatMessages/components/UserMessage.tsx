@@ -1,7 +1,13 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ChevronUp, GitCommitHorizontal, GitCompare } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  GitCommitHorizontal,
+  GitCompare,
+} from "lucide-react";
 import { UserMessageActions } from "./UserMessageActions";
+import { HookExecutionUI } from "../toolCalls/HookExecutionUI";
 import type { UserMessageProps } from "../utils/types";
 import {
   formatLinesStr,
@@ -16,6 +22,7 @@ export const UserMessage = memo(
     content,
     isStreaming,
     onRollback,
+    hookExecutions,
   }: UserMessageProps): React.JSX.Element => {
     const segments = parseContentSegments(content);
     const [expanded, setExpanded] = useState(false);
@@ -58,10 +65,7 @@ export const UserMessage = memo(
         const halfW = PREVIEW_MAX_W / 2;
         const clampedX = Math.max(
           halfW + 4,
-          Math.min(
-            rect.left + rect.width / 2,
-            window.innerWidth - halfW - 4
-          )
+          Math.min(rect.left + rect.width / 2, window.innerWidth - halfW - 4)
         );
         // User 消息可能位于窗口任意位置，预览不能无脑朝上：
         // 上方空间不足时改为朝下显示，避免预览被窗口顶部裁切。
@@ -186,7 +190,9 @@ export const UserMessage = memo(
                   lastSep === -1
                     ? segment.tag.path
                     : segment.tag.path.slice(lastSep + 1);
-                const chipTitle = `${segment.tag.section === "staged" ? "Staged" : "Unstaged"} ${segment.tag.status} ${segment.tag.path}`;
+                const chipTitle = `${
+                  segment.tag.section === "staged" ? "Staged" : "Unstaged"
+                } ${segment.tag.status} ${segment.tag.path}`;
                 return (
                   <span
                     className="user-message-file-chip change-chip"
@@ -244,6 +250,9 @@ export const UserMessage = memo(
             </button>
           )}
         </article>
+        {hookExecutions && hookExecutions.length > 0 ? (
+          <HookExecutionUI executions={hookExecutions} />
+        ) : null}
         <UserMessageActions
           content={content}
           isStreaming={isStreaming}

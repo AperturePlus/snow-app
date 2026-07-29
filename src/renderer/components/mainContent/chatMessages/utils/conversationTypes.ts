@@ -18,6 +18,49 @@ export type UserQuestionState = {
   customAnswers: string[];
 };
 
+export type HookExecutionStatus =
+  | "pass"
+  | "warn"
+  | "abort"
+  | "error"
+  | "needsDecision";
+
+export type HookExecutionRecord = {
+  /** The hook type that was triggered (e.g. "onUserMessage", "beforeToolCall"). */
+  hookType: string;
+  /** Resolved outcome kind from the hook execution. */
+  status: HookExecutionStatus;
+  /** Number of actions that were executed. */
+  executedActions: number;
+  /** Number of actions that were skipped. */
+  skippedActions: number;
+  /** Per-action results from the Rust backend. */
+  results: Array<{
+    actionType: string;
+    success: boolean;
+    command?: string | null;
+    exitCode?: number | null;
+    output?: string | null;
+    error?: string | null;
+    additionalContext?: string | null;
+  }>;
+  /** The original block message if the hook blocked the action. */
+  blockMessage?: string | null;
+  /** Timestamp (epoch ms) when the hook execution completed. */
+  timestamp: number;
+  /** When true, the hook returned a decision JSON and the user must
+   *  approve or reject the action before the AI loop can continue. */
+  pendingDecision?: boolean;
+  /** Human-readable message from the decision JSON's `decision.message`. */
+  decisionMessage?: string | null;
+  /** Internal identifier for the pending runtime decision. Not serialized. */
+  _decisionId?: string;
+  /** Internal: resolve function injected by useAgentLoop to unblock the
+   *  AI loop when the user clicks approve/reject.  Not serialized, not
+   *  part of the public type contract — exists only at runtime. */
+  _resolveDecision?: (approved: boolean) => void;
+};
+
 export type ToolCallInfo = {
   name: string;
   arguments: string;
@@ -63,6 +106,10 @@ export type ChatConversationMessage = {
    *  Used by rollback to restore the working directory to its pre-AI state. */
   checkpointId?: string;
   isContextCompaction?: boolean;
+  /** Hook execution records for this message (e.g. onUserMessage hooks
+   *  executed before the message was sent to the AI).  Stored on the user
+   *  message so the UI can render what hooks ran and their outcomes. */
+  hookExecutions?: HookExecutionRecord[];
 };
 
 export type UpsertedConversation = {
@@ -194,6 +241,11 @@ export type PendingUserQuestion = {
   reject: (error: Error) => void;
 };
 
+export type PendingHookDecision = {
+  sessionKey: string;
+  resolve: (approved: boolean) => void;
+};
+
 export type UserQuestionTarget = {
   sessionKey: string;
   assistantMessageId: string;
@@ -264,6 +316,7 @@ export type ConversationContextValue = {
   alwaysApprovedToolsRef: RefValue<Set<string>>;
   pendingToolAuthorizationRef: RefValue<Map<string, PendingToolAuthorization>>;
   pendingUserQuestionRef: RefValue<Map<string, PendingUserQuestion>>;
+  pendingHookDecisionRef: RefValue<Map<string, PendingHookDecision>>;
   userQuestionTargetRef: RefValue<Map<string, UserQuestionTarget>>;
   activeApiConfigRef: RefValue<ApiConfigRecord | null>;
   /** Per-session pause controllers. Each entry controls whether the agent

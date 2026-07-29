@@ -3,6 +3,7 @@ import type { ChatInputSendOptions } from "../../chatInput/types";
 import type {
   ChatConversationMessage,
   ConversationContextValue,
+  HookExecutionRecord,
   ToolAuthorizationDecision,
   ToolCallInfo,
 } from "../utils/conversationTypes";
@@ -19,7 +20,13 @@ import {
   validateToolCall,
 } from "../utils/conversationHelpers";
 import { calculateAutoCompressThresholdTokens } from "../../../sidebar/apiSettings/autoCompressThreshold";
-import { resolveHookOutcome } from "./hookOutcome";
+import {
+  appendHookExecutionToMessage,
+  buildHookExecRecord,
+  resolveHookOutcome,
+  runHook,
+  toNonBlockingRecord,
+} from "./hookOutcome";
 const PLAN_APPROVAL_TOOL_NAME = "plan-mode-requestApproval";
 const PARENT_PLAN_APPROVAL_REQUIRED = "PARENT_PLAN_APPROVAL_REQUIRED";
 
@@ -220,6 +227,65 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         return !r || r.isAbortRequested || r.runId !== currentRunId;
       };
 
+      const awaitHookDecision = async (
+        key: string,
+        messageId: string,
+        record: HookExecutionRecord
+      ): Promise<boolean> => {
+        const decisionId = `${messageId}-${
+          record.hookType
+        }-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const approved = await new Promise<boolean>((resolve) => {
+          let settled = false;
+          const settle = (decision: boolean): void => {
+            if (settled) {
+              return;
+            }
+            settled = true;
+            ctx.pendingHookDecisionRef.current.delete(decisionId);
+            resolve(decision);
+          };
+
+          ctx.pendingHookDecisionRef.current.set(decisionId, {
+            sessionKey: key,
+            resolve: settle,
+          });
+          ctx.updateSessionMessages(key, (currentMessages) =>
+            appendHookExecutionToMessage(
+              currentMessages,
+              {
+                ...record,
+                _decisionId: decisionId,
+                _resolveDecision: settle,
+              },
+              messageId
+            )
+          );
+        });
+
+        ctx.updateSessionMessages(key, (currentMessages) =>
+          currentMessages.map((currentMessage) =>
+            currentMessage.id === messageId
+              ? {
+                  ...currentMessage,
+                  hookExecutions: (currentMessage.hookExecutions ?? []).map(
+                    (execution) =>
+                      execution._decisionId === decisionId
+                        ? {
+                            ...execution,
+                            pendingDecision: false,
+                            status: approved ? "pass" : "abort",
+                            _resolveDecision: undefined,
+                          }
+                        : execution
+                  ),
+                }
+              : currentMessage
+          )
+        );
+        return approved;
+      };
+
       const executeSubAgentActivation = async (
         argsJson: string,
         parentConversationId: string,
@@ -266,6 +332,41 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             .slice(2, 10)}`;
           const title =
             prompt.length > 80 ? `${prompt.slice(0, 80)}...` : prompt;
+
+          // Execute beforeSubAgentStart hooks. If blocked, abort the
+          // sub-agent activation immediately with the hook's message.
+          try {
+            const beforeSubAgentContext = JSON.stringify({
+              agentId,
+              agentName: config.name,
+              prompt,
+              parentConversationId,
+              cwd: ctx.directoryPath ?? "",
+            });
+            const subHookResult = await runHook(
+              "beforeSubAgentStart",
+              dirId || undefined,
+              beforeSubAgentContext
+            );
+            if (subHookResult) {
+              ctx.updateSessionMessages(
+                parentConversationId,
+                (currentMessages) =>
+                  appendHookExecutionToMessage(
+                    currentMessages,
+                    subHookResult.record
+                  )
+              );
+              if (subHookResult.outcome.kind === "abort") {
+                return JSON.stringify({
+                  success: false,
+                  error: subHookResult.outcome.message,
+                });
+              }
+            }
+          } catch {
+            // Hook execution failed — continue with sub-agent activation
+          }
 
           await window.snow.createSubAgentSession(
             subConversationId,
@@ -876,6 +977,49 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             ctx.handleSendMessageRef.current(combined, lastOptions);
           }
 
+          // Execute onSubAgentComplete hooks. The hook context includes the
+          // sub-agent's summary so prompt-type hooks can inspect the result.
+          // If blocked, the error message replaces the summary returned to
+          // the parent AI loop.
+          let effectiveSummary = summary;
+          try {
+            const onCompleteContext = JSON.stringify({
+              agentId,
+              agentName: subAgentName ?? agentId,
+              prompt,
+              summary,
+              parentConversationId,
+              cwd: ctx.directoryPath ?? "",
+            });
+            const onCompleteResult = await runHook(
+              "onSubAgentComplete",
+              dirId || undefined,
+              onCompleteContext
+            );
+            if (onCompleteResult) {
+              ctx.updateSessionMessages(
+                parentConversationId,
+                (currentMessages) =>
+                  appendHookExecutionToMessage(
+                    currentMessages,
+                    onCompleteResult.record
+                  )
+              );
+              if (onCompleteResult.outcome.kind === "abort") {
+                effectiveSummary = onCompleteResult.outcome.message;
+              } else if (
+                onCompleteResult.outcome.kind === "pass" &&
+                onCompleteResult.outcome.context
+              ) {
+                effectiveSummary = `${summary}\n\n[Hook Context]\n${onCompleteResult.outcome.context}`;
+              } else if (onCompleteResult.outcome.kind === "warn") {
+                effectiveSummary = `${summary}\n\n[Hook Warning]\n${onCompleteResult.outcome.message}`;
+              }
+            }
+          } catch {
+            // Hook execution failed — use original summary
+          }
+
           await window.snow.updateSubAgentSessionStatus(
             subConvId,
             "completed",
@@ -895,7 +1039,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             success: true,
             conversationId: subConversationId,
             agentName: subAgentName,
-            summary,
+            summary: effectiveSummary,
           });
         } catch (err) {
           if (subConversationId) {
@@ -1446,28 +1590,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             if (validationError) {
               result = validationError;
             } else {
-              ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
-                currentMessages.map((currentMessage) => {
-                  if (currentMessage.id !== currentAssistantMessageId) {
-                    return currentMessage;
-                  }
-
-                  return {
-                    ...currentMessage,
-                    toolCalls: updateFirstMatchingToolCall(
-                      currentMessage.toolCalls,
-                      toolCall,
-                      "pending",
-                      (currentToolCall) => ({
-                        ...currentToolCall,
-                        status: "running" as const,
-                        startedAt: Date.now(),
-                      })
-                    ),
-                  };
-                })
-              );
-
               try {
                 const checkpointIds =
                   ctx.sessionsRefData.current.get(effectiveKey)
@@ -1529,38 +1651,54 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 }
 
                 try {
-                  if (
-                    toolCall.name === "sub-agents-activate" &&
-                    effectiveKey !== PENDING_SESSION_KEY
-                  ) {
-                    result = await executeSubAgentActivation(
-                      toolArgs,
-                      effectiveKey!,
-                      sessionDirId ?? ctx.directoryId ?? ""
+                  // Execute beforeToolCall hooks (with matcher) before calling the tool.
+                  // This gate runs after authorization but before every actual tool call,
+                  // including YOLO auto-approved tools and sub-agent activation.
+                  // Unified exit-code semantics:
+                  //   0 = pass (stdout may auto-respond to interactive tools)
+                  //   1 = warn or decision gate
+                  //   2+ = abort (AI loop fully interrupted)
+                  try {
+                    const beforeHookContext = JSON.stringify({
+                      toolName: toolCall.name,
+                      args: JSON.parse(toolArgs),
+                      cwd: ctx.directoryPath ?? "",
+                    });
+                    const beforeHookResult = await runHook(
+                      "beforeToolCall",
+                      sessionDirId ?? undefined,
+                      beforeHookContext
                     );
-                  } else {
-                    // Execute beforeToolCall hooks (with matcher) before calling the tool.
-                    // Unified exit-code semantics:
-                    //   0 = pass (stdout may auto-respond to interactive tools)
-                    //   1 = warn (warning collected, tool still executes)
-                    //   2+ = abort (AI loop fully interrupted)
-                    try {
-                      const beforeHookContext = JSON.stringify({
-                        toolName: toolCall.name,
-                        args: JSON.parse(toolArgs),
-                        cwd: ctx.directoryPath ?? "",
-                      });
-                      const beforeHookResult = await window.snow.executeHooks({
-                        hookType: "beforeToolCall",
-                        projectId: sessionDirId ?? undefined,
-                        contextJson: beforeHookContext,
-                      });
-                      const outcome = resolveHookOutcome(beforeHookResult);
+                    if (beforeHookResult) {
+                      const { outcome } = beforeHookResult;
+                      if (outcome.kind === "needsDecision") {
+                        const approved = await awaitHookDecision(
+                          effectiveKey,
+                          currentAssistantMessageId,
+                          beforeHookResult.record
+                        );
+                        if (isRunCancelled(effectiveKey)) {
+                          return;
+                        }
+                        if (!approved) {
+                          hookAborted = true;
+                          hookAbortMessage = outcome.message;
+                        }
+                      } else {
+                        ctx.updateSessionMessages(
+                          effectiveKey,
+                          (currentMessages) =>
+                            appendHookExecutionToMessage(
+                              currentMessages,
+                              beforeHookResult.record,
+                              currentAssistantMessageId
+                            )
+                        );
+                      }
 
                       if (outcome.kind === "abort") {
                         hookAborted = true;
                         hookAbortMessage = outcome.message;
-                        break;
                       }
 
                       // Interactive tools (askUserQuestion / plan approval) can be
@@ -1577,53 +1715,83 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                       if (outcome.kind === "warn") {
                         pendingHookWarnings.push(outcome.message);
                       }
-                    } catch {
-                      // Hook execution failed — continue with tool call
                     }
+                  } catch {
+                    // Hook execution failed — continue with tool call
+                  }
 
-                    if (result === undefined) {
-                      result = await window.snow.callMcpTool(
-                        toolCall.name,
-                        toolArgs,
-                        sessionDirId,
-                        checkpointIds,
-                        checkpointIds.length > 0
-                          ? ctx.directoryPath
-                          : undefined,
-                        sensitiveAuthorizationToken,
-                        (chunk) => {
-                          if (!chunk.data) {
-                            return;
-                          }
-                          if (chunk.stream === "interactive_session") {
-                            ctx.updateSessionMessages(
-                              effectiveKey,
-                              (currentMessages) =>
-                                currentMessages.map((currentMessage) => {
-                                  if (
-                                    currentMessage.id !==
-                                    currentAssistantMessageId
-                                  ) {
-                                    return currentMessage;
-                                  }
-
-                                  return {
-                                    ...currentMessage,
-                                    toolCalls: updateFirstMatchingToolCall(
-                                      currentMessage.toolCalls,
-                                      toolCall,
-                                      ["pending", "running"],
-                                      (currentToolCall) => ({
-                                        ...currentToolCall,
-                                        interactiveSessionId: chunk.data,
-                                      })
-                                    ),
-                                  };
+                  if (hookAborted) {
+                    const decisionAbortResult = JSON.stringify({
+                      success: false,
+                      error: "HOOK_DECISION_REJECTED",
+                      message: hookAbortMessage,
+                    });
+                    ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
+                      currentMessages.map((currentMessage) =>
+                        currentMessage.id === currentAssistantMessageId
+                          ? {
+                              ...currentMessage,
+                              toolCalls: updateFirstMatchingToolCall(
+                                currentMessage.toolCalls,
+                                toolCall,
+                                ["pending", "running"],
+                                (currentToolCall) => ({
+                                  ...currentToolCall,
+                                  status: "error" as const,
+                                  result: decisionAbortResult,
                                 })
-                            );
-                            return;
-                          }
+                              ),
+                            }
+                          : currentMessage
+                      )
+                    );
+                    break;
+                  }
 
+                  ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
+                    currentMessages.map((currentMessage) => {
+                      if (currentMessage.id !== currentAssistantMessageId) {
+                        return currentMessage;
+                      }
+
+                      return {
+                        ...currentMessage,
+                        toolCalls: updateFirstMatchingToolCall(
+                          currentMessage.toolCalls,
+                          toolCall,
+                          "pending",
+                          (currentToolCall) => ({
+                            ...currentToolCall,
+                            status: "running" as const,
+                            startedAt: Date.now(),
+                          })
+                        ),
+                      };
+                    })
+                  );
+
+                  if (
+                    toolCall.name === "sub-agents-activate" &&
+                    effectiveKey !== PENDING_SESSION_KEY
+                  ) {
+                    result = await executeSubAgentActivation(
+                      toolArgs,
+                      effectiveKey,
+                      sessionDirId ?? ctx.directoryId ?? ""
+                    );
+                  } else if (result === undefined) {
+                    result = await window.snow.callMcpTool(
+                      toolCall.name,
+                      toolArgs,
+                      sessionDirId,
+                      checkpointIds,
+                      checkpointIds.length > 0 ? ctx.directoryPath : undefined,
+                      sensitiveAuthorizationToken,
+                      (chunk) => {
+                        if (!chunk.data) {
+                          return;
+                        }
+                        if (chunk.stream === "interactive_session") {
                           ctx.updateSessionMessages(
                             effectiveKey,
                             (currentMessages) =>
@@ -1643,69 +1811,128 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                                     ["pending", "running"],
                                     (currentToolCall) => ({
                                       ...currentToolCall,
-                                      streamingStdout:
-                                        chunk.stream === "stdout"
-                                          ? `${
-                                              currentToolCall.streamingStdout ??
-                                              ""
-                                            }${chunk.data}`
-                                          : currentToolCall.streamingStdout,
-                                      streamingStderr:
-                                        chunk.stream === "stderr"
-                                          ? `${
-                                              currentToolCall.streamingStderr ??
-                                              ""
-                                            }${chunk.data}`
-                                          : currentToolCall.streamingStderr,
+                                      interactiveSessionId: chunk.data,
                                     })
                                   ),
                                 };
                               })
                           );
-                        },
-                        toolCall.interactionId,
-                        undefined,
-                        ctx.planModeRef.current,
-                        planApprovedSessionKeysRef.current.has(effectiveKey)
+                          return;
+                        }
+
+                        ctx.updateSessionMessages(
+                          effectiveKey,
+                          (currentMessages) =>
+                            currentMessages.map((currentMessage) => {
+                              if (
+                                currentMessage.id !== currentAssistantMessageId
+                              ) {
+                                return currentMessage;
+                              }
+
+                              return {
+                                ...currentMessage,
+                                toolCalls: updateFirstMatchingToolCall(
+                                  currentMessage.toolCalls,
+                                  toolCall,
+                                  ["pending", "running"],
+                                  (currentToolCall) => ({
+                                    ...currentToolCall,
+                                    streamingStdout:
+                                      chunk.stream === "stdout"
+                                        ? `${
+                                            currentToolCall.streamingStdout ??
+                                            ""
+                                          }${chunk.data}`
+                                        : currentToolCall.streamingStdout,
+                                    streamingStderr:
+                                      chunk.stream === "stderr"
+                                        ? `${
+                                            currentToolCall.streamingStderr ??
+                                            ""
+                                          }${chunk.data}`
+                                        : currentToolCall.streamingStderr,
+                                  })
+                                ),
+                              };
+                            })
+                        );
+                      },
+                      toolCall.interactionId,
+                      undefined,
+                      ctx.planModeRef.current,
+                      planApprovedSessionKeysRef.current.has(effectiveKey)
+                    );
+                  }
+
+                  // Execute afterToolCall hooks (with matcher) after the tool call completes.
+                  // Unified exit-code semantics:
+                  //   0 = pass (stdout context appended to the tool result)
+                  //   1 = warn or decision gate
+                  //   2+ = abort (AI loop fully interrupted)
+                  if (result !== undefined) {
+                    try {
+                      const afterHookContext = JSON.stringify({
+                        toolName: toolCall.name,
+                        args: JSON.parse(toolArgs),
+                        result: JSON.parse(result),
+                        cwd: ctx.directoryPath ?? "",
+                      });
+                      const afterHookResult = await runHook(
+                        "afterToolCall",
+                        sessionDirId ?? undefined,
+                        afterHookContext
                       );
-                    }
+                      if (!afterHookResult) {
+                        throw new Error("HOOK_NOT_CONFIGURED");
+                      }
+                      const { outcome } = afterHookResult;
 
-                    // Execute afterToolCall hooks (with matcher) after the tool call completes.
-                    // Unified exit-code semantics:
-                    //   0 = pass (stdout context appended to the tool result)
-                    //   1 = warn (warning collected, result unchanged)
-                    //   2+ = abort (AI loop fully interrupted)
-                    if (result !== undefined) {
-                      try {
-                        const afterHookContext = JSON.stringify({
-                          toolName: toolCall.name,
-                          args: JSON.parse(toolArgs),
-                          result: JSON.parse(result),
-                          cwd: ctx.directoryPath ?? "",
-                        });
-                        const afterHookResult = await window.snow.executeHooks({
-                          hookType: "afterToolCall",
-                          projectId: sessionDirId ?? undefined,
-                          contextJson: afterHookContext,
-                        });
-                        const outcome = resolveHookOutcome(afterHookResult);
-
-                        if (outcome.kind === "abort") {
+                      // needsDecision pauses the AI loop until the user acts.
+                      // awaitHookDecision appends the record together with its
+                      // runtime resolver; non-decision outcomes are appended
+                      // directly below.
+                      if (outcome.kind === "needsDecision") {
+                        const approved = await awaitHookDecision(
+                          effectiveKey,
+                          currentAssistantMessageId,
+                          afterHookResult.record
+                        );
+                        if (isRunCancelled(effectiveKey)) {
+                          return;
+                        }
+                        if (!approved) {
                           hookAborted = true;
                           hookAbortMessage = outcome.message;
                           break;
                         }
-
-                        if (outcome.kind === "warn") {
-                          pendingHookWarnings.push(outcome.message);
-                        } else if (outcome.kind === "pass" && outcome.context) {
-                          result = `${result}\n\n[Hook Context]\n${outcome.context}`;
-                        }
-                      } catch {
-                        // Hook execution failed — keep original result
+                      } else {
+                        ctx.updateSessionMessages(
+                          effectiveKey,
+                          (currentMessages) =>
+                            appendHookExecutionToMessage(
+                              currentMessages,
+                              afterHookResult.record,
+                              currentAssistantMessageId
+                            )
+                        );
                       }
+
+                      if (outcome.kind === "abort") {
+                        hookAborted = true;
+                        hookAbortMessage = outcome.message;
+                        break;
+                      }
+
+                      if (outcome.kind === "warn") {
+                        pendingHookWarnings.push(outcome.message);
+                      } else if (outcome.kind === "pass" && outcome.context) {
+                        result = `${result}\n\n[Hook Context]\n${outcome.context}`;
+                      }
+                    } catch {
+                      // Hook execution failed — keep original result
                     }
-                  } // end of else (non-sub-agent tool call)
+                  }
                 } finally {
                   if (isInteractiveQuestionTool) {
                     ctx.userQuestionTargetRef.current.delete(
@@ -1833,13 +2060,13 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
 
         // Add tool results as a tool message for the next iteration
         const toolResultMessageId = createMessageId("tool");
-        let toolResultContent = formatToolResultsContent(
-          structuredToolResults
-        );
+        let toolResultContent = formatToolResultsContent(structuredToolResults);
         // Inject collected hook warnings (exit code 1) so the model sees them
         // alongside the tool results.
         if (pendingHookWarnings.length > 0) {
-          toolResultContent += `\n\n[Hook Warnings]\n${pendingHookWarnings.join("\n")}`;
+          toolResultContent += `\n\n[Hook Warnings]\n${pendingHookWarnings.join(
+            "\n"
+          )}`;
         }
         const toolResultMessage: ChatConversationMessage = {
           id: toolResultMessageId,
@@ -2034,6 +2261,23 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           });
           const outcome = resolveHookOutcome(hookResult);
 
+          // Store non-decision outcomes immediately.
+          // appended by awaitHookDecision together with their runtime resolver.
+          const hookExecRecord = buildHookExecRecord(
+            "onUserMessage",
+            hookResult,
+            outcome
+          );
+          if (outcome.kind !== "needsDecision") {
+            ctx.updateSessionMessages(finalSessionKey, (currentMessages) =>
+              appendHookExecutionToMessage(
+                currentMessages,
+                hookExecRecord,
+                userMessage.id
+              )
+            );
+          }
+
           if (outcome.kind === "abort") {
             ctx.updateSessionMessages(finalSessionKey, (currentMessages) =>
               currentMessages.map((currentMessage) =>
@@ -2047,6 +2291,42 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                     }
                   : currentMessage
               )
+            );
+            return;
+          }
+
+          if (outcome.kind === "needsDecision") {
+            const userDecision = await awaitHookDecision(
+              finalSessionKey,
+              userMessage.id,
+              hookExecRecord
+            );
+            if (isRunCancelled(finalSessionKey)) {
+              return;
+            }
+
+            if (!userDecision) {
+              ctx.updateSessionMessages(finalSessionKey, (currentMessages) =>
+                currentMessages.map((currentMessage) =>
+                  currentMessage.id === assistantMessageId
+                    ? {
+                        ...currentMessage,
+                        content: outcome.message,
+                        timestamp: formatMessageTime(),
+                        status: "error",
+                        isRetrying: false,
+                      }
+                    : currentMessage
+                )
+              );
+              return;
+            }
+
+            await runAgentLoop(
+              assistantMessageId,
+              [{ role: "user", content: trimmed }],
+              sessionKey === PENDING_SESSION_KEY ? undefined : sessionKey,
+              checkpointId
             );
             return;
           }
@@ -2099,6 +2379,39 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         })
         .finally(() => {
           const ref = ctx.sessionsRefData.current.get(finalSessionKey);
+
+          // Execute onStop hooks (fire-and-forget). This is the single
+          // convergence point for ALL stop scenarios: natural completion,
+          // user abort, error, and superseded by a newer run. The hook
+          // runs regardless of why the AI loop stopped.
+          const stopDirId = ref?.directoryId ?? sessionDirId ?? ctx.directoryId;
+          const onStopMessageId = ctx.sessionsRef.current[
+            finalSessionKey
+          ]?.messages.findLast((message) => message.role !== "tool")?.id;
+          const onStopContext = JSON.stringify({
+            conversationId:
+              finalSessionKey === PENDING_SESSION_KEY
+                ? undefined
+                : finalSessionKey,
+            cwd: ctx.directoryPath ?? "",
+            reason: isRunCancelled(finalSessionKey) ? "aborted" : "completed",
+          });
+          void runHook("onStop", stopDirId ?? undefined, onStopContext)
+            .then((hookResult) => {
+              if (hookResult) {
+                ctx.updateSessionMessages(finalSessionKey, (currentMessages) =>
+                  appendHookExecutionToMessage(
+                    currentMessages,
+                    toNonBlockingRecord(hookResult.record),
+                    onStopMessageId
+                  )
+                );
+              }
+            })
+            .catch(() => {
+              // onStop hook failures must not block cleanup
+            });
+
           // Only clear isSending when this run is still the current one.
           // If a newer send or abort has incremented runId, the newer run
           // owns isSending and we must not clobber it.

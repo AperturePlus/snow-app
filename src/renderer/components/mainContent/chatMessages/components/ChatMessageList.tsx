@@ -5,6 +5,7 @@ import { AiResponse } from "./AiResponse";
 import { CompactionMessage } from "./CompactionMessage";
 import { UserMessage } from "./UserMessage";
 import { VirtualizedMessage } from "./VirtualizedMessage";
+import { HookExecutionUI } from "../toolCalls/HookExecutionUI";
 import type { ChatConversationMessage } from "../utils/conversationTypes";
 import { useViewportVirtualization } from "../hooks/useViewportVirtualization";
 import { useChatConversationContext } from "./ChatConversationContext";
@@ -132,18 +133,26 @@ export const ChatMessageList = ({
     return pinned;
   }, [activeConversationId, lastAssistantMessageId, messages]);
 
-  const virtualization = useViewportVirtualization(scrollContainerRef, pinnedIds);
+  const virtualization = useViewportVirtualization(
+    scrollContainerRef,
+    pinnedIds
+  );
 
   const renderMessageContent = useCallback(
     (message: ChatConversationMessage): React.JSX.Element | null => {
       if (message.role === "user") {
         if (message.isContextCompaction) {
           return (
-            <CompactionMessage
-              content={message.content}
-              isStreaming={isStreaming}
-              onRollback={() => handleRollback(message.id)}
-            />
+            <div className="chat-message-hook-container">
+              <CompactionMessage
+                content={message.content}
+                isStreaming={isStreaming}
+                onRollback={() => handleRollback(message.id)}
+              />
+              {message.hookExecutions && message.hookExecutions.length > 0 ? (
+                <HookExecutionUI executions={message.hookExecutions} />
+              ) : null}
+            </div>
           );
         }
 
@@ -152,6 +161,7 @@ export const ChatMessageList = ({
             content={message.content}
             isStreaming={isStreaming}
             onRollback={() => handleRollback(message.id)}
+            hookExecutions={message.hookExecutions}
           />
         );
       }
@@ -174,44 +184,51 @@ export const ChatMessageList = ({
       //   but precedes a tool-call round would briefly show actions that
       //   vanish when the next assistant turn starts — causing a flash.
       const showActions =
-        !isStreaming && !isMessageStreaming && (!hasToolCalls || isLastAssistant);
+        !isStreaming &&
+        !isMessageStreaming &&
+        (!hasToolCalls || isLastAssistant);
 
       return (
-        <AiResponse
-          isStreaming={message.status === "sending"}
-          isAborting={isLastAssistant && isAborting}
-          isRetrying={isLastAssistant && message.isRetrying}
-          retryAttempt={message.retryAttempt}
-          retryError={message.retryError}
-          streamTokenCount={
-            isLastAssistant && isStreaming ? streamTokenCount : undefined
-          }
-          streamElapsedMs={
-            isLastAssistant && isStreaming ? streamElapsedMs : undefined
-          }
-          streamTtftMs={
-            isLastAssistant && isStreaming ? streamTtftMs : undefined
-          }
-          summary={message.content}
-          thinking={message.thinking}
-          showActions={showActions}
-          toolCalls={message.toolCalls}
-          pendingToolAuthorizations={
-            isLastAssistant
-              ? pendingToolAuthorizations.filter(
-                  (toolCall) =>
-                    toolCall.authorizationConversationId ===
-                    activeConversationId
-                )
-              : undefined
-          }
-          onApproveToolAuthorization={approveToolAuthorization}
-          onApproveToolAuthorizationAlways={approveToolAuthorizationAlways}
-          onRejectToolAuthorization={rejectToolAuthorization}
-          conversationId={activeConversationId}
-          responseId={message.responseId}
-          onFork={handleFork}
-        />
+        <div className="chat-message-hook-container">
+          <AiResponse
+            isStreaming={message.status === "sending"}
+            isAborting={isLastAssistant && isAborting}
+            isRetrying={isLastAssistant && message.isRetrying}
+            retryAttempt={message.retryAttempt}
+            retryError={message.retryError}
+            streamTokenCount={
+              isLastAssistant && isStreaming ? streamTokenCount : undefined
+            }
+            streamElapsedMs={
+              isLastAssistant && isStreaming ? streamElapsedMs : undefined
+            }
+            streamTtftMs={
+              isLastAssistant && isStreaming ? streamTtftMs : undefined
+            }
+            summary={message.content}
+            thinking={message.thinking}
+            showActions={showActions}
+            toolCalls={message.toolCalls}
+            pendingToolAuthorizations={
+              isLastAssistant
+                ? pendingToolAuthorizations.filter(
+                    (toolCall) =>
+                      toolCall.authorizationConversationId ===
+                      activeConversationId
+                  )
+                : undefined
+            }
+            onApproveToolAuthorization={approveToolAuthorization}
+            onApproveToolAuthorizationAlways={approveToolAuthorizationAlways}
+            onRejectToolAuthorization={rejectToolAuthorization}
+            conversationId={activeConversationId}
+            responseId={message.responseId}
+            onFork={handleFork}
+          />
+          {message.hookExecutions && message.hookExecutions.length > 0 ? (
+            <HookExecutionUI executions={message.hookExecutions} />
+          ) : null}
+        </div>
       );
     },
     [

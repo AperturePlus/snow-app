@@ -1,8 +1,9 @@
-import type { ToolCallInfo } from "./conversationTypes";
+import type { HookExecutionRecord, ToolCallInfo } from "./conversationTypes";
 export type UserMessageProps = {
   content: string;
   isStreaming: boolean;
   onRollback: () => void;
+  hookExecutions?: HookExecutionRecord[];
 };
 
 export type AiResponseSection = {

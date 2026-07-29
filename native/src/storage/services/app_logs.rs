@@ -265,6 +265,49 @@ pub async fn maybe_log_api_request(
     .ok();
 }
 
+/// Write a hook warning log when a hook command exits with code 1 (soft warning).
+/// The warning does not block the action but is recorded for diagnostics.
+/// Uses `spawn_blocking` so the async hook execution path is never blocked
+/// by SQLite I/O.
+///
+/// Failures are silently ignored to avoid disrupting the main hook flow.
+pub async fn log_hook_warning(
+    database_path: PathBuf,
+    hook_type: String,
+    command: String,
+    exit_code: i32,
+    output: Option<String>,
+    error: Option<String>,
+    context: Option<String>,
+) {
+    let db_path = database_path;
+    let message = format!(
+        "Hook '{}' command exited with code {} (soft warning)",
+        hook_type, exit_code
+    );
+
+    tokio::task::spawn_blocking(move || {
+        let _ = insert_app_log(
+            &db_path,
+            &AppLogInput {
+                level: "WARN".to_string(),
+                module: "hooks".to_string(),
+                func: hook_type,
+                line: None,
+                message,
+                input: Some(command),
+                output,
+                duration: None,
+                context,
+                error,
+                source: "main".to_string(),
+            },
+        );
+    })
+    .await
+    .ok();
+}
+
 fn map_log_row(row: &Row<'_>) -> rusqlite::Result<AppLogRecord> {
     Ok(AppLogRecord {
         id: row.get(0)?,

@@ -8,6 +8,7 @@ import {
   deleteCheckpoints,
   formatMessageTime,
 } from "../utils/conversationHelpers";
+import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
 
 /**
  * 上下文压缩逻辑：手动 /compact 和自动阈值触发的压缩。
@@ -53,6 +54,38 @@ export const useCompaction = (ctx: ConversationContextValue) => {
       }
 
       try {
+        // Execute beforeCompress hooks. If blocked, abort compaction
+        // immediately — the user sees the hook's error message.
+        try {
+          const compressDirId = sessionRef?.directoryId ?? ctx.directoryId;
+          const beforeCompressContext = JSON.stringify({
+            conversationId,
+            isAuto,
+            cwd: ctx.directoryPath ?? "",
+          });
+          const compressHookResult = await runHook(
+            "beforeCompress",
+            compressDirId ?? undefined,
+            beforeCompressContext
+          );
+          if (compressHookResult) {
+            ctx.updateSessionMessages(conversationId, (currentMessages) =>
+              appendHookExecutionToMessage(
+                currentMessages,
+                compressHookResult.record
+              )
+            );
+            if (compressHookResult.outcome.kind === "abort") {
+              throw new Error(compressHookResult.outcome.message);
+            }
+          }
+        } catch (hookError) {
+          if (hookError instanceof Error && hookError.message) {
+            throw hookError;
+          }
+          // Hook execution failed (not an abort) — continue with compaction
+        }
+
         const compactionStreamPromise = window.snow.createResponseStream(
           {
             messages: [{ role: "user", content: "context handoff" }],

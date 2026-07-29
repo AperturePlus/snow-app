@@ -14,6 +14,8 @@ use napi_derive::napi;
 use serde::{Deserialize, Serialize};
 use similar::TextDiff;
 
+use super::gitignore::GitignoreMatcher;
+
 const CHECKPOINT_DIR_NAME: &str = "checkpoints";
 const OBJECT_DIR_NAME: &str = "objects";
 const PENDING_DIR_NAME: &str = "pending";
@@ -39,6 +41,7 @@ const SKIP_DIRS: &[&str] = &[
     "venv",
     ".idea",
     ".vscode",
+    ".vs",
     ".snow",
     ".snowapp",
     "release",
@@ -414,6 +417,7 @@ fn update_checkpoint_git_ref(
 }
 
 fn collect_worktree_file_paths(root: &Path) -> Result<HashSet<String>> {
+    let matcher = GitignoreMatcher::from_project_root(root);
     let mut paths = HashSet::new();
     let mut directories = vec![root.to_path_buf()];
 
@@ -448,10 +452,16 @@ fn collect_worktree_file_paths(root: &Path) -> Result<HashSet<String>> {
             if file_type.is_symlink() {
                 continue;
             }
+
+            let relative_path = to_forward_slashes(relative);
+            if matcher.is_ignored(&relative_path, file_type.is_dir()) {
+                continue;
+            }
+
             if file_type.is_dir() {
                 directories.push(path);
             } else if file_type.is_file() {
-                paths.insert(to_forward_slashes(relative));
+                paths.insert(relative_path);
             }
         }
     }

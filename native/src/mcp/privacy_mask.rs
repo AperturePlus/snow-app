@@ -104,7 +104,7 @@ const SENSITIVE_KEY_NAME_PATTERN: &str =
 
 fn quoted_context_pattern() -> Regex {
     let pattern = format!(
-        r#"['"]?({})['"]?\s*(?:=|:)\s*([`'"])([^`'"\r\n]+)\2"#,
+        r#"['"]?({})['"]?\s*(?:=|:)\s*(?:'([^'\r\n]+)'|"([^"\r\n]+)"|`([^`\r\n]+)`)"#,
         SENSITIVE_KEY_NAME_PATTERN
     );
     Regex::new(&pattern).unwrap()
@@ -112,7 +112,7 @@ fn quoted_context_pattern() -> Regex {
 
 fn unquoted_context_pattern() -> Regex {
     let pattern = format!(
-        r#"['"]?({})['"]?\s*(?:=|:)\s*(?![`'"])([^\s,;#{{}}\]]+)"#,
+        r#"['"]?({})['"]?\s*(?:=|:)\s*([^\s,;#{{}}\]'"`]+)"#,
         SENSITIVE_KEY_NAME_PATTERN
     );
     Regex::new(&pattern).unwrap()
@@ -120,13 +120,13 @@ fn unquoted_context_pattern() -> Regex {
 
 fn cli_option_pattern() -> Regex {
     Regex::new(
-        r#"(?i)(\B--(?:api-key|token|access-token|refresh-token|client-secret|secret|password)\s+)([`'"]?)([^`'"\s]+)\2"#,
+        r#"(?i)(\B--(?:api-key|token|access-token|refresh-token|client-secret|secret|password)\s+)(?:'([^'\s]+)'|"([^"\s]+)"|`([^`\s]+)`|([^`'"\s]+))"#,
     )
     .unwrap()
 }
 
 fn authorization_pattern() -> Regex {
-    Regex::new(r"(?i)(\b(?:Bearer|Basic)\s+)(?!\$\{)([A-Za-z0-9._~+/=-]{12,})\b").unwrap()
+    Regex::new(r"(?i)(\b(?:Bearer|Basic)\s+)([A-Za-z0-9._~+/=-]{12,})\b").unwrap()
 }
 
 fn url_query_pattern() -> Regex {
@@ -301,12 +301,35 @@ fn add_regex_value_group_matches(
     }
 }
 
-fn collect_context_matches(
+fn add_regex_value_group_multi_matches(
+    text: &str,
+    matches: &mut Vec<SensitiveMatch>,
+    pattern: &Regex,
+    value_groups: &[usize],
+    match_type: &str,
+    confidence: f64,
+) {
+    for capture in pattern.captures_iter(text) {
+        for &group in value_groups {
+            let Some(m) = capture.get(group) else {
+                continue;
+            };
+            let value = m.as_str();
+            if value.is_empty() || is_placeholder_secret(value) {
+                continue;
+            }
+            add_match(matches, m.start(), m.end(), match_type, confidence);
+            break;
+        }
+    }
+}
+
+fn collect_context_matches_multi(
     text: &str,
     matches: &mut Vec<SensitiveMatch>,
     pattern: &Regex,
     key_group: usize,
-    value_group: usize,
+    value_groups: &[usize],
     match_type: &str,
     confidence: f64,
 ) {
@@ -315,20 +338,26 @@ fn collect_context_matches(
             .get(key_group)
             .map(|m| m.as_str())
             .unwrap_or("");
-        let Some(value_match) = capture.get(value_group) else {
-            continue;
-        };
-        let value = value_match.as_str();
-        if value.is_empty() || !should_mask_context_value(value, key_name) {
-            continue;
+        let mut found = false;
+        for &group in value_groups {
+            let Some(value_match) = capture.get(group) else {
+                continue;
+            };
+            let value = value_match.as_str();
+            if value.is_empty() || !should_mask_context_value(value, key_name) {
+                continue;
+            }
+            add_match(
+                matches,
+                value_match.start(),
+                value_match.end(),
+                match_type,
+                confidence,
+            );
+            found = true;
+            break;
         }
-        add_match(
-            matches,
-            value_match.start(),
-            value_match.end(),
-            match_type,
-            confidence,
-        );
+        let _ = found;
     }
 }
 
@@ -401,29 +430,29 @@ fn collect_local_sensitive_matches(text: &str) -> Vec<SensitiveMatch> {
         add_regex_matches(text, &mut matches, &pattern.pattern, pattern.match_type, pattern.confidence);
     }
 
-    collect_context_matches(
+    collect_context_matches_multi(
         text,
         &mut matches,
         &quoted_context_pattern(),
         1,
-        3,
+        &[2, 3, 4],
         "context_secret",
         0.9,
     );
-    collect_context_matches(
+    collect_context_matches_multi(
         text,
         &mut matches,
         &unquoted_context_pattern(),
         1,
-        2,
+        &[2],
         "context_secret",
         0.85,
     );
-    add_regex_value_group_matches(
+    add_regex_value_group_multi_matches(
         text,
         &mut matches,
         &cli_option_pattern(),
-        3,
+        &[2, 3, 4, 5],
         "context_secret",
         0.85,
     );
