@@ -31,6 +31,7 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
           directoryId: dirId,
           checkpointIds: [],
           hasAutoCompacted: false,
+          childSubAgentIds: new Set(),
         });
       }
       ctx.setSessions((prev) => {

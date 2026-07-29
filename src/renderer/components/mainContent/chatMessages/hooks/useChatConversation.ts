@@ -31,8 +31,20 @@ export const useChatConversation = (
   const [conversationVersion, setConversationVersion] = useState(0);
   const [upsertedConversation, setUpsertedConversation] =
     useState<ConversationContextValue["upsertedConversation"]>(null);
-  const [subAgentSessionEvent, setSubAgentSessionEvent] =
-    useState<ConversationContextValue["subAgentSessionEvent"]>(null);
+  const [subAgentSessionEvents, setSubAgentSessionEvents] = useState<
+    ConversationContextValue["subAgentSessionEvents"]
+  >({});
+  // Upsert a single sub-agent event keyed by its conversationId so multiple
+  // parallel sub-agents each keep their own live entry.
+  const setSubAgentSessionEvent = useCallback(
+    (event: ConversationContextValue["subAgentSessionEvents"][string]) => {
+      setSubAgentSessionEvents((prev) => ({
+        ...prev,
+        [event.conversationId]: event,
+      }));
+    },
+    []
+  );
   const [streamingConversationIds, setStreamingConversationIds] = useState<
     Set<string>
   >(new Set());
@@ -170,7 +182,7 @@ export const useChatConversation = (
     activeConversationId,
     conversationVersion,
     upsertedConversation,
-    subAgentSessionEvent,
+    subAgentSessionEvents,
     streamingConversationIds,
     completedConversationIds,
     isLoadingInitialHistory,
@@ -358,7 +370,7 @@ export const useChatConversation = (
     summary: activeSession?.summary ?? "",
     conversationVersion,
     upsertedConversation,
-    subAgentSessionEvent,
+    subAgentSessionEvents,
     sessions,
     activeConversationId,
     conversationDirectoryId: activeSession?.directoryId,

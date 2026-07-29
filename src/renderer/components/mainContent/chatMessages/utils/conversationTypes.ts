@@ -124,6 +124,10 @@ export type SubAgentSessionEvent = {
   agentName: string;
   status: "running" | "completed" | "failed" | "cancelled";
   timestamp: number;
+  /** The interactionId of the parent tool call that activated this sub-agent.
+   *  Used to match the event to the correct SubAgentToolCall UI when multiple
+   *  sub-agents run in parallel with the same agentId. */
+  toolCallInteractionId?: string;
 };
 
 export type ConversationSessionState = {
@@ -191,6 +195,10 @@ export type ConversationSessionRef = {
   directoryId?: string;
   checkpointIds: string[];
   hasAutoCompacted: boolean;
+  /** Conversation ids of sub-agent sessions spawned by this conversation.
+   *  Used to propagate an abort from the main flow down to every running
+   *  sub-agent (and, recursively, their own sub-agents). */
+  childSubAgentIds: Set<string>;
 };
 
 /** Per-session pause controller stored in pauseControllerRef. When `paused`
@@ -270,7 +278,10 @@ export type ConversationContextValue = {
   activeConversationId: string | undefined;
   conversationVersion: number;
   upsertedConversation: UpsertedConversation | null;
-  subAgentSessionEvent: SubAgentSessionEvent | null;
+  /** All sub-agent session events keyed by sub-agent conversationId. Multiple
+   *  parallel sub-agents each keep their own entry so the UI can match every
+   *  SubAgentToolCall to the correct live session. */
+  subAgentSessionEvents: Record<string, SubAgentSessionEvent>;
   streamingConversationIds: Set<string>;
   completedConversationIds: Set<string>;
   isLoadingInitialHistory: boolean;
@@ -332,9 +343,7 @@ export type ConversationContextValue = {
   setUpsertedConversation: Dispatch<
     SetStateAction<UpsertedConversation | null>
   >;
-  setSubAgentSessionEvent: Dispatch<
-    SetStateAction<SubAgentSessionEvent | null>
-  >;
+  setSubAgentSessionEvent: (event: SubAgentSessionEvent) => void;
   setStreamingConversationIds: Dispatch<SetStateAction<Set<string>>>;
   setCompletedConversationIds: Dispatch<SetStateAction<Set<string>>>;
   setIsLoadingInitialHistory: Dispatch<SetStateAction<boolean>>;
@@ -378,7 +387,8 @@ export type UseChatConversationResult = {
   summary: string;
   conversationVersion: number;
   upsertedConversation: UpsertedConversation | null;
-  subAgentSessionEvent: SubAgentSessionEvent | null;
+  /** All sub-agent session events keyed by sub-agent conversationId. */
+  subAgentSessionEvents: Record<string, SubAgentSessionEvent>;
   /** All conversation sessions, keyed by conversation id. Used by tool-call
    *  UIs (e.g. sub-agent activation) to inspect the live state of other
    *  sessions such as streaming sub-agent conversations. */

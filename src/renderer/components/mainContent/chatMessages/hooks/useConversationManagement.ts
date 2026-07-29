@@ -140,6 +140,7 @@ export const useConversationManagement = (
           directoryId: conversationDirId,
           checkpointIds,
           hasAutoCompacted: false,
+          childSubAgentIds: new Set(),
         });
         ctx.setSessions((prev) => ({
           ...prev,
@@ -408,6 +409,53 @@ export const useConversationManagement = (
     // when the rollback's delete/truncate runs.
     if (key !== PENDING_SESSION_KEY) {
       void window.snow.cancelConversationSummary(key);
+    }
+
+    // Cascade the abort to every sub-agent spawned by this conversation (and
+    // recursively to their own sub-agents). Without this, stopping the main
+    // flow would leave sub-agents streaming in the background.
+    const abortSubAgentTree = (subKey: string): void => {
+      const subRef = ctx.sessionsRefData.current.get(subKey);
+      if (!subRef || subRef.isAbortRequested) {
+        return;
+      }
+      subRef.isAbortRequested = true;
+      subRef.isSending = false;
+
+      ctx.updateSessionMessages(subKey, (currentMessages) =>
+        currentMessages.map((message) => ({
+          ...message,
+          status: message.status === "sending" ? "sent" : message.status,
+          isRetrying: message.status === "sending" ? false : message.isRetrying,
+          toolCalls: message.toolCalls?.map((toolCall) =>
+            toolCall.status === "running" || toolCall.status === "pending"
+              ? {
+                  ...toolCall,
+                  status: "error",
+                  result: toolCall.result ?? "Interrupted by user",
+                }
+              : toolCall
+          ),
+        }))
+      );
+      ctx.updateSessionField(subKey, "isStreaming", false);
+      ctx.updateSessionField(subKey, "streamStartedAt", 0);
+      ctx.updateSessionField(subKey, "isAborting", false);
+      ctx.updateSessionField(subKey, "isPaused", false);
+      ctx.pauseControllerRef.current.delete(subKey);
+      ctx.removeStreamingId(subKey);
+
+      if (subRef.streamId) {
+        void window.snow.abortResponseStream(subRef.streamId);
+      }
+
+      for (const grandChildId of subRef.childSubAgentIds) {
+        abortSubAgentTree(grandChildId);
+      }
+    };
+
+    for (const subAgentId of ref.childSubAgentIds) {
+      abortSubAgentTree(subAgentId);
     }
   }, [
     ctx.removeStreamingId,
