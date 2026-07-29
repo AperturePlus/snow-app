@@ -1498,6 +1498,12 @@ export const zhCN = {
   "rightPanel.fileViewerSaveError": "保存文件失败",
   "rightPanel.fileViewerDiscardConfirm":
     "存在未保存的更改，是否放弃并退出编辑模式？",
+  "rightPanel.fileSearchPlaceholder": "在文件中查找",
+  "rightPanel.fileSearchNoResult": "无匹配",
+  "rightPanel.fileSearchMatchCase": "区分大小写",
+  "rightPanel.fileSearchPrevious": "上一个匹配（Shift+Enter）",
+  "rightPanel.fileSearchNext": "下一个匹配（Enter）",
+  "rightPanel.fileSearchClose": "关闭查找（Esc）",
   "git.noWorkspaceDirectory": "未选择工作区目录",
   "git.loadingStatus": "加载 Git 状态中...",
   "git.notARepo": "不是 Git 仓库",

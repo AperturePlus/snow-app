@@ -1478,6 +1478,12 @@ export const zhTW = {
   "rightPanel.fileViewerSaveError": "儲存檔案失敗",
   "rightPanel.fileViewerDiscardConfirm":
     "存在未儲存的變更，是否放棄並退出編輯模式？",
+  "rightPanel.fileSearchPlaceholder": "在檔案中尋找",
+  "rightPanel.fileSearchNoResult": "無相符項目",
+  "rightPanel.fileSearchMatchCase": "區分大小寫",
+  "rightPanel.fileSearchPrevious": "上一個相符項目（Shift+Enter）",
+  "rightPanel.fileSearchNext": "下一個相符項目（Enter）",
+  "rightPanel.fileSearchClose": "關閉尋找（Esc）",
   "git.noWorkspaceDirectory": "未選擇工作區目錄",
   "git.loadingStatus": "載入 Git 狀態中...",
   "git.notARepo": "不是 Git 儲存庫",

@@ -16987,6 +16987,118 @@ input {
   flex-shrink: 0;
 }
 
+/* ===== File Viewer Search (Ctrl/Cmd+F) ===== */
+/* 根容器 tabIndex=-1 可聚焦（点击即聚焦），用于快捷键焦点感知；去掉聚焦轮廓。 */
+.file-viewer:focus {
+  outline: none;
+}
+
+.file-viewer-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.file-viewer-search-input-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.file-viewer-search-input-icon {
+  position: absolute;
+  left: 7px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.file-viewer-search-input {
+  width: 100%;
+  padding: 4px 8px 4px 24px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+
+.file-viewer-search-input:focus {
+  border-color: var(--accent-color);
+}
+
+.file-viewer-search-case {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  transition: background 0.1s, color 0.1s;
+}
+
+.file-viewer-search-case:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.file-viewer-search-case.active {
+  background: var(--accent-blue-bg, var(--bg-tertiary));
+  color: var(--accent-blue-text, var(--accent-color));
+}
+
+.file-viewer-search-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 44px;
+  text-align: center;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.file-viewer-search-count.no-result {
+  color: var(--accent-red);
+}
+
+/* 匹配高亮层：绝对定位于 .file-viewer-code（position: relative）内，
+   横向偏移由内联 transform translateX(-scrollLeft) 实时补偿。 */
+.file-viewer-search-marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.file-viewer-search-mark {
+  position: absolute;
+  background: color-mix(
+    in srgb,
+    var(--accent-amber-text, #d97706) 28%,
+    transparent
+  );
+  border-radius: 2px;
+}
+
+.file-viewer-search-mark.current {
+  background: color-mix(in srgb, var(--accent-color, #4f8cff) 45%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--accent-color, #4f8cff) 70%, transparent);
+}
+
 /* Edit mode mirrors the view mode layout: this is the single scroll container
    (both axes — long lines produce a horizontal scrollbar here), and a
    `.file-viewer-code` flex row inside it holds the gutter plus the editor at

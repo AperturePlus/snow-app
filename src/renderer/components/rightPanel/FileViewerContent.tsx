@@ -1,6 +1,9 @@
 import hljs from "highlight.js";
 import {
   AlertCircle,
+  CaseSensitive,
+  ChevronDown,
+  ChevronUp,
   Code2,
   Copy,
   Eye,
@@ -9,10 +12,20 @@ import {
   Loader2,
   Pencil,
   Save,
+  Search,
+  X,
 } from "lucide-react";
 import Editor from "react-simple-code-editor";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
+import { useKeyboardShortcutsSettings } from "../KeyboardShortcutsProvider";
 import { useI18n } from "../../i18n";
 import type { FileContentResult } from "./types";
 
@@ -26,6 +39,54 @@ type FileViewerContentProps = {
 };
 
 const EDITOR_TEXTAREA_ID = "file-viewer-editor-textarea";
+
+/** 文内搜索匹配数上限，避免超大文件单字符查询卡死。 */
+const SEARCH_MATCH_LIMIT = 10000;
+/** 查看模式高亮矩形渲染上限，超过时只渲染当前匹配。 */
+const SEARCH_MARK_RENDER_LIMIT = 2000;
+/** 编辑模式下可作为初始查询的选区最大长度。 */
+const SEARCH_SEED_MAX_LENGTH = 200;
+
+type SearchMatch = { start: number; end: number; line: number };
+
+type SearchMarkRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  isCurrent: boolean;
+};
+
+/**
+ * 在 root 的文本节点上按字符偏移 [start, end) 创建 DOM Range，
+ * 供 getClientRects() 取得匹配文本的渲染矩形（查看模式高亮层与
+ * 横向滚动定位使用）。root 的 textContent 必须与搜索目标一致。
+ */
+const makeTextRange = (
+  root: HTMLElement,
+  start: number,
+  end: number
+): Range | null => {
+  const range = document.createRange();
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let position = 0;
+  let started = false;
+  let node = walker.nextNode();
+  while (node) {
+    const length = node.nodeValue?.length ?? 0;
+    if (!started && start <= position + length) {
+      range.setStart(node, start - position);
+      started = true;
+    }
+    if (started && end <= position + length) {
+      range.setEnd(node, end - position);
+      return range;
+    }
+    position += length;
+    node = walker.nextNode();
+  }
+  return null;
+};
 
 const escapeHtml = (str: string): string =>
   str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -106,6 +167,7 @@ export function FileViewerContent({
   onDirtyChange,
 }: FileViewerContentProps): React.JSX.Element {
   const { t } = useI18n();
+  const { registerScopedHandler } = useKeyboardShortcutsSettings();
   const [content, setContent] = useState<FileContentResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -127,6 +189,27 @@ export function FileViewerContent({
   // （搜索结果点击行）传入，加载完内容后滚动到该行并临时高亮。
   const codeScrollRef = useRef<HTMLDivElement | null>(null);
   const [highlightLine, setHighlightLine] = useState<number | null>(null);
+
+  // ===== 文内搜索（Ctrl/Cmd+F）相关 =====
+  // 文件区持有焦点时 openSearch 快捷键被接管为文内搜索（scoped 拦截），
+  // 失焦后自动回落到全局聚合搜索。RightPanel 为 keep-alive 多实例共存，
+  // 只有持有焦点的实例会拦截。
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const codeContentRef = useRef<HTMLElement | null>(null);
+  const marksLayerRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  // 锚点：打开搜索时记录光标位置，首个命中落在锚点附近；null 表示未设置。
+  const searchAnchorRef = useRef<number | null>(null);
+  // 导航时钟：仅显式导航（打开/上一个/下一个）时才在编辑模式重设选区，
+  // 避免用户在 textarea 中编辑时不断覆盖其光标。
+  const searchNavTickRef = useRef(0);
+  const lastHandledNavTickRef = useRef(0);
+
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchCaseSensitive, setSearchCaseSensitive] = useState(false);
+  const [searchIndex, setSearchIndex] = useState(0);
+  const [searchMarkRects, setSearchMarkRects] = useState<SearchMarkRect[]>([]);
 
   useEffect(() => {
     onDirtyChangeRef.current = onDirtyChange;
@@ -379,6 +462,291 @@ export function FileViewerContent({
     }
   }, [editMode]);
 
+  // ===== 文内搜索逻辑 =====
+
+  const canSearch = content != null && !content.isBinary && !content.isImage;
+
+  // 搜索目标：编辑模式搜 editedContent，查看模式搜已加载内容。
+  const searchTarget = useMemo(() => {
+    if (!canSearch || content == null) return "";
+    return editMode ? editedContent : content.content;
+  }, [canSearch, content, editMode, editedContent]);
+
+  const searchMatches = useMemo<SearchMatch[]>(() => {
+    if (!searchOpen || searchQuery.length === 0 || searchTarget.length === 0) {
+      return [];
+    }
+    const haystack = searchCaseSensitive
+      ? searchTarget
+      : searchTarget.toLowerCase();
+    const needle = searchCaseSensitive
+      ? searchQuery
+      : searchQuery.toLowerCase();
+    // 行起始偏移表，用于二分反查匹配所在行号。
+    const lineStarts: number[] = [0];
+    for (let i = 0; i < searchTarget.length; i += 1) {
+      if (searchTarget[i] === "\n") lineStarts.push(i + 1);
+    }
+    const matches: SearchMatch[] = [];
+    let from = 0;
+    while (matches.length < SEARCH_MATCH_LIMIT) {
+      const found = haystack.indexOf(needle, from);
+      if (found === -1) break;
+      let lo = 0;
+      let hi = lineStarts.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (lineStarts[mid] <= found) lo = mid;
+        else hi = mid - 1;
+      }
+      matches.push({ start: found, end: found + needle.length, line: lo + 1 });
+      from = found + needle.length;
+    }
+    return matches;
+  }, [searchOpen, searchQuery, searchCaseSensitive, searchTarget]);
+
+  // 匹配集变化：有锚点则落在锚点后第一个命中，否则夹紧当前索引。
+  useEffect(() => {
+    if (searchMatches.length === 0) {
+      setSearchIndex(0);
+      return;
+    }
+    const anchor = searchAnchorRef.current;
+    if (anchor != null) {
+      searchAnchorRef.current = null;
+      const anchored = searchMatches.findIndex((m) => m.end > anchor);
+      setSearchIndex(anchored === -1 ? 0 : anchored);
+      return;
+    }
+    setSearchIndex((prev) => (prev >= searchMatches.length ? 0 : prev));
+  }, [searchMatches]);
+
+  const focusSearchInput = useCallback(() => {
+    requestAnimationFrame(() => {
+      const input = searchInputRef.current;
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    });
+  }, []);
+
+  // 作用域接管的局部 handler：打开（或重新聚焦）文内搜索。
+  // 编辑模式下若 textarea 存在短单行选区，以其作为初始查询。
+  const openLocalSearch = useCallback(() => {
+    if (editMode) {
+      const textarea = document.getElementById(EDITOR_TEXTAREA_ID);
+      if (textarea instanceof HTMLTextAreaElement) {
+        const start = textarea.selectionStart ?? 0;
+        const end = textarea.selectionEnd ?? 0;
+        searchAnchorRef.current = start;
+        if (end > start && end - start <= SEARCH_SEED_MAX_LENGTH) {
+          const selected = textarea.value.slice(start, end);
+          if (!selected.includes("\n")) {
+            setSearchQuery(selected);
+          }
+        }
+      }
+    } else {
+      searchAnchorRef.current = null;
+    }
+    searchNavTickRef.current += 1;
+    setSearchOpen(true);
+    focusSearchInput();
+  }, [editMode, focusSearchInput]);
+
+  // 拦截条件：焦点位于本文件查看器内（含搜索栏自身）。
+  const shouldInterceptOpenSearch = useCallback(() => {
+    const root = rootRef.current;
+    const active = document.activeElement;
+    return root != null && active != null && root.contains(active);
+  }, []);
+
+  useEffect(() => {
+    return registerScopedHandler(
+      "openSearch",
+      openLocalSearch,
+      shouldInterceptOpenSearch
+    );
+  }, [registerScopedHandler, openLocalSearch, shouldInterceptOpenSearch]);
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    setSearchMarkRects([]);
+    if (editMode) {
+      requestAnimationFrame(() => {
+        const textarea = document.getElementById(EDITOR_TEXTAREA_ID);
+        if (textarea instanceof HTMLTextAreaElement) {
+          textarea.focus();
+        }
+      });
+    }
+  }, [editMode]);
+
+  const goRelative = useCallback(
+    (delta: number) => {
+      if (searchMatches.length === 0) return;
+      searchNavTickRef.current += 1;
+      setSearchIndex((prev) => {
+        const total = searchMatches.length;
+        return (prev + delta + total) % total;
+      });
+    },
+    [searchMatches.length]
+  );
+
+  // 搜索栏按键：容器带 data-local-shortcuts，全局快捷键引擎不介入。
+  const handleSearchBarKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        closeSearch();
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        goRelative(event.shiftKey ? -1 : 1);
+        return;
+      }
+      const mod = event.ctrlKey || event.metaKey;
+      if (mod && (event.key === "f" || event.key === "F")) {
+        event.preventDefault();
+        searchInputRef.current?.select();
+      }
+    },
+    [closeSearch, goRelative]
+  );
+
+  // 当前匹配滚动入视。编辑模式仅在显式导航时重设选区（避免覆盖用户
+  // 正在编辑的光标）；查看模式始终滚动（纵向外层容器 + 横向内层代码区）。
+  useEffect(() => {
+    if (!searchOpen || searchMatches.length === 0) return;
+    const match =
+      searchMatches[Math.min(searchIndex, searchMatches.length - 1)];
+    if (!match) return;
+    const navigated =
+      searchNavTickRef.current !== lastHandledNavTickRef.current;
+    if (navigated) {
+      lastHandledNavTickRef.current = searchNavTickRef.current;
+    }
+
+    if (editMode) {
+      if (!navigated) return;
+      const textarea = document.getElementById(EDITOR_TEXTAREA_ID);
+      if (!(textarea instanceof HTMLTextAreaElement)) return;
+      textarea.setSelectionRange(match.start, match.end);
+      const lineHeight = parseFloat(
+        window.getComputedStyle(textarea).lineHeight
+      );
+      if (Number.isFinite(lineHeight) && lineHeight > 0) {
+        textarea.scrollTop = Math.max(
+          0,
+          (match.line - 1) * lineHeight - textarea.clientHeight / 3
+        );
+      }
+      return;
+    }
+
+    const scrollEl = codeScrollRef.current;
+    const codeEl = scrollEl?.querySelector(".file-viewer-code") ?? null;
+    if (scrollEl && codeEl) {
+      const style = window.getComputedStyle(codeEl);
+      const lineHeight = parseFloat(style.lineHeight);
+      const paddingTop = parseFloat(style.paddingTop) || 0;
+      if (Number.isFinite(lineHeight) && lineHeight > 0) {
+        const targetTop = paddingTop + (match.line - 1) * lineHeight;
+        scrollEl.scrollTop = Math.max(0, targetTop - scrollEl.clientHeight / 3);
+      }
+    }
+    const contentEl = codeContentRef.current;
+    if (contentEl) {
+      const range = makeTextRange(contentEl, match.start, match.end);
+      const rects = range?.getClientRects();
+      if (rects && rects.length > 0) {
+        const first = rects[0];
+        const box = contentEl.getBoundingClientRect();
+        const x = first.left - box.left + contentEl.scrollLeft;
+        const margin = 24;
+        if (x < contentEl.scrollLeft + margin) {
+          contentEl.scrollLeft = Math.max(0, x - margin);
+        } else if (
+          x + first.width >
+          contentEl.scrollLeft + contentEl.clientWidth - margin
+        ) {
+          contentEl.scrollLeft =
+            x + first.width - contentEl.clientWidth + margin;
+        }
+      }
+    }
+  }, [searchOpen, searchMatches, searchIndex, editMode]);
+
+  // 查看模式匹配高亮层：用 Range 取每个匹配文本的渲染矩形，换算为相对
+  // .file-viewer-code 的坐标；内层代码区横向滚动由层 transform 实时补偿。
+  useLayoutEffect(() => {
+    if (editMode || !searchOpen) {
+      setSearchMarkRects([]);
+      return;
+    }
+    const layer = marksLayerRef.current;
+    const contentEl = codeContentRef.current;
+    if (!layer || !contentEl || searchMatches.length === 0) {
+      setSearchMarkRects([]);
+      return;
+    }
+    const preEl = contentEl.closest(".file-viewer-code");
+    if (!preEl) return;
+    const preRect = preEl.getBoundingClientRect();
+    const scrollLeft = contentEl.scrollLeft;
+    const current =
+      searchMatches[Math.min(searchIndex, searchMatches.length - 1)];
+    if (!current) {
+      setSearchMarkRects([]);
+      return;
+    }
+    const list =
+      searchMatches.length <= SEARCH_MARK_RENDER_LIMIT
+        ? searchMatches
+        : [current];
+    const rects: SearchMarkRect[] = [];
+    for (const match of list) {
+      const range = makeTextRange(contentEl, match.start, match.end);
+      if (!range) continue;
+      const clientRects = range.getClientRects();
+      for (let i = 0; i < clientRects.length; i += 1) {
+        const r = clientRects[i];
+        if (r.width <= 0 && r.height <= 0) continue;
+        rects.push({
+          left: r.left - preRect.left + scrollLeft,
+          top: r.top - preRect.top,
+          width: r.width,
+          height: r.height,
+          isCurrent: match === current,
+        });
+      }
+    }
+    layer.style.transform = `translateX(${-scrollLeft}px)`;
+    setSearchMarkRects(rects);
+  }, [
+    searchOpen,
+    editMode,
+    searchMatches,
+    searchIndex,
+    highlightedCode,
+    svgMode,
+  ]);
+
+  const handleCodeContentScroll = useCallback(
+    (event: React.UIEvent<HTMLElement>) => {
+      const layer = marksLayerRef.current;
+      if (layer) {
+        const scrollLeft = (event.currentTarget as HTMLElement).scrollLeft;
+        layer.style.transform = `translateX(${-scrollLeft}px)`;
+      }
+    },
+    []
+  );
+
   const renderCodeBlock = () => {
     const { html } = highlightedCode;
     // 计算高亮条位置。lineHeight 在 effect 中也测量过，这里为渲染
@@ -408,11 +776,35 @@ export function FileViewerContent({
               aria-hidden="true"
             />
           ) : null}
+          {searchOpen && !editMode ? (
+            <div
+              className="file-viewer-search-marks"
+              ref={marksLayerRef}
+              aria-hidden="true"
+            >
+              {searchMarkRects.map((rect, i) => (
+                <div
+                  key={i}
+                  className={`file-viewer-search-mark${
+                    rect.isCurrent ? " current" : ""
+                  }`}
+                  style={{
+                    left: rect.left,
+                    top: rect.top,
+                    width: rect.width,
+                    height: rect.height,
+                  }}
+                />
+              ))}
+            </div>
+          ) : null}
           <code className="file-viewer-line-numbers" aria-hidden="true">
             {viewLineNumbers}
           </code>
           <code
+            ref={codeContentRef}
             className="hljs file-viewer-code-content"
+            onScroll={handleCodeContentScroll}
             dangerouslySetInnerHTML={{ __html: html }}
           />
         </pre>
@@ -506,7 +898,7 @@ export function FileViewerContent({
   const canEdit = isEditable(content);
 
   return (
-    <div className="file-viewer">
+    <div className="file-viewer" ref={rootRef} tabIndex={-1}>
       <div className="file-viewer-header">
         <span className="file-viewer-file-name" title={filePath}>
           {fileName}
@@ -619,6 +1011,92 @@ export function FileViewerContent({
         <div className="file-viewer-save-error">
           <AlertCircle size={14} />
           <span>{saveError}</span>
+        </div>
+      ) : null}
+      {searchOpen && canSearch ? (
+        <div
+          className="file-viewer-search-bar"
+          data-local-shortcuts
+          onKeyDown={handleSearchBarKeyDown}
+        >
+          <div className="file-viewer-search-input-wrap">
+            <Search size={13} className="file-viewer-search-input-icon" />
+            <input
+              ref={searchInputRef}
+              className="file-viewer-search-input"
+              type="text"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder={t("rightPanel.fileSearchPlaceholder", {
+                defaultValue: "Search in file",
+              })}
+              spellCheck={false}
+              autoFocus
+            />
+          </div>
+          <button
+            type="button"
+            className={`file-viewer-search-case${
+              searchCaseSensitive ? " active" : ""
+            }`}
+            onClick={() => setSearchCaseSensitive((prev) => !prev)}
+            title={t("rightPanel.fileSearchMatchCase", {
+              defaultValue: "Match case",
+            })}
+          >
+            <CaseSensitive size={14} />
+          </button>
+          <span
+            className={`file-viewer-search-count${
+              searchQuery.length > 0 && searchMatches.length === 0
+                ? " no-result"
+                : ""
+            }`}
+          >
+            {searchQuery.length > 0
+              ? searchMatches.length === 0
+                ? t("rightPanel.fileSearchNoResult", {
+                    defaultValue: "No results",
+                  })
+                : `${searchIndex + 1}/${
+                    searchMatches.length >= SEARCH_MATCH_LIMIT
+                      ? `${SEARCH_MATCH_LIMIT}+`
+                      : searchMatches.length
+                  }`
+              : ""}
+          </span>
+          <button
+            type="button"
+            className="file-viewer-action-btn"
+            onClick={() => goRelative(-1)}
+            disabled={searchMatches.length === 0}
+            title={t("rightPanel.fileSearchPrevious", {
+              defaultValue: "Previous match (Shift+Enter)",
+            })}
+          >
+            <ChevronUp size={14} />
+          </button>
+          <button
+            type="button"
+            className="file-viewer-action-btn"
+            onClick={() => goRelative(1)}
+            disabled={searchMatches.length === 0}
+            title={t("rightPanel.fileSearchNext", {
+              defaultValue: "Next match (Enter)",
+            })}
+          >
+            <ChevronDown size={14} />
+          </button>
+          <button
+            type="button"
+            className="file-viewer-action-btn"
+            onClick={closeSearch}
+            title={t("rightPanel.fileSearchClose", {
+              defaultValue: "Close search (Esc)",
+            })}
+          >
+            <X size={13} />
+          </button>
         </div>
       ) : null}
       <div className="file-viewer-body">

@@ -33,6 +33,22 @@ const DEFAULT_SETTINGS: KeyboardShortcutsSettings = {
  */
 export type KeyboardShortcutHandler = () => void;
 
+/**
+ * 作用域拦截器：返回 true 表示当前上下文（如某个面板持有焦点）
+ * 要接管该快捷键，引擎将调用局部 handler 而不再触发全局 handler。
+ */
+export type ScopedShortcutInterceptor = () => boolean;
+
+/**
+ * 作用域快捷键条目：局部 handler + 拦截判定。
+ * 同一 action 可注册多个条目，引擎按注册的逆序查找第一个
+ * shouldIntercept() 为 true 的条目。
+ */
+export type ScopedShortcutHandler = {
+  handler: KeyboardShortcutHandler;
+  shouldIntercept: ScopedShortcutInterceptor;
+};
+
 type KeyboardShortcutsContextValue = {
   /** 当前快捷键设置（内存缓存，启动时从 SQLite 加载） */
   settings: KeyboardShortcutsSettings;
@@ -49,7 +65,23 @@ type KeyboardShortcutsContextValue = {
     handler: KeyboardShortcutHandler
   ) => () => void;
   /** 获取某个动作的当前处理器（通过 ref，避免闭包过期） */
-  getHandler: (action: KeyboardShortcutAction) => KeyboardShortcutHandler | null;
+  getHandler: (
+    action: KeyboardShortcutAction
+  ) => KeyboardShortcutHandler | null;
+  /**
+   * 注册某个动作的作用域（局部）处理器。当快捷键命中且
+   * shouldIntercept() 返回 true 时，引擎调用该局部 handler
+   * 并跳过全局 handler；否则回落到全局 handler。返回注销函数。
+   */
+  registerScopedHandler: (
+    action: KeyboardShortcutAction,
+    handler: KeyboardShortcutHandler,
+    shouldIntercept: ScopedShortcutInterceptor
+  ) => () => void;
+  /** 获取某个动作的全部作用域条目（引擎用，逆序查找） */
+  getScopedHandlers: (
+    action: KeyboardShortcutAction
+  ) => ScopedShortcutHandler[];
 };
 
 const KeyboardShortcutsContext = createContext<
@@ -61,15 +93,20 @@ export const KeyboardShortcutsProvider = ({
 }: {
   children: ReactNode;
 }): React.JSX.Element => {
-  const [settings, setSettings] = useState<KeyboardShortcutsSettings>(
-    DEFAULT_SETTINGS
-  );
+  const [settings, setSettings] =
+    useState<KeyboardShortcutsSettings>(DEFAULT_SETTINGS);
   const [isLoaded, setIsLoaded] = useState(false);
 
   // 处理器注册表：action -> handler。使用 ref 持有最新值，
   // 这样 keydown 监听器读取时不会因闭包过期而调用旧 handler。
   const handlersRef = useRef<
     Map<KeyboardShortcutAction, KeyboardShortcutHandler>
+  >(new Map());
+
+  // 作用域处理器注册表：action -> 条目数组。用于焦点感知的局部接管，
+  // 例如文件查看器持有焦点时把 openSearch 接管为文内搜索。
+  const scopedHandlersRef = useRef<
+    Map<KeyboardShortcutAction, ScopedShortcutHandler[]>
   >(new Map());
 
   // 设置的 ref 镜像，keydown 监听器通过它读取最新设置，
@@ -143,12 +180,46 @@ export const KeyboardShortcutsProvider = ({
     []
   );
 
+  const registerScopedHandler = useCallback(
+    (
+      action: KeyboardShortcutAction,
+      handler: KeyboardShortcutHandler,
+      shouldIntercept: ScopedShortcutInterceptor
+    ) => {
+      const entry: ScopedShortcutHandler = { handler, shouldIntercept };
+      const list = scopedHandlersRef.current.get(action) ?? [];
+      list.push(entry);
+      scopedHandlersRef.current.set(action, list);
+      return () => {
+        const current = scopedHandlersRef.current.get(action);
+        if (!current) return;
+        const index = current.indexOf(entry);
+        if (index !== -1) {
+          current.splice(index, 1);
+        }
+        if (current.length === 0) {
+          scopedHandlersRef.current.delete(action);
+        }
+      };
+    },
+    []
+  );
+
+  const getScopedHandlers = useCallback(
+    (action: KeyboardShortcutAction): ScopedShortcutHandler[] => {
+      return scopedHandlersRef.current.get(action) ?? [];
+    },
+    []
+  );
+
   const value: KeyboardShortcutsContextValue = {
     settings,
     isLoaded,
     updateShortcutConfig,
     registerHandler,
     getHandler,
+    registerScopedHandler,
+    getScopedHandlers,
   };
 
   return (
@@ -173,10 +244,10 @@ export const useKeyboardShortcutsSettings =
  * 获取当前设置的 ref，供 keydown 监听器同步读取最新值。
  * 避免在 keydown callback 闭包中捕获过期的 settings。
  */
-export const useKeyboardShortcutsSettingsRef = ():
-  React.MutableRefObject<KeyboardShortcutsSettings> => {
-  const { settings } = useKeyboardShortcutsSettings();
-  const ref = useRef(settings);
-  ref.current = settings;
-  return ref;
-};
+export const useKeyboardShortcutsSettingsRef =
+  (): React.MutableRefObject<KeyboardShortcutsSettings> => {
+    const { settings } = useKeyboardShortcutsSettings();
+    const ref = useRef(settings);
+    ref.current = settings;
+    return ref;
+  };

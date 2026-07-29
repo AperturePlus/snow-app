@@ -1582,6 +1582,12 @@ export const en = {
   "rightPanel.fileViewerSaveError": "Failed to save file",
   "rightPanel.fileViewerDiscardConfirm":
     "You have unsaved changes. Discard them and leave edit mode?",
+  "rightPanel.fileSearchPlaceholder": "Search in file",
+  "rightPanel.fileSearchNoResult": "No results",
+  "rightPanel.fileSearchMatchCase": "Match case",
+  "rightPanel.fileSearchPrevious": "Previous match (Shift+Enter)",
+  "rightPanel.fileSearchNext": "Next match (Enter)",
+  "rightPanel.fileSearchClose": "Close search (Esc)",
   "git.noWorkspaceDirectory": "No workspace directory selected",
   "git.loadingStatus": "Loading git status...",
   "git.notARepo": "Not a git repository",
