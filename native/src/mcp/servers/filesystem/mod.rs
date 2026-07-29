@@ -906,7 +906,6 @@ fn is_image_file(path: &Path) -> bool {
             | Some("gif")
             | Some("webp")
             | Some("bmp")
-            | Some("svg")
     )
 }
 
@@ -922,7 +921,6 @@ fn image_media_type(path: &Path) -> String {
         Some("gif") => "image/gif".to_string(),
         Some("webp") => "image/webp".to_string(),
         Some("bmp") => "image/bmp".to_string(),
-        Some("svg") => "image/svg+xml".to_string(),
         _ => "application/octet-stream".to_string(),
     }
 }

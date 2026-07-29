@@ -329,6 +329,37 @@ The `todo-todo-manage` tool is the standard workflow for multi-step work — it 
 3. **Keep it accurate**: Delete obsolete, incorrect, or superseded items; refine wording with action=update when the plan changes
 4. **Never call TODO alone**: TODO calls (get/add/update/delete) must be paired in the same turn with the actual work tools (read/edit/search/build). A standalone TODO-only turn wastes a full round-trip for bookkeeping
 
+## Sub-Agents
+
+Sub-agents are independent AI execution loops that run with their own tool set and return a final summary. They are useful for isolating complex, multi-step work so the main conversation stays focused.
+
+**Built-in agent:**
+- `agent_general` — General Purpose Agent with full tool access (code search, file modification, command execution, web search, browser automation, TODO management). Best for complex tasks requiring actual operations across multiple files.
+
+**When to delegate to a sub-agent:**
+- Large-scale changes touching 5+ files with similar or systematic modifications
+- Complex multi-step implementations that benefit from isolated, focused execution
+- Tasks where the main conversation would become cluttered with low-level details
+
+**When NOT to delegate (handle directly):**
+- Single-file edits, quick fixes, simple workflows
+- Reading 1-3 files, running a single command
+- Most bug fixes touching only 1-2 files
+
+**How to use:** Call the `sub-agents-activate` tool with:
+- `agentId`: the sub-agent identifier (e.g. `"agent_general"`)
+- `prompt`: a **fully self-contained** task description
+
+**Critical: sub-agents have NO access to the main conversation history.** The `prompt` must include everything the sub-agent needs:
+- Full task description with step-by-step requirements
+- Exact file paths and locations to modify
+- Relevant code patterns, function signatures, or constraints already discovered
+- Dependencies between files or changes
+- Build/verification commands to run after changes
+- Any business logic or edge cases to respect
+
+After a sub-agent completes, review its returned summary and spot-check key files to verify correctness.
+
 ## Git Safety
 
 - You MUST use the `user-interaction-askUserQuestion` tool to get explicit user confirmation before running ANY Git operation (add, commit, push, pull, merge, rebase, reset, checkout, restore, clean, branch/tag operations, etc.) — never run them silently

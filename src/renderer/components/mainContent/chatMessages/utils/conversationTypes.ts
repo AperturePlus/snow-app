@@ -194,7 +194,6 @@ export type ConversationSessionRef = {
   runId: number;
   directoryId?: string;
   checkpointIds: string[];
-  hasAutoCompacted: boolean;
   /** Conversation ids of sub-agent sessions spawned by this conversation.
    *  Used to propagate an abort from the main flow down to every running
    *  sub-agent (and, recursively, their own sub-agents). */
@@ -301,6 +300,10 @@ export type ConversationContextValue = {
   compactionPreview: string;
   compactionError: string | null;
   isCompacting: boolean;
+  /** Conversation currently running a compaction (auto or manual). The
+   *  compaction preview/error UI is only shown for this conversation so it
+   *  does not bleed into other conversations after a switch. */
+  compactingConversationId: string | null;
 
   // Refs
   sessionsRefData: RefValue<Map<string, ConversationSessionRef>>;
@@ -319,7 +322,8 @@ export type ConversationContextValue = {
     (
       conversationId: string,
       model?: string,
-      isAuto?: boolean
+      isAuto?: boolean,
+      subAgentConfigProfile?: string
     ) => Promise<string | null>
   >;
   yoloModeRef: RefValue<boolean>;
@@ -329,7 +333,13 @@ export type ConversationContextValue = {
   pendingUserQuestionRef: RefValue<Map<string, PendingUserQuestion>>;
   pendingHookDecisionRef: RefValue<Map<string, PendingHookDecision>>;
   userQuestionTargetRef: RefValue<Map<string, UserQuestionTarget>>;
-  activeApiConfigRef: RefValue<ApiConfigRecord | null>;
+  /** Fetches an API config fresh from storage. Called at each auto-compaction
+   *  decision point so user edits to the config (e.g. the auto-compress
+   *  threshold) take effect immediately without a restart. When `profileName`
+   *  is given, the matching profile is returned (falling back to the active
+   *  config); otherwise the active config is returned. Sub-agents pass their
+   *  configured profile so the threshold matches their real context window. */
+  getActiveApiConfig: (profileName?: string) => Promise<ApiConfigRecord | null>;
   /** Per-session pause controllers. Each entry controls whether the agent
    *  loop for that session should block before its next iteration. */
   pauseControllerRef: RefValue<Map<string, PauseController>>;
@@ -359,6 +369,7 @@ export type ConversationContextValue = {
   setCompactionPreview: Dispatch<SetStateAction<string>>;
   setCompactionError: Dispatch<SetStateAction<string | null>>;
   setIsCompacting: Dispatch<SetStateAction<boolean>>;
+  setCompactingConversationId: Dispatch<SetStateAction<string | null>>;
 
   // Basic session callbacks
   setActiveId: (id: string | undefined) => void;
@@ -424,6 +435,7 @@ export type UseChatConversationResult = {
   compactionPreview: string;
   compactionError: string | null;
   isCompacting: boolean;
+  compactingConversationId: string | null;
   handleSelectConversation: (
     conversationId: string,
     title?: string,

@@ -268,6 +268,89 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
           );
         }
 
+        // Auto-compaction for sub-agents: mirrors the main agent loop. When the
+        // sub-agent's effective API config has enableAutoCompress=true and the
+        // total token usage crosses the configured threshold, finalize the
+        // assistant message, compact the sub-conversation, and continue the
+        // sub-agent loop from the compacted context. The threshold is read from
+        // the sub-agent's configured profile (falling back to the active config)
+        // so it matches the sub-agent's real context window, and is fetched
+        // fresh on every check so user edits apply without a restart.
+        if (subResponse.tokenUsage && subResponse.status !== "error") {
+          const subApiConfig = await ctx.getActiveApiConfig(
+            subAgentConfigProfile || undefined
+          );
+          if (subApiConfig?.enableAutoCompress) {
+            // autoCompressThreshold is stored in TOKENS — compare directly (see
+            // the main loop check for why calculateAutoCompressThresholdTokens
+            // is intentionally not used here).
+            const subThresholdTokens = subApiConfig.autoCompressThreshold;
+            if (subThresholdTokens != null && subThresholdTokens > 0) {
+              const subTotalTokens =
+                subResponse.tokenUsage.inputTokens +
+                subResponse.tokenUsage.outputTokens;
+              if (subTotalTokens >= subThresholdTokens) {
+                // Finalize the assistant message that crossed the threshold so
+                // it does not linger in "sending" state. Any tool calls it
+                // emitted are abandoned by the handoff; the Rust compaction
+                // boundary plus ensure_tool_pairing keep the post-compaction
+                // context free of orphan tool entries.
+                ctx.updateSessionMessages(subConvId, (currentMessages) =>
+                  currentMessages.map((currentMessage) =>
+                    currentMessage.id === subAssistantMessageId
+                      ? {
+                          ...currentMessage,
+                          content:
+                            subResponse.content || currentMessage.content || "",
+                          thinking:
+                            subResponse.thinking ||
+                            currentMessage.thinking ||
+                            undefined,
+                          timestamp: formatMessageTime(),
+                          status: "sent",
+                          responseId: subResponse.id || undefined,
+                          model: subResponse.model || undefined,
+                          isRetrying: false,
+                        }
+                      : currentMessage
+                  )
+                );
+
+                const subCompactionSummary =
+                  await ctx.performCompactionRef.current(
+                    subConvId,
+                    subResponse.model || undefined,
+                    true,
+                    subAgentConfigProfile || undefined
+                  );
+
+                if (subCompactionSummary) {
+                  if (isSubCancelled()) {
+                    return "Sub-agent interrupted by user";
+                  }
+
+                  // performCompaction's finally resets isSending=false, but the
+                  // sub-agent loop is still mid-send. Restore it so abort keeps
+                  // working and the session stays locked until the loop ends.
+                  const subRefAfterCompaction =
+                    ctx.sessionsRefData.current.get(subConvId);
+                  if (subRefAfterCompaction) {
+                    subRefAfterCompaction.isSending = true;
+                    subRefAfterCompaction.isAbortRequested = false;
+                  }
+
+                  // Continue the sub-agent loop from the compacted context. The
+                  // Rust backend rebuilds context from the compaction boundary
+                  // stored in the database for this sub-conversation.
+                  return subAgentRunLoop([
+                    { role: "user", content: subCompactionSummary },
+                  ]);
+                }
+              }
+            }
+          }
+        }
+
         const subToolCalls = parseToolCalls(subResponse.toolCallsJson);
 
         if (subToolCalls.length === 0) {

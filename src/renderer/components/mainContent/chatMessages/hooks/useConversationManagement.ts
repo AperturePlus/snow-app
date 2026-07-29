@@ -139,7 +139,6 @@ export const useConversationManagement = (
           runId: 0,
           directoryId: conversationDirId,
           checkpointIds,
-          hasAutoCompacted: false,
           childSubAgentIds: new Set(),
         });
         ctx.setSessions((prev) => ({

@@ -10,6 +10,7 @@ use crate::api::responses::{
     create_response_stream_with_context, ResponsesApiRequest, ResponsesApiResult,
     ResponsesApiStreamCallback,
 };
+use crate::storage::services::app_logs::{insert_app_log, AppLogInput};
 use crate::storage::services::chat_conversations::{store_failed_chat_exchange, ChatContextMessage};
 use crate::storage::services::usage_records::{record_usage, UsageRecordInput};
 
@@ -38,7 +39,12 @@ pub async fn create_response_stream(
         .map(str::to_owned);
 
     let context = tokio::task::spawn_blocking(move || {
-        if is_sub_agent {
+        // A sub-agent request (non-empty sub_agent_tools_json) always resolves
+        // its configured profile. A context-compaction request carries no tools
+        // but may still target a sub-agent profile, so honour an explicit
+        // profile here too — otherwise the handoff would wrongly fall back to
+        // the active config instead of the sub-agent's own API configuration.
+        if is_sub_agent || sub_agent_config_profile.is_some() {
             get_api_request_context_for_profile(sub_agent_config_profile.as_deref())
         } else {
             get_active_api_request_context()
@@ -194,6 +200,39 @@ pub async fn create_response_stream(
         }
         Err(error) => {
             if failure_context_compaction {
+                // Context compaction failures are surfaced to the renderer
+                // as a raw Err (no persisted error exchange). Log the full
+                // request metadata here so the app_logs table captures enough
+                // detail to diagnose provider/model/config issues without
+                // needing to reproduce the failure.
+                let compaction_error = error.to_string();
+                let compaction_db = failure_database_path.clone();
+                let compaction_context = serde_json::json!({
+                    "conversation_id": failure_conversation_id,
+                    "model": failure_model,
+                    "directory_id": failure_directory_id,
+                    "request_method": usage_request_method,
+                    "api_profile": usage_api_profile_name,
+                })
+                .to_string();
+                tokio::task::spawn_blocking(move || {
+                    let _ = insert_app_log(
+                        &compaction_db,
+                        &AppLogInput {
+                            level: "ERROR".to_string(),
+                            module: "api".to_string(),
+                            func: "create_response_stream".to_string(),
+                            line: None,
+                            message: "Context compaction request failed".to_string(),
+                            input: None,
+                            output: None,
+                            duration: None,
+                            context: Some(compaction_context),
+                            error: Some(compaction_error),
+                            source: "main".to_string(),
+                        },
+                    );
+                });
                 return Err(error);
             }
             let error_message = error.to_string();

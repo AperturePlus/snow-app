@@ -322,13 +322,22 @@ pub(super) async fn collect_streaming_response(
                     }
                     // Track newly added function_call output items so we can
                     // reconstruct them (name + call_id) if the stream ends
-                    // before `output_item.done`.
                     "response.output_item.added" => {
                         if let Some(item) = event.get("item") {
                             let item_type = item
                                 .get("type")
                                 .and_then(Value::as_str)
                                 .unwrap_or_default();
+
+                            // Capture reasoning items (with encrypted_content)
+                            // as early as possible. If the stream is
+                            // interrupted after `added` but before
+                            // `output_item.done`, we still retain the
+                            // reasoning item for round-tripping.
+                            if item_type == "reasoning" {
+                                reasoning_items.push(item.clone());
+                            }
+
                             if matches!(
                                 item_type,
                                 "function_call" | "tool_call" | "custom_tool_call" | "mcp_call"
@@ -348,14 +357,30 @@ pub(super) async fn collect_streaming_response(
                     }
                     "response.output_item.done" => {
                         // Capture reasoning items (with encrypted_content)
-                        // for round-tripping when store:false.
+                        // for round-tripping when store:false. Also handles
+                        // the case where `added` already captured it — we
+                        // replace with the final/done version which may
+                        // contain the complete summary.
                         if let Some(item) = event.get("item") {
                             let item_type = item
                                 .get("type")
                                 .and_then(Value::as_str)
                                 .unwrap_or_default();
                             if item_type == "reasoning" {
-                                reasoning_items.push(item.clone());
+                                // Replace any prior entry from `added` with
+                                // the finalised `done` version, or push if
+                                // not already tracked.
+                                if let Some(pos) = reasoning_items
+                                    .iter()
+                                    .position(|existing| {
+                                        existing.get("id").and_then(Value::as_str)
+                                            == item.get("id").and_then(Value::as_str)
+                                    })
+                                {
+                                    reasoning_items[pos] = item.clone();
+                                } else {
+                                    reasoning_items.push(item.clone());
+                                }
                             }
                         }
                         collect_tool_calls(event.get("item"), &mut tool_calls);
@@ -478,14 +503,16 @@ pub(super) async fn collect_streaming_response(
     // happens when a relay returns HTTP 200 with a JSON error body (e.g.
     // quota exhausted) instead of a proper SSE stream. The async_openai
     // library may surface this as an empty stream rather than an error.
+    //
+    // The ONLY reliable signal is raw_events being empty — if we received
+    // any SSE event at all (even a bare `response.output_item.added` with
+    // a reasoning item and no text content), the stream is valid and must
+    // NOT be treated as an error. Checking content/thinking/tool_calls for
+    // emptiness causes false positives on reasoning-only responses.
     // Responses API has no mid-stream reconnect loop, so we return the
     // error directly — it propagates to the JS agent loop for retry.
     if !stream_completed_normally
         && response_status != "cancelled"
-        && content.is_empty()
-        && thinking.is_empty()
-        && tool_calls_json == "[]"
-        && reasoning_items_json == "[]"
         && raw_events.is_empty()
     {
         return Err(non_sse_response_error("stream ended with zero events"));

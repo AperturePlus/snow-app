@@ -176,7 +176,13 @@ export function ApiModelCombobox({
                         isSelected ? "selected" : ""
                       } ${isHighlighted ? "highlighted" : ""}`}
                       onMouseEnter={() => setHighlightedIndex(index)}
-                      onClick={() => handleSelectModel(model.id)}
+                      onClick={(event) => {
+                        // Prevent the wrapping <label> from forwarding the
+                        // click to the input (which would re-open the menu
+                        // via onFocus/onClick after the option is unmounted).
+                        event.preventDefault();
+                        handleSelectModel(model.id);
+                      }}
                       role="option"
                       aria-selected={isSelected}
                       title={model.id}

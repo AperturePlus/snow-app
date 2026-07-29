@@ -190,9 +190,10 @@ export const parseContentSegments = (content: string): ContentSegment[] => {
       // 图片统一显示为 image.<ext>，避免磁盘存储路径里冗长的文件名
       // （带 hash/时间戳）污染 chip 标签。扩展名从 data URL 或路径推断。
       const ext = (() => {
-        const mimeMatch = value.match(/^data:image\/([a-z]+);/);
+        const mimeMatch = value.match(/^data:image\/([a-z0-9+.-]+);/);
         if (mimeMatch) {
-          return mimeMatch[1];
+          // "svg+xml" -> "svg"
+          return mimeMatch[1].split("+")[0];
         }
         const pathExtMatch = value.match(/\.([a-zA-Z0-9]+)(?:[?#]|$)/);
         return pathExtMatch ? pathExtMatch[1].toLowerCase() : "png";
@@ -213,9 +214,7 @@ export const parseContentSegments = (content: string): ContentSegment[] => {
       let path = value;
       let lines: number[] | undefined;
       if (!isDirectory) {
-        const linesMatch = value.match(
-          /:L\d+(?:-L\d+)?(?:,L\d+(?:-L\d+)?)*$/
-        );
+        const linesMatch = value.match(/:L\d+(?:-L\d+)?(?:,L\d+(?:-L\d+)?)*$/);
         if (linesMatch) {
           lines = parseLinesStr(linesMatch[0].slice(1));
           path = value.slice(0, linesMatch.index);
@@ -253,7 +252,9 @@ export const createChipHtml = (tag: FileTag): string => {
     !tag.isDirectory && tag.lines && tag.lines.length > 0
       ? formatLinesStr(tag.lines)
       : "";
-  const linesAttr = linesStr ? ` data-file-lines="${escapeHtml(linesStr)}"` : "";
+  const linesAttr = linesStr
+    ? ` data-file-lines="${escapeHtml(linesStr)}"`
+    : "";
   const displayName = linesStr ? `${tag.name}:${linesStr}` : tag.name;
   const chipTitle = linesStr ? `${tag.path}:${linesStr}` : tag.path;
   return `<span class="file-chip" contenteditable="false" data-file-tag="true" data-file-path="${escapeHtml(
@@ -307,7 +308,9 @@ export const createChangeChipHtml = (tag: ChangeTag): string => {
     tag.path.lastIndexOf("\\")
   );
   const name = lastSep === -1 ? tag.path : tag.path.slice(lastSep + 1);
-  const chipTitle = `${tag.section === "staged" ? "Staged" : "Unstaged"} ${tag.status} ${tag.path}`;
+  const chipTitle = `${tag.section === "staged" ? "Staged" : "Unstaged"} ${
+    tag.status
+  } ${tag.path}`;
   const changeData = escapeHtml(
     JSON.stringify({
       repoPath: tag.repoPath,
@@ -333,15 +336,12 @@ export const readEditableContent = (el: HTMLElement): string => {
       if (elem.dataset.fileTag === "true") {
         const linesRaw = elem.dataset.fileLines;
         const lines =
-          linesRaw && linesRaw.length > 0
-            ? parseLinesStr(linesRaw)
-            : undefined;
+          linesRaw && linesRaw.length > 0 ? parseLinesStr(linesRaw) : undefined;
         result += encodeFileTag({
           path: elem.dataset.filePath || "",
           name: elem.dataset.fileName || "",
           isDirectory: elem.dataset.fileIsDir === "true",
-          lines:
-            elem.dataset.fileIsDir === "true" ? undefined : lines,
+          lines: elem.dataset.fileIsDir === "true" ? undefined : lines,
         });
       } else if (elem.dataset.imageTag === "true") {
         result += encodeImageTag({

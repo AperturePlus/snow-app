@@ -288,6 +288,7 @@ async fn create_response_async(
         && streamed_response.content.is_empty()
         && streamed_response.thinking.is_empty()
         && streamed_response.tool_calls_json == "[]"
+        && streamed_response.reasoning_items_json == "[]"
     {
         log_api_warning(
             &database_path,

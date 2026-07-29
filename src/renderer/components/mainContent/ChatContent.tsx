@@ -62,6 +62,7 @@ const ChatContentBody = ({
     compactionPreview,
     compactionError,
     isCompacting,
+    compactingConversationId,
     yoloMode,
     isUpdatingYoloMode,
     setYoloMode,
@@ -77,6 +78,16 @@ const ChatContentBody = ({
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const hasMessages = messages.length > 0;
   const hasHistoryContent = hasMessages || isLoadingInitialHistory;
+  // Compaction state is global, but the preview/error UI must only appear in
+  // the conversation that is actually compacting — otherwise it bleeds into
+  // other conversations after a switch.
+  const isCompactionForActiveConversation =
+    activeConversationId != null &&
+    activeConversationId === compactingConversationId;
+  const isCompactingActive = isCompacting && isCompactionForActiveConversation;
+  const activeCompactionError = isCompactionForActiveConversation
+    ? compactionError
+    : null;
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeConversationIdRef = useRef(activeConversationId);
   const previousActiveConversationIdRef = useRef(activeConversationId);
@@ -88,7 +99,7 @@ const ChatContentBody = ({
   const shouldStickToBottomRef = useRef(true);
   const isInitialBottomPositioningRef = useRef(false);
   const isUserScrollIntentRef = useRef(false);
-  const previousIsCompactingRef = useRef(isCompacting);
+  const previousIsCompactingRef = useRef(isCompactingActive);
   const scrollRafIdRef = useRef(0);
   activeConversationIdRef.current = activeConversationId;
 
@@ -320,8 +331,8 @@ const ChatContentBody = ({
   // must remain visible regardless of the user's normal auto-scroll preference.
   useLayoutEffect(() => {
     const wasCompacting = previousIsCompactingRef.current;
-    previousIsCompactingRef.current = isCompacting;
-    if (wasCompacting === isCompacting) {
+    previousIsCompactingRef.current = isCompactingActive;
+    if (wasCompacting === isCompactingActive) {
       return;
     }
 
@@ -335,7 +346,7 @@ const ChatContentBody = ({
 
     scrollToBottom();
     requestAnimationFrame(scrollToBottom);
-  }, [isCompacting]);
+  }, [isCompactingActive]);
 
   const handleLoadOlderWithScroll = useCallback(async (): Promise<void> => {
     const container = scrollRef.current;
@@ -562,9 +573,9 @@ const ChatContentBody = ({
               scrollContainerRef={scrollRef}
             />
             <CompactionStream
-              isCompacting={isCompacting}
+              isCompacting={isCompactingActive}
               compactionPreview={compactionPreview}
-              compactionError={compactionError}
+              compactionError={activeCompactionError}
             />
           </>
         ) : (
@@ -614,7 +625,7 @@ const ChatContentBody = ({
           onRefreshPlanMode={refreshPlanMode}
           autoScrollEnabled={autoScrollEnabled}
           onAutoScrollChange={setAutoScrollEnabled}
-          isCompacting={isCompacting}
+          isCompacting={isCompactingActive}
         />
       </div>
 

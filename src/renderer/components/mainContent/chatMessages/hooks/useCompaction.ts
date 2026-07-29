@@ -20,7 +20,8 @@ export const useCompaction = (ctx: ConversationContextValue) => {
     async (
       conversationId: string,
       model?: string,
-      isAuto = false
+      isAuto = false,
+      subAgentConfigProfile?: string
     ): Promise<string | null> => {
       const sessionRef = ctx.sessionsRefData.current.get(conversationId);
       if (sessionRef) {
@@ -30,6 +31,15 @@ export const useCompaction = (ctx: ConversationContextValue) => {
       ctx.setCompactionPreview("");
       ctx.setCompactionError(null);
       ctx.setIsCompacting(true);
+      ctx.setCompactingConversationId(conversationId);
+      void window.snow.writeLog("INFO", {
+        module: "compaction",
+        func: "performCompaction",
+        message: isAuto
+          ? "auto-compaction started"
+          : "manual compaction started",
+        context: JSON.stringify({ conversationId, model: model ?? null }),
+      });
 
       // Create a file-system checkpoint before compaction so rolling back to
       // the compaction boundary can restore files modified by the subsequent
@@ -52,6 +62,19 @@ export const useCompaction = (ctx: ConversationContextValue) => {
           // will still truncate the conversation, just without file restore.
         }
       }
+
+      const compactionStartedAt = Date.now();
+      const compactionRequest = {
+        messages: [{ role: "user" as const, content: "context handoff" }],
+        model,
+        conversationId,
+        directoryId: sessionRef?.directoryId ?? ctx.directoryId,
+        contextCompaction: true,
+        checkpointId,
+        // For sub-agent conversations, carry the configured profile so Rust
+        // resolves the same API config the sub-agent uses for the handoff.
+        subAgentConfigProfile,
+      };
 
       try {
         // Execute beforeCompress hooks. If blocked, abort compaction
@@ -87,14 +110,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
         }
 
         const compactionStreamPromise = window.snow.createResponseStream(
-          {
-            messages: [{ role: "user", content: "context handoff" }],
-            model,
-            conversationId,
-            directoryId: sessionRef?.directoryId ?? ctx.directoryId,
-            contextCompaction: true,
-            checkpointId,
-          },
+          compactionRequest,
           (chunk) => {
             if (chunk.retrying) {
               // Reset accumulated preview so the UI reflects the fresh request
@@ -109,10 +125,19 @@ export const useCompaction = (ctx: ConversationContextValue) => {
           (streamId) => {
             if (sessionRef) {
               sessionRef.streamId = streamId;
-              sessionRef.streamPromise = compactionStreamPromise;
             }
           }
         );
+        // createResponseStream invokes the stream-id callback SYNCHRONOUSLY
+        // (before it returns the promise), so the promise must be attached to
+        // the session here rather than inside that callback — referencing
+        // compactionStreamPromise from within its own initializer throws a
+        // temporal-dead-zone "Cannot access before initialization" error, which
+        // silently failed every auto-compaction. This mirrors the main agent
+        // loop, which also assigns streamPromise only after the call returns.
+        if (sessionRef) {
+          sessionRef.streamPromise = compactionStreamPromise;
+        }
 
         const response = await compactionStreamPromise;
 
@@ -158,8 +183,43 @@ export const useCompaction = (ctx: ConversationContextValue) => {
         );
         ctx.updateSessionField(conversationId, "messageRecords", latestRecords);
 
+        void window.snow.writeLog("INFO", {
+          module: "compaction",
+          func: "performCompaction",
+          message: "compaction succeeded",
+          context: JSON.stringify({
+            conversationId,
+            isAuto,
+            contentLength: content.length,
+            inputTokens: response.tokenUsage?.inputTokens ?? null,
+            outputTokens: response.tokenUsage?.outputTokens ?? null,
+          }),
+        });
         return content;
       } catch (error) {
+        // Log failures for BOTH auto and manual compaction. Auto-compaction
+        // errors are otherwise suppressed in the UI (isAuto), which made a
+        // failed auto-compaction look like a brief "flash" with no explanation.
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        const errorStack = error instanceof Error ? error.stack : undefined;
+        void window.snow.writeLog("ERROR", {
+          module: "compaction",
+          func: "performCompaction",
+          message: isAuto
+            ? "auto-compaction failed"
+            : "manual compaction failed",
+          context: JSON.stringify({
+            conversationId,
+            isAuto,
+            durationMs: Date.now() - compactionStartedAt,
+            request: compactionRequest,
+            directoryPath: ctx.directoryPath ?? null,
+            checkpointId: checkpointId ?? null,
+            errorStack: errorStack ?? null,
+          }),
+          error: errorMessage,
+        });
         if (!isAuto) {
           ctx.setCompactionError(
             error instanceof Error ? error.message : "Failed to compact context"
@@ -184,6 +244,11 @@ export const useCompaction = (ctx: ConversationContextValue) => {
         }
         ctx.setIsCompacting(false);
         ctx.setCompactionPreview("");
+        // Only clear the marker if it still points at this conversation, so a
+        // newer compaction started in another session is not prematurely hidden.
+        ctx.setCompactingConversationId((current) =>
+          current === conversationId ? null : current
+        );
 
         // For manual compaction, flush pending messages after completion.
         // Auto-compaction runs inside runAgentLoop so the loop itself
@@ -210,6 +275,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
       ctx.setCompactionPreview,
       ctx.setCompactionError,
       ctx.setIsCompacting,
+      ctx.setCompactingConversationId,
       ctx.sessionsRefData,
       ctx.pendingQueueRef,
       ctx.setActivePendingMessages,

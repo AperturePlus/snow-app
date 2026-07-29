@@ -14,7 +14,6 @@ import {
   getErrorMessage,
   parseToolCalls,
 } from "../utils/conversationHelpers";
-import { calculateAutoCompressThresholdTokens } from "../../../sidebar/apiSettings/autoCompressThreshold";
 import {
   appendHookExecutionToMessage,
   buildHookExecRecord,
@@ -405,25 +404,48 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         if (
           response.tokenUsage &&
           response.status !== "error" &&
-          effectiveKey !== PENDING_SESSION_KEY &&
-          !ctx.sessionsRefData.current.get(effectiveKey)?.hasAutoCompacted
+          effectiveKey !== PENDING_SESSION_KEY
         ) {
-          const apiConfig = ctx.activeApiConfigRef.current;
+          const apiConfig = await ctx.getActiveApiConfig();
           if (apiConfig?.enableAutoCompress) {
-            const thresholdTokens = calculateAutoCompressThresholdTokens(
-              apiConfig.maxContextTokens,
-              apiConfig.autoCompressThreshold
-            );
+            // autoCompressThreshold is stored in TOKENS (resolved from the
+            // configured percent against maxContextTokens when the config is
+            // saved). Compare the live token total against it directly — do NOT
+            // run it through calculateAutoCompressThresholdTokens, which expects
+            // a percent and would clamp a token value to 100% of the context.
+            const thresholdTokens = apiConfig.autoCompressThreshold;
             if (thresholdTokens != null && thresholdTokens > 0) {
               const totalTokens =
                 response.tokenUsage.inputTokens +
                 response.tokenUsage.outputTokens;
               if (totalTokens >= thresholdTokens) {
-                const sessionRefForAuto =
-                  ctx.sessionsRefData.current.get(effectiveKey);
-                if (sessionRefForAuto) {
-                  sessionRefForAuto.hasAutoCompacted = true;
-                }
+                // Finalize the assistant message that crossed the threshold so
+                // it does not linger in "sending" state (the normal finalize
+                // step below is skipped when we divert into compaction). Any
+                // tool calls it emitted are abandoned by the handoff; the Rust
+                // compaction boundary plus ensure_tool_pairing keep the
+                // post-compaction context free of orphan tool entries, so the
+                // next request cannot fail with an orphan-tool 400 error.
+                ctx.updateSessionMessages(effectiveKey, (currentMessages) =>
+                  currentMessages.map((currentMessage) =>
+                    currentMessage.id === currentAssistantMessageId
+                      ? {
+                          ...currentMessage,
+                          content:
+                            response.content || currentMessage.content || "",
+                          thinking:
+                            response.thinking ||
+                            currentMessage.thinking ||
+                            undefined,
+                          timestamp: formatMessageTime(),
+                          status: "sent",
+                          responseId: response.id || undefined,
+                          model: response.model || options.model,
+                          isRetrying: false,
+                        }
+                      : currentMessage
+                  )
+                );
 
                 const compactionSummary =
                   await ctx.performCompactionRef.current(
@@ -435,6 +457,18 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 if (compactionSummary) {
                   if (isRunCancelled(effectiveKey)) {
                     return;
+                  }
+
+                  // performCompaction's finally resets isSending=false, but the
+                  // agent loop is still mid-send. Restore it so handleAbort keeps
+                  // working (it bails out when isSending is false) and the session
+                  // stays locked until the loop finishes — mirroring the pre-send
+                  // compaction path.
+                  const sessionRefAfterCompaction =
+                    ctx.sessionsRefData.current.get(effectiveKey);
+                  if (sessionRefAfterCompaction) {
+                    sessionRefAfterCompaction.isSending = true;
+                    sessionRefAfterCompaction.isAbortRequested = false;
                   }
 
                   // Start a new agent loop iteration with the compacted
@@ -461,11 +495,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                     response.conversationId
                   );
                   return;
-                }
-
-                // Compaction failed — reset the flag so it can retry later.
-                if (sessionRefForAuto) {
-                  sessionRefForAuto.hasAutoCompacted = false;
                 }
               }
             }
@@ -739,16 +768,13 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         // sent against a fresh, summarized context. This applies both to
         // direct user sends and to pending-message flushes (which re-enter
         // handleSendMessage via handleSendMessageRef).
-        if (
-          sessionKey !== PENDING_SESSION_KEY &&
-          !ctx.sessionsRefData.current.get(sessionKey)?.hasAutoCompacted
-        ) {
-          const apiConfig = ctx.activeApiConfigRef.current;
+        if (sessionKey !== PENDING_SESSION_KEY) {
+          const apiConfig = await ctx.getActiveApiConfig();
           if (apiConfig?.enableAutoCompress) {
-            const thresholdTokens = calculateAutoCompressThresholdTokens(
-              apiConfig.maxContextTokens,
-              apiConfig.autoCompressThreshold
-            );
+            // autoCompressThreshold is stored in TOKENS — compare directly (see
+            // the in-loop check for why calculateAutoCompressThresholdTokens is
+            // intentionally not used here).
+            const thresholdTokens = apiConfig.autoCompressThreshold;
             if (thresholdTokens != null && thresholdTokens > 0) {
               const currentTokenUsage =
                 ctx.sessionsRef.current?.[sessionKey]?.tokenUsage ?? null;
@@ -757,12 +783,11 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                   currentTokenUsage.inputTokens +
                   currentTokenUsage.outputTokens;
                 if (totalTokens >= thresholdTokens) {
-                  const compactionSummary =
-                    await ctx.performCompactionRef.current(
-                      sessionKey,
-                      options.model,
-                      true
-                    );
+                  await ctx.performCompactionRef.current(
+                    sessionKey,
+                    options.model,
+                    true
+                  );
 
                   // performCompaction resets sessionRef.isSending to false in
                   // its finally block, but we are still mid-send — restore it
@@ -779,13 +804,6 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                   // regardless of whether compaction succeeded.
                   if (isRunCancelled(sessionKey)) {
                     return;
-                  }
-
-                  // Mark the session as auto-compacted so the in-loop
-                  // post-response compaction check does not trigger again
-                  // for this turn.
-                  if (compactionSummary && sessionRefAfterCompaction) {
-                    sessionRefAfterCompaction.hasAutoCompacted = true;
                   }
                 }
               }
