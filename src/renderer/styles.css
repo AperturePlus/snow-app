@@ -14733,6 +14733,23 @@ input {
   color: #fff;
 }
 
+/* Danger variant is used for operation error alerts (git push/pull
+   failures). The message is raw git output: multi-line, long paths —
+   preserve line breaks, wrap long words, and cap the height. */
+.confirm-dialog-danger .confirm-dialog-body {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.confirm-dialog-danger .confirm-dialog-body p {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .tool-authorization-prompt {
   display: grid;
   gap: 10px;
@@ -16970,14 +16987,17 @@ input {
   flex-shrink: 0;
 }
 
-/* Edit mode mirrors the view mode layout: this is the single scroll container,
-   and a `.file-viewer-code` flex row inside it holds the gutter plus the editor
-   at full content height, so the line numbers scroll together with the code. */
+/* Edit mode mirrors the view mode layout: this is the single scroll container
+   (both axes — long lines produce a horizontal scrollbar here), and a
+   `.file-viewer-code` flex row inside it holds the gutter plus the editor at
+   full content height, so the line numbers scroll together with the code. The
+   gutter is `position: sticky; left: 0`, so it stays visible while the code
+   scrolls horizontally beneath it. */
 .file-viewer-edit-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: scroll;
-  overflow-x: hidden;
+  overflow-x: auto;
   background: var(--bg-primary);
 }
 
@@ -16998,8 +17018,20 @@ input {
 
 /* The library overlays a transparent <textarea> on the highlighted <pre>. They
    share the same font metrics via the wrapper, so the caret stays aligned with
-   the highlight. Keep the library's default wrapping (pre-wrap) so the
-   highlight layer and textarea scroll together vertically. */
+   the highlight. Both layers are forced to `white-space: pre` (overriding the
+   library's inline pre-wrap / break-word) so long lines never soft-wrap:
+   wrapping would desync the gutter, which renders one number per logical
+   line. Horizontal overflow is handled by `.file-viewer-edit-scroll` — the
+   editor container is sized with `min-width: max-content` (Editor `style`
+   prop) so it grows with the widest line, the outer scroll container shows
+   the horizontal scrollbar, and the sticky gutter stays pinned on the left. */
+.file-viewer-editor-wrap pre,
+.file-viewer-edit-textarea {
+  white-space: pre !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+}
+
 .file-viewer-edit-textarea {
   outline: none;
   caret-color: var(--text-primary);

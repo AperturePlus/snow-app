@@ -442,6 +442,7 @@ export function FileViewerContent({
             tabSize={2}
             insertSpaces
             spellCheck={false}
+            style={{ minWidth: "max-content" }}
           />
         </div>
       </div>

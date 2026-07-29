@@ -56,6 +56,10 @@ export const GitControl = ({
   const commitMsgStreamIdRef = useRef<string | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [discardTarget, setDiscardTarget] = useState<GitFileStatus[]>([]);
+  const [operationError, setOperationError] = useState<{
+    title: string;
+    message: string;
+  } | null>(null);
   const lastClickedPathRef = useRef<string | null>(null);
   const lastClickedSectionRef = useRef<"staged" | "unstaged" | null>(null);
   const prevStatusRef = useRef<string | null>(null);
@@ -236,7 +240,8 @@ export const GitControl = ({
         file.path.lastIndexOf("/"),
         file.path.lastIndexOf("\\")
       );
-      const fileName = lastSep === -1 ? file.path : file.path.slice(lastSep + 1);
+      const fileName =
+        lastSep === -1 ? file.path : file.path.slice(lastSep + 1);
       onOpenFile(absolutePath, fileName);
     },
     [repoPath, onOpenFile]
@@ -327,9 +332,24 @@ export const GitControl = ({
     setActionInProgress("push");
     window.snow
       .gitPush(repoPath)
-      .then(() => refresh())
+      .then((result) => {
+        if (result.success) {
+          refresh();
+        } else {
+          setOperationError({
+            title: t("git.pushFailed"),
+            message: result.message,
+          });
+        }
+      })
+      .catch((err: unknown) => {
+        setOperationError({
+          title: t("git.pushFailed"),
+          message: err instanceof Error ? err.message : String(err),
+        });
+      })
       .finally(() => setActionInProgress(null));
-  }, [repoPath, refresh]);
+  }, [repoPath, refresh, t]);
 
   const handlePull = useCallback(() => {
     if (!repoPath) {
@@ -338,9 +358,24 @@ export const GitControl = ({
     setActionInProgress("pull");
     window.snow
       .gitPull(repoPath)
-      .then(() => refresh())
+      .then((result) => {
+        if (result.success) {
+          refresh();
+        } else {
+          setOperationError({
+            title: t("git.pullFailed"),
+            message: result.message,
+          });
+        }
+      })
+      .catch((err: unknown) => {
+        setOperationError({
+          title: t("git.pullFailed"),
+          message: err instanceof Error ? err.message : String(err),
+        });
+      })
       .finally(() => setActionInProgress(null));
-  }, [repoPath, refresh]);
+  }, [repoPath, refresh, t]);
 
   const handleDiscardRequest = useCallback((files: GitFileStatus[]) => {
     if (files.length === 0) {
@@ -367,6 +402,10 @@ export const GitControl = ({
 
   const handleDiscardCancel = useCallback(() => {
     setDiscardTarget([]);
+  }, []);
+
+  const handleDismissError = useCallback(() => {
+    setOperationError(null);
   }, []);
 
   const handleGenerateCommitMessage = useCallback(() => {
@@ -624,6 +663,16 @@ export const GitControl = ({
         cancelLabel={t("git.discardCancelBtn")}
         onConfirm={handleDiscardConfirm}
         onCancel={handleDiscardCancel}
+      />
+
+      <ConfirmDialog
+        open={operationError !== null}
+        variant="danger"
+        title={operationError?.title ?? ""}
+        message={operationError?.message ?? ""}
+        confirmLabel={t("git.errorDismiss")}
+        onConfirm={handleDismissError}
+        onCancel={handleDismissError}
       />
     </div>
   );
