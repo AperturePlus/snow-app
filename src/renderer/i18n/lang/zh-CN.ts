@@ -129,7 +129,8 @@ export const zhCN = {
   "scheduledTask.name": "名称",
   "scheduledTask.namePlaceholder": "例如：每日代码审查提醒",
   "scheduledTask.prompt": "提示词",
-  "scheduledTask.promptPlaceholder": "每次执行时发送给 AI Loop 的提示词，任务拥有所有工具的使用权限。",
+  "scheduledTask.promptPlaceholder":
+    "每次执行时发送给 AI Loop 的提示词，任务拥有所有工具的使用权限。",
   "scheduledTask.taskType": "任务类型",
   "scheduledTask.typeOnce": "单次",
   "scheduledTask.typeRecurring": "循环",
@@ -149,7 +150,8 @@ export const zhCN = {
   "scheduledTask.invalidSchedule": "无效",
   "scheduledTask.taskCount": "{{count}} 个任务",
   "scheduledTask.emptyHint": "还没有定时任务，在右侧创建一个吧。",
-  "scheduledTask.executorUnavailable": "AI Loop 不可用 — 在聊天就绪前任务不会执行。",
+  "scheduledTask.executorUnavailable":
+    "AI Loop 不可用 — 在聊天就绪前任务不会执行。",
   "scheduledTask.lifetimeHint": "任务仅在应用运行期间执行，退出后清除。",
   "scheduledTask.clearAll": "全部清除",
   "scheduledTask.confirmClearAll": "确定清除所有定时任务？此操作不可撤销。",
@@ -1605,6 +1607,7 @@ export const zhCN = {
   "git.noWorkspaceDirectory": "未选择工作区目录",
   "git.loadingStatus": "加载 Git 状态中...",
   "git.notARepo": "不是 Git 仓库",
+  "git.selectRepo": "选择仓库",
   "git.pull": "拉取",
   "git.pullBehind": "拉取（落后 {{count}} 个提交）",
   "git.push": "推送",

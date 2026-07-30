@@ -129,7 +129,8 @@ export const zhTW = {
   "scheduledTask.name": "名稱",
   "scheduledTask.namePlaceholder": "例如：每日程式碼審查提醒",
   "scheduledTask.prompt": "提示詞",
-  "scheduledTask.promptPlaceholder": "每次執行時傳送給 AI Loop 的提示詞，任務擁有所有工具的使用權限。",
+  "scheduledTask.promptPlaceholder":
+    "每次執行時傳送給 AI Loop 的提示詞，任務擁有所有工具的使用權限。",
   "scheduledTask.taskType": "任務類型",
   "scheduledTask.typeOnce": "單次",
   "scheduledTask.typeRecurring": "循環",
@@ -149,7 +150,8 @@ export const zhTW = {
   "scheduledTask.invalidSchedule": "無效",
   "scheduledTask.taskCount": "{{count}} 個任務",
   "scheduledTask.emptyHint": "還沒有定時任務，在右側建立一個吧。",
-  "scheduledTask.executorUnavailable": "AI Loop 不可用 — 在聊天就緒前任務不會執行。",
+  "scheduledTask.executorUnavailable":
+    "AI Loop 不可用 — 在聊天就緒前任務不會執行。",
   "scheduledTask.lifetimeHint": "任務僅在應用執行期間執行，退出後清除。",
   "scheduledTask.clearAll": "全部清除",
   "scheduledTask.confirmClearAll": "確定清除所有定時任務？此操作不可撤銷。",
@@ -1585,6 +1587,7 @@ export const zhTW = {
   "git.noWorkspaceDirectory": "未選擇工作區目錄",
   "git.loadingStatus": "載入 Git 狀態中...",
   "git.notARepo": "不是 Git 儲存庫",
+  "git.selectRepo": "選擇儲存庫",
   "git.pull": "拉取",
   "git.pullBehind": "拉取（落後 {{count}} 個提交）",
   "git.push": "推送",

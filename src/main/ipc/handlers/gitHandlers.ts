@@ -194,6 +194,14 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       return native.getGitCommitFiles(repoPath.trim(), hash.trim());
     }
   );
+  // ===== Git repo discovery =====
+  ipcMain.handle("git:discover-repos", async (_event, rootPath: unknown) => {
+    if (typeof rootPath !== "string" || !rootPath.trim()) {
+      throw new Error("Root path is required");
+    }
+    return native.discoverGitRepos(rootPath.trim());
+  });
+
   // ===== AI commit message generation =====
   ipcMain.handle(
     "git:generate-commit-message",

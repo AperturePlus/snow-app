@@ -781,10 +781,15 @@ export type GitLogEntry = {
   refs: string;
   parents: string[];
 };
-
 export type GitCommitFile = {
   path: string;
   status: string;
+};
+
+export type GitRepoInfo = {
+  path: string;
+  name: string;
+  currentBranch: string;
 };
 
 export type DetectedTerminal = {
@@ -1138,6 +1143,7 @@ export type NativeBridge = {
     repoPath: string,
     hash: string
   ) => Promise<GitCommitFile[]>;
+  discoverGitRepos: (rootPath: string) => Promise<GitRepoInfo[]>;
   startGitWatch: (
     repoPath: string,
     onChange: (repoPath: string) => void

@@ -4,7 +4,7 @@ use crate::api::commit_message::generate_commit_message_stream;
 use crate::api::responses::{ResponsesApiResult, ResponsesApiStreamCallback};
 use crate::storage::services::git::{
     GitBranch, GitCheckoutResult, GitCommitFile, GitCommitResult, GitDiffResult,
-    GitLogEntry, GitPushPullResult, GitStageResult, GitStatusResult,
+    GitLogEntry, GitPushPullResult, GitRepoInfo, GitStageResult, GitStatusResult,
 };
 use crate::storage::services::git_watcher::{GitChangeCallback};
 
@@ -130,6 +130,23 @@ pub async fn get_git_commit_files(
     hash: String,
 ) -> napi::Result<Vec<GitCommitFile>> {
     crate::storage::services::git::get_commit_files(&repo_path, &hash)
+}
+
+/// Discover all git repositories within a directory tree.
+///
+/// Recursively scans `root_path` for subdirectories containing a `.git`
+/// entry. When a repo is found, its contents are not recursed into.
+/// Runs on the blocking thread pool because filesystem traversal and
+/// `git rev-parse` calls may be slow on large directory trees.
+#[napi]
+pub async fn discover_git_repos(root_path: String) -> napi::Result<Vec<GitRepoInfo>> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::discover_git_repos(&root_path)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to discover git repos: {join_error}"))
+    })?
 }
 
 #[napi(

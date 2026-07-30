@@ -517,6 +517,11 @@ export const loadNativeBridge = (): NativeBridge => {
       getGitCommitFiles: () => {
         throw new Error("Rust native bridge is required for git commit files");
       },
+      discoverGitRepos: () => {
+        throw new Error(
+          "Rust native bridge is required for git repo discovery"
+        );
+      },
       generateCommitMessage: () =>
         Promise.reject(
           new Error(

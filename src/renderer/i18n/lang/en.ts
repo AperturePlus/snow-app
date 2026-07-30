@@ -1693,6 +1693,7 @@ export const en = {
   "git.noWorkspaceDirectory": "No workspace directory selected",
   "git.loadingStatus": "Loading git status...",
   "git.notARepo": "Not a git repository",
+  "git.selectRepo": "Select repository",
   "git.pull": "Pull",
   "git.pullBehind": "Pull ({{count}} commits behind)",
   "git.push": "Push",
