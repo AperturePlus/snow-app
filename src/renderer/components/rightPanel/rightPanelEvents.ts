@@ -35,9 +35,15 @@ export type OpenBrowserTabPayload = {
   url: string;
 };
 
+export type FocusBrowserTabPayload = {
+  /** 需要切换到的浏览器实例 ID（browser MCP 工具返回的 instanceId） */
+  instanceId: string;
+};
+
 type RightPanelEventMap = {
   "open-file-diff-preview": (payload: OpenFileDiffPreviewPayload) => void;
   "open-browser-tab": (payload: OpenBrowserTabPayload) => void;
+  "focus-browser-tab": (payload: FocusBrowserTabPayload) => void;
   "request-expand": () => void;
 };
 
@@ -46,6 +52,7 @@ type EventKey = keyof RightPanelEventMap;
 const listeners: {
   "open-file-diff-preview"?: Set<(payload: OpenFileDiffPreviewPayload) => void>;
   "open-browser-tab"?: Set<(payload: OpenBrowserTabPayload) => void>;
+  "focus-browser-tab"?: Set<(payload: FocusBrowserTabPayload) => void>;
   "request-expand"?: Set<() => void>;
 } = {};
 

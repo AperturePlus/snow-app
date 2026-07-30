@@ -15,7 +15,7 @@ import type {
 import { useI18n } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { Modal } from "../common/Modal";
-import { McpSettingsEditor } from "./mcpSettings/McpSettingsEditor";
+import { McpSettingsEditor, McpSettingsEditorActions } from "./mcpSettings/McpSettingsEditor";
 import {
   McpSettingsList,
   type McpSettingsListItem,
@@ -989,6 +989,15 @@ export function McpSettingsPanel({
         closeDisabled={isBusy}
         size="large"
         className="mcp-settings-editor-modal"
+        footer={
+          draft && (
+            <McpSettingsEditorActions
+              isBusy={isBusy}
+              isSaving={isSaving}
+              onCancel={cancelDraft}
+            />
+          )
+        }
       >
         {draft && (
           <McpSettingsEditor

@@ -3,18 +3,26 @@ use std::process::Stdio;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
-use crate::exports::terminal::{load_terminal_shell_path, resolve_shell_and_args};
+use uuid::Uuid;
+
+use crate::exports::terminal::{
+    detect_shell_family, load_terminal_shell_path, resolve_login_path, resolve_shell_and_args,
+};
 
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 use regex::Regex;
 use serde_json::{json, Value};
-use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
 use super::super::service::McpService;
 use super::super::tools::McpTool;
+use super::remote_workspace::{
+    execute_remote_workspace_command, is_ssh_path, resolve_remote_project_workspace,
+    RemoteWorkspaceCallback,
+};
 
 pub struct BashService;
 
@@ -27,6 +35,60 @@ pub struct BashStreamChunk {
 pub type BashStreamCallback =
     ThreadsafeFunction<BashStreamChunk, Unknown<'static>, BashStreamChunk, Status, false>;
 
+/// A live interactive bash session that keeps its stdin pipe open so the
+/// user can send input after the process has started.  Sessions are stored
+/// in a global registry keyed by a UUID so the frontend can write to them
+/// via `write_interactive_stdin` without holding any Rust object across the
+/// NAPI boundary.
+struct InteractiveSession {
+    stdin: tokio::process::ChildStdin,
+}
+
+static INTERACTIVE_SESSIONS: OnceLock<tokio::sync::Mutex<HashMap<String, InteractiveSession>>> =
+    OnceLock::new();
+
+fn interactive_sessions() -> &'static tokio::sync::Mutex<HashMap<String, InteractiveSession>> {
+    INTERACTIVE_SESSIONS.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()))
+}
+
+/// Write user-supplied input to a live interactive session's stdin.
+/// The session is looked up by the UUID that was emitted as the
+/// `interactive_session` stream chunk.  After writing, the stdin pipe is
+/// **not** closed — the process may still need more input later.
+pub async fn write_interactive_stdin(
+    session_id: String,
+    input: String,
+) -> napi::Result<()> {
+    let mut sessions = interactive_sessions().lock().await;
+    let session = sessions
+        .get_mut(&session_id)
+        .ok_or_else(|| {
+            Error::new(
+                Status::GenericFailure,
+                format!(
+                    "Interactive session not found or already terminated: {session_id}"
+                ),
+            )
+        })?;
+    session
+        .stdin
+        .write_all(input.as_bytes())
+        .await
+        .map_err(|e| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to write to interactive session stdin: {e}"),
+            )
+        })?;
+    Ok(())
+}
+
+/// Remove (and drop) a finished interactive session from the registry.
+async fn remove_interactive_session(session_id: &str) {
+    let mut sessions = interactive_sessions().lock().await;
+    sessions.remove(session_id);
+}
+
 impl BashService {
     pub fn new() -> Self {
         BashService
@@ -34,9 +96,7 @@ impl BashService {
 }
 
 const SERVER_ID: &str = "bash";
-const MAX_OUTPUT_LENGTH: usize = 10000;
 const DEFAULT_TIMEOUT_MS: u64 = 30000;
-const OUTPUT_TRUNCATED_MARKER: &str = "... (output truncated)";
 const SENSITIVE_AUTHORIZATION_TTL: Duration = Duration::from_secs(60);
 
 struct SensitiveCommandAuthorization {
@@ -153,6 +213,7 @@ impl BashService {
         project_id: Option<&str>,
         sensitive_authorization_token: Option<&str>,
         on_chunk: BashStreamCallback,
+        on_remote_workspace_command: &RemoteWorkspaceCallback,
     ) -> napi::Result<Value> {
         let command = args
             .get("command")
@@ -176,6 +237,15 @@ impl BashService {
             .and_then(Value::as_u64)
             .unwrap_or(DEFAULT_TIMEOUT_MS);
         let executed_at = chrono::Local::now().to_rfc3339();
+
+        // When isInteractive is true the command expects to receive user
+        // input at runtime (password prompts, y/n confirmations, etc.).
+        // Interactive commands bypass the sensitive-command gate because the
+        // user is already expected to confirm each input manually in the UI.
+        let is_interactive = args
+            .get("isInteractive")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
 
         if is_dangerous_command(&command) {
             return Err(Error::new(
@@ -202,7 +272,16 @@ impl BashService {
         // token issued after explicit user confirmation. The token travels
         // outside the model-controlled tool arguments and is bound to this
         // exact command.
-        let sensitive_matches = check_sensitive_commands(&command, project_id).await;
+        //
+        // Interactive commands skip the sensitive-command gate entirely
+        // because the user is expected to confirm every input in the
+        // interactive terminal UI — a separate confirmation dialog would be
+        // redundant.
+        let sensitive_matches = if is_interactive {
+            Vec::new()
+        } else {
+            check_sensitive_commands(&command, project_id).await
+        };
         if !sensitive_matches.is_empty()
             && !consume_sensitive_command_authorization(
                 &command,
@@ -222,19 +301,54 @@ impl BashService {
             ));
         }
 
+        let remote_working_directory = if is_ssh_path(&working_directory) {
+            Some(working_directory.clone())
+        } else {
+            resolve_remote_project_workspace(project_id).await?
+        };
+        if let Some(remote_working_directory) = remote_working_directory {
+            let mut remote_args = args.clone();
+            remote_args["workingDirectory"] = Value::String(remote_working_directory);
+            return execute_remote_workspace_command(
+                on_remote_workspace_command,
+                "bash-terminal-execute",
+                &remote_args,
+            )
+            .await;
+        }
+
         let shell_path = load_terminal_shell_path().await?;
-        let (shell, shell_args) = resolve_shell_and_args(&shell_path, &command).await?;
+        let (shell, shell_args) =
+            resolve_shell_and_args(&shell_path, &command, Some(&working_directory)).await?;
+
+        // resolve_login_path 在 Windows 上返回注册表中的 Windows PATH（分号分隔的
+        // Windows 路径）。这对 powershell/cmd 有用，但注入给 WSL 会破坏 Linux 的 PATH
+        //（Linux 用冒号分隔）。WSL 通过 `bash -lc` 自行从 .profile 加载 Linux PATH，
+        // 因此跳过注入。
+        let login_path = if detect_shell_family(&shell) == "wsl" {
+            None
+        } else {
+            resolve_login_path().await
+        };
 
         let mut process = Command::new(&shell);
         process
             .args(&shell_args)
             .current_dir(&working_directory)
-            .stdin(Stdio::null())
+            .stdin(if is_interactive {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true)
             .env("LANG", "en_US.UTF-8")
             .env("LC_ALL", "en_US.UTF-8");
+
+        if let Some(ref path) = login_path {
+            process.env("PATH", path);
+        }
 
         #[cfg(target_os = "windows")]
         {
@@ -258,6 +372,35 @@ impl BashService {
         })?;
 
         let callback = Arc::new(on_chunk);
+
+        // For interactive sessions, take the stdin pipe and register the
+        // session so the frontend can write user input via
+        // `write_interactive_stdin`.  Emit a special stream chunk with
+        // stream="interactive_session" and data=<session_id> so the
+        // frontend knows the session ID to use.
+        let interactive_session_id = if is_interactive {
+            if let Some(stdin) = child.stdin.take() {
+                let session_id = Uuid::new_v4().to_string();
+                let mut sessions = interactive_sessions().lock().await;
+                sessions.insert(
+                    session_id.clone(),
+                    InteractiveSession { stdin },
+                );
+                drop(sessions);
+
+                emit_stream_chunk(
+                    &callback,
+                    "interactive_session",
+                    session_id.clone(),
+                );
+                Some(session_id)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let stdout_task = child.stdout.take().map(|stdout| {
             tokio::spawn(read_stream(stdout, "stdout", Arc::clone(&callback)))
         });
@@ -265,8 +408,16 @@ impl BashService {
             tokio::spawn(read_stream(stderr, "stderr", Arc::clone(&callback)))
         });
 
+        // Interactive commands use a much longer timeout because they
+        // wait for user input.  We use 24 hours as the upper bound.
+        let effective_timeout = if is_interactive {
+            Duration::from_secs(86400)
+        } else {
+            Duration::from_millis(timeout)
+        };
+
         let wait_result = match tokio::time::timeout(
-            Duration::from_millis(timeout),
+            effective_timeout,
             child.wait(),
         )
         .await
@@ -277,16 +428,15 @@ impl BashService {
                 ProcessWaitResult::Failed(error.to_string())
             }
             Err(_) => {
-                // On timeout, kill the entire process tree (not just
-                // the shell) and recover whatever output the stream
-                // tasks have collected so far.  The AI loop must
-                // receive the partial output together with a timeout
-                // notice so it can reason about the situation and
-                // continue.
                 kill_process_tree(&mut child).await;
                 ProcessWaitResult::TimedOut
             }
         };
+
+        // Clean up the interactive session after the process exits.
+        if let Some(ref session_id) = interactive_session_id {
+            remove_interactive_session(session_id).await;
+        }
 
         // After a kill the pipes may linger briefly; bound the wait
         // so we never block indefinitely.
@@ -305,7 +455,8 @@ impl BashService {
                 "stderr": stderr,
                 "exitCode": exit_code,
                 "command": command,
-                "executedAt": executed_at
+                "executedAt": executed_at,
+                "interactive": is_interactive
             })),
             ProcessWaitResult::TimedOut => Err(Error::new(
                 Status::GenericFailure,
@@ -396,7 +547,6 @@ where
     let mut output = Vec::new();
     let mut buffer = [0_u8; 4096];
     let mut pending_utf8 = Vec::new();
-    let mut was_truncated = false;
 
     loop {
         let read = match reader.read(&mut buffer).await {
@@ -404,22 +554,9 @@ where
             Ok(read) => read,
         };
 
-        let remaining = MAX_OUTPUT_LENGTH.saturating_sub(output.len());
-        let accepted = remaining.min(read);
-        if accepted > 0 {
-            output.extend_from_slice(&buffer[..accepted]);
-            pending_utf8.extend_from_slice(&buffer[..accepted]);
-            emit_complete_utf8_chunks(&on_chunk, stream, &mut pending_utf8);
-        }
-
-        if accepted < read && !was_truncated {
-            was_truncated = true;
-            emit_stream_chunk(
-                &on_chunk,
-                stream,
-                OUTPUT_TRUNCATED_MARKER.to_string(),
-            );
-        }
+        output.extend_from_slice(&buffer[..read]);
+        pending_utf8.extend_from_slice(&buffer[..read]);
+        emit_complete_utf8_chunks(&on_chunk, stream, &mut pending_utf8);
     }
 
     if !pending_utf8.is_empty() {
@@ -430,12 +567,7 @@ where
         );
     }
 
-    let mut text = String::from_utf8_lossy(&output).into_owned();
-    text = strip_ansi_codes(&text);
-    if was_truncated {
-        text.push_str(OUTPUT_TRUNCATED_MARKER);
-    }
-    text
+    strip_ansi_codes(&String::from_utf8_lossy(&output))
 }
 
 fn emit_complete_utf8_chunks(

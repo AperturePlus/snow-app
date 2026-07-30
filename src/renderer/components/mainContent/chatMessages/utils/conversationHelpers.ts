@@ -252,6 +252,16 @@ export const parseToolCalls = (
   return [];
 };
 
+/**
+ * Strips hook-appended sections ([Hook Context] and [Hook Warning]) from
+ * user message content. These sections are appended to the message before
+ * sending to the AI and persist in the database, but should not be shown
+ * to the user as part of their original message — otherwise the displayed
+ * text becomes much longer than what the user actually typed.
+ */
+const stripHookSections = (content: string): string =>
+  content.replace(/\n\n\[Hook (?:Warning|Context)\]\n[\s\S]*$/, "");
+
 export const buildConversationMessages = (
   records: ChatMessageRecord[]
 ): ChatConversationMessage[] => {
@@ -303,7 +313,10 @@ export const buildConversationMessages = (
       return {
         id: record.id,
         role: record.role === "user" ? "user" : "assistant",
-        content: record.content,
+        content:
+          record.role === "user"
+            ? stripHookSections(record.content)
+            : record.content,
         thinking: record.thinking || undefined,
         timestamp: record.createdAt,
         status: record.status === "error" ? "error" : "sent",

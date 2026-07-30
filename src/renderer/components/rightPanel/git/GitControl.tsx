@@ -22,6 +22,7 @@ type GitControlProps = {
   repoPath: string | undefined | null;
   onFileSelect: (file: GitFileStatus | null) => void;
   onStatusChange?: (status: GitStatusResult | null) => void;
+  onOpenFile?: (filePath: string, fileName: string) => void;
 };
 
 const isSelectedKey = (section: "staged" | "unstaged", path: string) =>
@@ -31,6 +32,7 @@ export const GitControl = ({
   repoPath,
   onFileSelect,
   onStatusChange,
+  onOpenFile,
 }: GitControlProps): React.JSX.Element => {
   const { t } = useI18n();
   const { status, isLoading, error, refresh } = useGitStatus(repoPath);
@@ -54,6 +56,10 @@ export const GitControl = ({
   const commitMsgStreamIdRef = useRef<string | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [discardTarget, setDiscardTarget] = useState<GitFileStatus[]>([]);
+  const [operationError, setOperationError] = useState<{
+    title: string;
+    message: string;
+  } | null>(null);
   const lastClickedPathRef = useRef<string | null>(null);
   const lastClickedSectionRef = useRef<"staged" | "unstaged" | null>(null);
   const prevStatusRef = useRef<string | null>(null);
@@ -223,6 +229,24 @@ export const GitControl = ({
     [status, onFileSelect]
   );
 
+  const handleOpenFile = useCallback(
+    (file: GitFileStatus) => {
+      if (!repoPath || !onOpenFile) {
+        return;
+      }
+      const base = repoPath.replace(/[\\/]+$/, "");
+      const absolutePath = `${base}/${file.path}`;
+      const lastSep = Math.max(
+        file.path.lastIndexOf("/"),
+        file.path.lastIndexOf("\\")
+      );
+      const fileName =
+        lastSep === -1 ? file.path : file.path.slice(lastSep + 1);
+      onOpenFile(absolutePath, fileName);
+    },
+    [repoPath, onOpenFile]
+  );
+
   const handleStageToggle = useCallback(
     (files: GitFileStatus[], section: "staged" | "unstaged") => {
       if (!repoPath || files.length === 0) {
@@ -308,9 +332,24 @@ export const GitControl = ({
     setActionInProgress("push");
     window.snow
       .gitPush(repoPath)
-      .then(() => refresh())
+      .then((result) => {
+        if (result.success) {
+          refresh();
+        } else {
+          setOperationError({
+            title: t("git.pushFailed"),
+            message: result.message,
+          });
+        }
+      })
+      .catch((err: unknown) => {
+        setOperationError({
+          title: t("git.pushFailed"),
+          message: err instanceof Error ? err.message : String(err),
+        });
+      })
       .finally(() => setActionInProgress(null));
-  }, [repoPath, refresh]);
+  }, [repoPath, refresh, t]);
 
   const handlePull = useCallback(() => {
     if (!repoPath) {
@@ -319,9 +358,24 @@ export const GitControl = ({
     setActionInProgress("pull");
     window.snow
       .gitPull(repoPath)
-      .then(() => refresh())
+      .then((result) => {
+        if (result.success) {
+          refresh();
+        } else {
+          setOperationError({
+            title: t("git.pullFailed"),
+            message: result.message,
+          });
+        }
+      })
+      .catch((err: unknown) => {
+        setOperationError({
+          title: t("git.pullFailed"),
+          message: err instanceof Error ? err.message : String(err),
+        });
+      })
       .finally(() => setActionInProgress(null));
-  }, [repoPath, refresh]);
+  }, [repoPath, refresh, t]);
 
   const handleDiscardRequest = useCallback((files: GitFileStatus[]) => {
     if (files.length === 0) {
@@ -348,6 +402,10 @@ export const GitControl = ({
 
   const handleDiscardCancel = useCallback(() => {
     setDiscardTarget([]);
+  }, []);
+
+  const handleDismissError = useCallback(() => {
+    setOperationError(null);
   }, []);
 
   const handleGenerateCommitMessage = useCallback(() => {
@@ -523,6 +581,7 @@ export const GitControl = ({
             onStageToggle={handleStageToggle}
             onStageAll={handleStageAll}
             onDiscard={handleDiscardRequest}
+            onOpenFile={handleOpenFile}
           />
 
           <GitFileList
@@ -534,6 +593,7 @@ export const GitControl = ({
             onFileSelect={handleFileSelect}
             onStageToggle={handleStageToggle}
             onUnstageAll={handleUnstageAll}
+            onOpenFile={handleOpenFile}
           />
 
           <div className="git-commit-section">
@@ -603,6 +663,16 @@ export const GitControl = ({
         cancelLabel={t("git.discardCancelBtn")}
         onConfirm={handleDiscardConfirm}
         onCancel={handleDiscardCancel}
+      />
+
+      <ConfirmDialog
+        open={operationError !== null}
+        variant="danger"
+        title={operationError?.title ?? ""}
+        message={operationError?.message ?? ""}
+        confirmLabel={t("git.errorDismiss")}
+        onConfirm={handleDismissError}
+        onCancel={handleDismissError}
       />
     </div>
   );

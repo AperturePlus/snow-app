@@ -1,5 +1,12 @@
-import { app, BrowserWindow, Menu, nativeImage, nativeTheme } from "electron";
-import { APP_ICON_PATH, isMacOS } from "./constants";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  nativeImage,
+  nativeTheme,
+} from "electron";
+import { APP_ICON_PATH, APP_USER_MODEL_ID, isMacOS } from "./constants";
 import { initializeApplicationServices } from "./applicationServices";
 import { createWindow } from "./mainWindow";
 import { registerIpcHandlers } from "../ipc/registerIpcHandlers";
@@ -14,6 +21,7 @@ import {
   registerImageProxyProtocol,
   registerImageProxySchemePrivilege,
 } from "./imageProxyProtocol";
+import { applySessionProxy } from "./sessionProxy";
 
 export const bootstrapApplication = (): void => {
   snowLog.info({
@@ -58,6 +66,11 @@ export const bootstrapApplication = (): void => {
 
   app.name = "Snow App";
 
+  // Windows 上必须设置 AppUserModelID，否则系统通知会显示默认的
+  // "electron.app.Snow App" 包名形式，且无法正确归类到本应用。
+  // 需在 app.whenReady() 之前调用，保证 Notification 初始化时已生效。
+  app.setAppUserModelId(APP_USER_MODEL_ID);
+
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
     nativeTheme.themeSource = "system";
@@ -98,6 +111,14 @@ export const bootstrapApplication = (): void => {
         error: error instanceof Error ? error.message : String(error),
       });
     });
+
+    // 启动时应用会话代理，使 net.fetch / electron-updater 走内置代理配置。
+    void applySessionProxy(native);
+
+    // 渲染进程保存代理设置后通知主进程重新应用会话代理。
+    ipcMain.handle("proxy-browser-settings:apply", () =>
+      applySessionProxy(native)
+    );
 
     // Apply persisted theme mode to nativeTheme as soon as storage is ready.
     // This keeps the Electron window chrome (and shouldUseDarkColors) in sync

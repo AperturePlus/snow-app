@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { AlertCircle, CheckCircle2, Info } from "lucide-react";
 
 type AutoDismissNoticeTone = "success" | "error" | "info";
@@ -36,10 +37,15 @@ export function AutoDismissNotice({
     return null;
   }
 
-  return (
-    <div className={`auto-dismiss-notice ${tone}`} role="status" aria-live="polite">
+  return createPortal(
+    <div
+      className={`auto-dismiss-notice ${tone}`}
+      role="status"
+      aria-live="polite"
+    >
       <span className="auto-dismiss-notice-icon">{noticeIcons[tone]}</span>
       <span className="auto-dismiss-notice-message">{message}</span>
-    </div>
+    </div>,
+    document.body
   );
 }

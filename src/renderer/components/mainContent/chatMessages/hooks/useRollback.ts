@@ -37,6 +37,14 @@ export const useRollback = (ctx: ConversationContextValue) => {
       ctx.updateSessionField(key, "isAborting", false);
       ctx.removeStreamingId(key);
 
+      // Cancel any in-flight summary generation so the
+      // update_conversation_summary write transaction is skipped before the
+      // rollback's delete/truncate runs. Without this, the summary promise may
+      // still hold a database write lock and cause "database is locked".
+      if (key !== PENDING_SESSION_KEY) {
+        void window.snow.cancelConversationSummary(key);
+      }
+
       const session = ctx.sessionsRef.current[key];
       if (!session) {
         return;
@@ -137,6 +145,10 @@ export const useRollback = (ctx: ConversationContextValue) => {
           isFirstMessage,
           isContextCompaction: targetMessage.isContextCompaction === true,
           todoItems,
+          streamPromise:
+            ctx.sessionsRefData.current.get(key)?.streamPromise ?? null,
+          summaryPromise:
+            ctx.sessionsRefData.current.get(key)?.summaryPromise ?? null,
         });
       };
 
@@ -154,7 +166,7 @@ export const useRollback = (ctx: ConversationContextValue) => {
   );
 
   const confirmRollback = useCallback(
-    (mode: RollbackMode): void => {
+    async (mode: RollbackMode): Promise<void> => {
       const preview = ctx.rollbackPreview;
       if (!preview) {
         return;
@@ -170,6 +182,23 @@ export const useRollback = (ctx: ConversationContextValue) => {
         isFirstMessage,
         isContextCompaction,
       } = preview;
+
+      // Wait for any in-flight stream AND summary generation to fully settle
+      // (including the Rust store_chat_exchange / update_conversation_summary
+      // write transactions) before issuing delete/truncate. Without this, the
+      // write transactions race and can exceed the busy_timeout, producing a
+      // "database is locked" error. The promises are captured at
+      // handleRollback time (before the agent loop clears them from the ref).
+      const pending: Promise<unknown>[] = [];
+      if (preview.streamPromise) {
+        pending.push(preview.streamPromise);
+      }
+      if (preview.summaryPromise) {
+        pending.push(preview.summaryPromise);
+      }
+      if (pending.length > 0) {
+        await Promise.allSettled(pending);
+      }
 
       ctx.updateSessionMessages(key, (currentMessages) => {
         const targetIndex = currentMessages.findIndex(

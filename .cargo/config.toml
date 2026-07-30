@@ -1,0 +1,27 @@
+# NOTE: This file must live at the repository ROOT. Cargo resolves config by
+# walking up from the current working directory, and our build scripts invoke
+# cargo from the project root -- a config under native/ would never be picked up.
+#
+# Per-platform linker strategy:
+# - Windows (msvc): rust-lld (lld-link flavor) replaces the slow MSVC link.exe.
+#   rustc injects the MSVC library search paths itself, so invoking rust-lld
+#   directly works here.
+# - Linux / macOS: left at the default linker on purpose. On Linux gnu, setting
+#   linker = "rust-lld" invokes lld directly and bypasses the cc/gcc driver,
+#   which drops the system library search paths (-lc, -lpthread, -lm, ...) and
+#   makes linking fail. A working lld setup there needs a driver
+#   (linker = "clang" + -C link-arg=-fuse-ld=lld) plus clang/lld installed.
+#   macOS lld (ld64.lld) is not production-ready, and Xcode 15+'s linker is
+#   already fast.
+
+# Windows: significantly faster linking for the large cdylib
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld"
+
+[target.aarch64-pc-windows-msvc]
+linker = "rust-lld"
+
+# Linux: newer Rust toolchains default to rust-lld which bypasses the cc driver
+# and drops system library search paths (-lc, -lpthread, ...). Force cc driver.
+[target.x86_64-unknown-linux-gnu]
+linker = "cc"

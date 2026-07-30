@@ -5,7 +5,7 @@ import { Modal } from "../common/Modal";
 import { useI18n } from "../../i18n";
 import type { ApiConfigRecord } from "../../../preload";
 import { ApiSettingsActions } from "./apiSettings/ApiSettingsActions";
-import { ApiSettingsFormPanel } from "./apiSettings/ApiSettingsFormPanel";
+import { ApiSettingsFormActions, ApiSettingsFormPanel } from "./apiSettings/ApiSettingsFormPanel";
 import { ApiSettingsSummary } from "./apiSettings/ApiSettingsSummary";
 import { ApiSettingsTable } from "./apiSettings/ApiSettingsTable";
 import {
@@ -403,6 +403,17 @@ export function ApiSettingsTreePanel({
         closeDisabled={isBusy}
         size="large"
         className="api-settings-editor-modal"
+        footer={
+          <ApiSettingsFormActions
+            isSaving={isSaving}
+            onCancel={toggleAddForm}
+            onSave={() => void handleAddSubmit()}
+            saveLabel={t("settings.saveApiConfig", {
+              defaultValue: "Save API profile",
+            })}
+            asForm
+          />
+        }
       >
         <ApiSettingsFormPanel
           data={addForm}
@@ -431,6 +442,18 @@ export function ApiSettingsTreePanel({
         closeDisabled={isBusy}
         size="large"
         className="api-settings-editor-modal"
+        footer={
+          editForm && (
+            <ApiSettingsFormActions
+              isSaving={isSaving}
+              onCancel={handleCancelEdit}
+              onSave={() => void handleSaveEdit()}
+              saveLabel={t("settings.saveApiConfig", {
+                defaultValue: "Save API profile",
+              })}
+            />
+          )
+        }
       >
         {editForm && (
           <ApiSettingsFormPanel

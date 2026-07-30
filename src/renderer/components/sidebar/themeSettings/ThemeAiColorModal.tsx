@@ -233,6 +233,45 @@ export function ThemeAiColorModal({
       onClose={handleClose}
       closeDisabled={loading}
       size="medium"
+      footer={
+        <>
+          <button
+            className="api-settings-form-btn primary"
+            onClick={handleGenerate}
+            type="button"
+            disabled={loading || !selectedProfile || !imagePath}
+          >
+            {loading ? (
+              <Loader2 size={14} strokeWidth={1.9} className="spin" />
+            ) : (
+              <Sparkles size={14} strokeWidth={1.9} />
+            )}
+            <span>
+              {loading
+                ? t("settings.themeAiColorGenerating", {
+                    defaultValue: "Generating...",
+                  })
+                : t("settings.themeAiColorGenerate", {
+                    defaultValue: "Generate",
+                  })}
+            </span>
+          </button>
+          {loading ? (
+            <button
+              className="api-settings-form-btn secondary"
+              onClick={handleCancel}
+              type="button"
+            >
+              <X size={14} strokeWidth={1.9} />
+              <span>
+                {t("settings.themeAiColorCancel", {
+                  defaultValue: "Cancel",
+                })}
+              </span>
+            </button>
+          ) : null}
+        </>
+      }
     >
       <div className="theme-ai-color-modal">
         <AutoDismissNotice
@@ -284,44 +323,6 @@ export function ThemeAiColorModal({
             />
           </div>
         ) : null}
-
-        <div className="theme-ai-color-actions">
-          <button
-            className="api-settings-form-btn primary"
-            onClick={handleGenerate}
-            type="button"
-            disabled={loading || !selectedProfile || !imagePath}
-          >
-            {loading ? (
-              <Loader2 size={14} strokeWidth={1.9} className="spin" />
-            ) : (
-              <Sparkles size={14} strokeWidth={1.9} />
-            )}
-            <span>
-              {loading
-                ? t("settings.themeAiColorGenerating", {
-                    defaultValue: "Generating...",
-                  })
-                : t("settings.themeAiColorGenerate", {
-                    defaultValue: "Generate",
-                  })}
-            </span>
-          </button>
-          {loading ? (
-            <button
-              className="api-settings-form-btn secondary"
-              onClick={handleCancel}
-              type="button"
-            >
-              <X size={14} strokeWidth={1.9} />
-              <span>
-                {t("settings.themeAiColorCancel", {
-                  defaultValue: "Cancel",
-                })}
-              </span>
-            </button>
-          ) : null}
-        </div>
       </div>
     </Modal>
   );

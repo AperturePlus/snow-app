@@ -17,6 +17,7 @@ import type {
   SshConnectParams,
 } from "../../../preload";
 import { ExplorerEntryContextMenu } from "./ExplorerEntryContextMenu";
+import type { FileTag } from "../mainContent/chatInput/fileTagUtils";
 import type { SidebarContentProps } from "./types";
 
 type TreeNode = {
@@ -118,6 +119,16 @@ export function ProjectExplorerContent({
   const [isSearching, setIsSearching] = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchSeqRef = useRef(0);
+
+  // 搜索结果行多选状态：path -> 选中的行号集合。
+  // 支持跨文件累加，拖拽时按文件聚合为多个 FileTag。
+  const [selectedLines, setSelectedLines] = useState<
+    Map<string, Set<number>>
+  >(new Map());
+  // shift 范围选择锚点：上次点击（非 shift）的文件路径与行号。
+  const lineSelectAnchorRef = useRef<{ path: string; line: number } | null>(
+    null
+  );
 
   const loadRootDirectory = useCallback(async (): Promise<void> => {
     if (!explorerDirectoryId) {
@@ -383,10 +394,6 @@ export function ProjectExplorerContent({
       event: React.MouseEvent<HTMLDivElement>,
       entry: { name: string; path: string }
     ): void => {
-      if (isSsh) {
-        return;
-      }
-
       event.preventDefault();
       setSelectedPath(entry.path);
       setEntryContextMenu({
@@ -395,7 +402,7 @@ export function ProjectExplorerContent({
         position: { x: event.clientX, y: event.clientY },
       });
     },
-    [isSsh]
+    []
   );
 
   const handleRenameEntry = useCallback(
@@ -406,7 +413,15 @@ export function ProjectExplorerContent({
 
       setError(null);
       try {
-        await window.snow.renameWorkspaceEntry(rootPath, entryPath, newName);
+        if (isSsh && sshSessionIdRef.current) {
+          await window.snow.sshRenameEntry(
+            sshSessionIdRef.current,
+            entryPath,
+            newName
+          );
+        } else {
+          await window.snow.renameWorkspaceEntry(rootPath, entryPath, newName);
+        }
         setSelectedPath(null);
         handleRefresh();
       } catch (operationError) {
@@ -420,7 +435,7 @@ export function ProjectExplorerContent({
         throw operationError;
       }
     },
-    [handleRefresh, rootPath, t]
+    [handleRefresh, isSsh, rootPath, t]
   );
 
   const handleDeleteEntry = useCallback(
@@ -431,7 +446,11 @@ export function ProjectExplorerContent({
 
       setError(null);
       try {
-        await window.snow.deleteWorkspaceEntry(rootPath, entryPath);
+        if (isSsh && sshSessionIdRef.current) {
+          await window.snow.sshDeleteEntry(sshSessionIdRef.current, entryPath);
+        } else {
+          await window.snow.deleteWorkspaceEntry(rootPath, entryPath);
+        }
         setSelectedPath(null);
         handleRefresh();
       } catch (operationError) {
@@ -445,7 +464,7 @@ export function ProjectExplorerContent({
         throw operationError;
       }
     },
-    [handleRefresh, rootPath, t]
+    [handleRefresh, isSsh, rootPath, t]
   );
 
   const handleSearchChange = useCallback((value: string): void => {
@@ -491,6 +510,8 @@ export function ProjectExplorerContent({
     setSearchQuery("");
     setSearchResults([]);
     setIsSearching(false);
+    setSelectedLines(new Map());
+    lineSelectAnchorRef.current = null;
     if (searchTimerRef.current) {
       clearTimeout(searchTimerRef.current);
     }
@@ -642,19 +663,110 @@ export function ProjectExplorerContent({
     []
   );
 
+  // 将当前选中行按文件聚合成 FileTag 列表。拖拽时统一发送。
+  const buildSelectedFileTags = useCallback((): FileTag[] => {
+    const tags: FileTag[] = [];
+    for (const [filePath, lineSet] of selectedLines) {
+      if (lineSet.size === 0) {
+        continue;
+      }
+      const result = searchResults.find((r) => r.path === filePath);
+      const name = result?.name ?? filePath.split(/[\\/]/).pop() ?? filePath;
+      const lines = Array.from(lineSet).sort((a, b) => a - b);
+      tags.push({ path: filePath, name, isDirectory: false, lines });
+    }
+    return tags;
+  }, [searchResults, selectedLines]);
+
+  // 点击文件名：清空行选择，打开文件（不带行号）。
+  const handleSearchFileNameClick = useCallback(
+    (result: FileSearchResult) => {
+      setSelectedPath(result.path);
+      setSelectedLines(new Map());
+      lineSelectAnchorRef.current = null;
+      onOpenFile?.(result.path, result.name);
+    },
+    [onOpenFile]
+  );
+
+  // 点击某行：普通点击选中该行并打开文件定位；ctrl/shift 进行多选。
+  const handleSearchLineClick = useCallback(
+    (result: FileSearchResult, line: number, event: React.MouseEvent) => {
+      event.stopPropagation();
+
+      const isCtrl = event.ctrlKey || event.metaKey;
+
+      if (isCtrl) {
+        // 切换该行选中，不打开文件。
+        setSelectedLines((prev) => {
+          const next = new Map(prev);
+          const set = new Set(next.get(result.path) ?? []);
+          if (set.has(line)) {
+            set.delete(line);
+          } else {
+            set.add(line);
+          }
+          if (set.size > 0) {
+            next.set(result.path, set);
+          } else {
+            next.delete(result.path);
+          }
+          return next;
+        });
+        lineSelectAnchorRef.current = { path: result.path, line };
+        return;
+      }
+
+      if (event.shiftKey && lineSelectAnchorRef.current) {
+        const anchor = lineSelectAnchorRef.current;
+        // 范围选择：仅同一文件内从 anchor 到当前行。
+        if (anchor.path === result.path) {
+          const from = Math.min(anchor.line, line);
+          const to = Math.max(anchor.line, line);
+          setSelectedLines((prev) => {
+            const next = new Map(prev);
+            const set = new Set(next.get(result.path) ?? []);
+            for (let l = from; l <= to; l++) {
+              set.add(l);
+            }
+            next.set(result.path, set);
+            return next;
+          });
+          return;
+        }
+      }
+
+      // 普通点击：仅选中该行并打开文件定位到该行。
+      const single = new Map<string, Set<number>>();
+      single.set(result.path, new Set([line]));
+      setSelectedLines(single);
+      lineSelectAnchorRef.current = { path: result.path, line };
+      setSelectedPath(result.path);
+      onOpenFile?.(result.path, result.name, undefined, undefined, line);
+    },
+    [onOpenFile]
+  );
+
+  // 拖拽搜索结果（从文件名区域触发）：若有选中行则发送选中行的
+  // 聚合 FileTag 列表；否则视为整个文件引用，不携带行号。
   const handleSearchResultDragStart = useCallback(
-    (event: React.DragEvent<HTMLDivElement>, result: FileSearchResult) => {
+    (event: React.DragEvent, result: FileSearchResult) => {
+      const selectedTags = buildSelectedFileTags();
+      if (selectedTags.length > 0) {
+        event.dataTransfer.setData(
+          "application/json",
+          JSON.stringify({ type: "file-tags", tags: selectedTags })
+        );
+        event.dataTransfer.effectAllowed = "copy";
+        return;
+      }
       event.dataTransfer.setData(
         "application/json",
-        JSON.stringify({
-          path: result.path,
-          name: result.name,
-          isDirectory: false,
-        })
+        JSON.stringify({ type: "file-tags", tags: [{ path: result.path, name: result.name, isDirectory: false }] })
       );
       event.dataTransfer.effectAllowed = "copy";
     },
-    []
+    [buildSelectedFileTags]
   );
 
   return (
@@ -756,48 +868,62 @@ export function ProjectExplorerContent({
                     values: { count: searchResults.length },
                   })}
                 </span>
-                {searchResults.map((result) => (
-                  <div
-                    className="explorer-search-result"
-                    key={result.path}
-                    draggable
-                    onDragStart={(event) =>
-                      handleSearchResultDragStart(event, result)
-                    }
-                    onClick={() => {
-                      setSelectedPath(result.path);
-                      onOpenFile?.(result.path, result.name);
-                    }}
-                    onContextMenu={(event) =>
-                      handleEntryContextMenu(event, result)
-                    }
-                    title={result.path}
-                  >
-                    {getFileTypeIcon(result.name, false, false, {
-                      className: "tree-icon",
-                      size: 13,
-                    })}
-                    <div className="explorer-search-result-info">
-                      <span className="explorer-search-result-name">
-                        {result.name}
-                      </span>
-                      <span className="explorer-search-result-path">
-                        {result.relativePath}
-                      </span>
-                      {result.lineMatches.map((match) => (
-                        <span
-                          className="explorer-search-result-line"
-                          key={match.line}
-                        >
-                          <span className="explorer-search-line-number">
-                            {match.line}
-                          </span>
-                          {match.text}
+                {searchResults.map((result) => {
+                  const selectedSet = selectedLines.get(result.path);
+                  return (
+                    <div
+                      className="explorer-search-result"
+                      key={result.path}
+                      draggable
+                      onDragStart={(event) =>
+                        handleSearchResultDragStart(event, result)
+                      }
+                      onClick={() => handleSearchFileNameClick(result)}
+                      onContextMenu={(event) =>
+                        handleEntryContextMenu(event, result)
+                      }
+                      title={result.path}
+                    >
+                      {getFileTypeIcon(result.name, false, false, {
+                        className: "tree-icon",
+                        size: 13,
+                      })}
+                      <div className="explorer-search-result-info">
+                        <span className="explorer-search-result-name">
+                          {result.name}
                         </span>
-                      ))}
+                        <span className="explorer-search-result-path">
+                          {result.relativePath}
+                        </span>
+                        {result.lineMatches.map((match) => {
+                          const isSelected =
+                            selectedSet?.has(match.line) ?? false;
+                          return (
+                            <span
+                              className={`explorer-search-result-line${
+                                isSelected ? " is-selected" : ""
+                              }`}
+                              key={match.line}
+                              draggable
+                              onDragStart={(event) =>
+                                handleSearchResultDragStart(event, result)
+                              }
+                              onClick={(event) =>
+                                handleSearchLineClick(result, match.line, event)
+                              }
+                              title={`${result.path}:${match.line}`}
+                            >
+                              <span className="explorer-search-line-number">
+                                {match.line}
+                              </span>
+                              {match.text}
+                            </span>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </>
             )}
           </div>
@@ -830,7 +956,12 @@ export function ProjectExplorerContent({
                       if (hasChildren) {
                         void handleToggle(node.path);
                       } else {
-                        onOpenFile?.(node.path, node.name);
+                        onOpenFile?.(
+                          node.path,
+                          node.name,
+                          isSsh,
+                          sshSessionIdRef.current
+                        );
                       }
                     }}
                     onContextMenu={(event) =>

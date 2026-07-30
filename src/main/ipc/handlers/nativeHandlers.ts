@@ -1,4 +1,4 @@
-import { ipcMain } from "electron";
+import { ipcMain, nativeTheme } from "electron";
 import { randomUUID } from "node:crypto";
 import type {
   BashStreamChunk,
@@ -22,6 +22,7 @@ import {
   resolveUserQuestion,
   USER_QUESTION_RESPONSE_CHANNEL,
 } from "../userQuestionBroker";
+import { dispatchRemoteWorkspaceCommand } from "../../ssh/remoteWorkspaceCommand";
 
 const MCP_TOOL_CHUNK_CHANNEL = "mcp:call-tool:chunk";
 
@@ -55,6 +56,13 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   ipcMain.handle("settings:set-request-logging", (_event, enabled: boolean) =>
     native.setRequestLogging(enabled)
   );
+  ipcMain.handle("settings:get-request-logging-expiry", () =>
+    native.getRequestLoggingExpiry()
+  );
+  ipcMain.handle(
+    "settings:set-request-logging-expiry",
+    (_event, expiresAtMs: number) => native.setRequestLoggingExpiry(expiresAtMs)
+  );
   ipcMain.handle("settings:get-privacy-settings", () =>
     native.getPrivacySettings()
   );
@@ -74,8 +82,27 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     if (!settings || typeof settings !== "object") {
       throw new Error("Theme settings must be an object");
     }
+    const themeSettings = settings as { mode?: unknown };
+    const mode = themeSettings.mode;
+    // 同步 nativeTheme.themeSource，使窗口 chrome 和 shouldUseDarkColors
+    // 立即跟随用户选择，而不是仅在启动时从后端读取。
+    if (mode === "light" || mode === "dark" || mode === "system") {
+      nativeTheme.themeSource = mode;
+    }
     return native.setThemeSettings(settings as never);
   });
+  ipcMain.handle("settings:get-keyboard-shortcuts", () =>
+    native.getKeyboardShortcutsSettings()
+  );
+  ipcMain.handle(
+    "settings:set-keyboard-shortcuts",
+    (_event, settings: unknown) => {
+      if (!settings || typeof settings !== "object") {
+        throw new Error("Keyboard shortcuts settings must be an object");
+      }
+      return native.setKeyboardShortcutsSettings(settings as never);
+    }
+  );
   ipcMain.handle(
     "theme:save-background-image",
     (_event, sourcePath: unknown) => {
@@ -536,6 +563,19 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     }
   );
   ipcMain.handle(
+    "mcp:write-interactive-stdin",
+    async (_event, sessionId: unknown, input: unknown) => {
+      if (typeof sessionId !== "string" || !sessionId.trim()) {
+        throw new Error("Session ID is required");
+      }
+      if (typeof input !== "string") {
+        throw new Error("Input must be a string");
+      }
+
+      await native.writeInteractiveStdin(sessionId.trim(), input);
+    }
+  );
+  ipcMain.handle(
     "mcp:call-tool",
     async (
       event,
@@ -547,7 +587,9 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       sensitiveAuthorizationToken: unknown,
       streamId: unknown,
       interactionId: unknown,
-      subAgentAllowedTools: unknown
+      subAgentAllowedTools: unknown,
+      planMode: unknown,
+      planApproved: unknown
     ) => {
       if (typeof toolFullName !== "string" || !toolFullName.trim()) {
         throw new Error("Tool full name is required");
@@ -589,6 +631,12 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       if (typeof interactionId !== "string" || !interactionId.trim()) {
         throw new Error("Tool interaction ID is required");
       }
+      if (planMode !== undefined && typeof planMode !== "boolean") {
+        throw new Error("Plan Mode state must be a boolean");
+      }
+      if (planApproved !== undefined && typeof planApproved !== "boolean") {
+        throw new Error("Plan approval state must be a boolean");
+      }
 
       const normalizedStreamId = streamId.trim();
       const normalizedInteractionId = interactionId.trim();
@@ -620,7 +668,10 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
           dispatchBrowserCommand(event.sender, command),
         (question: UserQuestionCommand) =>
           dispatchUserQuestion(event.sender, question, normalizedInteractionId),
-        normalizedSubAgentAllowedTools
+        (command) => dispatchRemoteWorkspaceCommand(command),
+        normalizedSubAgentAllowedTools,
+        planMode as boolean | undefined,
+        planApproved as boolean | undefined
       );
     }
   );

@@ -121,6 +121,16 @@ pub fn is_retriable_error(error: &Error) -> bool {
         return true;
     }
 
+    // Non-SSE response body — the server returned HTTP 200 but the body is
+    // not a valid SSE stream (e.g. a JSON error envelope from a relay).
+    // This is surfaced by `non_sse_response_error` when the stream ends
+    // with accumulated bytes that produced no SSE events. Relays that wrap
+    // upstream errors this way are retried so transient relay failures can
+    // recover once the relay's quota/rate window resets.
+    if message.contains("non-sse response") {
+        return true;
+    }
+
     false
 }
 
@@ -157,6 +167,19 @@ pub async fn wait_before_retry(
 /// phrased so `is_retriable_error` recognises it as a retriable condition.
 pub fn stream_idle_timeout_error() -> Error {
     Error::from_reason("Stream idle timeout: no data received within the configured period")
+}
+
+/// Build the error used when the HTTP response has a 2xx status code but the
+/// body is **not** a valid SSE stream — e.g. a relay that returns a JSON error
+/// envelope (such as a quota-exhausted message) with HTTP 200 instead of a
+/// proper SSE event stream.
+///
+/// The message includes the raw body so the caller can see the actual error,
+/// and is phrased so `is_retriable_error` recognises it as a retriable
+/// condition via the "non-sse response" marker.
+pub fn non_sse_response_error(body: &str) -> Error {
+    let truncated = if body.len() > 1000 { &body[..1000] } else { body };
+    Error::from_reason(format!("Non-SSE response: stream ended without any SSE events (body: {truncated})"))
 }
 
 /// Wrap an async function with retry logic.

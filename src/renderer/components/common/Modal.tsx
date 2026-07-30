@@ -15,6 +15,7 @@ type ModalProps = {
   closeLabel: string;
   onClose: () => void;
   children: ReactNode;
+  footer?: ReactNode;
   size?: "medium" | "large";
   closeDisabled?: boolean;
   className?: string;
@@ -36,6 +37,7 @@ export function Modal({
   closeLabel,
   onClose,
   children,
+  footer,
   size = "medium",
   closeDisabled = false,
   className = "",
@@ -121,6 +123,7 @@ export function Modal({
           </button>
         </div>
         <div className="app-modal-body">{children}</div>
+        {footer && <div className="app-modal-footer">{footer}</div>}
       </div>
     </div>,
     document.body

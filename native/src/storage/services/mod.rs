@@ -29,3 +29,4 @@ pub mod plan_settings;
 pub mod privacy_settings;
 pub mod request_logging_settings;
 pub mod memos;
+pub mod keyboard_shortcuts;

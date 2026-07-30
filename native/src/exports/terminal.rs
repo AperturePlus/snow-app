@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -98,7 +99,7 @@ pub(crate) fn detect_windows_terminals() -> Vec<DetectedTerminal> {
     let windows_candidates: &[(&str, &str, &str)] = &[
         ("PowerShell", "powershell.exe", "powershell"),
         ("Command Prompt", "cmd.exe", "cmd"),
-        ("WSL Bash", "wsl.exe", "posix"),
+        ("WSL Bash", "wsl.exe", "wsl"),
     ];
 
     for (name, exe, family) in windows_candidates {
@@ -265,19 +266,22 @@ pub(crate) async fn load_terminal_shell_path() -> napi::Result<String> {
 
 /// 根据 shellPath 解析实际要启动的 shell 可执行文件及参数。
 /// shellPath 为空时自动检测默认终端；检测失败时使用平台回退（cmd / sh）。
+/// `cwd` 为工作目录；WSL 等需要通过参数传递目录的 shell 会使用它构造
+/// `--cd` 参数，而 powershell/cmd/posix 仍由调用方通过 `current_dir` 设置。
 pub(crate) async fn resolve_shell_and_args(
     shell_path: &str,
     command: &str,
+    cwd: Option<&str>,
 ) -> napi::Result<(String, Vec<String>)> {
     if shell_path.is_empty() {
         if let Some(detected) = detect_default_terminal().await? {
-            return build_shell_args(&detected.path, &detected.family, command);
+            return build_shell_args(&detected.path, &detected.family, command, cwd);
         }
         return fallback_shell_args(command);
     }
 
     let family = detect_shell_family(shell_path);
-    build_shell_args(shell_path, &family, command)
+    build_shell_args(shell_path, &family, command, cwd)
 }
 
 pub(crate) fn detect_shell_family(shell_path: &str) -> String {
@@ -307,6 +311,7 @@ pub(crate) fn build_shell_args(
     shell: &str,
     family: &str,
     command: &str,
+    cwd: Option<&str>,
 ) -> napi::Result<(String, Vec<String>)> {
     match family {
         "powershell" => {
@@ -328,15 +333,22 @@ pub(crate) fn build_shell_args(
             let utf8_command = format!("chcp 65001>nul && {}", command);
             Ok((shell.to_string(), vec!["/C".to_string(), utf8_command]))
         }
-        "wsl" => Ok((
-            shell.to_string(),
-            vec![
-                "-e".to_string(),
-                "bash".to_string(),
-                "-c".to_string(),
-                command.to_string(),
-            ],
-        )),
+        "wsl" => {
+            // WSL 不会继承 Windows 进程的 cwd 作为 Linux 工作目录，必须通过
+            // `--cd` 显式传递（wsl.exe 接受 Windows 路径并自动转换为 /mnt/...）。
+            // 使用 `bash -lc` 以登录 shell 方式运行命令，确保 .profile 中设置的
+            // PATH（如 nvm 管理的 node）被正确加载。
+            let mut args: Vec<String> = Vec::new();
+            if let Some(dir) = cwd.map(str::trim).filter(|d| !d.is_empty()) {
+                args.push("--cd".to_string());
+                args.push(dir.to_string());
+            }
+            args.push("-e".to_string());
+            args.push("bash".to_string());
+            args.push("-lc".to_string());
+            args.push(command.to_string());
+            Ok((shell.to_string(), args))
+        }
         _ => Ok((
             shell.to_string(),
             vec!["-c".to_string(), command.to_string()],
@@ -350,5 +362,169 @@ pub(crate) fn fallback_shell_args(command: &str) -> napi::Result<(String, Vec<St
         Ok(("cmd".to_string(), vec!["/C".to_string(), utf8_command]))
     } else {
         Ok(("sh".to_string(), vec!["-c".to_string(), command.to_string()]))
+    }
+}
+
+// ============================================================================
+// PATH 解析（修复 macOS GUI 应用 PATH 缺失问题）
+// ============================================================================
+
+/// 缓存登录 shell 解析出的 PATH，避免每次执行命令都 fork 一个 shell。
+/// Electron 应用进程生命周期内 PATH 变化极少，缓存是安全的。
+static LOGIN_PATH_CACHE: OnceLock<String> = OnceLock::new();
+
+/// 展开 Windows 路径中的 `%VAR%` 环境变量引用（如 `%SystemRoot%`）。
+/// 仅展开已知变量，未知引用保持原样。
+#[cfg(target_os = "windows")]
+fn expand_env_vars(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '%' {
+            // 收集 % 之间的变量名
+            let mut var_name = String::new();
+            let mut found_close = false;
+            while let Some(&next) = chars.peek() {
+                if next == '%' {
+                    chars.next();
+                    found_close = true;
+                    break;
+                }
+                var_name.push(next);
+                chars.next();
+            }
+            if found_close && !var_name.is_empty() {
+                // 查找环境变量（大小写不敏感查找）
+                let val = std::env::vars().find(|(k, _)| k.eq_ignore_ascii_case(&var_name));
+                if let Some((_, v)) = val {
+                    result.push_str(&v);
+                } else {
+                    // 未知变量，保留原样
+                    result.push('%');
+                    result.push_str(&var_name);
+                    result.push('%');
+                }
+            } else {
+                // 没有闭合 % 或空变量名，保留原始 %
+                result.push('%');
+                result.push_str(&var_name);
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+    result
+}
+
+/// 从 Windows 注册表读取 User PATH 和 System PATH 并合并。
+/// 注册表是 Windows PATH 的权威来源，比进程继承的 PATH 更可靠。
+/// Electron GUI 应用有时会继承到不完整的 PATH（如从 explorer.exe 启动），
+/// 读取注册表可以确保拿到完整的系统 PATH。
+#[cfg(target_os = "windows")]
+fn read_registry_path() -> Option<String> {
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+
+    // System PATH
+    let system_path: Option<String> = hklm
+        .open_subkey_with_flags(
+            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+            KEY_READ,
+        )
+        .ok()
+        .and_then(|key| key.get_value("Path").ok());
+
+    // User PATH
+    let user_path: Option<String> = hkcu
+        .open_subkey_with_flags(r"Environment", KEY_READ)
+        .ok()
+        .and_then(|key| key.get_value("Path").ok());
+
+    let system_path = system_path.map(|p| expand_env_vars(&p)).unwrap_or_default();
+    let user_path = user_path.map(|p| expand_env_vars(&p)).unwrap_or_default();
+
+    // 合并：System PATH 在前，User PATH 在后（与 Windows 默认行为一致）
+    let combined = match (system_path.is_empty(), user_path.is_empty()) {
+        (true, true) => return None,
+        (true, false) => user_path,
+        (false, true) => system_path,
+        (false, false) => format!("{};{}", system_path, user_path),
+    };
+
+    if combined.trim().is_empty() {
+        None
+    } else {
+        Some(combined)
+    }
+}
+
+pub(crate) async fn resolve_login_path() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(cached) = LOGIN_PATH_CACHE.get() {
+            if !cached.is_empty() {
+                return Some(cached.clone());
+            }
+        }
+
+        // 注册表读取是同步 I/O，用 spawn_blocking 避免阻塞 tokio 运行时
+        let path = tokio::task::spawn_blocking(|| read_registry_path())
+            .await
+            .ok()
+            .flatten();
+
+        if let Some(ref p) = path {
+            let _ = LOGIN_PATH_CACHE.set(p.clone());
+        }
+        path
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Some(cached) = LOGIN_PATH_CACHE.get() {
+            if !cached.is_empty() {
+                return Some(cached.clone());
+            }
+        }
+
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            tokio::process::Command::new(&shell)
+                .args(["-l", "-i", "-c", "echo $PATH"])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .output(),
+        )
+        .await;
+
+        let path = match result {
+            Ok(Ok(output)) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                // 交互式 shell 可能会在 .zshrc 中往 stdout 打印额外内容
+                //（如 motd、nvm 提示等），echo $PATH 不一定在第一行。
+                // 取最后一个非空行作为 PATH 值。
+                let path = stdout
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .last()
+                    .unwrap_or("")
+                    .to_string();
+                if path.is_empty() {
+                    return None;
+                }
+                path
+            }
+            _ => return None,
+        };
+
+        let _ = LOGIN_PATH_CACHE.set(path.clone());
+        Some(path)
     }
 }

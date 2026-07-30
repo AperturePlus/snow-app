@@ -174,7 +174,7 @@ pub fn analyze_file(file_path: &str, source_text: &str) -> AnalyzedFile {
                 continue;
             }
 
-            if !is_known_global(name) {
+            if !super::ambient_globals::is_ambient_global(name, file_path) {
                 diagnostics.push(DiagnosticItem {
                     severity: DiagnosticSeverity::Error.as_str().to_string(),
                     message: format!("Cannot find name '{name}'. Did you forget to import it?"),
@@ -270,30 +270,7 @@ fn reference_access_str(reference: &oxc::semantic::Reference) -> &'static str {
     }
 }
 
-fn is_known_global(name: &str) -> bool {
-    matches!(
-        name,
-        "console" | "window" | "document" | "globalThis" | "global" | "process"
-            | "Buffer" | "require" | "module" | "exports" | "__dirname" | "__filename"
-            | "setTimeout" | "setInterval" | "clearTimeout" | "clearInterval"
-            | "setImmediate" | "clearImmediate" | "queueMicrotask" | "URL" | "URLSearchParams"
-            | "fetch" | "AbortController" | "AbortSignal" | "Event" | "EventTarget"
-            | "CustomEvent" | "Error" | "TypeError" | "RangeError" | "SyntaxError"
-            | "ReferenceError" | "Promise" | "Symbol" | "BigInt" | "Math" | "JSON"
-            | "Date" | "Array" | "Object" | "String" | "Number" | "Boolean" | "RegExp"
-            | "Map" | "Set" | "WeakMap" | "WeakSet" | "Proxy" | "Reflect" | "Intl"
-            | "localStorage" | "sessionStorage" | "indexedDB" | "WebSocket"
-            | "XMLHttpRequest" | "FormData" | "Blob" | "File" | "FileReader" | "Headers"
-            | "Request" | "Response" | "ReadableStream" | "WritableStream" | "TransformStream"
-            | "crypto" | "navigator" | "location" | "history" | "screen" | "performance"
-            | "undefined" | "NaN" | "Infinity" | "parseInt" | "parseFloat" | "isNaN"
-            | "isFinite" | "encodeURI" | "decodeURI" | "encodeURIComponent"
-            | "decodeURIComponent" | "escape" | "unescape" | "eval" | "alert" | "confirm"
-            | "prompt" | "atob" | "btoa" | "structuredClone" | "DOMException"
-            | "HTMLElement" | "Node" | "Element" | "Document" | "Window" | "React" | "Vue"
-            | "napi" | "napi_derive" | "tokio" | "serde" | "serde_json" | "std" | "self"
-    )
-}
+
 
 pub fn build_file_outline(file_path: &str, source_text: &str) -> Vec<OutlineEntry> {
     let path = Path::new(file_path);

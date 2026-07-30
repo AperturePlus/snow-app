@@ -11,9 +11,9 @@ use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
 use crate::exports::terminal::{load_terminal_shell_path, resolve_shell_and_args};
+use crate::storage::services::app_logs;
 use crate::storage::services::hooks_configs;
 
-const MAX_OUTPUT_LENGTH: usize = 10_000;
 const DEFAULT_TIMEOUT_MS: u64 = 5_000;
 
 #[napi(object)]
@@ -47,6 +47,12 @@ pub struct HookExecuteResult {
     /// When a command exits with code >= 2, the hook blocks the action.
     pub blocked: Option<bool>,
     pub block_message: Option<String>,
+    /// When true, the soft-warning hook returned a decision JSON on stdout
+    /// and the caller must prompt the user to approve or reject the action.
+    pub requires_decision: Option<bool>,
+    /// The human-readable message extracted from the decision JSON's
+    /// `decision.message` field. Present only when `requires_decision` is true.
+    pub decision_message: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -125,6 +131,8 @@ pub async fn execute_hooks(database_path: &Path, input: &HookExecuteInput) -> Re
     let mut soft_signal = false;
     let mut blocked = false;
     let mut block_message: Option<String> = None;
+    let mut requires_decision = false;
+    let mut decision_message: Option<String> = None;
 
     for rule in &rules {
         if !match_rule(rule, &context) {
@@ -150,6 +158,33 @@ pub async fn execute_hooks(database_path: &Path, input: &HookExecuteInput) -> Re
 
             if is_soft {
                 soft_signal = true;
+                // Check if the stdout contains a decision JSON.  When a hook
+                // command exits with code 1 and its stdout parses as JSON with
+                // a `decision` object containing a `message` field, the caller
+                // must prompt the user to approve or reject the action.
+                if let Some(ref output) = result.output {
+                    if let Ok(parsed) = serde_json::from_str::<Value>(output) {
+                        if let Some(decision) = parsed.get("decision") {
+                            if let Some(msg) = decision.get("message").and_then(Value::as_str) {
+                                requires_decision = true;
+                                decision_message = Some(msg.to_string());
+                            }
+                        }
+                    }
+                }
+                // Write a hook warning log for exit-code-1 commands.
+                // The warning does not block the action but is recorded for diagnostics.
+                // Uses spawn_blocking internally so the async path is not blocked.
+                app_logs::log_hook_warning(
+                    database_path.to_path_buf(),
+                    hook_type.to_string(),
+                    result.command.clone().unwrap_or_default(),
+                    result.exit_code.unwrap_or(1),
+                    result.output.clone(),
+                    result.error.clone(),
+                    Some(input.context_json.clone()),
+                )
+                .await;
             }
 
             if is_hard {
@@ -179,6 +214,8 @@ pub async fn execute_hooks(database_path: &Path, input: &HookExecuteInput) -> Re
         soft_signal: if soft_signal { Some(true) } else { None },
         blocked: if blocked { Some(true) } else { None },
         block_message,
+        requires_decision: if requires_decision { Some(true) } else { None },
+        decision_message,
     })
 }
 
@@ -336,10 +373,12 @@ async fn execute_command_action(
     };
 
     // 复用终端设置：读取 system_settings.terminal_settings 的 shellPath，
-    // 按 shell family 构造启动参数（PowerShell 注入 UTF-8 编码、cmd 带 chcp 65001），
+    // 按 shell family 构造启动参数（PowerShell 注入 UTF-8 编码、cmd 带 chcp 65001，
+    // WSL 用 --cd 传递工作目录 + bash -lc 加载 Linux PATH），
     // 避免硬编码 cmd /C 导致的中文路径乱码问题。
     let shell_path = load_terminal_shell_path().await?;
-    let (shell, shell_args) = resolve_shell_and_args(&shell_path, command).await?;
+    let cwd_str = cwd.as_deref().and_then(Path::to_str);
+    let (shell, shell_args) = resolve_shell_and_args(&shell_path, command, cwd_str).await?;
 
     let mut shell_command = Command::new(&shell);
     shell_command
@@ -423,8 +462,8 @@ async fn execute_command_action(
 
     let (status, stdout_bytes, stderr_bytes) = output;
     let exit_code = status.code().unwrap_or(-1);
-    let stdout = truncate_output(&String::from_utf8_lossy(&stdout_bytes));
-    let stderr = truncate_output(&String::from_utf8_lossy(&stderr_bytes));
+    let stdout = String::from_utf8_lossy(&stdout_bytes).into_owned();
+    let stderr = String::from_utf8_lossy(&stderr_bytes).into_owned();
 
     let success = exit_code == 0;
     let additional_context = if success && !stdout.is_empty() {
@@ -479,19 +518,6 @@ fn execute_context_action(action: &HookActionDef) -> Result<HookActionResultReco
         error: None,
         additional_context,
     })
-}
-
-fn truncate_output(output: &str) -> String {
-    if output.len() <= MAX_OUTPUT_LENGTH {
-        return output.to_string();
-    }
-
-    let half = MAX_OUTPUT_LENGTH / 2;
-    format!(
-        "{}\n...(output truncated)...\n{}",
-        &output[..half],
-        &output[output.len() - half..]
-    )
 }
 
 fn extract_additional_context(output: &str) -> Option<String> {

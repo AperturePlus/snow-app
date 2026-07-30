@@ -4,7 +4,7 @@ import type { ApiConfigRecord, SubAgentConfigRecord } from "../../../preload";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { Modal } from "../common/Modal";
 import { useI18n } from "../../i18n";
-import { SubAgentEditor } from "./subAgent/SubAgentEditor";
+import { SubAgentEditor, SubAgentEditorActions } from "./subAgent/SubAgentEditor";
 import { SubAgentList } from "./subAgent/SubAgentList";
 import { SubAgentSummary } from "./subAgent/SubAgentSummary";
 import {
@@ -381,6 +381,15 @@ export function SubAgentSettingsPanel({
         closeDisabled={isBusy}
         size="large"
         className="sub-agent-editor-modal"
+        footer={
+          draft && (
+            <SubAgentEditorActions
+              isBusy={isBusy}
+              isSaving={isSaving}
+              onCancel={cancelDraft}
+            />
+          )
+        }
       >
         {draft && (
           <SubAgentEditor

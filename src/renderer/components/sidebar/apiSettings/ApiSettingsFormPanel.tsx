@@ -25,53 +25,73 @@ export function ApiSettingsFormPanel({
   asForm = false,
 }: ApiSettingsFormPanelProps): React.JSX.Element {
   const { t } = useI18n();
-  const content = (
-    <>
-      <ApiSettingsFormFields
-        data={data}
-        onChange={onChange}
-        disabled={isSaving}
-        isNew={isNew}
-      />
-      <div className="api-settings-form-actions">
-        <button
-          className="api-settings-form-btn secondary"
-          onClick={onCancel}
-          type="button"
-          disabled={isSaving}
-        >
-          <X size={15} strokeWidth={1.9} />
-          <span>{t("settings.cancel", { defaultValue: "Cancel" })}</span>
-        </button>
-        <button
-          className="api-settings-form-btn primary"
-          onClick={asForm ? undefined : onSave}
-          type={asForm ? "submit" : "button"}
-          disabled={isSaving}
-        >
-          {isSaving ? (
-            <Loader2 size={15} className="spin" />
-          ) : (
-            <Save size={15} strokeWidth={1.9} />
-          )}
-          <span>{saveLabel}</span>
-        </button>
-      </div>
-    </>
+  const fields = (
+    <ApiSettingsFormFields
+      data={data}
+      onChange={onChange}
+      disabled={isSaving}
+      isNew={isNew}
+    />
   );
 
   if (asForm) {
     return (
       <form
+        id="api-settings-form"
         onSubmit={(event) => {
           event.preventDefault();
           onSave();
         }}
       >
-        {content}
+        {fields}
       </form>
     );
   }
 
-  return content;
+  return fields;
+}
+
+type ApiSettingsFormActionsProps = {
+  isSaving: boolean;
+  onCancel: () => void;
+  onSave: () => void;
+  saveLabel: string;
+  asForm?: boolean;
+};
+
+export function ApiSettingsFormActions({
+  isSaving,
+  onCancel,
+  onSave,
+  saveLabel,
+  asForm = false,
+}: ApiSettingsFormActionsProps): React.JSX.Element {
+  const { t } = useI18n();
+  return (
+    <>
+      <button
+        className="api-settings-form-btn secondary"
+        onClick={onCancel}
+        type="button"
+        disabled={isSaving}
+      >
+        <X size={15} strokeWidth={1.9} />
+        <span>{t("settings.cancel", { defaultValue: "Cancel" })}</span>
+      </button>
+      <button
+        className="api-settings-form-btn primary"
+        onClick={asForm ? undefined : onSave}
+        type={asForm ? "submit" : "button"}
+        form={asForm ? "api-settings-form" : undefined}
+        disabled={isSaving}
+      >
+        {isSaving ? (
+          <Loader2 size={15} className="spin" />
+        ) : (
+          <Save size={15} strokeWidth={1.9} />
+        )}
+        <span>{saveLabel}</span>
+      </button>
+    </>
+  );
 }

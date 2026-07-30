@@ -18,6 +18,7 @@
 
 #![allow(dead_code)]
 
+mod ambient_globals;
 mod analyzer;
 mod semantic_analyzer;
 mod symbol_index;

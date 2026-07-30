@@ -1,0 +1,211 @@
+import type { ResponsesApiStreamChunk } from "../../../../../preload/types/api";
+import type {
+  ConversationContextValue,
+  HookExecutionRecord,
+} from "../utils/conversationTypes";
+import { formatMessageTime } from "../utils/conversationHelpers";
+import { appendHookExecutionToMessage } from "./hookOutcome";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+export const PLAN_APPROVAL_TOOL_NAME = "plan-mode-requestApproval";
+export const PARENT_PLAN_APPROVAL_REQUIRED = "PARENT_PLAN_APPROVAL_REQUIRED";
+
+// ---------------------------------------------------------------------------
+// Pure helpers
+// ---------------------------------------------------------------------------
+
+export const isStructuredPlanApproval = (
+  toolName: string,
+  result: string
+): boolean => {
+  if (toolName !== PLAN_APPROVAL_TOOL_NAME) {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    return parsed.approved === true;
+  } catch {
+    return false;
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Factory: isRunCancelled
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns a predicate that detects whether the current run has been
+ * superseded -- either by an explicit abort (isAbortRequested), by a newer
+ * send/abort that incremented runId, or because the session ref was deleted.
+ */
+export const createIsRunCancelled = (
+  ctx: ConversationContextValue,
+  currentRunId: number
+) => {
+  return (key: string): boolean => {
+    const r = ctx.sessionsRefData.current.get(key);
+    return !r || r.isAbortRequested || r.runId !== currentRunId;
+  };
+};
+
+// ---------------------------------------------------------------------------
+// Factory: awaitHookDecision
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates a function that pauses the agent loop until the user resolves a
+ * hook decision gate (approve / reject). The decision record is written into
+ * the target assistant message and the runtime resolver is registered in
+ * ctx.pendingHookDecisionRef so handleAbort can settle it externally.
+ */
+export const createAwaitHookDecision = (ctx: ConversationContextValue) => {
+  return async (
+    key: string,
+    messageId: string,
+    record: HookExecutionRecord
+  ): Promise<boolean> => {
+    const decisionId = `${messageId}-${
+      record.hookType
+    }-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const approved = await new Promise<boolean>((resolve) => {
+      let settled = false;
+      const settle = (decision: boolean): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        ctx.pendingHookDecisionRef.current.delete(decisionId);
+        resolve(decision);
+      };
+
+      ctx.pendingHookDecisionRef.current.set(decisionId, {
+        sessionKey: key,
+        resolve: settle,
+      });
+      ctx.updateSessionMessages(key, (currentMessages) =>
+        appendHookExecutionToMessage(
+          currentMessages,
+          {
+            ...record,
+            _decisionId: decisionId,
+            _resolveDecision: settle,
+          },
+          messageId
+        )
+      );
+    });
+
+    ctx.updateSessionMessages(key, (currentMessages) =>
+      currentMessages.map((currentMessage) =>
+        currentMessage.id === messageId
+          ? {
+              ...currentMessage,
+              hookExecutions: (currentMessage.hookExecutions ?? []).map(
+                (execution) =>
+                  execution._decisionId === decisionId
+                    ? {
+                        ...execution,
+                        pendingDecision: false,
+                        status: approved ? "pass" : "abort",
+                        _resolveDecision: undefined,
+                      }
+                    : execution
+              ),
+            }
+          : currentMessage
+      )
+    );
+    return approved;
+  };
+};
+
+// ---------------------------------------------------------------------------
+// Factory: stream chunk handler
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the onChunk callback for createResponseStream. Handles real-time
+ * token probe updates, retry resets, and incremental content/thinking deltas.
+ * Shared between the main agent loop and the sub-agent loop.
+ */
+export const createStreamChunkHandler = (
+  ctx: ConversationContextValue,
+  sessionKey: string,
+  assistantMessageId: string,
+  isCancelled: () => boolean
+) => {
+  return (chunk: ResponsesApiStreamChunk): void => {
+    if (isCancelled()) {
+      return;
+    }
+
+    ctx.updateSessionField(sessionKey, "streamTokenCount", chunk.streamTokenCount);
+    ctx.updateSessionField(sessionKey, "streamElapsedMs", chunk.elapsedMs);
+    ctx.updateSessionField(sessionKey, "streamTtftMs", chunk.ttftMs);
+
+    ctx.updateSessionMessages(sessionKey, (currentMessages) =>
+      currentMessages.map((currentMessage) => {
+        if (currentMessage.id !== assistantMessageId) {
+          return currentMessage;
+        }
+
+        if (chunk.retrying) {
+          return {
+            ...currentMessage,
+            content: "",
+            thinking: undefined,
+            isRetrying: true,
+            retryAttempt: chunk.retryAttempt ?? undefined,
+            retryError: chunk.retryError ?? undefined,
+            status: "sending",
+          };
+        }
+
+        const existingContent = currentMessage.content;
+        const nextContent =
+          chunk.content || `${existingContent}${chunk.contentDelta}`;
+        const nextThinking =
+          chunk.thinking ||
+          `${currentMessage.thinking ?? ""}${chunk.thinkingDelta}`;
+
+        return {
+          ...currentMessage,
+          content: nextContent,
+          thinking: nextThinking || undefined,
+          timestamp: formatMessageTime(),
+          status: "sending",
+          isRetrying: false,
+        };
+      })
+    );
+  };
+};
+
+// ---------------------------------------------------------------------------
+// Factory: stream id handler
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates the onStreamId callback for createResponseStream. Stores the stream
+ * id on the session ref and immediately aborts if the run was already
+ * cancelled before the stream started.
+ */
+export const createStreamIdHandler = (
+  ctx: ConversationContextValue,
+  sessionKey: string,
+  isCancelled: () => boolean
+) => {
+  return (streamId: string): void => {
+    const ref = ctx.sessionsRefData.current.get(sessionKey);
+    if (ref) {
+      ref.streamId = streamId;
+      if (isCancelled()) {
+        void window.snow.abortResponseStream(streamId);
+      }
+    }
+  };
+};

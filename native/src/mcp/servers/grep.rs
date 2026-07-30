@@ -12,6 +12,9 @@ use tokio::process::Command;
 
 use super::super::service::McpService;
 use super::super::tools::McpTool;
+use super::remote_workspace::{
+    execute_remote_workspace_command, is_ssh_path, RemoteWorkspaceCallback,
+};
 
 pub struct GrepService;
 
@@ -139,7 +142,24 @@ impl McpService for GrepService {
 }
 
 impl GrepService {
-    pub async fn execute_search(&self, args: &Value) -> napi::Result<Value> {
+    pub async fn execute_search(
+        &self,
+        args: &Value,
+        on_remote_workspace_command: &RemoteWorkspaceCallback,
+    ) -> napi::Result<Value> {
+        if args
+            .get("path")
+            .and_then(Value::as_str)
+            .is_some_and(is_ssh_path)
+        {
+            return execute_remote_workspace_command(
+                on_remote_workspace_command,
+                "grep-search",
+                args,
+            )
+            .await;
+        }
+
         let pattern = args
             .get("pattern")
             .and_then(Value::as_str)

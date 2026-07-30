@@ -18,6 +18,49 @@ export type UserQuestionState = {
   customAnswers: string[];
 };
 
+export type HookExecutionStatus =
+  | "pass"
+  | "warn"
+  | "abort"
+  | "error"
+  | "needsDecision";
+
+export type HookExecutionRecord = {
+  /** The hook type that was triggered (e.g. "onUserMessage", "beforeToolCall"). */
+  hookType: string;
+  /** Resolved outcome kind from the hook execution. */
+  status: HookExecutionStatus;
+  /** Number of actions that were executed. */
+  executedActions: number;
+  /** Number of actions that were skipped. */
+  skippedActions: number;
+  /** Per-action results from the Rust backend. */
+  results: Array<{
+    actionType: string;
+    success: boolean;
+    command?: string | null;
+    exitCode?: number | null;
+    output?: string | null;
+    error?: string | null;
+    additionalContext?: string | null;
+  }>;
+  /** The original block message if the hook blocked the action. */
+  blockMessage?: string | null;
+  /** Timestamp (epoch ms) when the hook execution completed. */
+  timestamp: number;
+  /** When true, the hook returned a decision JSON and the user must
+   *  approve or reject the action before the AI loop can continue. */
+  pendingDecision?: boolean;
+  /** Human-readable message from the decision JSON's `decision.message`. */
+  decisionMessage?: string | null;
+  /** Internal identifier for the pending runtime decision. Not serialized. */
+  _decisionId?: string;
+  /** Internal: resolve function injected by useAgentLoop to unblock the
+   *  AI loop when the user clicks approve/reject.  Not serialized, not
+   *  part of the public type contract — exists only at runtime. */
+  _resolveDecision?: (approved: boolean) => void;
+};
+
 export type ToolCallInfo = {
   name: string;
   arguments: string;
@@ -38,6 +81,10 @@ export type ToolCallInfo = {
   /** Epoch milliseconds when the tool transitioned to "running".
    *  Used by the Bash tool UI to render a live timeout countdown. */
   startedAt?: number;
+  /** UUID assigned by the Rust backend when the bash command runs in
+   *  interactive mode (isInteractive=true).  The frontend uses this ID
+   *  to send user input to the process stdin via `writeInteractiveStdin`. */
+  interactiveSessionId?: string;
 };
 
 export type ChatConversationMessage = {
@@ -59,6 +106,10 @@ export type ChatConversationMessage = {
    *  Used by rollback to restore the working directory to its pre-AI state. */
   checkpointId?: string;
   isContextCompaction?: boolean;
+  /** Hook execution records for this message (e.g. onUserMessage hooks
+   *  executed before the message was sent to the AI).  Stored on the user
+   *  message so the UI can render what hooks ran and their outcomes. */
+  hookExecutions?: HookExecutionRecord[];
 };
 
 export type UpsertedConversation = {
@@ -73,6 +124,10 @@ export type SubAgentSessionEvent = {
   agentName: string;
   status: "running" | "completed" | "failed" | "cancelled";
   timestamp: number;
+  /** The interactionId of the parent tool call that activated this sub-agent.
+   *  Used to match the event to the correct SubAgentToolCall UI when multiple
+   *  sub-agents run in parallel with the same agentId. */
+  toolCallInteractionId?: string;
 };
 
 export type ConversationSessionState = {
@@ -114,6 +169,18 @@ export type ConversationSessionState = {
 
 export type ConversationSessionRef = {
   streamId: string | null;
+  /**
+   * The in-flight `createResponseStream` promise. Resolved after the Rust
+   * backend finishes `store_chat_exchange`. Rollback awaits this before
+   * issuing delete/truncate to avoid concurrent write-transaction races.
+   */
+  streamPromise: Promise<unknown> | null;
+  /**
+   * The in-flight `generateConversationSummary` promise. Resolved after the
+   * Rust backend finishes `update_conversation_summary`. Rollback awaits this
+   * before issuing delete/truncate to avoid concurrent write-transaction races.
+   */
+  summaryPromise: Promise<unknown> | null;
   isSending: boolean;
   isAbortRequested: boolean;
   /**
@@ -127,7 +194,10 @@ export type ConversationSessionRef = {
   runId: number;
   directoryId?: string;
   checkpointIds: string[];
-  hasAutoCompacted: boolean;
+  /** Conversation ids of sub-agent sessions spawned by this conversation.
+   *  Used to propagate an abort from the main flow down to every running
+   *  sub-agent (and, recursively, their own sub-agents). */
+  childSubAgentIds: Set<string>;
 };
 
 /** Per-session pause controller stored in pauseControllerRef. When `paused`
@@ -157,6 +227,10 @@ export type RollbackPreview = {
   isFirstMessage: boolean;
   isContextCompaction: boolean;
   todoItems: RollbackTodoItem[];
+  /** Captured at handleRollback time so confirmRollback can await it. */
+  streamPromise: Promise<unknown> | null;
+  /** Captured at handleRollback time so confirmRollback can await it. */
+  summaryPromise: Promise<unknown> | null;
 };
 
 export type ToolAuthorizationDecision =
@@ -172,6 +246,11 @@ export type PendingUserQuestion = {
   interactionId: string;
   resolve: (resultJson: string) => void;
   reject: (error: Error) => void;
+};
+
+export type PendingHookDecision = {
+  sessionKey: string;
+  resolve: (approved: boolean) => void;
 };
 
 export type UserQuestionTarget = {
@@ -198,7 +277,10 @@ export type ConversationContextValue = {
   activeConversationId: string | undefined;
   conversationVersion: number;
   upsertedConversation: UpsertedConversation | null;
-  subAgentSessionEvent: SubAgentSessionEvent | null;
+  /** All sub-agent session events keyed by sub-agent conversationId. Multiple
+   *  parallel sub-agents each keep their own entry so the UI can match every
+   *  SubAgentToolCall to the correct live session. */
+  subAgentSessionEvents: Record<string, SubAgentSessionEvent>;
   streamingConversationIds: Set<string>;
   completedConversationIds: Set<string>;
   isLoadingInitialHistory: boolean;
@@ -218,6 +300,10 @@ export type ConversationContextValue = {
   compactionPreview: string;
   compactionError: string | null;
   isCompacting: boolean;
+  /** Conversation currently running a compaction (auto or manual). The
+   *  compaction preview/error UI is only shown for this conversation so it
+   *  does not bleed into other conversations after a switch. */
+  compactingConversationId: string | null;
 
   // Refs
   sessionsRefData: RefValue<Map<string, ConversationSessionRef>>;
@@ -236,7 +322,8 @@ export type ConversationContextValue = {
     (
       conversationId: string,
       model?: string,
-      isAuto?: boolean
+      isAuto?: boolean,
+      subAgentConfigProfile?: string
     ) => Promise<string | null>
   >;
   yoloModeRef: RefValue<boolean>;
@@ -244,8 +331,15 @@ export type ConversationContextValue = {
   alwaysApprovedToolsRef: RefValue<Set<string>>;
   pendingToolAuthorizationRef: RefValue<Map<string, PendingToolAuthorization>>;
   pendingUserQuestionRef: RefValue<Map<string, PendingUserQuestion>>;
+  pendingHookDecisionRef: RefValue<Map<string, PendingHookDecision>>;
   userQuestionTargetRef: RefValue<Map<string, UserQuestionTarget>>;
-  activeApiConfigRef: RefValue<ApiConfigRecord | null>;
+  /** Fetches an API config fresh from storage. Called at each auto-compaction
+   *  decision point so user edits to the config (e.g. the auto-compress
+   *  threshold) take effect immediately without a restart. When `profileName`
+   *  is given, the matching profile is returned (falling back to the active
+   *  config); otherwise the active config is returned. Sub-agents pass their
+   *  configured profile so the threshold matches their real context window. */
+  getActiveApiConfig: (profileName?: string) => Promise<ApiConfigRecord | null>;
   /** Per-session pause controllers. Each entry controls whether the agent
    *  loop for that session should block before its next iteration. */
   pauseControllerRef: RefValue<Map<string, PauseController>>;
@@ -259,9 +353,7 @@ export type ConversationContextValue = {
   setUpsertedConversation: Dispatch<
     SetStateAction<UpsertedConversation | null>
   >;
-  setSubAgentSessionEvent: Dispatch<
-    SetStateAction<SubAgentSessionEvent | null>
-  >;
+  setSubAgentSessionEvent: (event: SubAgentSessionEvent) => void;
   setStreamingConversationIds: Dispatch<SetStateAction<Set<string>>>;
   setCompletedConversationIds: Dispatch<SetStateAction<Set<string>>>;
   setIsLoadingInitialHistory: Dispatch<SetStateAction<boolean>>;
@@ -277,6 +369,7 @@ export type ConversationContextValue = {
   setCompactionPreview: Dispatch<SetStateAction<string>>;
   setCompactionError: Dispatch<SetStateAction<string | null>>;
   setIsCompacting: Dispatch<SetStateAction<boolean>>;
+  setCompactingConversationId: Dispatch<SetStateAction<string | null>>;
 
   // Basic session callbacks
   setActiveId: (id: string | undefined) => void;
@@ -305,7 +398,8 @@ export type UseChatConversationResult = {
   summary: string;
   conversationVersion: number;
   upsertedConversation: UpsertedConversation | null;
-  subAgentSessionEvent: SubAgentSessionEvent | null;
+  /** All sub-agent session events keyed by sub-agent conversationId. */
+  subAgentSessionEvents: Record<string, SubAgentSessionEvent>;
   /** All conversation sessions, keyed by conversation id. Used by tool-call
    *  UIs (e.g. sub-agent activation) to inspect the live state of other
    *  sessions such as streaming sub-agent conversations. */
@@ -341,6 +435,7 @@ export type UseChatConversationResult = {
   compactionPreview: string;
   compactionError: string | null;
   isCompacting: boolean;
+  compactingConversationId: string | null;
   handleSelectConversation: (
     conversationId: string,
     title?: string,
@@ -366,7 +461,7 @@ export type UseChatConversationResult = {
   buildFromContent: (content: string) => void;
   handleRollback: (messageId: string) => void;
   rollbackPreview: RollbackPreview | null;
-  confirmRollback: (mode: RollbackMode) => void;
+  confirmRollback: (mode: RollbackMode) => Promise<void>;
   cancelRollback: () => void;
   yoloMode: boolean;
   isUpdatingYoloMode: boolean;

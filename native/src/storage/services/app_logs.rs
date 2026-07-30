@@ -230,6 +230,20 @@ pub async fn maybe_log_api_request(
         if !enabled {
             return;
         }
+        // 强制校验自动关闭时间：即使渲染进程的倒计时未运行（面板关闭/视图切换），
+        // 到期后 Rust 写入路径也会拒绝记录，并顺手复位开关与过期时间。
+        let expires_at_ms = system_settings::get_request_logging_expiry(&db_path).unwrap_or(0);
+        if expires_at_ms > 0 {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_millis() as i64)
+                .unwrap_or(0);
+            if now_ms >= expires_at_ms {
+                let _ = system_settings::set_request_logging(&db_path, false);
+                let _ = system_settings::set_request_logging_expiry(&db_path, 0);
+                return;
+            }
+        }
         let _ = insert_app_log(
             &db_path,
             &AppLogInput {
@@ -243,6 +257,49 @@ pub async fn maybe_log_api_request(
                 duration: None,
                 context: None,
                 error: None,
+                source: "main".to_string(),
+            },
+        );
+    })
+    .await
+    .ok();
+}
+
+/// Write a hook warning log when a hook command exits with code 1 (soft warning).
+/// The warning does not block the action but is recorded for diagnostics.
+/// Uses `spawn_blocking` so the async hook execution path is never blocked
+/// by SQLite I/O.
+///
+/// Failures are silently ignored to avoid disrupting the main hook flow.
+pub async fn log_hook_warning(
+    database_path: PathBuf,
+    hook_type: String,
+    command: String,
+    exit_code: i32,
+    output: Option<String>,
+    error: Option<String>,
+    context: Option<String>,
+) {
+    let db_path = database_path;
+    let message = format!(
+        "Hook '{}' command exited with code {} (soft warning)",
+        hook_type, exit_code
+    );
+
+    tokio::task::spawn_blocking(move || {
+        let _ = insert_app_log(
+            &db_path,
+            &AppLogInput {
+                level: "WARN".to_string(),
+                module: "hooks".to_string(),
+                func: hook_type,
+                line: None,
+                message,
+                input: Some(command),
+                output,
+                duration: None,
+                context,
+                error,
                 source: "main".to_string(),
             },
         );

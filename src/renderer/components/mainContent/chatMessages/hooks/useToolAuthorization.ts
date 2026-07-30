@@ -4,6 +4,7 @@ import type {
   ToolCallInfo,
   ToolAuthorizationDecision,
 } from "../utils/conversationTypes";
+import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
 
 /**
  * 工具授权逻辑：YOLO 模式、敏感命令检查、批量授权闸门等。
@@ -234,13 +235,25 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         }
 
         let command = "";
+        let isInteractive = false;
         try {
           const parsed = JSON.parse(toolCall.arguments || "{}");
           if (typeof parsed?.command === "string") {
             command = parsed.command;
           }
+          if (typeof parsed?.isInteractive === "boolean") {
+            isInteractive = parsed.isInteractive;
+          }
         } catch {
           // ignore parse error
+        }
+
+        // Interactive commands skip the sensitive-command gate entirely
+        // because the user is expected to confirm every input in the
+        // interactive terminal UI — a separate confirmation dialog would
+        // be redundant.
+        if (isInteractive) {
+          return { status: "approved" };
         }
 
         if (!command) {
@@ -337,13 +350,67 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         // Keep the last known in-memory state if the read fails.
       }
 
+      // YOLO has no authorization dialog, so toolConfirmation does not run.
+      // beforeToolCall remains the pre-execution policy gate in both modes.
+      if (ctx.yoloModeRef.current) {
+        return Promise.all(
+          toolCalls.map((toolCall, index) =>
+            requestToolAuthorization(toolCall, index, conversationId, projectId)
+          )
+        );
+      }
+
+      // Non-YOLO flow: execute toolConfirmation before showing authorization.
+      const hookDecisions = await Promise.all(
+        toolCalls.map(async (toolCall) => {
+          try {
+            const toolConfirmContext = JSON.stringify({
+              toolName: toolCall.name,
+              args: JSON.parse(toolCall.arguments || "{}"),
+              cwd: ctx.directoryPath ?? "",
+            });
+            const confirmResult = await runHook(
+              "toolConfirmation",
+              projectId || undefined,
+              toolConfirmContext
+            );
+            if (confirmResult) {
+              ctx.updateSessionMessages(conversationId, (currentMessages) =>
+                appendHookExecutionToMessage(
+                  currentMessages,
+                  confirmResult.record
+                )
+              );
+              if (confirmResult.outcome.kind === "abort") {
+                return {
+                  status: "rejected" as const,
+                  reason: confirmResult.outcome.message,
+                };
+              }
+            }
+          } catch {
+            // Hook execution failed — continue with normal authorization
+          }
+          return null;
+        })
+      );
+
       return Promise.all(
-        toolCalls.map((toolCall, index) =>
-          requestToolAuthorization(toolCall, index, conversationId, projectId)
-        )
+        toolCalls.map((toolCall, index) => {
+          const hookDecision = hookDecisions[index];
+          if (hookDecision) {
+            return Promise.resolve(hookDecision);
+          }
+          return requestToolAuthorization(
+            toolCall,
+            index,
+            conversationId,
+            projectId
+          );
+        })
       );
     },
-    [applyYoloMode, requestToolAuthorization]
+    [applyYoloMode, requestToolAuthorization, ctx.directoryPath]
   );
 
   const approveToolAuthorizationAlways = useCallback(

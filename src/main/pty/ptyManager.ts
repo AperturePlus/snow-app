@@ -56,6 +56,23 @@ const getShellArgs = (): string[] => {
   return ["-l"];
 };
 
+/**
+ * Whether the given shell path points to WSL (wsl.exe). WSL must be launched
+ * with `--cd <windowsPath>` because it does NOT inherit the Windows process
+ * working directory as a Linux cwd — without `--cd` the Linux shell starts in
+ * the user's home directory instead of the project directory.
+ */
+const isWslShell = (shellPath: string): boolean => {
+  const base =
+    shellPath
+      .replace(/\\/g, "/")
+      .split("/")
+      .pop()
+      ?.toLowerCase()
+      .replace(/\.exe$/, "") ?? "";
+  return base === "wsl";
+};
+
 const sanitizeEnv = (): Record<string, string> => {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
@@ -195,8 +212,17 @@ export const createPtySession = (
     spawnCwd = undefined; // Remote path, not a local cwd
   } else if (customShell && existsSync(customShell)) {
     shell = customShell;
-    shellArgs = isWindows ? [] : ["-l"];
-    spawnCwd = options.cwd || undefined;
+    if (isWindows && isWslShell(customShell)) {
+      // WSL ignores the Windows process cwd; pass the project directory via
+      // `--cd` so the Linux shell opens inside it. wsl.exe accepts Windows
+      // paths and translates them to /mnt/<drive>/... automatically.
+      shellArgs =
+        options.cwd && options.cwd.trim() ? ["--cd", options.cwd] : [];
+      spawnCwd = undefined;
+    } else {
+      shellArgs = isWindows ? [] : ["-l"];
+      spawnCwd = options.cwd || undefined;
+    }
   } else {
     shell = getShell();
     shellArgs = getShellArgs();

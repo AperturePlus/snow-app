@@ -3,6 +3,7 @@ import {
   FilePlus,
   FileMinus,
   FileEdit,
+  FileText,
   FileX,
   Plus,
   Undo2,
@@ -30,6 +31,7 @@ type GitFileListProps = {
   onStageAll?: () => void;
   onUnstageAll?: () => void;
   onDiscard?: (files: GitFileStatus[]) => void;
+  onOpenFile?: (file: GitFileStatus) => void;
 };
 
 const getStatusIcon = (status: string): React.ReactNode => {
@@ -98,6 +100,7 @@ export const GitFileList = ({
   onStageAll,
   onUnstageAll,
   onDiscard,
+  onOpenFile,
 }: GitFileListProps): React.JSX.Element => {
   const { t } = useI18n();
   const isStaged = section === "staged";
@@ -271,6 +274,20 @@ export const GitFileList = ({
                       title={t("git.discardFile")}
                     >
                       <Undo2 size={12} strokeWidth={1.8} />
+                    </button>
+                  )}
+                  {onOpenFile && (
+                    <button
+                      type="button"
+                      className="git-file-action git-open-action"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenFile(file);
+                      }}
+                      disabled={actionInProgress !== null}
+                      title={t("git.openFile")}
+                    >
+                      <FileText size={12} strokeWidth={1.8} />
                     </button>
                   )}
                 </div>

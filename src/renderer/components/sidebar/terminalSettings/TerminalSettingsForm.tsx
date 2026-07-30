@@ -1,5 +1,5 @@
-import { Loader2, RotateCcw } from "lucide-react";
-import { type ChangeEvent } from "react";
+import { RotateCcw } from "lucide-react";
+import { type ChangeEvent, type FocusEvent } from "react";
 import { useI18n } from "../../../i18n";
 import { CustomSelect } from "../../common/CustomSelect";
 import { FONT_WEIGHT_OPTIONS } from "./terminalSettingsConstants";
@@ -19,6 +19,8 @@ type TerminalSettingsFormProps = {
   ) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
   onSetValue: (field: keyof TerminalSettingsFormValue, value: string) => void;
   onShellPathChange: (value: string) => void;
+  /** 传入 nextForm 时以该值保存（下拉选择后 state 尚未重渲染，需显式携带新值）。 */
+  onBlurSave: (nextForm?: TerminalSettingsFormValue) => void;
   onReset: () => void;
   onSelectExecutable: () => void;
 };
@@ -31,10 +33,21 @@ export function TerminalSettingsForm({
   onUpdateField,
   onSetValue,
   onShellPathChange,
+  onBlurSave,
   onReset,
   onSelectExecutable,
 }: TerminalSettingsFormProps): React.JSX.Element {
   const { t } = useI18n();
+
+  // 焦点移入下拉控件（字重下拉 / Shell 组合框）不算真正失焦，不触发保存；
+  // 下拉控件完成选择后会携带新值主动保存。
+  const handleInputBlur = (event: FocusEvent<HTMLInputElement>) => {
+    const next = event.relatedTarget as HTMLElement | null;
+    if (next?.closest(".custom-select, .terminal-combobox")) {
+      return;
+    }
+    onBlurSave();
+  };
 
   return (
     <div className="api-settings-manual-form">
@@ -77,6 +90,11 @@ export function TerminalSettingsForm({
                 defaultValue: "No terminals detected",
               })}
               onChange={onShellPathChange}
+              onCommit={(path) => {
+                onShellPathChange(path);
+                onBlurSave({ ...form, shellPath: path });
+              }}
+              onBlur={() => onBlurSave()}
               onBrowse={onSelectExecutable}
             />
           </div>
@@ -100,6 +118,7 @@ export function TerminalSettingsForm({
               <input
                 value={form.fontFamily}
                 onChange={onUpdateField("fontFamily")}
+                onBlur={handleInputBlur}
                 placeholder={t("settings.terminalFontFamilyPlaceholder", {
                   defaultValue: "e.g. Consolas, Monaco, monospace",
                 })}
@@ -113,6 +132,7 @@ export function TerminalSettingsForm({
               <input
                 value={form.fontSize}
                 onChange={onUpdateField("fontSize")}
+                onBlur={handleInputBlur}
                 type="number"
                 min={6}
                 max={72}
@@ -128,7 +148,10 @@ export function TerminalSettingsForm({
               <CustomSelect
                 value={form.fontWeight}
                 options={FONT_WEIGHT_OPTIONS}
-                onChange={(value) => onSetValue("fontWeight", value)}
+                onChange={(value) => {
+                  onSetValue("fontWeight", value);
+                  onBlurSave({ ...form, fontWeight: value });
+                }}
                 disabled={isBusy}
               />
             </label>
@@ -141,6 +164,7 @@ export function TerminalSettingsForm({
               <input
                 value={form.lineHeight}
                 onChange={onUpdateField("lineHeight")}
+                onBlur={handleInputBlur}
                 type="number"
                 min={0.5}
                 max={3}
@@ -169,6 +193,7 @@ export function TerminalSettingsForm({
               <input
                 value={form.proxy}
                 onChange={onUpdateField("proxy")}
+                onBlur={handleInputBlur}
                 placeholder={t("settings.terminalProxyPlaceholder", {
                   defaultValue:
                     "e.g. http://127.0.0.1:7890 (leave empty for none)",

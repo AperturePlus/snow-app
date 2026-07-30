@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -15,10 +16,15 @@ import { FileViewerContent } from "./rightPanel/FileViewerContent";
 import { TerminalPanelContent } from "./rightPanel/TerminalPanelContent";
 import { BrowserPanelContent } from "./rightPanel/BrowserPanelContent";
 import { FileDiffPreview } from "./common/FileDiffPreview";
-import { useBrowserMcpCommandBridge } from "./rightPanel/browser/useBrowserMcpCommandBridge";
+import {
+  useBrowserMcpCommandBridge,
+  type BrowserMcpTabCallbacks,
+} from "./rightPanel/browser/useBrowserMcpCommandBridge";
+import { focusBrowserMcpInstance } from "./rightPanel/browser/browserMcpController";
 import {
   rightPanelEvents,
   type OpenBrowserTabPayload,
+  type FocusBrowserTabPayload,
   type OpenFileDiffPreviewPayload,
 } from "./rightPanel/rightPanelEvents";
 import { generateComparePatch } from "./common/GitDiffView";
@@ -38,7 +44,13 @@ const GIT_TAB_ID = "git";
 export type RightPanelRef = {
   openTerminal: (cwd: string) => void;
   openBrowser: (url?: string) => void;
-  openFile: (filePath: string, fileName: string) => void;
+  openFile: (
+    filePath: string,
+    fileName: string,
+    isSsh?: boolean,
+    sshSessionId?: string | null,
+    focusLine?: number
+  ) => void;
 };
 
 type RightPanelProps = RightPanelContentProps & {
@@ -144,8 +156,6 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       [t]
     );
 
-    useBrowserMcpCommandBridge(handleOpenBrowserTab);
-
     const handleBrowserTitleChange = useCallback(
       (tabId: string, title: string) => {
         setTabs((prev) =>
@@ -156,17 +166,36 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     );
 
     const handleOpenFileTab = useCallback(
-      (filePath: string, fileName: string) => {
+      (
+        filePath: string,
+        fileName: string,
+        isSsh: boolean,
+        sshSessionId?: string | null,
+        focusLine?: number
+      ) => {
         const tabId = `file:${filePath}`;
         setTabs((prev) => {
           const existing = prev.find((t) => t.id === tabId);
           if (existing) {
-            return prev;
+            // 已存在 tab：仅更新 focusLine，不重建（避免重载文件内容）。
+            return prev.map((t) =>
+              t.id === tabId
+                ? {
+                    ...t,
+                    data: {
+                      ...(t.data as FileViewerTabData),
+                      focusLine,
+                    },
+                  }
+                : t
+            );
           }
           const fileData: FileViewerTabData = {
             filePath,
             fileName,
-            isSsh: false,
+            isSsh,
+            sshSessionId: sshSessionId ?? undefined,
+            focusLine,
           };
           const newTab: RightPanelTab = {
             id: tabId,
@@ -179,6 +208,15 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         setActiveTabId(tabId);
       },
       []
+    );
+
+    // Git 变更/暂存区文件「打开文件」按钮：以本地仓库文件（isSsh=false）
+    // 在右侧面板新建 file tab，通过 FileViewerContent 显示文件原文。
+    const handleOpenFileFromGit = useCallback(
+      (filePath: string, fileName: string) => {
+        handleOpenFileTab(filePath, fileName, false);
+      },
+      [handleOpenFileTab]
     );
 
     const handleOpenFileDiffPreviewTab = useCallback(
@@ -202,9 +240,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         setTabs((prev) => {
           const existing = prev.find((t) => t.id === tabId);
           if (existing) {
-            return prev.map((t) =>
-              t.id === tabId ? { ...t, data } : t
-            );
+            return prev.map((t) => (t.id === tabId ? { ...t, data } : t));
           }
           const newTab: RightPanelTab = {
             id: tabId,
@@ -265,8 +301,20 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         openBrowser: (url?: string) => {
           handleOpenBrowserTab(url);
         },
-        openFile: (filePath: string, fileName: string) => {
-          handleOpenFileTab(filePath, fileName);
+        openFile: (
+          filePath: string,
+          fileName: string,
+          isSsh?: boolean,
+          sshSessionId?: string | null,
+          focusLine?: number
+        ) => {
+          handleOpenFileTab(
+            filePath,
+            fileName,
+            isSsh ?? false,
+            sshSessionId,
+            focusLine
+          );
         },
       }),
       [handleOpenTerminalTab, handleOpenBrowserTab, handleOpenFileTab]
@@ -295,9 +343,94 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         if (currentActive !== tabId) {
           return currentActive;
         }
-        return GIT_TAB_ID;
+        // 关闭当前激活的 tab：优先向左顺延选择相邻 tab，
+        // 仅当左侧没有其他 tab 时才回退到 Git tab。
+        const currentIndex = tabs.findIndex((t) => t.id === tabId);
+        if (currentIndex > 0) {
+          return tabs[currentIndex - 1].id;
+        }
+        // currentIndex === 0：左侧无 tab，回退到 Git tab（若存在）
+        const gitTab = tabs.find((t) => t.id === GIT_TAB_ID);
+        return gitTab ? GIT_TAB_ID : tabs[1]?.id ?? currentActive;
       });
-    }, []);
+    }, [tabs]);
+
+    const handleCloseBrowserTab = useCallback(
+      (instanceId: string): boolean => {
+        const tab = tabs.find(
+          (t) => t.id === instanceId && t.type === "browser"
+        );
+        if (!tab) {
+          return false;
+        }
+        handleCloseTab(instanceId);
+        return true;
+      },
+      [tabs, handleCloseTab]
+    );
+
+    const handleFocusBrowserTab = useCallback(
+      (instanceId: string): boolean => {
+        const tab = tabs.find(
+          (t) => t.id === instanceId && t.type === "browser"
+        );
+        if (!tab) {
+          return false;
+        }
+        setActiveTabId(instanceId);
+        focusBrowserMcpInstance(instanceId);
+        return true;
+      },
+      [tabs]
+    );
+
+    // 工具调用组件（BrowserToolCall）请求切换到指定浏览器实例的 tab。
+    const handleFocusBrowserTabEvent = useCallback(
+      (payload: FocusBrowserTabPayload) => {
+        const instanceId = payload.instanceId.trim();
+        if (!instanceId) {
+          return;
+        }
+        if (handleFocusBrowserTab(instanceId)) {
+          rightPanelEvents.emit("request-expand");
+        }
+      },
+      [handleFocusBrowserTab]
+    );
+
+    useEffect(() => {
+      return rightPanelEvents.on(
+        "focus-browser-tab",
+        handleFocusBrowserTabEvent
+      );
+    }, [handleFocusBrowserTabEvent]);
+
+    const handleListBrowserTabs = useCallback(() => {
+      return tabs
+        .filter((t) => t.type === "browser")
+        .map((t) => ({
+          instanceId: t.id,
+          title: t.title,
+          isActive: t.id === activeTabId,
+        }));
+    }, [tabs, activeTabId]);
+
+    const browserMcpCallbacks = useMemo<BrowserMcpTabCallbacks>(
+      () => ({
+        openTab: handleOpenBrowserTab,
+        closeTab: handleCloseBrowserTab,
+        focusTab: handleFocusBrowserTab,
+        listTabs: handleListBrowserTabs,
+      }),
+      [
+        handleOpenBrowserTab,
+        handleCloseBrowserTab,
+        handleFocusBrowserTab,
+        handleListBrowserTabs,
+      ]
+    );
+
+    useBrowserMcpCommandBridge(browserMcpCallbacks);
 
     const tabListRef = useRef<HTMLDivElement>(null);
 
@@ -332,10 +465,11 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     const renderTabContent = (tab: RightPanelTab): React.ReactNode => {
       if (tab.type === "git") {
         return (
-          <GitPanelContent
-            activeDirectory={activeDirectory}
-            onOpenInTab={handleOpenDiffTab}
-          />
+        <GitPanelContent
+          activeDirectory={activeDirectory}
+          onOpenInTab={handleOpenDiffTab}
+          onOpenFile={handleOpenFileFromGit}
+        />
         );
       }
 
@@ -387,6 +521,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             fileName={fileData.fileName}
             isSsh={fileData.isSsh}
             sshSessionId={fileData.sshSessionId}
+            focusLine={fileData.focusLine}
             onDirtyChange={(dirty) =>
               setDirtyTabs((prev) => {
                 const next = new Set(prev);
@@ -447,7 +582,10 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                 >
                   <span className="right-panel-tab-title" title={tab.title}>
                     {dirtyTabs.has(tab.id) && (
-                      <span className="right-panel-tab-dirty-dot" aria-hidden="true" />
+                      <span
+                        className="right-panel-tab-dirty-dot"
+                        aria-hidden="true"
+                      />
                     )}
                     {tab.title}
                   </span>

@@ -73,6 +73,18 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to read Request logging")
         ),
+      getRequestLoggingExpiry: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to read Request logging expiry"
+          )
+        ),
+      setRequestLoggingExpiry: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to write Request logging expiry"
+          )
+        ),
       setRequestLogging: () =>
         Promise.reject(
           new Error("Rust native bridge is required to write Request logging")
@@ -92,6 +104,18 @@ export const loadNativeBridge = (): NativeBridge => {
       setThemeSettings: () =>
         Promise.reject(
           new Error("Rust native bridge is required to write theme settings")
+        ),
+      getKeyboardShortcutsSettings: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to read keyboard shortcuts settings"
+          )
+        ),
+      setKeyboardShortcutsSettings: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to write keyboard shortcuts settings"
+          )
         ),
       saveThemeBackgroundImage: () =>
         Promise.reject(
@@ -435,6 +459,7 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to generate conversation summary"
           )
         ),
+      cancelConversationSummary: () => false,
       fetchAvailableModels: () =>
         Promise.reject(
           new Error("Rust native bridge is required to fetch available models")
@@ -574,6 +599,10 @@ export const loadNativeBridge = (): NativeBridge => {
           new Error(
             "Rust native bridge is required to authorize sensitive commands"
           )
+        ),
+      writeInteractiveStdin: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write interactive stdin")
         ),
       callMcpTool: () =>
         Promise.reject(

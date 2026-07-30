@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Timer } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, Send, Timer } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
@@ -12,6 +12,7 @@ type ParsedBashArgs = {
   command: string;
   workingDirectory: string;
   timeout?: number;
+  isInteractive?: boolean;
 };
 
 type ParsedBashResult =
@@ -44,10 +45,15 @@ const parseArgs = (args: string): ParsedBashArgs | null => {
       typeof parsed.timeout === "number" && parsed.timeout > 0
         ? parsed.timeout
         : undefined;
+    const isInteractive =
+      typeof parsed.isInteractive === "boolean"
+        ? parsed.isInteractive
+        : undefined;
     return {
       command: parsed.command,
       workingDirectory: parsed.workingDirectory,
       timeout,
+      isInteractive,
     };
   } catch {
     return null;
@@ -138,12 +144,17 @@ export const BashToolCall = ({
   const isRunning = toolCall.status === "running";
   const timeoutMs = parsedArgs?.timeout ?? DEFAULT_TIMEOUT_MS;
   const startedAt = toolCall.startedAt;
+  const isInteractive = parsedArgs?.isInteractive === true;
+  const interactiveSessionId = toolCall.interactiveSessionId;
+  const canSendInput =
+    isInteractive && isRunning && Boolean(interactiveSessionId);
 
   // Live countdown: ticks every 200ms while running so the user can
   // see how much time is left before the command is killed.
+  // Interactive commands have no meaningful countdown, so we skip it.
   const [remainingMs, setRemainingMs] = useState<number | null>(null);
   useEffect(() => {
-    if (!isRunning || !startedAt) {
+    if (!isRunning || !startedAt || isInteractive) {
       setRemainingMs(null);
       return;
     }
@@ -154,10 +165,58 @@ export const BashToolCall = ({
     update();
     const interval = setInterval(update, 200);
     return () => clearInterval(interval);
-  }, [isRunning, startedAt, timeoutMs]);
+  }, [isRunning, startedAt, timeoutMs, isInteractive]);
 
   const countdownSeconds =
     remainingMs !== null ? Math.ceil(remainingMs / 1000) : null;
+
+  // Interactive input state
+  const [inputValue, setInputValue] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-focus the input when the interactive session becomes available
+  useEffect(() => {
+    if (canSendInput && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [canSendInput]);
+
+  const handleSendInput = useCallback(async () => {
+    if (!interactiveSessionId || !inputValue.trim() || isSending) {
+      return;
+    }
+    setIsSending(true);
+    setSendError(null);
+    try {
+      await window.snow.writeInteractiveStdin(
+        interactiveSessionId,
+        `${inputValue}\n`
+      );
+      setInputValue("");
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSending(false);
+    }
+  }, [interactiveSessionId, inputValue, isSending]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      // When the user is composing text with an IME (e.g. Chinese Pinyin
+      // candidate selection), Enter confirms the candidate — it must NOT
+      // submit the input.  isComposing is true during composition.
+      if (e.nativeEvent.isComposing || e.keyCode === 229) {
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        void handleSendInput();
+      }
+    },
+    [handleSendInput]
+  );
 
   const output = useMemo(() => {
     if (parsedResult.type === "success") {
@@ -196,8 +255,14 @@ export const BashToolCall = ({
       category="terminal"
       displayName={commandSummary}
       status={effectiveStatus}
+      defaultOpen={isInteractive && isRunning}
       meta={
         <>
+          {isInteractive && (isRunning || canSendInput) ? (
+            <span className="tool-call-bash-interactive-badge">
+              {t("toolCall.bash.interactive")}
+            </span>
+          ) : null}
           {parsedResult.type === "success" ? (
             <span
               className={`tool-call-bash-exit-code ${
@@ -249,7 +314,7 @@ export const BashToolCall = ({
         <div
           className={`tool-call-bash-terminal ${
             isRunning ? "tool-call-bash-terminal-live" : ""
-          }`}
+          } ${isInteractive ? "tool-call-bash-terminal-interactive" : ""}`}
         >
           {parsedArgs?.workingDirectory ? (
             <div className="tool-call-bash-workdir">
@@ -292,6 +357,42 @@ export const BashToolCall = ({
                   <i />
                 </span>
               ) : null}
+            </div>
+          ) : null}
+
+          {canSendInput ? (
+            <div className="tool-call-bash-interactive-input-area">
+              {sendError ? (
+                <div className="tool-call-bash-interactive-error">
+                  <AlertCircle size={12} aria-hidden="true" />
+                  <span>{sendError}</span>
+                </div>
+              ) : null}
+              <div className="tool-call-bash-interactive-input-row">
+                <span className="tool-call-bash-prompt" aria-hidden="true">
+                  {">"}
+                </span>
+                <input
+                  ref={inputRef}
+                  className="tool-call-bash-interactive-input"
+                  disabled={isSending}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={t("toolCall.bash.interactivePlaceholder")}
+                  type="text"
+                  value={inputValue}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <button
+                  className="tool-call-bash-interactive-send"
+                  disabled={isSending || !inputValue.trim()}
+                  onClick={() => void handleSendInput()}
+                  type="button"
+                >
+                  <Send size={13} />
+                </button>
+              </div>
             </div>
           ) : null}
         </div>

@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use tokio_util::sync::CancellationToken;
 
 use crate::api::config::get_api_config_custom_headers;
 use crate::api::conversation::{
@@ -16,8 +17,12 @@ use crate::api::responses::{
 };
 use crate::api::summary::generate_conversation_summary as generate_summary;
 use crate::api::theme_palette::generate_theme_palette_stream;
-use crate::mcp::servers::bash::{authorize_sensitive_command as authorize_command, BashStreamCallback};
+use crate::mcp::servers::bash::{
+    authorize_sensitive_command as authorize_command,
+    write_interactive_stdin as write_interactive_stdin_impl, BashStreamCallback,
+};
 use crate::mcp::servers::browser::BrowserCommandCallback;
+use crate::mcp::servers::remote_workspace::RemoteWorkspaceCallback;
 use crate::mcp::servers::skills::{ProjectSkillDefinition, SkillDefinition, SkillsService};
 use crate::mcp::servers::user_interaction::UserQuestionCallback;
 use crate::mcp::tools::{
@@ -120,9 +125,31 @@ pub async fn generate_theme_palette(
 
     result
 }
+
+/// Generate a conversation summary (title) for the given conversation id.
+///
+/// Registers a cancellation token so the in-flight non-streaming HTTP
+/// request can be aborted via `cancel_conversation_summary`. When cancelled,
+/// the summary returns an empty string WITHOUT writing to the database,
+/// releasing the SQLite lock for a subsequent delete/truncate.
 #[napi(ts_return_type = "Promise<string>")]
 pub async fn generate_conversation_summary(conversation_id: String) -> napi::Result<String> {
-    generate_summary(conversation_id).await
+    let token = CancellationToken::new();
+    crate::api::cancel::register_summary(&conversation_id, token.clone());
+    let result = generate_summary(conversation_id.clone(), token).await;
+    crate::api::cancel::unregister_summary(&conversation_id);
+    result
+}
+
+/// Cancel an in-flight conversation summary generation.
+///
+/// Returns `true` if a summary was found and cancelled, `false` otherwise.
+/// Call this from `handleAbort` / `handleRollback` so the summary's
+/// `update_conversation_summary` write transaction is skipped before the
+/// delete/truncate runs, avoiding a "database is locked" race.
+#[napi]
+pub fn cancel_conversation_summary(conversation_id: String) -> napi::Result<bool> {
+    Ok(crate::api::cancel::cancel_summary(&conversation_id))
 }
 #[napi]
 pub async fn list_mcp_tools() -> napi::Result<Vec<McpToolDefinition>> {
@@ -212,8 +239,16 @@ pub async fn authorize_sensitive_command(command: String, token: String) -> napi
     authorize_command(command, token).await
 }
 
+#[napi]
+pub async fn write_interactive_stdin(
+    session_id: String,
+    input: String,
+) -> napi::Result<()> {
+    write_interactive_stdin_impl(session_id, input).await
+}
+
 #[napi(
-    ts_args_type = "toolFullName: string, argsJson: string, projectId: string | undefined, checkpointIds: string[] | undefined, checkpointWorkDir: string | undefined, sensitiveAuthorizationToken: string | undefined, onChunk: (chunk: BashStreamChunk) => void, onBrowserCommand: (command: BrowserCommand) => Promise<string>, onUserQuestion: (question: UserQuestionCommand) => Promise<string>, subAgentAllowedTools: string[] | undefined",
+    ts_args_type = "toolFullName: string, argsJson: string, projectId: string | undefined, checkpointIds: string[] | undefined, checkpointWorkDir: string | undefined, sensitiveAuthorizationToken: string | undefined, onChunk: (chunk: BashStreamChunk) => void, onBrowserCommand: (command: BrowserCommand) => Promise<string>, onUserQuestion: (question: UserQuestionCommand) => Promise<string>, onRemoteWorkspaceCommand: (command: RemoteWorkspaceCommand) => Promise<string>, subAgentAllowedTools: string[] | undefined, planMode: boolean | undefined, planApproved: boolean | undefined",
     ts_return_type = "Promise<string>"
 )]
 pub async fn call_mcp_tool(
@@ -226,7 +261,10 @@ pub async fn call_mcp_tool(
     on_chunk: BashStreamCallback,
     on_browser_command: BrowserCommandCallback,
     on_user_question: UserQuestionCallback,
+    on_remote_workspace_command: RemoteWorkspaceCallback,
     sub_agent_allowed_tools: Option<Vec<String>>,
+    plan_mode: Option<bool>,
+    plan_approved: Option<bool>,
 ) -> napi::Result<String> {
     call_tool(
         tool_full_name,
@@ -238,7 +276,10 @@ pub async fn call_mcp_tool(
         on_chunk,
         on_browser_command,
         on_user_question,
+        on_remote_workspace_command,
         sub_agent_allowed_tools,
+        plan_mode.unwrap_or(false),
+        plan_approved.unwrap_or(false),
     )
     .await
 }

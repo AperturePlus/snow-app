@@ -1,8 +1,9 @@
-import { Download, NotebookText, Search, Settings } from "lucide-react";
+import { Download, LoaderCircle, NotebookText, Search, Settings } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { useI18n } from "../../i18n";
 import { useChatConversationContext } from "../mainContent/chatMessages";
+import { shortcutEvents } from "../shortcutEvents";
 import type { MainContentView } from "../mainContent/types";
 import { ChatsSection } from "./mainSidebar/ChatsSection";
 import { PinnedSection } from "./mainSidebar/PinnedSection";
@@ -11,10 +12,19 @@ import { GlobalSearchModal } from "./GlobalSearchModal";
 import { MemoModal } from "./MemoModal";
 import type { SidebarContentProps } from "./types";
 import type {
-  UpdateStatus,
   ConversationSearchResult,
+  UpdateStatus,
   WorkspaceDirectoryRecord,
 } from "../../../preload";
+
+const INITIAL_UPDATE_STATUS: UpdateStatus = {
+  available: false,
+  version: null,
+  downloading: false,
+  progress: 0,
+  downloaded: false,
+  error: null,
+};
 
 export function MainSidebarContent({
   activeDirectory,
@@ -27,36 +37,12 @@ export function MainSidebarContent({
   const { t } = useI18n();
   const { handleSelectConversation } = useChatConversationContext();
   const [isSwitchingDirectory, setIsSwitchingDirectory] = useState(false);
-  const [appVersion, setAppVersion] = useState<string>("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMemoOpen, setIsMemoOpen] = useState(false);
   const [pendingMemoCount, setPendingMemoCount] = useState(0);
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({
-    available: false,
-    version: null,
-    downloading: false,
-    progress: 0,
-    downloaded: false,
-    error: null,
-  });
-
-  useEffect(() => {
-    window.snow
-      .getAppVersion()
-      .then((version) => setAppVersion(version))
-      .catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    window.snow
-      .getUpdateStatus()
-      .then(setUpdateStatus)
-      .catch(() => undefined);
-    const unsubscribe = window.snow.onUpdateStatusChanged((status) => {
-      setUpdateStatus(status);
-    });
-    return unsubscribe;
-  }, []);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>(
+    INITIAL_UPDATE_STATUS
+  );
 
   // Load the pending memo count for the sidebar badge. It is refreshed
   // whenever the memo modal closes (the modal calls onPendingCountChange
@@ -79,13 +65,43 @@ export function MainSidebarContent({
     refreshPendingMemoCount();
   }, [refreshPendingMemoCount]);
 
-  const handleDownloadUpdate = (): void => {
-    void window.snow.downloadUpdate();
-  };
+  // 订阅自动更新状态：autoUpdater 在启动后自动检测更新，发现新版本时
+  // 通过 onUpdateStatusChanged 推送，此处据此在设置按钮旁显示更新入口。
+  useEffect(() => {
+    window.snow
+      .getUpdateStatus()
+      .then(setUpdateStatus)
+      .catch(() => undefined);
+    const unsubscribe = window.snow.onUpdateStatusChanged((status) => {
+      setUpdateStatus(status);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
-  const handleInstallUpdate = (): void => {
+  const handleDownloadUpdate = useCallback((): void => {
+    void window.snow.downloadUpdate();
+  }, []);
+
+  const handleInstallUpdate = useCallback((): void => {
     void window.snow.installUpdate();
-  };
+  }, []);
+
+  // 订阅快捷键事件：Ctrl/Cmd+F 切换搜索 modal，Ctrl/Cmd+B 切换备忘录 modal。
+  // 快捷键引擎通过 shortcutEvents 总线触发，此组件持有 modal open 状态。
+  useEffect(() => {
+    const unsubSearch = shortcutEvents.on("toggle-search", () => {
+      setIsSearchOpen((prev) => !prev);
+    });
+    const unsubMemo = shortcutEvents.on("toggle-memo", () => {
+      setIsMemoOpen((prev) => !prev);
+    });
+    return () => {
+      unsubSearch();
+      unsubMemo();
+    };
+  }, []);
 
   const handleSearchSelectConversation = (
     conversation: ConversationSearchResult
@@ -177,49 +193,62 @@ export function MainSidebarContent({
             <Settings size={18} strokeWidth={1.8} />
             <span>{t("sidebar.settings", { defaultValue: "Settings" })}</span>
           </button>
-          {appVersion && (
-            <span className="sidebar-version-badge">v{appVersion}</span>
+
+          {/* 自动检测到新版本时显示更新入口 */}
+          {updateStatus.available &&
+            !updateStatus.downloading &&
+            !updateStatus.downloaded && (
+              <button
+                className="nav-item update-ready-btn"
+                onClick={handleDownloadUpdate}
+                type="button"
+                title={t("settings.newVersionAvailable", {
+                  values: { version: updateStatus.version ?? "" },
+                  defaultValue: `Update to ${updateStatus.version ?? ""}`,
+                })}
+              >
+                <Download size={16} strokeWidth={1.8} />
+                <span>
+                  {t("settings.update", {
+                    defaultValue: "Update",
+                  })}
+                </span>
+              </button>
+            )}
+
+          {/* 下载中 */}
+          {updateStatus.available && updateStatus.downloading && (
+            <div
+              className="nav-item update-downloading"
+              title={t("settings.updateDownloading", {
+                values: { percent: updateStatus.progress },
+                defaultValue: `Downloading ${updateStatus.progress}%`,
+              })}
+            >
+              <LoaderCircle size={16} strokeWidth={1.8} />
+              <span>{updateStatus.progress}%</span>
+            </div>
           )}
-        </div>
-        {updateStatus.available &&
-          !updateStatus.downloading &&
-          !updateStatus.downloaded && (
+
+          {/* 下载完成 → 重启更新 */}
+          {updateStatus.downloaded && (
             <button
               className="nav-item update-ready-btn"
-              onClick={handleDownloadUpdate}
+              onClick={handleInstallUpdate}
               type="button"
+              title={t("settings.updateReady", {
+                defaultValue: "Restart to update",
+              })}
             >
               <Download size={16} strokeWidth={1.8} />
               <span>
-                {t("sidebar.updateAvailable", {
-                  defaultValue: "Update now",
+                {t("settings.updateReady", {
+                  defaultValue: "Restart to update",
                 })}
               </span>
             </button>
           )}
-        {updateStatus.available && updateStatus.downloading && (
-          <div className="nav-item update-downloading">
-            <Download size={16} strokeWidth={1.8} />
-            <span>
-              {t("sidebar.updateDownloading", {
-                values: { percent: updateStatus.progress },
-                defaultValue: `Downloading ${updateStatus.progress}%`,
-              })}
-            </span>
-          </div>
-        )}
-        {updateStatus.downloaded && (
-          <button
-            className="nav-item update-ready-btn"
-            onClick={handleInstallUpdate}
-            type="button"
-          >
-            <Download size={16} strokeWidth={1.8} />
-            <span>
-              {t("sidebar.updateReady", { defaultValue: "Restart to update" })}
-            </span>
-          </button>
-        )}
+        </div>
       </div>
       <GlobalSearchModal
         open={isSearchOpen}

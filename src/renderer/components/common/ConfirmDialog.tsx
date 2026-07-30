@@ -7,7 +7,8 @@ type ConfirmDialogProps = {
   title: string;
   message: string;
   confirmLabel: string;
-  cancelLabel: string;
+  /** When omitted, the cancel button is hidden (single-button alert mode). */
+  cancelLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
   variant?: "default" | "warning" | "danger";
@@ -65,13 +66,15 @@ export const ConfirmDialog = ({
           <p>{message}</p>
         </div>
         <div className="confirm-dialog-actions">
-          <button
-            type="button"
-            className="confirm-dialog-btn cancel"
-            onClick={onCancel}
-          >
-            {cancelLabel}
-          </button>
+          {cancelLabel && (
+            <button
+              type="button"
+              className="confirm-dialog-btn cancel"
+              onClick={onCancel}
+            >
+              {cancelLabel}
+            </button>
+          )}
           <button
             type="button"
             className="confirm-dialog-btn confirm"

@@ -82,6 +82,22 @@ pub async fn set_request_logging(enabled: bool) -> napi::Result<()> {
         .map_err(map_spawn_error)?
 }
 
+#[napi]
+pub async fn get_request_logging_expiry() -> napi::Result<i64> {
+    tokio::task::spawn_blocking(crate::storage::get_request_logging_expiry)
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn set_request_logging_expiry(expires_at_ms: i64) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::set_request_logging_expiry(expires_at_ms)
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
 #[napi(object)]
 pub struct PrivacyApiConfigNapi {
     pub url: String,
@@ -1258,4 +1274,100 @@ fn map_spawn_error(e: tokio::task::JoinError) -> Error {
         Status::GenericFailure,
         format!("Spawned blocking task failed: {}", e),
     )
+}
+
+// ============================================================================
+// Keyboard shortcuts — 快捷键设置，6 个快捷键各自 enabled + foregroundOnly。
+// ============================================================================
+
+#[napi(object)]
+pub struct KeyboardShortcutConfigNapi {
+    pub key: String,
+    pub enabled: bool,
+    pub foreground_only: bool,
+}
+
+impl From<crate::storage::services::keyboard_shortcuts::KeyboardShortcutConfig>
+    for KeyboardShortcutConfigNapi
+{
+    fn from(c: crate::storage::services::keyboard_shortcuts::KeyboardShortcutConfig) -> Self {
+        KeyboardShortcutConfigNapi {
+            key: c.key,
+            enabled: c.enabled,
+            foreground_only: c.foreground_only,
+        }
+    }
+}
+
+impl From<KeyboardShortcutConfigNapi>
+    for crate::storage::services::keyboard_shortcuts::KeyboardShortcutConfig
+{
+    fn from(c: KeyboardShortcutConfigNapi) -> Self {
+        crate::storage::services::keyboard_shortcuts::KeyboardShortcutConfig {
+            key: c.key,
+            enabled: c.enabled,
+            foreground_only: c.foreground_only,
+        }
+    }
+}
+
+#[napi(object)]
+pub struct KeyboardShortcutsSettingsNapi {
+    pub cancel_session: KeyboardShortcutConfigNapi,
+    pub open_search: KeyboardShortcutConfigNapi,
+    pub open_memo: KeyboardShortcutConfigNapi,
+    pub open_todo: KeyboardShortcutConfigNapi,
+    pub cycle_project: KeyboardShortcutConfigNapi,
+    pub open_project_explorer: KeyboardShortcutConfigNapi,
+}
+
+impl From<crate::storage::services::keyboard_shortcuts::KeyboardShortcutsSettings>
+    for KeyboardShortcutsSettingsNapi
+{
+    fn from(s: crate::storage::services::keyboard_shortcuts::KeyboardShortcutsSettings) -> Self {
+        KeyboardShortcutsSettingsNapi {
+            cancel_session: s.cancel_session.into(),
+            open_search: s.open_search.into(),
+            open_memo: s.open_memo.into(),
+            open_todo: s.open_todo.into(),
+            cycle_project: s.cycle_project.into(),
+            open_project_explorer: s.open_project_explorer.into(),
+        }
+    }
+}
+
+impl From<KeyboardShortcutsSettingsNapi>
+    for crate::storage::services::keyboard_shortcuts::KeyboardShortcutsSettings
+{
+    fn from(s: KeyboardShortcutsSettingsNapi) -> Self {
+        crate::storage::services::keyboard_shortcuts::KeyboardShortcutsSettings {
+            cancel_session: s.cancel_session.into(),
+            open_search: s.open_search.into(),
+            open_memo: s.open_memo.into(),
+            open_todo: s.open_todo.into(),
+            cycle_project: s.cycle_project.into(),
+            open_project_explorer: s.open_project_explorer.into(),
+        }
+    }
+}
+
+#[napi]
+pub async fn get_keyboard_shortcuts_settings() -> napi::Result<KeyboardShortcutsSettingsNapi> {
+    let settings =
+        tokio::task::spawn_blocking(crate::storage::get_keyboard_shortcuts_settings)
+            .await
+            .map_err(map_spawn_error)??;
+    Ok(settings.into())
+}
+
+#[napi]
+pub async fn set_keyboard_shortcuts_settings(
+    settings: KeyboardShortcutsSettingsNapi,
+) -> napi::Result<()> {
+    let settings = settings.into();
+    tokio::task::spawn_blocking(move || {
+        crate::storage::set_keyboard_shortcuts_settings(settings)
+    })
+    .await
+    .map_err(map_spawn_error)?
 }

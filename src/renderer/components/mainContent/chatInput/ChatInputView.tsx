@@ -413,6 +413,45 @@ export const ChatInputView = ({
       try {
         const parsed = JSON.parse(jsonData) as Record<string, unknown>;
 
+        // 搜索结果组合拖拽：{ type: "file-tags", tags: FileTag[] }
+        if (
+          parsed.type === "file-tags" &&
+          Array.isArray(parsed.tags)
+        ) {
+          const tags: FileTag[] = parsed.tags
+            .filter(
+              (item) =>
+                item &&
+                typeof item === "object" &&
+                typeof (item as Record<string, unknown>).path === "string" &&
+                typeof (item as Record<string, unknown>).name === "string"
+            )
+            .map((item) => {
+              const t = item as Record<string, unknown>;
+              const rawLines = t.lines;
+              const lines =
+                Array.isArray(rawLines)
+                  ? rawLines
+                      .map((n) =>
+                        typeof n === "number"
+                          ? n
+                          : Number.parseInt(String(n), 10)
+                      )
+                      .filter((n) => Number.isFinite(n) && n > 0)
+                  : undefined;
+              return {
+                path: t.path as string,
+                name: t.name as string,
+                isDirectory: t.isDirectory === true,
+                lines: t.isDirectory === true ? undefined : lines,
+              };
+            });
+          if (tags.length > 0) {
+            insertFileTags(tags);
+          }
+          return;
+        }
+
         // Commit tag: has "hash" and "repoPath" fields
         if (
           typeof parsed.hash === "string" &&
@@ -466,10 +505,20 @@ export const ChatInputView = ({
           typeof parsed.path === "string" &&
           typeof parsed.name === "string"
         ) {
+          const rawLines = parsed.lines;
+          const lines =
+            Array.isArray(rawLines)
+              ? rawLines
+                  .map((n) =>
+                    typeof n === "number" ? n : Number.parseInt(String(n), 10)
+                  )
+                  .filter((n) => Number.isFinite(n) && n > 0)
+              : undefined;
           const tag: FileTag = {
             path: parsed.path,
             name: parsed.name,
             isDirectory: parsed.isDirectory === true,
+            lines: parsed.isDirectory === true ? undefined : lines,
           };
 
           if (textareaRef.current) {
@@ -483,7 +532,7 @@ export const ChatInputView = ({
         // Ignore invalid drag data
       }
     },
-    [syncContent, textareaRef]
+    [insertFileTags, syncContent, textareaRef]
   );
 
   const handleDragOver = useCallback(

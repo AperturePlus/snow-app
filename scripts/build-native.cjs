@@ -66,6 +66,25 @@ if (process.platform !== "darwin" && !target) {
 
 const cargoCommand = process.platform === "win32" ? "cargo.exe" : "cargo";
 
+// Detect a usable rustc wrapper (sccache) so compiled crates are cached across
+// builds. Only enabled when sccache is actually available, so machines or CI
+// runners without it simply build without caching instead of failing.
+function detectRustcWrapper() {
+  // Respect an explicitly configured wrapper from the environment.
+  if (process.env.RUSTC_WRAPPER) return process.env.RUSTC_WRAPPER;
+  // Allow opting out explicitly.
+  if (process.env.SNOW_DISABLE_SCCACHE) return null;
+  const probe = spawnSync("sccache", ["--version"], { stdio: "ignore" });
+  return probe.status === 0 ? "sccache" : null;
+}
+
+const rustcWrapper = detectRustcWrapper();
+if (rustcWrapper) {
+  console.log(`Using rustc wrapper "${rustcWrapper}" (shared compile cache)`);
+} else {
+  console.log("sccache not detected, building without a shared compile cache");
+}
+
 function runCargoBuild(triple) {
   const cargoArgs = [
     "build",
@@ -76,9 +95,13 @@ function runCargoBuild(triple) {
     triple,
   ];
 
+  const cargoEnv = { ...process.env };
+  if (rustcWrapper) cargoEnv.RUSTC_WRAPPER = rustcWrapper;
+
   const result = spawnSync(cargoCommand, cargoArgs, {
     cwd: projectRoot,
     stdio: "inherit",
+    env: cargoEnv,
   });
 
   if (result.status !== 0) {

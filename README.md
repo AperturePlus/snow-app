@@ -1,5 +1,13 @@
 # Snow App
 
+> [!WARNING] > **macOS Users:** If the app shows "damaged" or "cannot be opened" after installation, run the following command in Terminal:
+>
+> ```bash
+> sudo xattr -rd com.apple.quarantine /Applications/Snow\ App.app
+> ```
+>
+> You will be prompted to enter your login password to remove the quarantine attribute.
+
 > High-performance cross-platform desktop application powered by Electron, React, TypeScript, and Rust.
 
 [中文文档](./README_zh.md)
@@ -23,19 +31,19 @@ Snow App is a developer-focused desktop application that integrates AI-powered c
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Shell | Electron 37 |
-| Frontend | React 19, TypeScript 5.9 |
-| Bundler | electron-vite (Vite 4) |
-| Native | Rust 2021 Edition (napi-rs 3) |
-| Packaging | electron-builder 26 |
-| Terminal | node-pty, xterm.js 6 |
-| SSH | ssh2 |
-| Storage | rusqlite (SQLite, bundled) |
-| AI/HTTP | async-openai, reqwest |
-| Markdown | markdown-it, streaming-markdown, highlight.js |
-| Icons | lucide-react |
+| Layer     | Technology                                    |
+| --------- | --------------------------------------------- |
+| Shell     | Electron 37                                   |
+| Frontend  | React 19, TypeScript 5.9                      |
+| Bundler   | electron-vite (Vite 4)                        |
+| Native    | Rust 2021 Edition (napi-rs 3)                 |
+| Packaging | electron-builder 26                           |
+| Terminal  | node-pty, xterm.js 6                          |
+| SSH       | ssh2                                          |
+| Storage   | rusqlite (SQLite, bundled)                    |
+| AI/HTTP   | async-openai, reqwest                         |
+| Markdown  | markdown-it, streaming-markdown, highlight.js |
+| Icons     | lucide-react                                  |
 
 ## Project Structure
 
@@ -123,15 +131,15 @@ Runs both TypeScript type checking (`tsc --noEmit`) and Rust checking (`cargo ch
 
 ## Available Scripts
 
-| Script | Description |
-|--------|-------------|
-| `npm run dev` | Start development server with HMR |
-| `npm run build` | Build Rust native module + Vite bundle |
-| `npm run build:app` | Build + create distributable package |
-| `npm run build:rust` | Build only the Rust native module |
-| `npm run check` | TypeScript + Rust type checking |
-| `npm run check:ts` | TypeScript type checking only |
-| `npm run preview` | Preview the production build |
+| Script               | Description                            |
+| -------------------- | -------------------------------------- |
+| `npm run dev`        | Start development server with HMR      |
+| `npm run build`      | Build Rust native module + Vite bundle |
+| `npm run build:app`  | Build + create distributable package   |
+| `npm run build:rust` | Build only the Rust native module      |
+| `npm run check`      | TypeScript + Rust type checking        |
+| `npm run check:ts`   | TypeScript type checking only          |
+| `npm run preview`    | Preview the production build           |
 
 ## Native Module
 

@@ -2,6 +2,7 @@ import { memo } from "react";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import {
   AskUserQuestionToolCall,
+  PlanModeApprovalToolCall,
   BashToolCall,
   FilesystemReadToolCall,
   FilesystemEditToolCall,
@@ -12,6 +13,7 @@ import {
   CodebaseToolCall,
   CodeLensToolCall,
   WebSearchToolCall,
+  BrowserToolCall,
 } from "../toolCalls";
 import { ToolCallNode } from "../toolCalls/shared/ToolCallNode";
 import { useI18n } from "../../../../i18n";
@@ -57,6 +59,10 @@ export const ToolCallItem = memo(
     // Delegate to specialized renderers based on tool name
     if (toolCall.name === "user-interaction-askUserQuestion") {
       return <AskUserQuestionToolCall toolCall={toolCall} />;
+    }
+
+    if (toolCall.name === "plan-mode-requestApproval") {
+      return <PlanModeApprovalToolCall toolCall={toolCall} />;
     }
 
     if (toolCall.name === "filesystem-read") {
@@ -107,6 +113,10 @@ export const ToolCallItem = memo(
       return <WebSearchToolCall toolCall={toolCall} />;
     }
 
+    if (toolCall.name.startsWith("browser-")) {
+      return <BrowserToolCall toolCall={toolCall} />;
+    }
+
     const effectiveStatus = hasResultError(toolCall.result)
       ? "error"
       : toolCall.status;
@@ -114,10 +124,7 @@ export const ToolCallItem = memo(
     const hasBody = Boolean(formattedArgs || toolCall.result);
 
     return (
-      <ToolCallNode
-        toolName={toolCall.name}
-        status={effectiveStatus}
-      >
+      <ToolCallNode toolName={toolCall.name} status={effectiveStatus}>
         {hasBody ? (
           <>
             {formattedArgs ? (

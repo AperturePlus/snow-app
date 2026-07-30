@@ -38,7 +38,9 @@ const createMcpToolStreamId = (): string =>
 const normalizeBashStreamChunk = (value: unknown): BashStreamChunk | null => {
   if (
     !isRecord(value) ||
-    (value.stream !== "stdout" && value.stream !== "stderr") ||
+    (value.stream !== "stdout" &&
+      value.stream !== "stderr" &&
+      value.stream !== "interactive_session") ||
     typeof value.data !== "string"
   ) {
     return null;
@@ -485,6 +487,8 @@ export const systemApi = {
   },
   issueSensitiveCommandAuthorization: (command: string): Promise<string> =>
     ipcRenderer.invoke("mcp:authorize-sensitive-command", command),
+  writeInteractiveStdin: (sessionId: string, input: string): Promise<void> =>
+    ipcRenderer.invoke("mcp:write-interactive-stdin", sessionId, input),
   callMcpTool: (
     toolFullName: string,
     argsJson: string,
@@ -494,7 +498,9 @@ export const systemApi = {
     sensitiveAuthorizationToken?: string,
     onChunk?: (chunk: BashStreamChunk) => void,
     interactionId?: string,
-    subAgentAllowedTools?: string[]
+    subAgentAllowedTools?: string[],
+    planMode?: boolean,
+    planApproved?: boolean
   ): Promise<string> => {
     const streamId = createMcpToolStreamId();
     ensureMcpToolChunkListener();
@@ -514,7 +520,9 @@ export const systemApi = {
         sensitiveAuthorizationToken,
         streamId,
         interactionId ?? streamId,
-        subAgentAllowedTools
+        subAgentAllowedTools,
+        planMode,
+        planApproved
       )
       .finally(() => {
         mcpToolChunkCallbacks.delete(streamId);
@@ -552,6 +560,8 @@ export const systemApi = {
     ipcRenderer.invoke("updater:install-update"),
   getUpdateStatus: (): Promise<UpdateStatus> =>
     ipcRenderer.invoke("updater:get-status"),
+  checkForUpdates: (): Promise<UpdateStatus> =>
+    ipcRenderer.invoke("updater:check-for-updates"),
   onUpdateStatusChanged: (
     callback: (status: UpdateStatus) => void
   ): (() => void) => {

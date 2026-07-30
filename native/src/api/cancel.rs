@@ -11,6 +11,15 @@ static CANCEL_REGISTRY: Mutex<Option<HashMap<String, CancellationToken>>> = Mute
 /// already-cancelled token so the stream aborts immediately.
 static PRE_CANCELLED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 
+/// Separate registry for conversation-summary cancellation tokens, keyed by
+/// conversation id. Unlike streams, summary generation is a non-streaming
+/// HTTP request with no stream id, so it gets its own registry. This allows
+/// `handleAbort` / `handleRollback` to cancel an in-flight summary by
+/// conversation id so the summary's `update_conversation_summary` write
+/// transaction is skipped, releasing the database lock for a subsequent
+/// delete/truncate.
+static SUMMARY_REGISTRY: Mutex<Option<HashMap<String, CancellationToken>>> = Mutex::new(None);
+
 fn with_registry<F, R>(f: F) -> R
 where
     F: FnOnce(&mut HashMap<String, CancellationToken>) -> R,
@@ -31,6 +40,17 @@ where
         .expect("Pre-cancelled set mutex poisoned");
     let set = guard.get_or_insert_with(HashSet::new);
     f(set)
+}
+
+fn with_summary_registry<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut HashMap<String, CancellationToken>) -> R,
+{
+    let mut guard = SUMMARY_REGISTRY
+        .lock()
+        .expect("Summary registry mutex poisoned");
+    let registry = guard.get_or_insert_with(HashMap::new);
+    f(registry)
 }
 
 /// Register a cancellation token for the given stream id.
@@ -106,6 +126,37 @@ pub fn create_and_register(stream_id: &str) -> CancellationToken {
     }
     register_stream(stream_id, token.clone());
     token
+}
+
+/// Register a cancellation token for a conversation's summary generation.
+/// Called at the start of `generate_conversation_summary` in the NAPI layer.
+/// If a token already exists for the same conversation id it is replaced.
+pub fn register_summary(conversation_id: &str, token: CancellationToken) {
+    with_summary_registry(|registry| {
+        registry.insert(conversation_id.to_string(), token);
+    });
+}
+
+/// Trigger cancellation for a conversation's in-flight summary and remove
+/// the token from the registry. Returns `true` if a token was found and
+/// cancelled, `false` otherwise (e.g. the summary already finished).
+pub fn cancel_summary(conversation_id: &str) -> bool {
+    with_summary_registry(|registry| {
+        if let Some(token) = registry.remove(conversation_id) {
+            token.cancel();
+            true
+        } else {
+            false
+        }
+    })
+}
+
+/// Remove the summary token from the registry without cancelling it.
+/// Called when the summary finishes normally (success or error).
+pub fn unregister_summary(conversation_id: &str) {
+    with_summary_registry(|registry| {
+        registry.remove(conversation_id);
+    });
 }
 
 

@@ -10,15 +10,17 @@ import type { WorkspaceDirectoryRecord } from "../../../preload";
 import { useAutoScrollPreference } from "../../hooks/useAutoScrollPreference";
 import { useI18n } from "../../i18n";
 import { ChatInput } from "./ChatInput";
-import { PixelLogo } from "../common/PixelLogo";
+import { EmptyChatGreeting } from "./EmptyChatGreeting";
 import { ChatMessageList, useChatConversationContext } from "./chatMessages";
 import { RollbackConfirmDialog } from "./chatMessages/dialogs/RollbackConfirmDialog";
 import { CompactionStream } from "./chatMessages/components/CompactionStream";
 import type { ChatInputSendOptions } from "./chatInput/types";
+import type { MainContentView } from "./types";
 import type { RollbackMode } from "./chatMessages/utils/conversationTypes";
 
 type ChatContentProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
+  onNavigateToView?: (view: MainContentView) => void;
 };
 
 type PendingScrollRestore = {
@@ -33,6 +35,7 @@ const SHOW_SCROLL_TO_BOTTOM_THRESHOLD = 160;
 
 const ChatContentBody = ({
   activeDirectory,
+  onNavigateToView,
 }: ChatContentProps): React.JSX.Element => {
   const {
     messages,
@@ -59,6 +62,7 @@ const ChatContentBody = ({
     compactionPreview,
     compactionError,
     isCompacting,
+    compactingConversationId,
     yoloMode,
     isUpdatingYoloMode,
     setYoloMode,
@@ -74,6 +78,16 @@ const ChatContentBody = ({
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const hasMessages = messages.length > 0;
   const hasHistoryContent = hasMessages || isLoadingInitialHistory;
+  // Compaction state is global, but the preview/error UI must only appear in
+  // the conversation that is actually compacting — otherwise it bleeds into
+  // other conversations after a switch.
+  const isCompactionForActiveConversation =
+    activeConversationId != null &&
+    activeConversationId === compactingConversationId;
+  const isCompactingActive = isCompacting && isCompactionForActiveConversation;
+  const activeCompactionError = isCompactionForActiveConversation
+    ? compactionError
+    : null;
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeConversationIdRef = useRef(activeConversationId);
   const previousActiveConversationIdRef = useRef(activeConversationId);
@@ -85,9 +99,39 @@ const ChatContentBody = ({
   const shouldStickToBottomRef = useRef(true);
   const isInitialBottomPositioningRef = useRef(false);
   const isUserScrollIntentRef = useRef(false);
-  const previousIsCompactingRef = useRef(isCompacting);
+  const previousIsCompactingRef = useRef(isCompactingActive);
   const scrollRafIdRef = useRef(0);
+  const hasMessagesRef = useRef(hasMessages);
   activeConversationIdRef.current = activeConversationId;
+  hasMessagesRef.current = hasMessages;
+
+  // Shared by the scroll handler and the resize observer: content height
+  // changes (tool details expanding/collapsing, lazily rendered message
+  // groups, decoded images) can leave the viewport at the bottom — or remove
+  // the scrollbar entirely — without ever firing a scroll event, so the
+  // follow state and button visibility must be derived from live geometry.
+  const updateScrollFollowState = useCallback(
+    (container: HTMLDivElement): void => {
+      const distanceFromBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+
+      if (
+        isInitialBottomPositioningRef.current &&
+        !isUserScrollIntentRef.current
+      ) {
+        shouldStickToBottomRef.current = true;
+        setShowScrollToBottom(false);
+        return;
+      }
+
+      shouldStickToBottomRef.current = distanceFromBottom < 48;
+      setShowScrollToBottom(
+        hasMessagesRef.current &&
+          distanceFromBottom > SHOW_SCROLL_TO_BOTTOM_THRESHOLD
+      );
+    },
+    []
+  );
 
   useLayoutEffect(() => {
     if (previousActiveConversationIdRef.current === activeConversationId) {
@@ -194,8 +238,23 @@ const ChatContentBody = ({
       const didContentHeightChange = nextScrollHeight !== lastScrollHeight;
       lastScrollHeight = nextScrollHeight;
 
+      if (!didContentHeightChange) {
+        return;
+      }
+
+      // Re-evaluate against the fresh geometry before deciding whether to
+      // pin: a shrink may have already landed the viewport at the bottom.
+      // Skip while older messages are being prepended — the pending scroll
+      // restore will re-position the viewport and the follow-up scroll event
+      // re-evaluates the state.
       if (
-        !didContentHeightChange ||
+        !isLoadingOlderWithScrollRef.current &&
+        pendingScrollRestoreRef.current === null
+      ) {
+        updateScrollFollowState(container);
+      }
+
+      if (
         !shouldStickToBottomRef.current ||
         isLoadingOlderWithScrollRef.current ||
         pendingScrollRestoreRef.current !== null
@@ -204,12 +263,6 @@ const ChatContentBody = ({
       }
 
       container.scrollTop = nextScrollHeight;
-      if (
-        isInitialBottomPositioningRef.current &&
-        !isUserScrollIntentRef.current
-      ) {
-        setShowScrollToBottom(false);
-      }
     };
 
     // Coalesce bulk DOM mutations (child list changes, image loads) into a
@@ -259,7 +312,7 @@ const ChatContentBody = ({
       mutationObserver.disconnect();
       resizeObserver.disconnect();
     };
-  }, [activeConversationId]);
+  }, [activeConversationId, updateScrollFollowState]);
 
   // When tool authorization prompts appear, force-scroll the chat area to
   // the bottom so users do not miss the confirmation while reading earlier
@@ -317,8 +370,8 @@ const ChatContentBody = ({
   // must remain visible regardless of the user's normal auto-scroll preference.
   useLayoutEffect(() => {
     const wasCompacting = previousIsCompactingRef.current;
-    previousIsCompactingRef.current = isCompacting;
-    if (wasCompacting === isCompacting) {
+    previousIsCompactingRef.current = isCompactingActive;
+    if (wasCompacting === isCompactingActive) {
       return;
     }
 
@@ -332,7 +385,7 @@ const ChatContentBody = ({
 
     scrollToBottom();
     requestAnimationFrame(scrollToBottom);
-  }, [isCompacting]);
+  }, [isCompactingActive]);
 
   const handleLoadOlderWithScroll = useCallback(async (): Promise<void> => {
     const container = scrollRef.current;
@@ -424,21 +477,12 @@ const ChatContentBody = ({
         return;
       }
 
-      const distanceFromBottom =
-        container.scrollHeight - container.scrollTop - container.clientHeight;
       const isFollowingInitialContent =
         isInitialBottomPositioningRef.current && !isUserScrollIntentRef.current;
-
+      updateScrollFollowState(container);
       if (isFollowingInitialContent) {
-        shouldStickToBottomRef.current = true;
-        setShowScrollToBottom(false);
         return;
       }
-
-      shouldStickToBottomRef.current = distanceFromBottom < 48;
-      setShowScrollToBottom(
-        hasMessages && distanceFromBottom > SHOW_SCROLL_TO_BOTTOM_THRESHOLD
-      );
 
       if (
         container.scrollTop > LOAD_OLDER_SCROLL_THRESHOLD ||
@@ -453,9 +497,9 @@ const ChatContentBody = ({
     });
   }, [
     handleLoadOlderWithScroll,
-    hasMessages,
     hasMoreMessages,
     isLoadingOlderMessages,
+    updateScrollFollowState,
   ]);
 
   const handleScrollToBottom = useCallback((): void => {
@@ -491,7 +535,7 @@ const ChatContentBody = ({
 
   const handleConfirmRollback = useCallback(
     (mode: RollbackMode): void => {
-      confirmRollback(mode);
+      void confirmRollback(mode);
     },
     [confirmRollback]
   );
@@ -559,27 +603,16 @@ const ChatContentBody = ({
               scrollContainerRef={scrollRef}
             />
             <CompactionStream
-              isCompacting={isCompacting}
+              isCompacting={isCompactingActive}
               compactionPreview={compactionPreview}
-              compactionError={compactionError}
+              compactionError={activeCompactionError}
             />
           </>
         ) : (
-          <div className="chat-empty-greeting">
-            <div className="chat-empty-greeting-brand">
-              <PixelLogo className="chat-empty-greeting-logo" />
-            </div>
-            <p className="chat-empty-greeting-title">
-              {activeDirectory
-                ? t("chat.greetingWithProject", {
-                    defaultValue: "What would you like to work on in {{name}}?",
-                    values: { name: activeDirectory.name },
-                  })
-                : t("chat.greetingNoProject", {
-                    defaultValue: "Select a workspace project to get started.",
-                  })}
-            </p>
-          </div>
+          <EmptyChatGreeting
+            activeDirectory={activeDirectory}
+            onNavigateToView={onNavigateToView}
+          />
         )}
       </div>
 
@@ -622,7 +655,7 @@ const ChatContentBody = ({
           onRefreshPlanMode={refreshPlanMode}
           autoScrollEnabled={autoScrollEnabled}
           onAutoScrollChange={setAutoScrollEnabled}
-          isCompacting={isCompacting}
+          isCompacting={isCompactingActive}
         />
       </div>
 
@@ -643,6 +676,12 @@ const ChatContentBody = ({
 
 export const ChatContent = ({
   activeDirectory,
+  onNavigateToView,
 }: ChatContentProps): React.JSX.Element => {
-  return <ChatContentBody activeDirectory={activeDirectory} />;
+  return (
+    <ChatContentBody
+      activeDirectory={activeDirectory}
+      onNavigateToView={onNavigateToView}
+    />
+  );
 };

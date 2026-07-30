@@ -43,14 +43,32 @@ pub async fn git_commit(repo_path: String, message: String) -> napi::Result<GitC
     crate::storage::services::git::commit_changes(&repo_path, &message)
 }
 
+/// Push local commits to the remote. Runs on the blocking thread pool
+/// because `git push` performs network I/O and may take seconds — it
+/// must never block the async runtime.
 #[napi]
 pub async fn git_push(repo_path: String) -> napi::Result<GitPushPullResult> {
-    crate::storage::services::git::push_changes(&repo_path)
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::push_changes(&repo_path)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to push to remote: {join_error}"))
+    })?
 }
 
+/// Pull changes from the remote. Runs on the blocking thread pool
+/// because `git pull` performs network I/O and may take seconds — it
+/// must never block the async runtime.
 #[napi]
 pub async fn git_pull(repo_path: String) -> napi::Result<GitPushPullResult> {
-    crate::storage::services::git::pull_changes(&repo_path)
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::pull_changes(&repo_path)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to pull from remote: {join_error}"))
+    })?
 }
 
 /// Fetch from the remote without merging. Runs on the blocking thread
