@@ -86,10 +86,12 @@ export const useConversationManagement = (
       if (ctx.planModeRef.current !== targetPlanMode) {
         ctx.planModeRef.current = targetPlanMode;
         ctx.setPlanModeState(targetPlanMode);
+        void window.snow.setPlanMode(targetPlanMode);
       }
       if (ctx.goalModeRef.current !== targetGoalMode) {
         ctx.goalModeRef.current = targetGoalMode;
         ctx.setGoalModeState(targetGoalMode);
+        void window.snow.setGoalMode(targetGoalMode);
       }
 
       if (hasLoadedCachedHistory) {

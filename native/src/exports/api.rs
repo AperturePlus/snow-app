@@ -24,6 +24,7 @@ use crate::mcp::servers::bash::{
 use crate::mcp::servers::browser::BrowserCommandCallback;
 use crate::mcp::servers::remote_workspace::RemoteWorkspaceCallback;
 use crate::mcp::servers::skills::{ProjectSkillDefinition, SkillDefinition, SkillsService};
+use crate::mcp::servers::app_control::AppControlCallback;
 use crate::mcp::servers::user_interaction::UserQuestionCallback;
 use crate::mcp::tools::{
     call_mcp_tool as call_tool,
@@ -248,7 +249,7 @@ pub async fn write_interactive_stdin(
 }
 
 #[napi(
-    ts_args_type = "toolFullName: string, argsJson: string, projectId: string | undefined, checkpointIds: string[] | undefined, checkpointWorkDir: string | undefined, sensitiveAuthorizationToken: string | undefined, onChunk: (chunk: BashStreamChunk) => void, onBrowserCommand: (command: BrowserCommand) => Promise<string>, onUserQuestion: (question: UserQuestionCommand) => Promise<string>, onRemoteWorkspaceCommand: (command: RemoteWorkspaceCommand) => Promise<string>, subAgentAllowedTools: string[] | undefined, planMode: boolean | undefined, planApproved: boolean | undefined",
+    ts_args_type = "toolFullName: string, argsJson: string, projectId: string | undefined, checkpointIds: string[] | undefined, checkpointWorkDir: string | undefined, sensitiveAuthorizationToken: string | undefined, onChunk: (chunk: BashStreamChunk) => void, onBrowserCommand: (command: BrowserCommand) => Promise<string>, onUserQuestion: (question: UserQuestionCommand) => Promise<string>, onAppControl: (command: AppControlCommand) => Promise<string>, onRemoteWorkspaceCommand: (command: RemoteWorkspaceCommand) => Promise<string>, subAgentAllowedTools: string[] | undefined, planMode: boolean | undefined, planApproved: boolean | undefined",
     ts_return_type = "Promise<string>"
 )]
 pub async fn call_mcp_tool(
@@ -261,6 +262,7 @@ pub async fn call_mcp_tool(
     on_chunk: BashStreamCallback,
     on_browser_command: BrowserCommandCallback,
     on_user_question: UserQuestionCallback,
+    on_app_control: AppControlCallback,
     on_remote_workspace_command: RemoteWorkspaceCallback,
     sub_agent_allowed_tools: Option<Vec<String>>,
     plan_mode: Option<bool>,
@@ -276,6 +278,7 @@ pub async fn call_mcp_tool(
         on_chunk,
         on_browser_command,
         on_user_question,
+        on_app_control,
         on_remote_workspace_command,
         sub_agent_allowed_tools,
         plan_mode.unwrap_or(false),

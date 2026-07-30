@@ -1,6 +1,7 @@
 import { ipcMain, nativeTheme } from "electron";
 import { randomUUID } from "node:crypto";
 import type {
+  AppControlCommand,
   BashStreamChunk,
   BrowserCommand,
   BrowserCommandResponse,
@@ -22,6 +23,11 @@ import {
   resolveUserQuestion,
   USER_QUESTION_RESPONSE_CHANNEL,
 } from "../userQuestionBroker";
+import {
+  dispatchAppControl,
+  resolveAppControl,
+  APP_CONTROL_RESPONSE_CHANNEL,
+} from "../appControlBroker";
 import { dispatchRemoteWorkspaceCommand } from "../../ssh/remoteWorkspaceCommand";
 
 const MCP_TOOL_CHUNK_CHANNEL = "mcp:call-tool:chunk";
@@ -561,6 +567,18 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       resolveUserQuestion(event.sender, response);
     }
   );
+  ipcMain.on(
+    APP_CONTROL_RESPONSE_CHANNEL,
+    (
+      event,
+      response: { requestId: string; resultJson?: string; error?: string }
+    ) => {
+      if (!response || typeof response.requestId !== "string") {
+        return;
+      }
+      resolveAppControl(event.sender, response);
+    }
+  );
   ipcMain.handle(
     "mcp:authorize-sensitive-command",
     async (_event, command: unknown) => {
@@ -679,6 +697,8 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
           dispatchBrowserCommand(event.sender, command),
         (question: UserQuestionCommand) =>
           dispatchUserQuestion(event.sender, question, normalizedInteractionId),
+        (command: AppControlCommand) =>
+          dispatchAppControl(event.sender, command),
         (command) => dispatchRemoteWorkspaceCommand(command),
         normalizedSubAgentAllowedTools,
         planMode as boolean | undefined,

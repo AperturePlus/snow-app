@@ -5,6 +5,7 @@ use napi::bindgen_prelude::*;
 use serde_json::Value;
 
 use super::service::McpService;
+use super::servers::app_control::AppControlService;
 use super::servers::bash::BashService;
 use super::servers::browser::BrowserService;
 use super::servers::codebase::CodebaseService;
@@ -36,6 +37,7 @@ fn builtin_services_in_order() -> Vec<Arc<dyn McpService>> {
         Arc::new(CodebaseService::new()),
         Arc::new(CodeLensService::new()),
         Arc::new(PlanModeService::new()),
+        Arc::new(AppControlService::new()),
     ]
 }
 

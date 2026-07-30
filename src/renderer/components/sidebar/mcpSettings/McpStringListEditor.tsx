@@ -29,18 +29,7 @@ export function McpStringListEditor({
 
   return (
     <div className="mcp-key-value-editor">
-      <div className="api-settings-form-section-header">
-        <strong className="api-settings-form-section-title">{title}</strong>
-        <button
-          className="api-settings-form-btn secondary compact"
-          onClick={onAddItem}
-          type="button"
-          disabled={isBusy}
-        >
-          <Plus size={14} />
-          <span>{t("settings.add", { defaultValue: "Add" })}</span>
-        </button>
-      </div>
+      <strong className="api-settings-form-section-title">{title}</strong>
 
       <div className="custom-headers-editor-list">
         {items.length === 0 ? (
@@ -73,6 +62,16 @@ export function McpStringListEditor({
           ))
         )}
       </div>
+
+      <button
+        className="mcp-list-add-btn"
+        onClick={onAddItem}
+        type="button"
+        disabled={isBusy}
+      >
+        <Plus size={14} />
+        <span>{t("settings.add", { defaultValue: "Add" })}</span>
+      </button>
     </div>
   );
 }

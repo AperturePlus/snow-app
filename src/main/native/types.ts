@@ -713,6 +713,11 @@ export type UserQuestionResponse = {
   error?: string;
 };
 
+export type AppControlCommand = {
+  action: string;
+  payloadJson: string;
+};
+
 export type GitFileStatus = {
   path: string;
   oldPath: string | null;
@@ -1080,6 +1085,7 @@ export type NativeBridge = {
     onChunk: (chunk: BashStreamChunk) => void,
     onBrowserCommand: (command: BrowserCommand) => Promise<string>,
     onUserQuestion: (question: UserQuestionCommand) => Promise<string>,
+    onAppControl: (command: AppControlCommand) => Promise<string>,
     onRemoteWorkspaceCommand: (
       command: RemoteWorkspaceCommand
     ) => Promise<string>,

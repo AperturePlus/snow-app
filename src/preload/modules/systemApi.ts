@@ -27,6 +27,8 @@ const BROWSER_COMMAND_CHANNEL = "browser:command";
 const BROWSER_COMMAND_RESPONSE_CHANNEL = "browser:command-response";
 const USER_QUESTION_CHANNEL = "user-question:request";
 const USER_QUESTION_RESPONSE_CHANNEL = "user-question:response";
+const APP_CONTROL_CHANNEL = "app-control:request";
+const APP_CONTROL_RESPONSE_CHANNEL = "app-control:response";
 const CODEBASE_EMBED_PROGRESS_CHANNEL = "codebase:embed:progress";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -483,6 +485,46 @@ export const systemApi = {
     ipcRenderer.on(USER_QUESTION_CHANNEL, listener);
     return () => {
       ipcRenderer.removeListener(USER_QUESTION_CHANNEL, listener);
+    };
+  },
+  registerAppControlHandler: (
+    handler: (request: {
+      requestId: string;
+      action: string;
+      payloadJson: string;
+    }) => Promise<string>
+  ): (() => void) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      request: { requestId: string; action: string; payloadJson: string }
+    ): void => {
+      if (
+        !request ||
+        typeof request.requestId !== "string" ||
+        typeof request.action !== "string" ||
+        typeof request.payloadJson !== "string"
+      ) {
+        return;
+      }
+
+      void handler(request)
+        .then((resultJson) => {
+          ipcRenderer.send(APP_CONTROL_RESPONSE_CHANNEL, {
+            requestId: request.requestId,
+            resultJson,
+          });
+        })
+        .catch((error: unknown) => {
+          ipcRenderer.send(APP_CONTROL_RESPONSE_CHANNEL, {
+            requestId: request.requestId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+    };
+
+    ipcRenderer.on(APP_CONTROL_CHANNEL, listener);
+    return () => {
+      ipcRenderer.removeListener(APP_CONTROL_CHANNEL, listener);
     };
   },
   issueSensitiveCommandAuthorization: (command: string): Promise<string> =>

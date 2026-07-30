@@ -261,6 +261,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             directoryId: sessionDirId,
             checkpointId,
             planMode: ctx.planModeRef.current,
+            goalMode: ctx.goalModeRef.current,
           },
           createStreamChunkHandler(
             ctx,

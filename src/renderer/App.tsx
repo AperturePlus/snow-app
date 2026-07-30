@@ -11,13 +11,20 @@ import { RightPanel, type RightPanelRef } from "./components/RightPanel";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { WindowControls } from "./components/WindowControls";
-import { ChatConversationProvider, useChatConversationContext } from "./components/mainContent/chatMessages";
+import {
+  ChatConversationProvider,
+  useChatConversationContext,
+} from "./components/mainContent/chatMessages";
 import type { MainContentView } from "./components/mainContent/types";
 import { SshConnectWizard } from "./components/sidebar/mainSidebar/SshConnectWizard";
 import { ConfirmDialog } from "./components/common/ConfirmDialog";
 import { rightPanelEvents } from "./components/rightPanel/rightPanelEvents";
-import { KeyboardShortcutsProvider, useKeyboardShortcutsSettings } from "./components/KeyboardShortcutsProvider";
+import {
+  KeyboardShortcutsProvider,
+  useKeyboardShortcutsSettings,
+} from "./components/KeyboardShortcutsProvider";
 import { shortcutEvents } from "./components/shortcutEvents";
+import { useAppControl } from "./hooks/useAppControl";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useI18n } from "./i18n";
 import { useTheme } from "./hooks/useTheme";
@@ -120,6 +127,7 @@ export const App = (): React.JSX.Element => {
   const isWindows = navigator.userAgent.includes("Win");
   const { t } = useI18n();
   useTheme();
+  useAppControl({ activeDirectory, setActiveMainView });
 
   // 监听主进程的关闭请求：所有关闭路径（标题栏按钮、Alt+F4、任务栏）
   // 都会在主进程被拦截并回推 window:close-requested，此处弹出二次确认。
@@ -311,80 +319,82 @@ export const App = (): React.JSX.Element => {
       >
         <ShortcutHandlerBridge />
         <div className={shellClasses} style={panelSizeStyle}>
-        {isWindows && <WindowControls />}
-        <TopBar
-          isSidebarCollapsed={isSidebarCollapsed}
-          isRightPanelCollapsed={isRightPanelCollapsed}
-          activeDirectory={activeDirectory}
-          onToggleSidebar={() =>
-            setIsSidebarCollapsed((isCollapsed) => !isCollapsed)
-          }
-          onToggleRightPanel={() =>
-            setIsRightPanelCollapsed((isCollapsed) => !isCollapsed)
-          }
-          isRightPanelFullscreen={isRightPanelFullscreen}
-          onToggleRightPanelFullscreen={() =>
-            setIsRightPanelFullscreen((isFullscreen) => !isFullscreen)
-          }
-          onOpenTerminal={handleOpenTerminal}
-          onOpenBrowser={handleOpenBrowser}
-        />
-        <div className="app-layout">
-          <Sidebar
+          {isWindows && <WindowControls />}
+          <TopBar
+            isSidebarCollapsed={isSidebarCollapsed}
+            isRightPanelCollapsed={isRightPanelCollapsed}
             activeDirectory={activeDirectory}
-            activeMainView={activeMainView}
-            isCollapsed={isSidebarCollapsed}
-            onActiveDirectoryChange={setActiveDirectory}
-            onSelectMainView={setActiveMainView}
-            onOpenSshWizard={handleOpenSshWizard}
-            onOpenFile={handleOpenFile}
+            onToggleSidebar={() =>
+              setIsSidebarCollapsed((isCollapsed) => !isCollapsed)
+            }
+            onToggleRightPanel={() =>
+              setIsRightPanelCollapsed((isCollapsed) => !isCollapsed)
+            }
+            isRightPanelFullscreen={isRightPanelFullscreen}
+            onToggleRightPanelFullscreen={() =>
+              setIsRightPanelFullscreen((isFullscreen) => !isFullscreen)
+            }
+            onOpenTerminal={handleOpenTerminal}
+            onOpenBrowser={handleOpenBrowser}
           />
-          {!isSidebarCollapsed && (
-            <div
-              className="panel-resizer sidebar-resizer layout-resizer"
-              role="separator"
-              aria-label="Resize sidebar"
-              aria-orientation="vertical"
-              onPointerDown={(event) => startPanelResize("sidebar", event)}
+          <div className="app-layout">
+            <Sidebar
+              activeDirectory={activeDirectory}
+              activeMainView={activeMainView}
+              isCollapsed={isSidebarCollapsed}
+              onActiveDirectoryChange={setActiveDirectory}
+              onSelectMainView={setActiveMainView}
+              onOpenSshWizard={handleOpenSshWizard}
+              onOpenFile={handleOpenFile}
             />
-          )}
-          <MainContent
-            activeDirectory={activeDirectory}
-            activeView={activeMainView}
-            onSelectView={setActiveMainView}
-          />
-          {!isRightPanelCollapsed && (
-            <div
-              className="panel-resizer right-panel-resizer layout-resizer"
-              role="separator"
-              aria-label="Resize review panel"
-              aria-orientation="vertical"
-              onPointerDown={(event) => startPanelResize("right-panel", event)}
+            {!isSidebarCollapsed && (
+              <div
+                className="panel-resizer sidebar-resizer layout-resizer"
+                role="separator"
+                aria-label="Resize sidebar"
+                aria-orientation="vertical"
+                onPointerDown={(event) => startPanelResize("sidebar", event)}
+              />
+            )}
+            <MainContent
+              activeDirectory={activeDirectory}
+              activeView={activeMainView}
+              onSelectView={setActiveMainView}
             />
-          )}
-          <RightPanel
-            ref={rightPanelRef}
-            isCollapsed={isRightPanelCollapsed}
-            isFullscreen={isRightPanelFullscreen}
-            activeDirectory={activeDirectory}
+            {!isRightPanelCollapsed && (
+              <div
+                className="panel-resizer right-panel-resizer layout-resizer"
+                role="separator"
+                aria-label="Resize review panel"
+                aria-orientation="vertical"
+                onPointerDown={(event) =>
+                  startPanelResize("right-panel", event)
+                }
+              />
+            )}
+            <RightPanel
+              ref={rightPanelRef}
+              isCollapsed={isRightPanelCollapsed}
+              isFullscreen={isRightPanelFullscreen}
+              activeDirectory={activeDirectory}
+            />
+          </div>
+          {showSshWizard ? (
+            <SshConnectWizard
+              onConfirm={(sshUrl) => void handleSshWizardConfirm(sshUrl)}
+              onCancel={handleSshWizardCancel}
+            />
+          ) : null}
+          <ConfirmDialog
+            open={showCloseConfirm}
+            title={t("app.closeConfirmTitle")}
+            message={t("app.closeConfirmMessage")}
+            confirmLabel={t("app.closeConfirm")}
+            cancelLabel={t("app.closeCancel")}
+            onConfirm={handleConfirmClose}
+            onCancel={handleCancelClose}
+            variant="warning"
           />
-        </div>
-        {showSshWizard ? (
-          <SshConnectWizard
-            onConfirm={(sshUrl) => void handleSshWizardConfirm(sshUrl)}
-            onCancel={handleSshWizardCancel}
-          />
-        ) : null}
-        <ConfirmDialog
-          open={showCloseConfirm}
-          title={t("app.closeConfirmTitle")}
-          message={t("app.closeConfirmMessage")}
-          confirmLabel={t("app.closeConfirm")}
-          cancelLabel={t("app.closeCancel")}
-          onConfirm={handleConfirmClose}
-          onCancel={handleCancelClose}
-          variant="warning"
-        />
         </div>
       </ChatConversationProvider>
     </KeyboardShortcutsProvider>

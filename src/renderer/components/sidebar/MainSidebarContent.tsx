@@ -1,9 +1,16 @@
-import { Download, LoaderCircle, NotebookText, Search, Settings } from "lucide-react";
+import {
+  Download,
+  LoaderCircle,
+  NotebookText,
+  Search,
+  Settings,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { useI18n } from "../../i18n";
 import { useChatConversationContext } from "../mainContent/chatMessages";
 import { shortcutEvents } from "../shortcutEvents";
+import { APP_CONTROL_MEMO_CREATED_EVENT } from "../../hooks/useAppControl";
 import type { MainContentView } from "../mainContent/types";
 import { ChatsSection } from "./mainSidebar/ChatsSection";
 import { PinnedSection } from "./mainSidebar/PinnedSection";
@@ -63,6 +70,16 @@ export function MainSidebarContent({
 
   useEffect(() => {
     refreshPendingMemoCount();
+  }, [refreshPendingMemoCount]);
+
+  useEffect(() => {
+    const handler = () => {
+      refreshPendingMemoCount();
+    };
+    window.addEventListener(APP_CONTROL_MEMO_CREATED_EVENT, handler);
+    return () => {
+      window.removeEventListener(APP_CONTROL_MEMO_CREATED_EVENT, handler);
+    };
   }, [refreshPendingMemoCount]);
 
   // 订阅自动更新状态：autoUpdater 在启动后自动检测更新，发现新版本时
@@ -158,9 +175,7 @@ export function MainSidebarContent({
           type="button"
         >
           <NotebookText size={16} strokeWidth={1.8} />
-          <span>
-            {t("memo.sidebarEntry", { defaultValue: "Memos" })}
-          </span>
+          <span>{t("memo.sidebarEntry", { defaultValue: "Memos" })}</span>
           {pendingMemoCount > 0 && (
             <span className="sidebar-memo-badge">{pendingMemoCount}</span>
           )}

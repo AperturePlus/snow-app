@@ -20,6 +20,7 @@ enum ToolCheckpointCapture {
 use super::builtin::{
     execute_builtin_tool, get_builtin_servers_with_tools, get_builtin_tools,
 };
+use super::servers::app_control::{AppControlCallback, AppControlService, SERVER_ID as APP_CONTROL_SERVER_ID};
 use super::servers::bash::{BashService, BashStreamCallback};
 use super::servers::browser::{BrowserCommandCallback, BrowserService};
 use super::servers::codebase::CodebaseService;
@@ -85,6 +86,7 @@ impl McpTool {
 /// server_name 经 `sanitize_name` 后不含 `-`，可安全用第一个 `-` 分割。
 pub const BUILTIN_SERVER_IDS: &[&str] = &[
     "user-interaction",
+    "app-control",
     "plan-mode",
     "filesystem",
     "sub-agents",
@@ -509,6 +511,7 @@ fn builtin_server_name(server_id: &str) -> &str {
         "browser" => "Browser",
         "user-interaction" => "User interaction",
         "plan-mode" => "Plan Mode",
+        "app-control" => "App Control",
         "sub-agents" => "Sub-agents",
         "codebase" => "Codebase",
         "codelens" => "CodeLens",
@@ -696,6 +699,7 @@ pub async fn call_mcp_tool(
     on_chunk: BashStreamCallback,
     on_browser_command: BrowserCommandCallback,
     on_user_question: UserQuestionCallback,
+    on_app_control: AppControlCallback,
     on_remote_workspace_command: RemoteWorkspaceCallback,
     sub_agent_allowed_tools: Option<Vec<String>>,
     plan_mode: bool,
@@ -843,6 +847,10 @@ pub async fn call_mcp_tool(
     } else if tool_full_name == "plan-mode-requestApproval" {
         PlanModeService::new()
             .execute_async(&args, &on_user_question)
+            .await?
+    } else if let Some(app_control_tool) = tool_full_name.strip_prefix("app-control-") {
+        AppControlService::new()
+            .execute_async(app_control_tool, &args, &on_app_control)
             .await?
     } else if tool_full_name == "skills-skill-execute" {
         SkillsService::new()
