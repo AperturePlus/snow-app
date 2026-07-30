@@ -20,7 +20,7 @@ enum ToolCheckpointCapture {
 use super::builtin::{
     execute_builtin_tool, get_builtin_servers_with_tools, get_builtin_tools,
 };
-use super::servers::app_control::{AppControlCallback, AppControlService, SERVER_ID as APP_CONTROL_SERVER_ID};
+use super::servers::app_control::{AppControlCallback, AppControlService};
 use super::servers::bash::{BashService, BashStreamCallback};
 use super::servers::browser::{BrowserCommandCallback, BrowserService};
 use super::servers::codebase::CodebaseService;

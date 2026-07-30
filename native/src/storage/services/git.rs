@@ -924,7 +924,26 @@ pub fn discover_git_repos(root_path: &str) -> Result<Vec<GitRepoInfo>> {
     }
 
     let mut repos: Vec<GitRepoInfo> = Vec::new();
-    scan_dir_for_repos(root, &mut repos);
+
+    // If the root directory itself is a git repo, add it and don't recurse
+    // into it. This handles the common case where the workspace directory
+    // IS the git repository (e.g. a single-project workspace), which
+    // scan_dir_for_repos would miss because it only checks children.
+    if root.join(".git").exists() {
+        let path_str = root.to_string_lossy().to_string();
+        let name = root
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| path_str.clone());
+        let current_branch = get_current_branch_name(&path_str).unwrap_or_default();
+        repos.push(GitRepoInfo {
+            path: path_str,
+            name,
+            current_branch,
+        });
+    } else {
+        scan_dir_for_repos(root, &mut repos);
+    }
 
     // Sort by path for deterministic ordering
     repos.sort_by(|a, b| a.path.cmp(&b.path));
