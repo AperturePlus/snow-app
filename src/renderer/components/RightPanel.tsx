@@ -1,6 +1,8 @@
 import { X } from "lucide-react";
 import {
   forwardRef,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -11,10 +13,6 @@ import {
 
 import { useI18n } from "../i18n";
 import { GitPanelContent } from "./rightPanel/GitPanelContent";
-import { DiffViewer } from "./rightPanel/DiffViewer";
-import { FileViewerContent } from "./rightPanel/FileViewerContent";
-import { TerminalPanelContent } from "./rightPanel/TerminalPanelContent";
-import { BrowserPanelContent } from "./rightPanel/BrowserPanelContent";
 import { FileDiffPreview } from "./common/FileDiffPreview";
 import {
   useBrowserMcpCommandBridge,
@@ -27,7 +25,7 @@ import {
   type FocusBrowserTabPayload,
   type OpenFileDiffPreviewPayload,
 } from "./rightPanel/rightPanelEvents";
-import { generateComparePatch } from "./common/GitDiffView";
+import { generateComparePatch } from "../utils/generateComparePatch";
 import type {
   BrowserTabData,
   DiffTabData,
@@ -38,6 +36,27 @@ import type {
   RightPanelTab,
   TerminalTabData,
 } from "./rightPanel/types";
+
+// 非默认 tab 的重组件按需加载，避免 xterm / highlight.js / @git-diff-view
+// 等重型依赖打入首屏 chunk。
+const DiffViewer = lazy(() =>
+  import("./rightPanel/DiffViewer").then((m) => ({ default: m.DiffViewer }))
+);
+const FileViewerContent = lazy(() =>
+  import("./rightPanel/FileViewerContent").then((m) => ({
+    default: m.FileViewerContent,
+  }))
+);
+const TerminalPanelContent = lazy(() =>
+  import("./rightPanel/TerminalPanelContent").then((m) => ({
+    default: m.TerminalPanelContent,
+  }))
+);
+const BrowserPanelContent = lazy(() =>
+  import("./rightPanel/BrowserPanelContent").then((m) => ({
+    default: m.BrowserPanelContent,
+  }))
+);
 
 const GIT_TAB_ID = "git";
 
@@ -320,40 +339,43 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       [handleOpenTerminalTab, handleOpenBrowserTab, handleOpenFileTab]
     );
 
-    const handleCloseTab = useCallback((tabId: string) => {
-      setTabs((prev) => {
-        if (tabId === GIT_TAB_ID) {
-          return prev;
-        }
-        const filtered = prev.filter((t) => t.id !== tabId);
-        if (filtered.length === 0) {
-          return prev;
-        }
-        return filtered;
-      });
-      setDirtyTabs((prev) => {
-        if (!prev.has(tabId)) {
-          return prev;
-        }
-        const next = new Set(prev);
-        next.delete(tabId);
-        return next;
-      });
-      setActiveTabId((currentActive) => {
-        if (currentActive !== tabId) {
-          return currentActive;
-        }
-        // 关闭当前激活的 tab：优先向左顺延选择相邻 tab，
-        // 仅当左侧没有其他 tab 时才回退到 Git tab。
-        const currentIndex = tabs.findIndex((t) => t.id === tabId);
-        if (currentIndex > 0) {
-          return tabs[currentIndex - 1].id;
-        }
-        // currentIndex === 0：左侧无 tab，回退到 Git tab（若存在）
-        const gitTab = tabs.find((t) => t.id === GIT_TAB_ID);
-        return gitTab ? GIT_TAB_ID : tabs[1]?.id ?? currentActive;
-      });
-    }, [tabs]);
+    const handleCloseTab = useCallback(
+      (tabId: string) => {
+        setTabs((prev) => {
+          if (tabId === GIT_TAB_ID) {
+            return prev;
+          }
+          const filtered = prev.filter((t) => t.id !== tabId);
+          if (filtered.length === 0) {
+            return prev;
+          }
+          return filtered;
+        });
+        setDirtyTabs((prev) => {
+          if (!prev.has(tabId)) {
+            return prev;
+          }
+          const next = new Set(prev);
+          next.delete(tabId);
+          return next;
+        });
+        setActiveTabId((currentActive) => {
+          if (currentActive !== tabId) {
+            return currentActive;
+          }
+          // 关闭当前激活的 tab：优先向左顺延选择相邻 tab，
+          // 仅当左侧没有其他 tab 时才回退到 Git tab。
+          const currentIndex = tabs.findIndex((t) => t.id === tabId);
+          if (currentIndex > 0) {
+            return tabs[currentIndex - 1].id;
+          }
+          // currentIndex === 0：左侧无 tab，回退到 Git tab（若存在）
+          const gitTab = tabs.find((t) => t.id === GIT_TAB_ID);
+          return gitTab ? GIT_TAB_ID : tabs[1]?.id ?? currentActive;
+        });
+      },
+      [tabs]
+    );
 
     const handleCloseBrowserTab = useCallback(
       (instanceId: string): boolean => {
@@ -465,106 +487,85 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     const renderTabContent = (tab: RightPanelTab): React.ReactNode => {
       if (tab.type === "git") {
         return (
-        <GitPanelContent
-          activeDirectory={activeDirectory}
-          onOpenInTab={handleOpenDiffTab}
-          onOpenFile={handleOpenFileFromGit}
-        />
-        );
-      }
-
-      if (tab.type === "terminal") {
-        const terminalData = tab.data as TerminalTabData;
-        return (
-          <TerminalPanelContent
-            cwd={terminalData.cwd}
-            isActive={activeTabId === tab.id}
-            onTitleChange={(title) => handleTerminalTitleChange(tab.id, title)}
+          <GitPanelContent
+            activeDirectory={activeDirectory}
+            onOpenInTab={handleOpenDiffTab}
+            onOpenFile={handleOpenFileFromGit}
           />
         );
       }
 
-      if (tab.type === "browser") {
-        const browserData = tab.data as BrowserTabData;
-        return (
-          <BrowserPanelContent
-            instanceId={browserData.instanceId}
-            initialUrl={browserData.url}
-            isActive={activeTabId === tab.id}
-            onTitleChange={(title) => handleBrowserTitleChange(tab.id, title)}
-          />
-        );
-      }
-
-      if (tab.type === "diff") {
-        const diffData = tab.data as DiffTabData;
-        if (!diffData) {
-          return null;
-        }
-        return (
-          <DiffViewer
-            selectedFile={diffData.selectedFile}
-            diffResult={diffData.diffResult}
-            diffLoading={diffData.diffLoading}
-          />
-        );
-      }
-
-      if (tab.type === "file") {
-        const fileData = tab.data as FileViewerTabData;
-        if (!fileData) {
-          return null;
-        }
-        return (
-          <FileViewerContent
-            filePath={fileData.filePath}
-            fileName={fileData.fileName}
-            isSsh={fileData.isSsh}
-            sshSessionId={fileData.sshSessionId}
-            focusLine={fileData.focusLine}
-            onDirtyChange={(dirty) =>
-              setDirtyTabs((prev) => {
-                const next = new Set(prev);
-                if (dirty) {
-                  next.add(tab.id);
-                } else {
-                  next.delete(tab.id);
+      // 非 Git tab 均为懒加载组件，需要 Suspense 包裹。
+      return (
+        <Suspense fallback={null}>
+          {tab.type === "terminal" ? (
+            <TerminalPanelContent
+              cwd={(tab.data as TerminalTabData).cwd}
+              isActive={activeTabId === tab.id}
+              onTitleChange={(title) =>
+                handleTerminalTitleChange(tab.id, title)
+              }
+            />
+          ) : tab.type === "browser" ? (
+            <BrowserPanelContent
+              instanceId={(tab.data as BrowserTabData).instanceId}
+              initialUrl={(tab.data as BrowserTabData).url}
+              isActive={activeTabId === tab.id}
+              onTitleChange={(title) => handleBrowserTitleChange(tab.id, title)}
+            />
+          ) : tab.type === "diff" ? (
+            (tab.data as DiffTabData) ? (
+              <DiffViewer
+                selectedFile={(tab.data as DiffTabData).selectedFile}
+                diffResult={(tab.data as DiffTabData).diffResult}
+                diffLoading={(tab.data as DiffTabData).diffLoading}
+              />
+            ) : null
+          ) : tab.type === "file" ? (
+            (tab.data as FileViewerTabData) ? (
+              <FileViewerContent
+                filePath={(tab.data as FileViewerTabData).filePath}
+                fileName={(tab.data as FileViewerTabData).fileName}
+                isSsh={(tab.data as FileViewerTabData).isSsh}
+                sshSessionId={(tab.data as FileViewerTabData).sshSessionId}
+                focusLine={(tab.data as FileViewerTabData).focusLine}
+                onDirtyChange={(dirty) =>
+                  setDirtyTabs((prev) => {
+                    const next = new Set(prev);
+                    if (dirty) {
+                      next.add(tab.id);
+                    } else {
+                      next.delete(tab.id);
+                    }
+                    return next;
+                  })
                 }
-                return next;
-              })
-            }
-          />
-        );
-      }
-
-      if (tab.type === "file-diff-preview") {
-        const previewData = tab.data as FileDiffPreviewTabData;
-        if (!previewData) {
-          return null;
-        }
-        return (
-          <FileDiffPreview
-            diffs={[
-              {
-                path: previewData.filePath,
-                changeType: previewData.changeType,
-                content: previewData.patch ?? "",
-                isBinary: false,
-              },
-            ]}
-            isLoading={false}
-            hasError={previewData.patch == null}
-            labels={{
-              loading: t("rightPanel.loadingDiff"),
-              error: t("rightPanel.diffPreviewError"),
-              empty: t("rightPanel.noChangesToDisplay"),
-              selectFile: t("rightPanel.selectFileToViewDiff"),
-            }}
-          />
-        );
-      }
-
-      return null;
+              />
+            ) : null
+          ) : tab.type === "file-diff-preview" ? (
+            (tab.data as FileDiffPreviewTabData) ? (
+              <FileDiffPreview
+                diffs={[
+                  {
+                    path: (tab.data as FileDiffPreviewTabData).filePath,
+                    changeType: (tab.data as FileDiffPreviewTabData).changeType,
+                    content: (tab.data as FileDiffPreviewTabData).patch ?? "",
+                    isBinary: false,
+                  },
+                ]}
+                isLoading={false}
+                hasError={(tab.data as FileDiffPreviewTabData).patch == null}
+                labels={{
+                  loading: t("rightPanel.loadingDiff"),
+                  error: t("rightPanel.diffPreviewError"),
+                  empty: t("rightPanel.noChangesToDisplay"),
+                  selectFile: t("rightPanel.selectFileToViewDiff"),
+                }}
+              />
+            ) : null
+          ) : null}
+        </Suspense>
+      );
     };
 
     return (

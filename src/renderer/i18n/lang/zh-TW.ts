@@ -529,6 +529,7 @@ export const zhTW = {
   "common.cancel": "取消",
   "common.confirm": "確認",
   "common.retry": "重試",
+  "common.loading": "載入中...",
   "sidebar.search": "搜尋",
   "sidebar.settings": "設定",
   "settings.title": "設定",

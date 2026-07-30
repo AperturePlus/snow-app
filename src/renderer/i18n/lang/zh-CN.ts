@@ -530,6 +530,7 @@ export const zhCN = {
   "common.cancel": "取消",
   "common.confirm": "确认",
   "common.retry": "重试",
+  "common.loading": "加载中...",
   "sidebar.search": "搜索",
   "sidebar.settings": "设置",
   "settings.title": "设置",

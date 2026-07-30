@@ -1,6 +1,6 @@
 {
   "name": "snow-app",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "High-performance cross-platform desktop app scaffold powered by Electron, React, TypeScript, and Rust.",
   "author": {
     "name": "MayDay",
@@ -66,6 +66,7 @@
   "build": {
     "appId": "com.snow.app",
     "productName": "Snow App",
+    "asar": true,
     "files": [
       "out/**",
       "native/*.node",

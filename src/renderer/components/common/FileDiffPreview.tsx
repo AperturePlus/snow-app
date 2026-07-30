@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { FilePen, FilePlus, FileX, type LucideIcon } from "lucide-react";
 
-import { DiffViewer } from "../rightPanel/DiffViewer";
+// DiffViewer 依赖 @git-diff-view（~1.7MB），懒加载避免打入首屏 chunk。
+const DiffViewer = lazy(() =>
+  import("../rightPanel/DiffViewer").then((m) => ({ default: m.DiffViewer }))
+);
 
 export type FileDiffPreviewItem = {
   path: string;
@@ -101,21 +104,23 @@ export const FileDiffPreview = ({
       ) : null}
       <div className="file-diff-preview-diff">
         {selectedDiff ? (
-          <DiffViewer
-            key={selectedDiff.path}
-            selectedFile={{
-              path: selectedDiff.path,
-              oldPath: null,
-              indexStatus: "",
-              workdirStatus: "",
-              status: selectedDiff.changeType,
-            }}
-            diffResult={{
-              content: selectedDiff.content,
-              isBinary: selectedDiff.isBinary,
-            }}
-            diffLoading={false}
-          />
+          <Suspense fallback={null}>
+            <DiffViewer
+              key={selectedDiff.path}
+              selectedFile={{
+                path: selectedDiff.path,
+                oldPath: null,
+                indexStatus: "",
+                workdirStatus: "",
+                status: selectedDiff.changeType,
+              }}
+              diffResult={{
+                content: selectedDiff.content,
+                isBinary: selectedDiff.isBinary,
+              }}
+              diffLoading={false}
+            />
+          </Suspense>
         ) : (
           <div className="file-diff-preview-state">
             {isLoading ? labels.loading : labels.selectFile}

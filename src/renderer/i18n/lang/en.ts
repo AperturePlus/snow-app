@@ -539,6 +539,7 @@ export const en = {
   "common.cancel": "Cancel",
   "common.confirm": "Confirm",
   "common.retry": "Retry",
+  "common.loading": "Loading...",
   "sidebar.search": "Search",
   "sidebar.settings": "Settings",
   "settings.title": "Settings",

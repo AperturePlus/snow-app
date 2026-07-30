@@ -4526,6 +4526,36 @@ input {
   padding: 18px 10px;
 }
 
+/* 懒加载面板的 Suspense 兜底：铺满主内容区，避免分包加载时白屏 */
+.main-content-loading {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+  user-select: none;
+  animation: main-content-loading-in 0.18s ease-out;
+}
+
+.main-content-loading .spin {
+  color: var(--text-tertiary);
+}
+
+@keyframes main-content-loading-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Header */
 .main-header {
   display: flex;

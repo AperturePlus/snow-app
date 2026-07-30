@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { MoveVertical } from "lucide-react";
 
 import { useI18n } from "../../i18n";
@@ -6,7 +6,11 @@ import type { GitDiffResult, GitFileStatus, GitStatusResult } from "./git";
 import { GitControl, RepoSelector, useGitRepos } from "./git";
 import type { OpenDiffTabCallback } from "./types";
 import type { RightPanelContentProps } from "./types";
-import { DiffViewer } from "./DiffViewer";
+
+// DiffViewer 依赖 @git-diff-view（~1.7MB），懒加载避免打入首屏 chunk。
+const DiffViewer = lazy(() =>
+  import("./DiffViewer").then((m) => ({ default: m.DiffViewer }))
+);
 
 const SPLIT_MIN = 0.15;
 const SPLIT_MAX = 0.85;
@@ -129,13 +133,15 @@ export function GitPanelContent({
         style={{ flexGrow: 1 - splitRatio, flexBasis: 0, flexShrink: 0 }}
       >
         {selectedFile ? (
-          <DiffViewer
-            selectedFile={selectedFile}
-            diffResult={diffResult}
-            diffLoading={diffLoading}
-            onOpenInTab={onOpenInTab}
-            onClose={() => setSelectedFile(null)}
-          />
+          <Suspense fallback={null}>
+            <DiffViewer
+              selectedFile={selectedFile}
+              diffResult={diffResult}
+              diffLoading={diffLoading}
+              onOpenInTab={onOpenInTab}
+              onClose={() => setSelectedFile(null)}
+            />
+          </Suspense>
         ) : (
           <div className="diff-viewer">
             <div className="diff-viewer-empty">

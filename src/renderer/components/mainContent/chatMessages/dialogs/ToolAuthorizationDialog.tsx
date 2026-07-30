@@ -2,7 +2,7 @@ import { FilePen, FilePlus, ShieldAlert } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useI18n } from "../../../../i18n";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
-import { getCompareDiffStats } from "../../../common/GitDiffView";
+import { getCompareDiffStats } from "../../../../utils/generateComparePatch";
 import { getFileName } from "../toolCalls/shared/formatters";
 import { MiniDiffViewer } from "../toolCalls/shared/MiniDiffViewer";
 import type { ToolCallInfo } from "../utils/conversationTypes";

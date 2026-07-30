@@ -12,11 +12,10 @@ on:
         type: string
       release_notes:
         description: |
-          - Fixed the issue with automatic compression failure
-          - Fixed the complete Hooks system and added development documentation
-          - Fixed the false positive code diagnostics issue in Codelens
-          - Optimized the browser control tool
-          - Added proxy address settings
+          - Add Goal mode
+          - Fixed Windows remote connection ssh not working with terminals
+          - Optimize startup speed with lazy loading
+          - Add timed task function
 
         required: false
         type: string
