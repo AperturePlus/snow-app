@@ -101,7 +101,37 @@ const ChatContentBody = ({
   const isUserScrollIntentRef = useRef(false);
   const previousIsCompactingRef = useRef(isCompactingActive);
   const scrollRafIdRef = useRef(0);
+  const hasMessagesRef = useRef(hasMessages);
   activeConversationIdRef.current = activeConversationId;
+  hasMessagesRef.current = hasMessages;
+
+  // Shared by the scroll handler and the resize observer: content height
+  // changes (tool details expanding/collapsing, lazily rendered message
+  // groups, decoded images) can leave the viewport at the bottom — or remove
+  // the scrollbar entirely — without ever firing a scroll event, so the
+  // follow state and button visibility must be derived from live geometry.
+  const updateScrollFollowState = useCallback(
+    (container: HTMLDivElement): void => {
+      const distanceFromBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+
+      if (
+        isInitialBottomPositioningRef.current &&
+        !isUserScrollIntentRef.current
+      ) {
+        shouldStickToBottomRef.current = true;
+        setShowScrollToBottom(false);
+        return;
+      }
+
+      shouldStickToBottomRef.current = distanceFromBottom < 48;
+      setShowScrollToBottom(
+        hasMessagesRef.current &&
+          distanceFromBottom > SHOW_SCROLL_TO_BOTTOM_THRESHOLD
+      );
+    },
+    []
+  );
 
   useLayoutEffect(() => {
     if (previousActiveConversationIdRef.current === activeConversationId) {
@@ -208,8 +238,23 @@ const ChatContentBody = ({
       const didContentHeightChange = nextScrollHeight !== lastScrollHeight;
       lastScrollHeight = nextScrollHeight;
 
+      if (!didContentHeightChange) {
+        return;
+      }
+
+      // Re-evaluate against the fresh geometry before deciding whether to
+      // pin: a shrink may have already landed the viewport at the bottom.
+      // Skip while older messages are being prepended — the pending scroll
+      // restore will re-position the viewport and the follow-up scroll event
+      // re-evaluates the state.
       if (
-        !didContentHeightChange ||
+        !isLoadingOlderWithScrollRef.current &&
+        pendingScrollRestoreRef.current === null
+      ) {
+        updateScrollFollowState(container);
+      }
+
+      if (
         !shouldStickToBottomRef.current ||
         isLoadingOlderWithScrollRef.current ||
         pendingScrollRestoreRef.current !== null
@@ -218,12 +263,6 @@ const ChatContentBody = ({
       }
 
       container.scrollTop = nextScrollHeight;
-      if (
-        isInitialBottomPositioningRef.current &&
-        !isUserScrollIntentRef.current
-      ) {
-        setShowScrollToBottom(false);
-      }
     };
 
     // Coalesce bulk DOM mutations (child list changes, image loads) into a
@@ -273,7 +312,7 @@ const ChatContentBody = ({
       mutationObserver.disconnect();
       resizeObserver.disconnect();
     };
-  }, [activeConversationId]);
+  }, [activeConversationId, updateScrollFollowState]);
 
   // When tool authorization prompts appear, force-scroll the chat area to
   // the bottom so users do not miss the confirmation while reading earlier
@@ -438,21 +477,12 @@ const ChatContentBody = ({
         return;
       }
 
-      const distanceFromBottom =
-        container.scrollHeight - container.scrollTop - container.clientHeight;
       const isFollowingInitialContent =
         isInitialBottomPositioningRef.current && !isUserScrollIntentRef.current;
-
+      updateScrollFollowState(container);
       if (isFollowingInitialContent) {
-        shouldStickToBottomRef.current = true;
-        setShowScrollToBottom(false);
         return;
       }
-
-      shouldStickToBottomRef.current = distanceFromBottom < 48;
-      setShowScrollToBottom(
-        hasMessages && distanceFromBottom > SHOW_SCROLL_TO_BOTTOM_THRESHOLD
-      );
 
       if (
         container.scrollTop > LOAD_OLDER_SCROLL_THRESHOLD ||
@@ -467,9 +497,9 @@ const ChatContentBody = ({
     });
   }, [
     handleLoadOlderWithScroll,
-    hasMessages,
     hasMoreMessages,
     isLoadingOlderMessages,
+    updateScrollFollowState,
   ]);
 
   const handleScrollToBottom = useCallback((): void => {

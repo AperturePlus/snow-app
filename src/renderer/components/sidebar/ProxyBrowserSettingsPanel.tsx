@@ -141,6 +141,8 @@ export function ProxyBrowserSettingsPanel({
           PROXY_BROWSER_SETTING_CODE,
           JSON.stringify(settings)
         );
+        // 通知主进程重新应用会话代理（net.fetch / electron-updater）
+        void window.snow.applyProxySettings();
         if (isMountedRef.current) {
           setLastSaved(settings);
           setStatus(

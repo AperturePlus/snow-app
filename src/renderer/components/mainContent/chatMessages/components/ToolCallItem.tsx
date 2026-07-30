@@ -13,6 +13,7 @@ import {
   CodebaseToolCall,
   CodeLensToolCall,
   WebSearchToolCall,
+  BrowserToolCall,
 } from "../toolCalls";
 import { ToolCallNode } from "../toolCalls/shared/ToolCallNode";
 import { useI18n } from "../../../../i18n";
@@ -110,6 +111,10 @@ export const ToolCallItem = memo(
       toolCall.name === "websearch-websearch-fetch"
     ) {
       return <WebSearchToolCall toolCall={toolCall} />;
+    }
+
+    if (toolCall.name.startsWith("browser-")) {
+      return <BrowserToolCall toolCall={toolCall} />;
     }
 
     const effectiveStatus = hasResultError(toolCall.result)

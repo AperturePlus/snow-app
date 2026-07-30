@@ -1,4 +1,11 @@
-import { app, BrowserWindow, Menu, nativeImage, nativeTheme } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  nativeImage,
+  nativeTheme,
+} from "electron";
 import { APP_ICON_PATH, APP_USER_MODEL_ID, isMacOS } from "./constants";
 import { initializeApplicationServices } from "./applicationServices";
 import { createWindow } from "./mainWindow";
@@ -14,6 +21,7 @@ import {
   registerImageProxyProtocol,
   registerImageProxySchemePrivilege,
 } from "./imageProxyProtocol";
+import { applySessionProxy } from "./sessionProxy";
 
 export const bootstrapApplication = (): void => {
   snowLog.info({
@@ -103,6 +111,14 @@ export const bootstrapApplication = (): void => {
         error: error instanceof Error ? error.message : String(error),
       });
     });
+
+    // 启动时应用会话代理，使 net.fetch / electron-updater 走内置代理配置。
+    void applySessionProxy(native);
+
+    // 渲染进程保存代理设置后通知主进程重新应用会话代理。
+    ipcMain.handle("proxy-browser-settings:apply", () =>
+      applySessionProxy(native)
+    );
 
     // Apply persisted theme mode to nativeTheme as soon as storage is ready.
     // This keeps the Electron window chrome (and shouldUseDarkColors) in sync

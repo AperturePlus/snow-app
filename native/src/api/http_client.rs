@@ -18,12 +18,14 @@ use std::time::Duration;
 use napi::bindgen_prelude::*;
 
 const PROXY_BROWSER_SETTING_CODE: &str = "proxy_browser_settings";
+const DEFAULT_PROXY_HOST: &str = "127.0.0.1";
 const DEFAULT_PROXY_PORT: u16 = 7890;
 
 /// 从数据库加载的代理配置快照。
 #[derive(Debug, Clone)]
 pub struct ProxyConfig {
     pub enabled: bool,
+    pub host: String,
     pub port: u16,
 }
 
@@ -31,8 +33,25 @@ impl Default for ProxyConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            host: DEFAULT_PROXY_HOST.to_string(),
             port: DEFAULT_PROXY_PORT,
         }
+    }
+}
+
+/// 清理代理主机字符串：去除协议前缀和首尾空白，
+/// 为空时回退到默认值。
+fn sanitize_proxy_host(host: &str) -> String {
+    let trimmed = host.trim();
+    let stripped = trimmed
+        .strip_prefix("http://")
+        .or_else(|| trimmed.strip_prefix("https://"))
+        .unwrap_or(trimmed);
+    let result = stripped.trim();
+    if result.is_empty() {
+        DEFAULT_PROXY_HOST.to_string()
+    } else {
+        result.to_string()
     }
 }
 
@@ -41,13 +60,13 @@ impl ProxyConfig {
     ///
     /// 当 `enabled` 为 false 时直接返回原 builder，由 reqwest 默认
     /// 跟随系统代理环境变量。当 `enabled` 为 true 时注入
-    /// `http://127.0.0.1:{port}` 代理。
+    /// `http://{host}:{port}` 代理。
     pub fn apply(
         self,
         mut builder: reqwest::ClientBuilder,
     ) -> Result<reqwest::ClientBuilder> {
         if self.enabled {
-            let proxy = reqwest::Proxy::all(format!("http://127.0.0.1:{}", self.port))
+            let proxy = reqwest::Proxy::all(format!("http://{}:{}", self.host, self.port))
                 .map_err(|error| {
                     Error::from_reason(format!("Invalid proxy settings: {error}"))
                 })?;
@@ -90,6 +109,12 @@ fn parse_proxy_config(raw: &str) -> ProxyConfig {
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
 
+    let host = value
+        .get("host")
+        .and_then(serde_json::Value::as_str)
+        .map(sanitize_proxy_host)
+        .unwrap_or_else(|| DEFAULT_PROXY_HOST.to_string());
+
     let port = value
         .get("port")
         .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|i| i as u64)))
@@ -97,7 +122,7 @@ fn parse_proxy_config(raw: &str) -> ProxyConfig {
         .map(|p| p as u16)
         .unwrap_or(DEFAULT_PROXY_PORT);
 
-    ProxyConfig { enabled, port }
+    ProxyConfig { enabled, host, port }
 }
 
 /// 创建带代理设置的默认 HTTP 客户端。

@@ -1,6 +1,17 @@
 import type { ProxyBrowserSettings } from "../../../../preload";
-import { DEFAULT_PROXY_BROWSER_SETTINGS } from "./proxyBrowserSettingsConstants";
+import {
+  DEFAULT_PROXY_BROWSER_SETTINGS,
+  DEFAULT_PROXY_HOST,
+} from "./proxyBrowserSettingsConstants";
 import type { ProxyBrowserSettingsForm } from "./types";
+
+export const sanitizeProxyHost = (host: string | undefined): string => {
+  if (!host) {
+    return DEFAULT_PROXY_HOST;
+  }
+  const stripped = host.trim().replace(/^https?:\/\//i, "");
+  return stripped || DEFAULT_PROXY_HOST;
+};
 
 export const parsePort = (value: string, fallback: number): number => {
   const port = Number.parseInt(value, 10);
@@ -23,15 +34,21 @@ export const normalizeProxyBrowserSettings = (
 
   return {
     enabled: toBoolean(source.enabled, DEFAULT_PROXY_BROWSER_SETTINGS.enabled),
-    port: parsePort(String(source.port ?? ""), DEFAULT_PROXY_BROWSER_SETTINGS.port),
+    host: sanitizeProxyHost(toText(source.host)),
+    port: parsePort(
+      String(source.port ?? ""),
+      DEFAULT_PROXY_BROWSER_SETTINGS.port
+    ),
     browserPath: toText(source.browserPath).trim(),
     browserDebugPort: parsePort(
       String(source.browserDebugPort ?? ""),
       DEFAULT_PROXY_BROWSER_SETTINGS.browserDebugPort
     ),
     searchEngine:
-      toText(source.searchEngine, DEFAULT_PROXY_BROWSER_SETTINGS.searchEngine).trim() ||
-      DEFAULT_PROXY_BROWSER_SETTINGS.searchEngine,
+      toText(
+        source.searchEngine,
+        DEFAULT_PROXY_BROWSER_SETTINGS.searchEngine
+      ).trim() || DEFAULT_PROXY_BROWSER_SETTINGS.searchEngine,
   };
 };
 
@@ -53,6 +70,7 @@ export const toProxyBrowserForm = (
   settings: ProxyBrowserSettings
 ): ProxyBrowserSettingsForm => ({
   enabled: settings.enabled,
+  host: settings.host,
   port: String(settings.port),
   browserPath: settings.browserPath,
   browserDebugPort: String(settings.browserDebugPort),
@@ -63,11 +81,13 @@ export const toProxyBrowserSettings = (
   form: ProxyBrowserSettingsForm
 ): ProxyBrowserSettings => ({
   enabled: form.enabled,
+  host: sanitizeProxyHost(form.host),
   port: parsePort(form.port, DEFAULT_PROXY_BROWSER_SETTINGS.port),
   browserPath: form.browserPath.trim(),
   browserDebugPort: parsePort(
     form.browserDebugPort,
     DEFAULT_PROXY_BROWSER_SETTINGS.browserDebugPort
   ),
-  searchEngine: form.searchEngine.trim() || DEFAULT_PROXY_BROWSER_SETTINGS.searchEngine,
+  searchEngine:
+    form.searchEngine.trim() || DEFAULT_PROXY_BROWSER_SETTINGS.searchEngine,
 });

@@ -1,5 +1,6 @@
 export type ProxyBrowserSettings = {
   enabled: boolean;
+  host: string;
   port: number;
   browserPath: string;
   browserDebugPort: number;

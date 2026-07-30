@@ -77,6 +77,18 @@ export function ProxyBrowserSettingsForm({
           <div className="api-settings-form-grid">
             <label className="api-settings-field">
               <span>
+                {t("settings.proxyHost", { defaultValue: "Proxy host" })}
+              </span>
+              <input
+                value={form.host}
+                onChange={onUpdateField("host")}
+                onBlur={() => onBlurSave()}
+                placeholder="127.0.0.1"
+                disabled={isBusy}
+              />
+            </label>
+            <label className="api-settings-field">
+              <span>
                 {t("settings.proxyPort", { defaultValue: "Proxy port" })}
               </span>
               <input

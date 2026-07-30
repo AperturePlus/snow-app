@@ -10,7 +10,9 @@ export function ProxyBrowserSettingsSummary({
   preview,
 }: ProxyBrowserSettingsSummaryProps): React.JSX.Element {
   const { t } = useI18n();
-  const proxyUrl = preview.enabled ? `http://127.0.0.1:${preview.port}` : "-";
+  const proxyUrl = preview.enabled
+    ? `http://${preview.host || "127.0.0.1"}:${preview.port}`
+    : "-";
   const browserLabel =
     preview.browserPath ||
     t("settings.autoDetectBrowser", { defaultValue: "Auto detect" });

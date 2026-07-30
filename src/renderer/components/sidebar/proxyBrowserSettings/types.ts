@@ -6,6 +6,7 @@ export type ProxyBrowserSettingsPanelProps = {
 
 export type ProxyBrowserSettingsForm = {
   enabled: boolean;
+  host: string;
   port: string;
   browserPath: string;
   browserDebugPort: string;

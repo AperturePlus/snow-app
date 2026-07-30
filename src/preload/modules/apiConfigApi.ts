@@ -169,6 +169,8 @@ export const apiConfigApi = {
     ipcRenderer.invoke("api-configs:import-snow-cli"),
   importSnowCliProxyConfig: (): Promise<ProxyBrowserSettings> =>
     ipcRenderer.invoke("proxy-browser-settings:import-snow-cli"),
+  applyProxySettings: (): Promise<void> =>
+    ipcRenderer.invoke("proxy-browser-settings:apply"),
   importSnowCliCodebaseSettings: (): Promise<CodebaseSettingsInput> =>
     ipcRenderer.invoke("codebase-settings:import-snow-cli"),
   selectBrowserExecutable: (dialogTitle?: string): Promise<string | null> =>

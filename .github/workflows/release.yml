@@ -7,15 +7,16 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "v0.1.6"
+        description: "v0.1.7"
         required: true
         type: string
       release_notes:
         description: |
-          - Fix WSL connection
-          - Fix autosave timing problem
-          - Add shortcut key system
-          - Optimize Plan mode
+          - Fixed the issue with automatic compression failure
+          - Fixed the complete Hooks system and added development documentation
+          - Fixed the false positive code diagnostics issue in Codelens
+          - Optimized the browser control tool
+          - Added proxy address settings
 
         required: false
         type: string

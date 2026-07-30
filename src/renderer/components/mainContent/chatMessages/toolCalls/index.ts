@@ -10,6 +10,7 @@ export { SubAgentToolCall } from "./SubAgentToolCall";
 export { CodebaseToolCall } from "./CodebaseToolCall";
 export { CodeLensToolCall } from "./CodeLensToolCall";
 export { WebSearchToolCall } from "./WebSearchToolCall";
+export { BrowserToolCall } from "./BrowserToolCall";
 export { HookExecutionUI } from "./HookExecutionUI";
 export type {
   HookExecutionRecord,

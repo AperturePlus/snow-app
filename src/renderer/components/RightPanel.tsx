@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -15,10 +16,15 @@ import { FileViewerContent } from "./rightPanel/FileViewerContent";
 import { TerminalPanelContent } from "./rightPanel/TerminalPanelContent";
 import { BrowserPanelContent } from "./rightPanel/BrowserPanelContent";
 import { FileDiffPreview } from "./common/FileDiffPreview";
-import { useBrowserMcpCommandBridge } from "./rightPanel/browser/useBrowserMcpCommandBridge";
+import {
+  useBrowserMcpCommandBridge,
+  type BrowserMcpTabCallbacks,
+} from "./rightPanel/browser/useBrowserMcpCommandBridge";
+import { focusBrowserMcpInstance } from "./rightPanel/browser/browserMcpController";
 import {
   rightPanelEvents,
   type OpenBrowserTabPayload,
+  type FocusBrowserTabPayload,
   type OpenFileDiffPreviewPayload,
 } from "./rightPanel/rightPanelEvents";
 import { generateComparePatch } from "./common/GitDiffView";
@@ -149,8 +155,6 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       },
       [t]
     );
-
-    useBrowserMcpCommandBridge(handleOpenBrowserTab);
 
     const handleBrowserTitleChange = useCallback(
       (tabId: string, title: string) => {
@@ -350,6 +354,83 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         return gitTab ? GIT_TAB_ID : tabs[1]?.id ?? currentActive;
       });
     }, [tabs]);
+
+    const handleCloseBrowserTab = useCallback(
+      (instanceId: string): boolean => {
+        const tab = tabs.find(
+          (t) => t.id === instanceId && t.type === "browser"
+        );
+        if (!tab) {
+          return false;
+        }
+        handleCloseTab(instanceId);
+        return true;
+      },
+      [tabs, handleCloseTab]
+    );
+
+    const handleFocusBrowserTab = useCallback(
+      (instanceId: string): boolean => {
+        const tab = tabs.find(
+          (t) => t.id === instanceId && t.type === "browser"
+        );
+        if (!tab) {
+          return false;
+        }
+        setActiveTabId(instanceId);
+        focusBrowserMcpInstance(instanceId);
+        return true;
+      },
+      [tabs]
+    );
+
+    // 工具调用组件（BrowserToolCall）请求切换到指定浏览器实例的 tab。
+    const handleFocusBrowserTabEvent = useCallback(
+      (payload: FocusBrowserTabPayload) => {
+        const instanceId = payload.instanceId.trim();
+        if (!instanceId) {
+          return;
+        }
+        if (handleFocusBrowserTab(instanceId)) {
+          rightPanelEvents.emit("request-expand");
+        }
+      },
+      [handleFocusBrowserTab]
+    );
+
+    useEffect(() => {
+      return rightPanelEvents.on(
+        "focus-browser-tab",
+        handleFocusBrowserTabEvent
+      );
+    }, [handleFocusBrowserTabEvent]);
+
+    const handleListBrowserTabs = useCallback(() => {
+      return tabs
+        .filter((t) => t.type === "browser")
+        .map((t) => ({
+          instanceId: t.id,
+          title: t.title,
+          isActive: t.id === activeTabId,
+        }));
+    }, [tabs, activeTabId]);
+
+    const browserMcpCallbacks = useMemo<BrowserMcpTabCallbacks>(
+      () => ({
+        openTab: handleOpenBrowserTab,
+        closeTab: handleCloseBrowserTab,
+        focusTab: handleFocusBrowserTab,
+        listTabs: handleListBrowserTabs,
+      }),
+      [
+        handleOpenBrowserTab,
+        handleCloseBrowserTab,
+        handleFocusBrowserTab,
+        handleListBrowserTabs,
+      ]
+    );
+
+    useBrowserMcpCommandBridge(browserMcpCallbacks);
 
     const tabListRef = useRef<HTMLDivElement>(null);
 
