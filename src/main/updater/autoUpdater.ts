@@ -1,6 +1,7 @@
 import { app, ipcMain, BrowserWindow } from "electron";
 import electronUpdater from "electron-updater";
 import { snowLog } from "../../utils/snowLogger";
+import { markCloseConfirmed } from "../app/mainWindow";
 
 const { autoUpdater } = electronUpdater;
 
@@ -159,11 +160,7 @@ export const initAutoUpdater = (mainWindow: BrowserWindow): void => {
   // 运行时定时检查：应用长时间运行时周期性探测新版本
   // 仅在无可用更新、未在下载、未下载完成时才执行实际检查，避免重复打扰
   runtimeCheckTimer = setInterval(() => {
-    if (
-      status.available ||
-      status.downloading ||
-      status.downloaded
-    ) {
+    if (status.available || status.downloading || status.downloaded) {
       return;
     }
     void checkForUpdatesAction();
@@ -192,6 +189,8 @@ export const initAutoUpdater = (mainWindow: BrowserWindow): void => {
 
   // 用户点击"重启更新" → 退出并安装
   ipcMain.handle("updater:install-update", () => {
+    // 跳过关闭二次确认，避免重启更新被拦截
+    markCloseConfirmed();
     autoUpdater.quitAndInstall();
   });
 
