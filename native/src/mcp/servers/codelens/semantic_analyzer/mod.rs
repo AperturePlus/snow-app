@@ -103,7 +103,7 @@ pub fn analyze_semantics(
     );
 
     let builtins = builtin_symbols(lang);
-    let diagnostics = build_diagnostics(&definitions, &references, &builtins, source, line_index);
+    let diagnostics = build_diagnostics(&definitions, &references, &builtins, source, line_index, lang);
 
     SemanticResult { diagnostics }
 }
@@ -230,6 +230,81 @@ fn should_skip_subtree(kind: &str, lang: TsLang) -> bool {
     }
 }
 
+/// When we skip a subtree (macro_invocation, scoped_identifier, etc.) we may
+/// still need to record a reference for the *name* portion of that node:
+///
+/// - `macro_invocation` -> the macro name (first identifier child) is a real
+///   reference to the imported macro, e.g. `json!(...)`.
+/// - `scoped_identifier` / `scoped_type_identifier` -> the *last* segment is a
+///   real reference to the imported item, e.g. `ThreadsafeFunction` in
+///   `napi::threadsafe_function::ThreadsafeFunction`.
+fn record_skipped_node_reference(
+    node: &Node,
+    source: &str,
+    lang: TsLang,
+    depth: usize,
+    def_name_ranges: &HashSet<(u32, u32)>,
+    references: &mut Vec<Reference>,
+) {
+    let kind = node.kind();
+
+    if lang == TsLang::Rust && kind == "macro_invocation" {
+        // The macro name is the first named child (an identifier).
+        if let Some(macro_name) = node.named_child(0) {
+            if macro_name.kind() == "identifier" {
+                let s = macro_name.start_byte() as u32;
+                let e = macro_name.end_byte() as u32;
+                if !def_name_ranges.contains(&(s, e)) {
+                    if let Ok(text) = macro_name.utf8_text(source.as_bytes()) {
+                        let text = text.trim();
+                        if !text.is_empty() && is_valid_ident(text) {
+                            references.push(Reference {
+                                name: text.to_string(),
+                                start_byte: s,
+                                end_byte: e,
+                                depth,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    if lang == TsLang::Rust && (kind == "scoped_identifier" || kind == "scoped_type_identifier") {
+        // The last named child is the trailing segment -- the actual item being
+        // referenced (e.g. `ThreadsafeFunction` in `a::b::ThreadsafeFunction`).
+        let last_idx = node.named_child_count().saturating_sub(1);
+        if let Some(trailing) = node.named_child(last_idx) {
+            let tk = trailing.kind();
+            if tk == "identifier" || tk == "type_identifier" {
+                let s = trailing.start_byte() as u32;
+                let e = trailing.end_byte() as u32;
+                if !def_name_ranges.contains(&(s, e)) {
+                    if let Ok(text) = trailing.utf8_text(source.as_bytes()) {
+                        let text = text.trim();
+                        if !text.is_empty() && is_valid_ident(text) {
+                            references.push(Reference {
+                                name: text.to_string(),
+                                start_byte: s,
+                                end_byte: e,
+                                depth,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    // For other skipped subtrees (use_declaration, import paths, etc.) we
+    // don't need to record anything extra -- the definitions phase already
+    // captured the imported names.
+    let _ = (source, def_name_ranges);
+}
+
 fn collect_references(
     node: &Node,
     source: &str,
@@ -238,8 +313,13 @@ fn collect_references(
     def_name_ranges: &HashSet<(u32, u32)>,
     references: &mut Vec<Reference>,
 ) {
-    // Skip entire subtrees that don't contain meaningful references
+    // Skip entire subtrees that don't contain meaningful references.
+    // However, for macro_invocation we still need to record the macro name
+    // itself as a reference (e.g. `json!({...})` -- the `json` identifier is
+    // a use of the imported macro).  Same for scoped_identifier /
+    // scoped_type_identifier -- their trailing segment is a real reference.
     if should_skip_subtree(node.kind(), lang) {
+        record_skipped_node_reference(node, source, lang, depth, def_name_ranges, references);
         return;
     }
 
@@ -339,7 +419,7 @@ fn is_reference_identifier(node: &Node, lang: TsLang) -> bool {
     let kind = node.kind();
     match lang {
         TsLang::Python => kind == "identifier",
-        TsLang::Rust => kind == "identifier",
+        TsLang::Rust => kind == "identifier" || kind == "type_identifier",
         TsLang::Go => {
             kind == "identifier" || kind == "type_identifier" || kind == "field_identifier"
         }
@@ -506,6 +586,7 @@ fn build_diagnostics(
     builtins: &HashSet<&'static str>,
     _source: &str,
     line_index: &LineIndex,
+    lang: TsLang,
 ) -> Vec<DiagnosticItem> {
     let mut diagnostics: Vec<DiagnosticItem> = Vec::new();
 
@@ -528,11 +609,23 @@ fn build_diagnostics(
         if r.name.len() <= 1 {
             continue;
         }
-        // Skip names that look like they start with uppercase in languages
-        // where that conventionally means a type (Rust, Go, Ruby, C#, Java).
-        // Types are harder to resolve without full type inference, so we
-        // only report lowercase-starting unresolved names to reduce noise.
-        // (We still report them -- just with a softer check below.)
+        // Skip names that start with an uppercase letter in languages where
+        // that conventionally means a type (Rust, Go, Ruby, C#, Java).
+        // Without full type inference / cross-crate name resolution we cannot
+        // reliably determine whether a type identifier is defined elsewhere
+        // (e.g. in another module), so reporting them would be pure noise.
+        if should_skip_uppercase_unresolved(lang)
+            && r.name
+                .chars()
+                .next()
+                .map(|c| c.is_uppercase())
+                .unwrap_or(false)
+        {
+            // Still record it as referenced so that the *import* of that
+            // uppercase name is not wrongly flagged as unused.
+            referenced_names.insert(r.name.as_str());
+            continue;
+        }
 
         let (start_line, start_col) = line_index.line_col(r.start_byte);
         let (end_line, end_col) = line_index.line_col(r.end_byte);
@@ -596,6 +689,18 @@ fn build_diagnostics(
     }
 
     diagnostics
+}
+
+/// Whether unresolved-reference diagnostics for uppercase-starting names
+/// should be suppressed for this language.  In statically-typed languages
+/// (Rust, Go, C, Java, C#) uppercase identifiers are typically types or
+/// constructor names that are defined in other modules/crates, which our
+/// single-file analyzer cannot resolve.  Reporting them would be noise.
+fn should_skip_uppercase_unresolved(lang: TsLang) -> bool {
+    matches!(
+        lang,
+        TsLang::Rust | TsLang::Go | TsLang::C | TsLang::Java | TsLang::CSharp
+    )
 }
 
 fn capitalize(s: &str) -> String {

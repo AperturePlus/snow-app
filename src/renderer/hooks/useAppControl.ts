@@ -1,9 +1,16 @@
 import { useEffect, useRef } from "react";
 import type { MainContentView } from "../components/mainContent/types";
 import type { WorkspaceDirectoryRecord } from "../../preload";
+import type {
+  CreateScheduledTaskInput,
+  ScheduledTaskSchedule,
+} from "../../preload";
+import { scheduledTasksStore } from "./scheduledTasksStore";
 
 export const APP_CONTROL_OPEN_SETTINGS_EVENT = "app-control:open-settings";
 export const APP_CONTROL_MEMO_CREATED_EVENT = "app-control:memo-created";
+export const APP_CONTROL_SCHEDULED_TASK_CREATED_EVENT =
+  "app-control:scheduled-task-created";
 
 type AppControlHandlers = {
   activeDirectory: WorkspaceDirectoryRecord | null;
@@ -79,6 +86,39 @@ export const useAppControl = ({
               new CustomEvent(APP_CONTROL_OPEN_SETTINGS_EVENT)
             );
             return JSON.stringify({ success: true, page });
+          }
+
+          case "create_scheduled_task": {
+            const name = (payload.name as string) ?? "";
+            const prompt = (payload.prompt as string) ?? "";
+            const schedule = payload.schedule as
+              | ScheduledTaskSchedule
+              | undefined;
+            if (!name.trim()) {
+              throw new Error("name is required");
+            }
+            if (!prompt.trim()) {
+              throw new Error("prompt is required");
+            }
+            if (!schedule) {
+              throw new Error("schedule is required");
+            }
+            // The store validates the schedule strictly; an invalid schedule
+            // throws here and the error propagates back to the MCP tool caller.
+            const input: CreateScheduledTaskInput = { name, prompt, schedule };
+            const created = scheduledTasksStore.create(input);
+            window.dispatchEvent(
+              new CustomEvent(APP_CONTROL_SCHEDULED_TASK_CREATED_EVENT, {
+                detail: { taskId: created.id, name: created.name },
+              })
+            );
+            return JSON.stringify({
+              success: true,
+              taskId: created.id,
+              name: created.name,
+              status: created.status,
+              nextRunAt: created.nextRunAt,
+            });
           }
 
           default:

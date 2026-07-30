@@ -292,6 +292,8 @@ Use the `todo-todo-manage` tool to track multi-step goals:
 - Mark each step completed as soon as it is verified
 - Update the plan when iterations reveal new information
 - NEVER batch-update TODO status at the end
+- Follow the language used by the user when adding a todo
+
 
 ## Git Safety
 

@@ -1,4 +1,5 @@
 import {
+  CalendarClock,
   Download,
   LoaderCircle,
   NotebookText,
@@ -11,12 +12,14 @@ import { useI18n } from "../../i18n";
 import { useChatConversationContext } from "../mainContent/chatMessages";
 import { shortcutEvents } from "../shortcutEvents";
 import { APP_CONTROL_MEMO_CREATED_EVENT } from "../../hooks/useAppControl";
+import { useScheduledTasks } from "../../hooks/useScheduledTasks";
 import type { MainContentView } from "../mainContent/types";
 import { ChatsSection } from "./mainSidebar/ChatsSection";
 import { PinnedSection } from "./mainSidebar/PinnedSection";
 import { ProjectsSection } from "./mainSidebar/ProjectsSection";
 import { GlobalSearchModal } from "./GlobalSearchModal";
 import { MemoModal } from "./MemoModal";
+import { ScheduledTasksModal } from "./ScheduledTasksModal";
 import type { SidebarContentProps } from "./types";
 import type {
   ConversationSearchResult,
@@ -46,10 +49,17 @@ export function MainSidebarContent({
   const [isSwitchingDirectory, setIsSwitchingDirectory] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMemoOpen, setIsMemoOpen] = useState(false);
+  const [isScheduledTasksOpen, setIsScheduledTasksOpen] = useState(false);
   const [pendingMemoCount, setPendingMemoCount] = useState(0);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>(
     INITIAL_UPDATE_STATUS
   );
+
+  // Scheduled tasks: the hook registers buildFromContent as the AI Loop
+  // executor and subscribes to the in-memory store. Mounted here (always
+  // rendered inside ChatConversationProvider) so the executor is available
+  // for the whole app lifetime. Tasks only live while the process is alive.
+  const { tasks: scheduledTasks } = useScheduledTasks();
 
   // Load the pending memo count for the sidebar badge. It is refreshed
   // whenever the memo modal closes (the modal calls onPendingCountChange
@@ -180,6 +190,20 @@ export function MainSidebarContent({
             <span className="sidebar-memo-badge">{pendingMemoCount}</span>
           )}
         </button>
+        <button
+          className="nav-item sidebar-scheduled-tasks-btn"
+          onClick={() => setIsScheduledTasksOpen(true)}
+          title={t("scheduledTask.sidebarEntry", { defaultValue: "Scheduled Tasks" })}
+          type="button"
+        >
+          <CalendarClock size={16} strokeWidth={1.8} />
+          <span>
+            {t("scheduledTask.sidebarEntry", { defaultValue: "Scheduled Tasks" })}
+          </span>
+          {scheduledTasks.length > 0 && (
+            <span className="sidebar-memo-badge">{scheduledTasks.length}</span>
+          )}
+        </button>
       </div>
       <PinnedSection
         activeDirectory={activeDirectory}
@@ -280,6 +304,10 @@ export function MainSidebarContent({
           refreshPendingMemoCount();
         }}
         onPendingCountChange={setPendingMemoCount}
+      />
+      <ScheduledTasksModal
+        open={isScheduledTasksOpen}
+        onClose={() => setIsScheduledTasksOpen(false)}
       />
     </>
   );

@@ -71,6 +71,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
         directoryId: sessionRef?.directoryId ?? ctx.directoryId,
         contextCompaction: true,
         checkpointId,
+        goalMode: ctx.goalModeRef.current,
         // For sub-agent conversations, carry the configured profile so Rust
         // resolves the same API config the sub-agent uses for the handoff.
         subAgentConfigProfile,

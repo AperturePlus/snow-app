@@ -328,6 +328,7 @@ The `todo-todo-manage` tool is the standard workflow for multi-step work — it 
 2. **Update immediately**: Mark an item inProgress when you start it and completed as soon as it is done. STRICTLY FORBIDDEN: finishing several steps first and doing one bulk status update at the end
 3. **Keep it accurate**: Delete obsolete, incorrect, or superseded items; refine wording with action=update when the plan changes
 4. **Never call TODO alone**: TODO calls (get/add/update/delete) must be paired in the same turn with the actual work tools (read/edit/search/build). A standalone TODO-only turn wastes a full round-trip for bookkeeping
+5. **Language**: Follow the language used by the user when adding a todo
 
 ## Sub-Agents
 
