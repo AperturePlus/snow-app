@@ -3,6 +3,7 @@ import {
   ClipboardList,
   Plus,
   ShieldAlert,
+  Target,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -33,6 +34,12 @@ export type PlusMenuProps = {
   isUpdatingPlanMode: boolean;
   onPlanModeChange?: (enabled: boolean) => void;
   onRefreshPlanMode?: () => void | Promise<boolean | void>;
+  goalMode: boolean;
+  isUpdatingGoalMode: boolean;
+  onGoalModeChange?: (enabled: boolean) => void;
+  onRefreshGoalMode?: () => void | Promise<boolean | void>;
+  goalModeTokenBudget: number;
+  onGoalModeTokenBudgetChange?: (budget: number) => void;
   autoScrollEnabled: boolean;
   onAutoScrollChange?: (enabled: boolean) => void;
 };
@@ -47,6 +54,12 @@ export const PlusMenu = ({
   isUpdatingPlanMode,
   onPlanModeChange,
   onRefreshPlanMode,
+  goalMode,
+  isUpdatingGoalMode,
+  onGoalModeChange,
+  onRefreshGoalMode,
+  goalModeTokenBudget,
+  onGoalModeTokenBudgetChange,
   autoScrollEnabled,
   onAutoScrollChange,
 }: PlusMenuProps): React.JSX.Element => {
@@ -54,6 +67,13 @@ export const PlusMenu = ({
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const dropdownDir = useDropdownDirection(containerRef, isOpen);
+  const [showGoalBudget, setShowGoalBudget] = useState(false);
+
+  useEffect(() => {
+    if (!goalMode) {
+      setShowGoalBudget(false);
+    }
+  }, [goalMode]);
 
   const handleClose = useCallback(() => {
     setIsOpen(false);
@@ -66,10 +86,11 @@ export const PlusMenu = ({
         // Re-read the persisted app setting whenever the menu opens.
         void onRefreshYoloMode?.();
         void onRefreshPlanMode?.();
+        void onRefreshGoalMode?.();
       }
       return next;
     });
-  }, [onRefreshYoloMode, onRefreshPlanMode]);
+  }, [onRefreshYoloMode, onRefreshPlanMode, onRefreshGoalMode]);
 
   const handleItemClick = useCallback(
     (item: PlusMenuItem) => {
@@ -213,6 +234,53 @@ export const PlusMenu = ({
                 <span className="toggle-slider" />
               </label>
             </div>
+            <div className="plus-menu-item plus-menu-yolo-item">
+              <Target size={14} className="plus-menu-item-icon" />
+              <div className="plus-menu-item-content">
+                <span className="plus-menu-item-label">
+                  {t("plusMenu.goalMode")}
+                </span>
+                <span className="plus-menu-item-description">
+                  {t("plusMenu.goalModeDescription")}
+                </span>
+              </div>
+              <label className="toggle-switch plus-menu-yolo-switch">
+                <input
+                  aria-label={t("plusMenu.goalMode")}
+                  checked={goalMode}
+                  disabled={isUpdatingGoalMode || !onGoalModeChange}
+                  onChange={() => {
+                    void onGoalModeChange?.(!goalMode);
+                  }}
+                  type="checkbox"
+                />
+                <span className="toggle-slider" />
+              </label>
+            </div>
+            {goalMode && (
+              <div className="plus-menu-goal-budget-panel">
+                <div className="plus-menu-goal-budget-title">
+                  {t("plusMenu.goalBudgetTitle")}
+                </div>
+                <div className="plus-menu-goal-budget-input-row">
+                  <input
+                    className="plus-menu-goal-budget-input"
+                    type="number"
+                    min={10000}
+                    step={100000}
+                    value={goalModeTokenBudget}
+                    onChange={(e) => {
+                      const value = parseInt(e.target.value, 10);
+                      if (!Number.isNaN(value) && value > 0) {
+                        onGoalModeTokenBudgetChange?.(value);
+                      }
+                    }}
+                    aria-label={t("plusMenu.goalBudgetTitle")}
+                  />
+                  <span className="plus-menu-goal-budget-unit">tokens</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

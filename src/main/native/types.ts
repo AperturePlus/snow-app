@@ -602,6 +602,7 @@ export type ResponsesApiRequest = {
   subAgentConfigProfile?: string;
   skipContext?: boolean;
   planMode?: boolean;
+  goalMode?: boolean;
 };
 
 export type TokenUsage = {
@@ -810,6 +811,10 @@ export type NativeBridge = {
   setYoloMode: (enabled: boolean) => Promise<void>;
   getPlanMode: () => Promise<boolean>;
   setPlanMode: (enabled: boolean) => Promise<void>;
+  getGoalMode: () => Promise<boolean>;
+  setGoalMode: (enabled: boolean) => Promise<void>;
+  getGoalModeTokenBudget: () => Promise<number>;
+  setGoalModeTokenBudget: (budget: number) => Promise<void>;
   getRequestLogging: () => Promise<boolean>;
   setRequestLogging: (enabled: boolean) => Promise<void>;
   getRequestLoggingExpiry: () => Promise<number>;

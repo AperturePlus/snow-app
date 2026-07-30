@@ -71,6 +71,12 @@ const ChatContentBody = ({
     isUpdatingPlanMode,
     setPlanMode,
     refreshPlanMode,
+    goalMode,
+    isUpdatingGoalMode,
+    setGoalMode,
+    refreshGoalMode,
+    goalModeTokenBudget,
+    setGoalModeTokenBudget,
     pendingToolAuthorizations,
   } = useChatConversationContext();
   const { t } = useI18n();
@@ -653,6 +659,12 @@ const ChatContentBody = ({
           isUpdatingPlanMode={isUpdatingPlanMode}
           onPlanModeChange={setPlanMode}
           onRefreshPlanMode={refreshPlanMode}
+          goalMode={goalMode}
+          isUpdatingGoalMode={isUpdatingGoalMode}
+          onGoalModeChange={setGoalMode}
+          onRefreshGoalMode={refreshGoalMode}
+          goalModeTokenBudget={goalModeTokenBudget}
+          onGoalModeTokenBudgetChange={setGoalModeTokenBudget}
           autoScrollEnabled={autoScrollEnabled}
           onAutoScrollChange={setAutoScrollEnabled}
           isCompacting={isCompactingActive}

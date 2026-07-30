@@ -79,6 +79,14 @@ export const apiConfigApi = {
     ipcRenderer.invoke("settings:get-plan-mode"),
   setPlanMode: (enabled: boolean): Promise<void> =>
     ipcRenderer.invoke("settings:set-plan-mode", enabled),
+  getGoalMode: (): Promise<boolean> =>
+    ipcRenderer.invoke("settings:get-goal-mode"),
+  setGoalMode: (enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke("settings:set-goal-mode", enabled),
+  getGoalModeTokenBudget: (): Promise<number> =>
+    ipcRenderer.invoke("settings:get-goal-mode-token-budget"),
+  setGoalModeTokenBudget: (budget: number): Promise<void> =>
+    ipcRenderer.invoke("settings:set-goal-mode-token-budget", budget),
   getRequestLogging: (): Promise<boolean> =>
     ipcRenderer.invoke("settings:get-request-logging"),
   setRequestLogging: (enabled: boolean): Promise<void> =>

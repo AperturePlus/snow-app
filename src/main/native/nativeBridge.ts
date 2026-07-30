@@ -69,6 +69,26 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to write Plan mode")
         ),
+      getGoalMode: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to read Goal mode")
+        ),
+      setGoalMode: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write Goal mode")
+        ),
+      getGoalModeTokenBudget: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to read Goal mode token budget"
+          )
+        ),
+      setGoalModeTokenBudget: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to write Goal mode token budget"
+          )
+        ),
       getRequestLogging: () =>
         Promise.reject(
           new Error("Rust native bridge is required to read Request logging")

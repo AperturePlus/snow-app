@@ -28,6 +28,12 @@ export type ChatInputProps = {
   isUpdatingPlanMode?: boolean;
   onPlanModeChange?: (enabled: boolean) => void;
   onRefreshPlanMode?: () => Promise<boolean | void>;
+  goalMode?: boolean;
+  isUpdatingGoalMode?: boolean;
+  onGoalModeChange?: (enabled: boolean) => void;
+  onRefreshGoalMode?: () => Promise<boolean | void>;
+  goalModeTokenBudget?: number;
+  onGoalModeTokenBudgetChange?: (budget: number) => void;
   autoScrollEnabled?: boolean;
   onAutoScrollChange?: (enabled: boolean) => void;
   isCompacting?: boolean;
@@ -114,6 +120,12 @@ export type ChatInputViewProps = ChatInputState &
     isUpdatingPlanMode: boolean;
     onPlanModeChange?: (enabled: boolean) => void;
     onRefreshPlanMode?: () => Promise<boolean | void>;
+    goalMode: boolean;
+    isUpdatingGoalMode: boolean;
+    onGoalModeChange?: (enabled: boolean) => void;
+    onRefreshGoalMode?: () => Promise<boolean | void>;
+    goalModeTokenBudget: number;
+    onGoalModeTokenBudgetChange?: (budget: number) => void;
     autoScrollEnabled: boolean;
     onAutoScrollChange?: (enabled: boolean) => void;
     isCompacting: boolean;

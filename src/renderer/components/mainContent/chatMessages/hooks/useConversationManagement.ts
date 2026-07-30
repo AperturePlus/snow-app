@@ -79,11 +79,17 @@ export const useConversationManagement = (
       // intent so the UI follows the active conversation normally.
       ctx.setNewChatRequested(false);
 
-      // Reset Plan Mode when switching to a different conversation.
-      if (ctx.planModeRef.current) {
-        ctx.planModeRef.current = false;
-        ctx.setPlanModeState(false);
-        void window.snow.setPlanMode(false);
+      // Restore Plan/Goal Mode from the target session's stored state.
+      const targetRef = ctx.sessionsRefData.current.get(trimmedId);
+      const targetPlanMode = targetRef?.planMode ?? false;
+      const targetGoalMode = targetRef?.goalMode ?? false;
+      if (ctx.planModeRef.current !== targetPlanMode) {
+        ctx.planModeRef.current = targetPlanMode;
+        ctx.setPlanModeState(targetPlanMode);
+      }
+      if (ctx.goalModeRef.current !== targetGoalMode) {
+        ctx.goalModeRef.current = targetGoalMode;
+        ctx.setGoalModeState(targetGoalMode);
       }
 
       if (hasLoadedCachedHistory) {
@@ -140,6 +146,8 @@ export const useConversationManagement = (
           directoryId: conversationDirId,
           checkpointIds,
           childSubAgentIds: new Set(),
+          planMode: false,
+          goalMode: false,
         });
         ctx.setSessions((prev) => ({
           ...prev,
@@ -208,8 +216,11 @@ export const useConversationManagement = (
       ctx.setActiveId,
       ctx.updateSessionField,
       ctx.setNewChatRequested,
+      ctx.sessionsRefData,
       ctx.planModeRef,
       ctx.setPlanModeState,
+      ctx.goalModeRef,
+      ctx.setGoalModeState,
     ]
   );
 
@@ -316,6 +327,13 @@ export const useConversationManagement = (
       void window.snow.setPlanMode(false);
     }
 
+    // Reset Goal Mode so a new chat always starts with it disabled.
+    if (ctx.goalModeRef.current) {
+      ctx.goalModeRef.current = false;
+      ctx.setGoalModeState(false);
+      void window.snow.setGoalMode(false);
+    }
+
     // Clear stale pending session only if it is NOT actively streaming.
     // When the pending session is streaming, we keep it alive so the AI
     // loop continues in the background and eventually persists the
@@ -337,6 +355,8 @@ export const useConversationManagement = (
     ctx.setNewChatRequested,
     ctx.planModeRef,
     ctx.setPlanModeState,
+    ctx.goalModeRef,
+    ctx.setGoalModeState,
   ]);
 
   const handleAbort = useCallback((): void => {

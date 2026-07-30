@@ -27,6 +27,8 @@ pub struct ConversationContextRequest<'a> {
     pub skip_context: bool,
     /// When true, replace the built-in system prompt with the Plan Mode prompt.
     pub plan_mode: bool,
+    /// When true, replace the built-in system prompt with the Goal Mode prompt.
+    pub goal_mode: bool,
     /// JSON-encoded list of user system prompt IDs configured for the active
     /// API profile. Empty string means "follow the global active list";
     /// `__DISABLED__` or an empty array opts out. Resolved into prompt

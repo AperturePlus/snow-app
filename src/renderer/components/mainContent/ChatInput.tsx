@@ -27,6 +27,12 @@ export const ChatInput = ({
   isUpdatingPlanMode = false,
   onPlanModeChange,
   onRefreshPlanMode,
+  goalMode = false,
+  isUpdatingGoalMode = false,
+  onGoalModeChange,
+  onRefreshGoalMode,
+  goalModeTokenBudget = 2000000,
+  onGoalModeTokenBudgetChange,
   autoScrollEnabled = false,
   onAutoScrollChange,
   isCompacting = false,
@@ -61,6 +67,12 @@ export const ChatInput = ({
       isUpdatingPlanMode={isUpdatingPlanMode}
       onPlanModeChange={onPlanModeChange}
       onRefreshPlanMode={onRefreshPlanMode}
+      goalMode={goalMode}
+      isUpdatingGoalMode={isUpdatingGoalMode}
+      onGoalModeChange={onGoalModeChange}
+      onRefreshGoalMode={onRefreshGoalMode}
+      goalModeTokenBudget={goalModeTokenBudget}
+      onGoalModeTokenBudgetChange={onGoalModeTokenBudgetChange}
       autoScrollEnabled={autoScrollEnabled}
       onAutoScrollChange={onAutoScrollChange}
       isCompacting={isCompacting}

@@ -1319,6 +1319,10 @@ export const en = {
   "plusMenu.planMode": "Plan Mode",
   "plusMenu.planModeDescription": "Analyze and plan before executing changes",
   "plusMenu.planModeActive": "Plan Mode active",
+  "plusMenu.goalMode": "Goal Mode",
+  "plusMenu.goalModeDescription": "Persistent objective-driven autonomous loop",
+  "plusMenu.goalBudgetTitle": "Token Budget",
+  "plusMenu.goalModeActive": "Goal Mode active",
   "toolAuthorization.title": "Allow tool execution",
   "toolAuthorization.message":
     "This tool is about to run. Confirm whether to continue.",

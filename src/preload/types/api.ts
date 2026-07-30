@@ -69,6 +69,7 @@ export type ResponsesApiRequest = {
   subAgentConfigProfile?: string | null;
   skipContext?: boolean | null;
   planMode?: boolean | null;
+  goalMode?: boolean | null;
 };
 
 export type TokenUsage = {

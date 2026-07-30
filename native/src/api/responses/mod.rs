@@ -70,6 +70,9 @@ pub struct ResponsesApiRequest {
     /// When true, replace the built-in system prompt with the Plan Mode prompt
     /// that instructs the AI to plan and get user approval before executing.
     pub plan_mode: Option<bool>,
+    /// When true, replace the built-in system prompt with the Goal Mode prompt
+    /// that instructs the AI to work autonomously toward a defined objective.
+    pub goal_mode: Option<bool>,
 }
 
 #[napi(object)]
@@ -204,6 +207,7 @@ async fn create_response_async(
         context_compaction: request.context_compaction.unwrap_or(false),
         skip_context: request.skip_context.unwrap_or(false),
         plan_mode: request.plan_mode.unwrap_or(false),
+        goal_mode: request.goal_mode.unwrap_or(false),
         system_prompt_ids_json: &api_config.system_prompt_ids_json,
     })?;
 

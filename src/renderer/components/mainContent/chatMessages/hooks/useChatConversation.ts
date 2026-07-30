@@ -61,6 +61,9 @@ export const useChatConversation = (
   const [isUpdatingYoloMode, setIsUpdatingYoloMode] = useState(false);
   const [planMode, setPlanModeState] = useState(false);
   const [isUpdatingPlanMode, setIsUpdatingPlanMode] = useState(false);
+  const [goalMode, setGoalModeState] = useState(false);
+  const [isUpdatingGoalMode, setIsUpdatingGoalMode] = useState(false);
+  const [goalModeTokenBudget, setGoalModeTokenBudgetState] = useState(2000000);
   const [pendingToolAuthorizations, setPendingToolAuthorizations] = useState<
     ConversationContextValue["pendingToolAuthorizations"]
   >([]);
@@ -103,6 +106,7 @@ export const useChatConversation = (
   >(async () => null);
   const yoloModeRef = useRef(yoloMode);
   const planModeRef = useRef(planMode);
+  const goalModeRef = useRef(goalMode);
   const alwaysApprovedToolsRef = useRef(new Set<string>());
   const pendingToolAuthorizationRef = useRef(
     new Map<
@@ -150,6 +154,7 @@ export const useChatConversation = (
   );
   yoloModeRef.current = yoloMode;
   planModeRef.current = planMode;
+  goalModeRef.current = goalMode;
 
   // --- Pause controller ---
   // Per-session pause flags. When paused, the agent loop awaits the
@@ -201,6 +206,9 @@ export const useChatConversation = (
     isUpdatingYoloMode,
     planMode,
     isUpdatingPlanMode,
+    goalMode,
+    isUpdatingGoalMode,
+    goalModeTokenBudget,
     pendingToolAuthorizations,
     activePendingMessages,
     compactionPreview,
@@ -219,6 +227,7 @@ export const useChatConversation = (
     performCompactionRef,
     yoloModeRef,
     planModeRef,
+    goalModeRef,
     alwaysApprovedToolsRef,
     pendingToolAuthorizationRef,
     pendingUserQuestionRef,
@@ -242,6 +251,9 @@ export const useChatConversation = (
     setIsUpdatingYoloMode,
     setPlanModeState,
     setIsUpdatingPlanMode,
+    setGoalModeState,
+    setIsUpdatingGoalMode,
+    setGoalModeTokenBudgetState,
     setPendingToolAuthorizations,
     setActivePendingMessages,
     setCompactionPreview,
@@ -441,6 +453,13 @@ export const useChatConversation = (
     isUpdatingPlanMode,
     setPlanMode: toolAuthApi.setPlanMode,
     refreshPlanMode: toolAuthApi.refreshPlanMode,
+    goalMode,
+    isUpdatingGoalMode,
+    setGoalMode: toolAuthApi.setGoalMode,
+    refreshGoalMode: toolAuthApi.refreshGoalMode,
+    goalModeTokenBudget,
+    setGoalModeTokenBudget: toolAuthApi.setGoalModeTokenBudget,
+    refreshGoalModeTokenBudget: toolAuthApi.refreshGoalModeTokenBudget,
     pendingToolAuthorizations,
     approveToolAuthorization,
     approveToolAuthorizationAlways: toolAuthApi.approveToolAuthorizationAlways,

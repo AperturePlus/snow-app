@@ -198,6 +198,10 @@ export type ConversationSessionRef = {
    *  Used to propagate an abort from the main flow down to every running
    *  sub-agent (and, recursively, their own sub-agents). */
   childSubAgentIds: Set<string>;
+  /** Whether Plan Mode was active when this session was last used. */
+  planMode: boolean;
+  /** Whether Goal Mode was active when this session was last used. */
+  goalMode: boolean;
 };
 
 /** Per-session pause controller stored in pauseControllerRef. When `paused`
@@ -295,6 +299,9 @@ export type ConversationContextValue = {
   isUpdatingYoloMode: boolean;
   planMode: boolean;
   isUpdatingPlanMode: boolean;
+  goalMode: boolean;
+  isUpdatingGoalMode: boolean;
+  goalModeTokenBudget: number;
   pendingToolAuthorizations: ToolCallInfo[];
   activePendingMessages: string[];
   compactionPreview: string;
@@ -328,6 +335,7 @@ export type ConversationContextValue = {
   >;
   yoloModeRef: RefValue<boolean>;
   planModeRef: RefValue<boolean>;
+  goalModeRef: RefValue<boolean>;
   alwaysApprovedToolsRef: RefValue<Set<string>>;
   pendingToolAuthorizationRef: RefValue<Map<string, PendingToolAuthorization>>;
   pendingUserQuestionRef: RefValue<Map<string, PendingUserQuestion>>;
@@ -364,6 +372,9 @@ export type ConversationContextValue = {
   setIsUpdatingYoloMode: Dispatch<SetStateAction<boolean>>;
   setPlanModeState: Dispatch<SetStateAction<boolean>>;
   setIsUpdatingPlanMode: Dispatch<SetStateAction<boolean>>;
+  setGoalModeState: Dispatch<SetStateAction<boolean>>;
+  setIsUpdatingGoalMode: Dispatch<SetStateAction<boolean>>;
+  setGoalModeTokenBudgetState: Dispatch<SetStateAction<number>>;
   setPendingToolAuthorizations: Dispatch<SetStateAction<ToolCallInfo[]>>;
   setActivePendingMessages: Dispatch<SetStateAction<string[]>>;
   setCompactionPreview: Dispatch<SetStateAction<string>>;
@@ -471,6 +482,13 @@ export type UseChatConversationResult = {
   isUpdatingPlanMode: boolean;
   setPlanMode: (enabled: boolean) => Promise<void>;
   refreshPlanMode: () => Promise<boolean>;
+  goalMode: boolean;
+  isUpdatingGoalMode: boolean;
+  setGoalMode: (enabled: boolean) => Promise<void>;
+  refreshGoalMode: () => Promise<boolean>;
+  goalModeTokenBudget: number;
+  setGoalModeTokenBudget: (budget: number) => Promise<void>;
+  refreshGoalModeTokenBudget: () => Promise<void>;
   pendingToolAuthorizations: ToolCallInfo[];
   approveToolAuthorization: (toolCall: ToolCallInfo) => void;
   approveToolAuthorizationAlways: (toolCall: ToolCallInfo) => void;

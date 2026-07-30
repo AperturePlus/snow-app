@@ -1342,11 +1342,12 @@ input {
   background: var(--bg-tertiary);
   border: 1px solid var(--border-subtle, var(--border-color));
   flex-shrink: 0;
-  transition: border-color 0.12s ease;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .emoji-picker-search:focus-within {
-  border-color: var(--accent-blue, #3b82f6);
+  border-color: var(--text-muted);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .emoji-picker-search-icon {
@@ -9548,8 +9549,7 @@ input {
   color: var(--text-tertiary);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s ease, background-color 0.15s ease,
-    color 0.15s ease;
+  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
 }
 
 .tool-call-browser-page:hover .tool-call-browser-external,
@@ -11663,9 +11663,46 @@ input {
   margin: 4px 8px;
   background: var(--border-light);
 }
-
 .plus-menu-yolo-item {
   cursor: default;
+}
+
+.plus-menu-goal-budget-panel {
+  padding: 6px 12px 10px 38px;
+}
+
+.plus-menu-goal-budget-title {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+
+.plus-menu-goal-budget-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.plus-menu-goal-budget-input {
+  width: 110px;
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.plus-menu-goal-budget-input:focus {
+  border-color: var(--text-muted);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.plus-menu-goal-budget-unit {
+  font-size: 11px;
+  color: var(--text-tertiary);
 }
 
 .plus-menu-yolo-switch {

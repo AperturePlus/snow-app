@@ -81,6 +81,7 @@ fn build_request(image_data_url: &str) -> ResponsesApiRequest {
         // ensures no chat history is loaded.
         skip_context: None,
         plan_mode: None,
+        goal_mode: None,
     }
 }
 

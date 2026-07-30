@@ -14,6 +14,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
   // 保持 ref 与 state 同步
   ctx.yoloModeRef.current = ctx.yoloMode;
   ctx.planModeRef.current = ctx.planMode;
+  ctx.goalModeRef.current = ctx.goalMode;
 
   const approveAllPendingToolAuthorizations = useCallback((): void => {
     const pendingEntries = ctx.pendingToolAuthorizationRef.current;
@@ -83,6 +84,53 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     }
   }, [applyPlanMode]);
 
+  const applyGoalMode = useCallback(
+    (enabled: boolean): void => {
+      ctx.goalModeRef.current = enabled;
+      ctx.setGoalModeState(enabled);
+    },
+    [ctx.goalModeRef, ctx.setGoalModeState]
+  );
+
+  const refreshGoalMode = useCallback(async (): Promise<boolean> => {
+    try {
+      const enabled = await window.snow.getGoalMode();
+      applyGoalMode(enabled);
+      return enabled;
+    } catch {
+      applyGoalMode(false);
+      return false;
+    }
+  }, [applyGoalMode]);
+
+  const applyGoalModeTokenBudget = useCallback(
+    (budget: number): void => {
+      ctx.setGoalModeTokenBudgetState(budget);
+    },
+    [ctx.setGoalModeTokenBudgetState]
+  );
+
+  const refreshGoalModeTokenBudget = useCallback(async (): Promise<void> => {
+    try {
+      const budget = await window.snow.getGoalModeTokenBudget();
+      applyGoalModeTokenBudget(budget);
+    } catch {
+      applyGoalModeTokenBudget(2000000);
+    }
+  }, [applyGoalModeTokenBudget]);
+
+  const setGoalModeTokenBudget = useCallback(
+    async (budget: number): Promise<void> => {
+      try {
+        await window.snow.setGoalModeTokenBudget(budget);
+        applyGoalModeTokenBudget(budget);
+      } catch {
+        // persist failure - keep current state
+      }
+    },
+    [applyGoalModeTokenBudget]
+  );
+
   // 初始化：读取磁盘 YOLO 设置和永久授权工具列表
   useEffect(() => {
     let disposed = false;
@@ -113,6 +161,32 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
         }
       });
 
+    void window.snow
+      .getGoalMode()
+      .then((enabled) => {
+        if (!disposed) {
+          applyGoalMode(enabled);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          applyGoalMode(false);
+        }
+      });
+
+    void window.snow
+      .getGoalModeTokenBudget()
+      .then((budget) => {
+        if (!disposed) {
+          applyGoalModeTokenBudget(budget);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          applyGoalModeTokenBudget(2000000);
+        }
+      });
+
     if (ctx.directoryId) {
       void window.snow
         .listToolApprovalProjectApprovedTools(ctx.directoryId)
@@ -136,6 +210,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
   }, [
     applyYoloMode,
     applyPlanMode,
+    applyGoalMode,
     ctx.directoryId,
     ctx.alwaysApprovedToolsRef,
   ]);
@@ -167,11 +242,68 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
       try {
         await window.snow.setPlanMode(enabled);
         applyPlanMode(enabled);
+        // Save to current session ref for per-conversation restore.
+        const key = ctx.activeConversationIdRef.current ?? "pending";
+        const ref = ctx.sessionsRefData.current.get(key);
+        if (ref) {
+          ref.planMode = enabled;
+          if (enabled) ref.goalMode = false;
+        }
+        // Mutual exclusion: enabling Plan Mode disables Goal Mode
+        if (enabled && ctx.goalModeRef.current) {
+          await window.snow.setGoalMode(false);
+          applyGoalMode(false);
+        }
       } finally {
         ctx.setIsUpdatingPlanMode(false);
       }
     },
-    [applyPlanMode, ctx.isUpdatingPlanMode, ctx.setIsUpdatingPlanMode]
+    [
+      applyPlanMode,
+      applyGoalMode,
+      ctx.isUpdatingPlanMode,
+      ctx.setIsUpdatingPlanMode,
+      ctx.goalModeRef,
+      ctx.activeConversationIdRef,
+      ctx.sessionsRefData,
+    ]
+  );
+
+  const setGoalMode = useCallback(
+    async (enabled: boolean): Promise<void> => {
+      if (ctx.isUpdatingGoalMode) {
+        return;
+      }
+
+      ctx.setIsUpdatingGoalMode(true);
+      try {
+        await window.snow.setGoalMode(enabled);
+        applyGoalMode(enabled);
+        // Save to current session ref for per-conversation restore.
+        const key = ctx.activeConversationIdRef.current ?? "pending";
+        const ref = ctx.sessionsRefData.current.get(key);
+        if (ref) {
+          ref.goalMode = enabled;
+          if (enabled) ref.planMode = false;
+        }
+        // Mutual exclusion: enabling Goal Mode disables Plan Mode
+        if (enabled && ctx.planModeRef.current) {
+          await window.snow.setPlanMode(false);
+          applyPlanMode(false);
+        }
+      } finally {
+        ctx.setIsUpdatingGoalMode(false);
+      }
+    },
+    [
+      applyGoalMode,
+      applyPlanMode,
+      ctx.isUpdatingGoalMode,
+      ctx.setIsUpdatingGoalMode,
+      ctx.planModeRef,
+      ctx.activeConversationIdRef,
+      ctx.sessionsRefData,
+    ]
   );
 
   const settleToolAuthorization = useCallback(
@@ -454,6 +586,12 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     applyPlanMode,
     refreshPlanMode,
     setPlanMode,
+    applyGoalMode,
+    refreshGoalMode,
+    setGoalMode,
+    applyGoalModeTokenBudget,
+    refreshGoalModeTokenBudget,
+    setGoalModeTokenBudget,
     settleToolAuthorization,
     rejectAllToolAuthorizations,
     requestToolAuthorization,

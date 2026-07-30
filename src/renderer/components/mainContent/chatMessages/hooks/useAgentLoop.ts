@@ -298,8 +298,15 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             // this session was streaming, do NOT auto-switch back — let the
             // conversation persist in the background and stay on the empty
             // greeting.
+            // When activeConversationIdRef is PENDING_SESSION_KEY the user
+            // navigated back to the pending conversation (via sidebar) before
+            // migration completed. After migrateSession deletes the pending
+            // key, the active id must follow to the real conversation id —
+            // otherwise the UI resolves an empty session and falls back to
+            // the Empty greeting screen.
             if (
-              ctx.activeConversationIdRef.current === undefined &&
+              (ctx.activeConversationIdRef.current === undefined ||
+                ctx.activeConversationIdRef.current === PENDING_SESSION_KEY) &&
               !ctx.newChatRequestedRef.current
             ) {
               ctx.setActiveId(response.conversationId);

@@ -1,5 +1,6 @@
 use napi::bindgen_prelude::*;
 
+use crate::prompt::goal_mode_system_prompt::build_goal_mode_system_prompt;
 use crate::prompt::plan_mode_system_prompt::build_plan_mode_system_prompt;
 use crate::prompt::system_prompt::build_system_prompt;
 use crate::storage::services::chat_conversations::{
@@ -89,6 +90,9 @@ pub fn prepare_context_request(
     let shell_type = resolve_default_shell(request.database_path);
     let system_prompt = if request.plan_mode {
         build_plan_mode_system_prompt(&working_directory, &shell_type)
+    } else if request.goal_mode {
+        let goal_token_budget = crate::storage::services::system_settings::get_goal_mode_token_budget(request.database_path).unwrap_or(2000000);
+        build_goal_mode_system_prompt(&working_directory, &shell_type, goal_token_budget)
     } else {
         build_system_prompt(&working_directory, &shell_type)
     };
