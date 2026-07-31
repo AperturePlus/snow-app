@@ -7,15 +7,22 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "v0.1.7"
+        description: "v0.1.9"
         required: true
         type: string
       release_notes:
         description: |
-          - Add Goal mode
-          - Fixed Windows remote connection ssh not working with terminals
-          - Optimize startup speed with lazy loading
-          - Add timed task function
+          - Add GitHub Skills installer: download repos, discover SKILL.md, install globally or per-project with uninstall support
+          - Migrate external MCP to official rmcp SDK for stdio and HTTP transports
+          - Normalize reasoning/thinking text handling across AI providers
+          - Derive prompt environment from configured shell type for correct remote SSH workspace descriptions
+          - Add Git Bash detection to terminal shell resolver
+          - Fix GitGraph rendering of phantom branch segments and lane stroke overlaps
+          - Fix model combobox filtering that hid all models when list reopened
+          - Send queued chat messages immediately by aborting current stream
+          - Optimistically update explorer tree on rename/delete
+          - Fix git output for non-ASCII paths with core.quotepath=false
+          - Keep context menus visible near window edges
 
         required: false
         type: string
