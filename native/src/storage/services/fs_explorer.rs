@@ -596,15 +596,28 @@ pub fn search_files(root_dir: &str, query: &str) -> Result<Vec<FileSearchResult>
         )));
     }
 
-    // Very short queries (single char) would match nearly every file and
-    // produce a huge amount of I/O; we require at least two characters so
-    // the content scan stays responsive. An empty query returns nothing.
     let trimmed = query.trim();
-    if trimmed.len() < 2 {
+    if trimmed.is_empty() {
         return Ok(Vec::new());
     }
 
     let query_lower = trimmed.to_lowercase();
+
+    // Path-aware search: a query containing "/" (e.g. "prompt/" or
+    // "prompt/utils") is treated as a directory path — the part before the
+    // last "/" locates the directory, and its children are listed (filtered
+    // by the trailing name query when present). This lets "@prompt/" surface
+    // the directory itself plus the files inside it.
+    if query_lower.contains('/') {
+        return Ok(search_files_by_path(root_path, &query_lower));
+    }
+
+    // Very short queries (single char) would match nearly every file and
+    // produce a huge amount of I/O; we require at least two characters so
+    // the content scan stays responsive. An empty query returns nothing.
+    if trimmed.len() < 2 {
+        return Ok(Vec::new());
+    }
 
     let results = Arc::new(Mutex::new(Vec::<FileSearchResult>::new()));
     let counter = Arc::new(AtomicUsize::new(0));
@@ -620,10 +633,16 @@ pub fn search_files(root_dir: &str, query: &str) -> Result<Vec<FileSearchResult>
 
     let mut final_results = results.lock().unwrap().drain(..).collect::<Vec<_>>();
 
-    // Sort: directories first, then files with name matches, then files with
-    // content matches, then alphabetical by name. This keeps the most relevant
-    // results on top without discarding content-only hits.
-    final_results.sort_by(|a, b| {
+    sort_search_results(&mut final_results);
+    final_results.truncate(MAX_RESULTS);
+
+    Ok(final_results)
+}
+
+/// Sort search results: directories first, then entries whose name matched,
+/// then alphabetical by name. This keeps the most relevant results on top.
+fn sort_search_results(results: &mut [FileSearchResult]) {
+    results.sort_by(|a, b| {
         if a.is_directory != b.is_directory {
             return if a.is_directory {
                 std::cmp::Ordering::Less
@@ -640,9 +659,205 @@ pub fn search_files(root_dir: &str, query: &str) -> Result<Vec<FileSearchResult>
         }
         a.name.cmp(&b.name)
     });
-    final_results.truncate(MAX_RESULTS);
+}
 
-    Ok(final_results)
+/// Path-aware search for queries containing "/" (e.g. "prompt/" or
+/// "prompt/utils"). The part before the last "/" is resolved as a directory
+/// path relative to the root; when it does not exist, the whole workspace is
+/// walked for directories whose relative path segments match the query
+/// segments — this covers partial paths like "prompt/" pointing at a
+/// directory nested deeper in the tree (e.g. "src/prompt/"). For each
+/// candidate directory the directory itself is included as a result,
+/// followed by its direct children filtered by the trailing name query
+/// (empty = list all).
+fn search_files_by_path(root_path: &Path, query_lower: &str) -> Vec<FileSearchResult> {
+    let segments: Vec<&str> = query_lower.split('/').collect();
+    // "prompt/" -> ["prompt", ""], "prompt/utils" -> ["prompt", "utils"]
+    let name_query = segments.last().copied().unwrap_or("");
+    let dir_segments: Vec<&str> = segments[..segments.len().saturating_sub(1)]
+        .iter()
+        .copied()
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let mut results: Vec<FileSearchResult> = Vec::new();
+    // Tracks directories already emitted, so a directory that matches the
+    // query segments both as a candidate and as a child of another candidate
+    // (e.g. "prompt/sub" for the query "prompt/") is only listed once.
+    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+
+    // Resolve candidate directories: exact root-relative path first, then a
+    // workspace-wide walk for segment matches at any depth.
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if dir_segments.is_empty() {
+        // Query like "/" — list the root's children directly.
+        candidates.push(root_path.to_path_buf());
+    } else {
+        let mut exact = root_path.to_path_buf();
+        for seg in &dir_segments {
+            exact.push(seg);
+        }
+        if exact.is_dir() {
+            candidates.push(exact);
+        } else {
+            let mut rel_segments: Vec<String> = Vec::new();
+            collect_matching_dirs(
+                root_path,
+                &mut rel_segments,
+                &dir_segments,
+                &mut candidates,
+                0,
+            );
+        }
+    }
+
+    for dir in candidates {
+        if results.len() >= MAX_RESULTS {
+            break;
+        }
+        if dir.as_path() != root_path {
+            push_directory_result(root_path, &dir, &mut results, &mut seen);
+        }
+        collect_directory_entries(root_path, &dir, name_query, &mut results, &mut seen);
+    }
+
+    sort_search_results(&mut results);
+    results.truncate(MAX_RESULTS);
+    results
+}
+
+/// Depth-first walk over the workspace collecting directories whose relative
+/// path segments contain `dir_segments` as a consecutive segment prefix match
+/// (`starts_with` per segment, case-insensitive). For example "prompt" matches
+/// "prompt/", "src/prompt/" and "prompts/" at any depth; "prompt/utils"
+/// matches "prompt/utils/" as well as "a/prompt/utils/". Skipped directories
+/// follow the same rules as the recursive name search.
+fn collect_matching_dirs(
+    current_dir: &Path,
+    rel_segments: &mut Vec<String>,
+    dir_segments: &[&str],
+    candidates: &mut Vec<PathBuf>,
+    depth: usize,
+) {
+    if depth > 0
+        && rel_segments.len() >= dir_segments.len()
+        && rel_segments
+            .windows(dir_segments.len())
+            .any(|win| {
+                win.iter()
+                    .zip(dir_segments.iter())
+                    .all(|(a, b)| a.starts_with(b))
+            })
+    {
+        candidates.push(current_dir.to_path_buf());
+    }
+
+    if depth >= MAX_DEPTH || candidates.len() >= MAX_RESULTS {
+        return;
+    }
+
+    let entries = match fs::read_dir(current_dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let entry_path = entry.path();
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_lowercase();
+        if should_skip_dir(&name) {
+            continue;
+        }
+        rel_segments.push(name);
+        collect_matching_dirs(
+            &entry_path,
+            rel_segments,
+            dir_segments,
+            candidates,
+            depth + 1,
+        );
+        rel_segments.pop();
+    }
+}
+
+/// Include the directory itself as a result entry (relative path visible).
+fn push_directory_result(
+    root_path: &Path,
+    dir: &Path,
+    results: &mut Vec<FileSearchResult>,
+    seen: &mut std::collections::HashSet<PathBuf>,
+) {
+    if results.len() >= MAX_RESULTS || !seen.insert(dir.to_path_buf()) {
+        return;
+    }
+    let name = dir
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let rel = dir
+        .strip_prefix(root_path)
+        .unwrap_or(dir)
+        .to_string_lossy()
+        .to_string();
+    results.push(FileSearchResult {
+        path: dir.to_string_lossy().to_string(),
+        relative_path: rel,
+        name,
+        is_directory: true,
+        matched_name: true,
+        line_matches: Vec::new(),
+    });
+}
+
+/// List the direct children of `dir`, filtered by `name_query` (empty means
+/// list everything). Skipped directories follow the same rules as the
+/// recursive name search; files are not content-scanned here.
+fn collect_directory_entries(
+    root_path: &Path,
+    dir: &Path,
+    name_query: &str,
+    results: &mut Vec<FileSearchResult>,
+    seen: &mut std::collections::HashSet<PathBuf>,
+) {
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        if results.len() >= MAX_RESULTS {
+            return;
+        }
+        let entry_path = entry.path();
+        if !seen.insert(entry_path.clone()) {
+            continue;
+        }
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        if is_dir && should_skip_dir(&name) {
+            continue;
+        }
+        if !name_query.is_empty() && !name.to_lowercase().contains(name_query) {
+            continue;
+        }
+
+        let rel = entry_path
+            .strip_prefix(root_path)
+            .unwrap_or(&entry_path)
+            .to_string_lossy()
+            .to_string();
+        results.push(FileSearchResult {
+            path: entry_path.to_string_lossy().to_string(),
+            relative_path: rel,
+            name: name.clone(),
+            is_directory: is_dir,
+            matched_name: !name_query.is_empty(),
+            line_matches: Vec::new(),
+        });
+    }
 }
 
 fn resolve_workspace_entry(root_path: &str, entry_path: &str) -> Result<(PathBuf, PathBuf)> {

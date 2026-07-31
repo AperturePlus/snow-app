@@ -1343,6 +1343,7 @@ export const zhTW = {
   "sensitiveCommand.message":
     "此命令匹配了敏感命令規則。即使在 YOLO 模式下也需要確認。",
   "sensitiveCommand.command": "命令",
+  "sensitiveCommand.description": "命令說明",
   "sensitiveCommand.matchedRules": "匹配的規則",
   "sensitiveCommand.confirmExecution": "確認執行",
   "chatInput.placeholder":

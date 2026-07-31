@@ -2,10 +2,42 @@ import { ipcRenderer, type IpcRendererEvent } from "electron";
 import type {
   DirectoryEntry,
   FileContentResult,
+  FileSearchAgentProgress,
   FileSearchResult,
   WorkspaceDirectoryInput,
   WorkspaceDirectoryRecord,
 } from "../types";
+
+const AGENT_SEARCH_PROGRESS_CHANNEL =
+  "workspace-directories:search-files-by-agent:progress";
+
+const agentSearchProgressCallbacks = new Map<
+  string,
+  (chunk: FileSearchAgentProgress) => void
+>();
+let agentSearchProgressListenerRegistered = false;
+
+const ensureAgentSearchProgressListener = (): void => {
+  if (agentSearchProgressListenerRegistered) {
+    return;
+  }
+  agentSearchProgressListenerRegistered = true;
+  ipcRenderer.on(
+    AGENT_SEARCH_PROGRESS_CHANNEL,
+    (_event, payload: unknown) => {
+      const record = payload as Record<string, unknown> | null;
+      const streamId = record?.streamId;
+      const chunk = record?.chunk as FileSearchAgentProgress | undefined;
+      if (typeof streamId !== "string" || !chunk) {
+        return;
+      }
+      agentSearchProgressCallbacks.get(streamId)?.(chunk);
+    }
+  );
+};
+
+const createAgentSearchStreamId = (): string =>
+  `agent-search-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 export const workspaceApi = {
   listWorkspaceDirectories: (): Promise<WorkspaceDirectoryRecord[]> =>
@@ -82,6 +114,29 @@ export const workspaceApi = {
   },
   searchFiles: (dirPath: string, query: string): Promise<FileSearchResult[]> =>
     ipcRenderer.invoke("workspace-directories:search-files", dirPath, query),
+  searchFilesByAgent: (
+    query: string,
+    workspacePath: string,
+    onProgress?: (chunk: FileSearchAgentProgress) => void
+  ): Promise<FileSearchResult[]> => {
+    const streamId = createAgentSearchStreamId();
+    ensureAgentSearchProgressListener();
+
+    if (onProgress) {
+      agentSearchProgressCallbacks.set(streamId, onProgress);
+    }
+
+    return ipcRenderer
+      .invoke(
+        "workspace-directories:search-files-by-agent",
+        query,
+        workspacePath,
+        streamId
+      )
+      .finally(() => {
+        agentSearchProgressCallbacks.delete(streamId);
+      });
+  },
   selectFiles: (
     dialogTitle?: string
   ): Promise<{ path: string; isDirectory: boolean }[] | null> =>

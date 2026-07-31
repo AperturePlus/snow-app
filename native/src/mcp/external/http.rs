@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::time::Duration;
 
 use http::header::{HeaderName, HeaderValue};
 use napi::{Error, Result};
@@ -12,8 +11,6 @@ use rmcp::transport::{
 use crate::storage::McpServerConfigRecord;
 
 use super::super::protocol::RemoteMcpTool;
-
-const DEFAULT_TIMEOUT_MS: u64 = 300_000;
 
 pub(super) type HttpRunningClient = RunningService<rmcp::RoleClient, ClientInfo>;
 
@@ -32,31 +29,62 @@ impl HttpMcpClient {
         }
 
         let custom_headers = parse_headers(&config.headers_json)?;
-        let _timeout = config_timeout(config);
 
-        let mut transport_config = StreamableHttpClientTransportConfig::with_uri(url);
-        if !custom_headers.is_empty() {
-            transport_config = transport_config.custom_headers(custom_headers);
-        }
-
-        let transport: StreamableHttpClientTransport<_> =
-            StreamableHttpClientTransport::from_config(transport_config);
-
-        let client_info = ClientInfo::default();
-        let lifecycle = ClientLifecycleMode::Auto {
+        // 优先尝试 2026-07-28 无状态协议。SDK 的 Auto 模式只对规范协商错误
+        // （-32601 Method Not Found / -32022 Unsupported Protocol Version）
+        // 自动降级或换版本重试；旧服务器若返回其他 JSON-RPC 错误（如 deepwiki
+        // 的 -32600 "Unsupported protocol version"），需在下面用 legacy
+        // initialize 握手手动重试一次。
+        let auto_lifecycle = ClientLifecycleMode::Auto {
             preferred_versions: vec![rmcp::model::ProtocolVersion::V_2026_07_28],
             legacy_version: Some(rmcp::model::ProtocolVersion::V_2025_11_25),
         };
 
-        let running = client_info
-            .serve_with_lifecycle(transport, lifecycle)
+        let client_info = ClientInfo::default();
+
+        let mut transport_config = StreamableHttpClientTransportConfig::with_uri(url);
+        if !custom_headers.is_empty() {
+            transport_config = transport_config.custom_headers(custom_headers.clone());
+        }
+        let transport: StreamableHttpClientTransport<_> =
+            StreamableHttpClientTransport::from_config(transport_config);
+
+        let running = match client_info
+            .clone()
+            .serve_with_lifecycle(transport, auto_lifecycle)
             .await
-            .map_err(|error| {
-                Error::from_reason(format!(
+        {
+            Ok(running) => running,
+            Err(error) if super::should_retry_with_legacy_handshake(&error) => {
+                // 重建 transport 避免复用失败连接的状态，改用 legacy 握手重连。
+                let mut transport_config = StreamableHttpClientTransportConfig::with_uri(url);
+                if !custom_headers.is_empty() {
+                    transport_config = transport_config.custom_headers(custom_headers);
+                }
+                let transport: StreamableHttpClientTransport<_> =
+                    StreamableHttpClientTransport::from_config(transport_config);
+
+                match client_info
+                    .serve_with_lifecycle(transport, ClientLifecycleMode::Initialize)
+                    .await
+                {
+                    Ok(running) => running,
+                    // 重试失败时保留原始 Auto 错误（含版本协商诊断信息）
+                    Err(_) => {
+                        return Err(Error::from_reason(format!(
+                            "Failed to connect external MCP HTTP server {}: {error}",
+                            config.name
+                        )))
+                    }
+                }
+            }
+            Err(error) => {
+                return Err(Error::from_reason(format!(
                     "Failed to connect external MCP HTTP server {}: {error}",
                     config.name
-                ))
-            })?;
+                )))
+            }
+        };
 
         Ok(Self { client: running })
     }
@@ -132,13 +160,4 @@ fn parse_headers(value: &str) -> Result<HashMap<HeaderName, HeaderValue>> {
         result.insert(name, value);
     }
     Ok(result)
-}
-
-fn config_timeout(config: &McpServerConfigRecord) -> Duration {
-    let timeout_ms = config
-        .timeout_ms
-        .filter(|timeout| *timeout > 0)
-        .map(|timeout| timeout as u64)
-        .unwrap_or(DEFAULT_TIMEOUT_MS);
-    Duration::from_millis(timeout_ms)
 }

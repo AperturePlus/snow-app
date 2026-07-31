@@ -232,14 +232,33 @@ export type CodebaseIndexedFilePage = {
   pageSize: number;
 };
 
-export type CodebaseFileEmbedding = {
+export type CodebaseSphereRelatedFile = {
+  index: number;
+  similarity: number;
+};
+
+export type CodebaseSphereNode = {
+  index: number;
   relativePath: string;
-  filePath: string;
   chunkCount: number;
   startLine: number;
   endLine: number;
   sizeBytes: number;
-  embedding: number[];
+  x: number;
+  y: number;
+  z: number;
+  related: CodebaseSphereRelatedFile[];
+};
+
+export type CodebaseSphereEdge = {
+  a: number;
+  b: number;
+  similarity: number;
+};
+
+export type CodebaseSphereLayout = {
+  nodes: CodebaseSphereNode[];
+  edges: CodebaseSphereEdge[];
 };
 
 export type CodebaseScanPreview = {

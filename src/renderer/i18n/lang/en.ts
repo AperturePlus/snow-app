@@ -1375,6 +1375,10 @@ export const en = {
   "fileMention.searching": "Searching...",
   "fileMention.noResults": "No results found",
   "fileMention.typeToSearch": "Type to search files...",
+  "fileMention.aiSearching": "AI is searching files...",
+  "fileMention.aiNoResults": "No matching files found",
+  "fileMention.aiHint": "Describe the file with natural language",
+  "fileMention.aiError": "AI search failed. Check the API settings and retry.",
   "fileMention.results": "{{count}} results",
   "fileMention.selected": "{{count}} selected",
   "fileMention.navigate": "navigate",
@@ -1426,6 +1430,7 @@ export const en = {
   "sensitiveCommand.message":
     "This command matches a sensitive command rule. Confirmation is required even in YOLO mode.",
   "sensitiveCommand.command": "Command",
+  "sensitiveCommand.description": "What it does",
   "sensitiveCommand.matchedRules": "Matched rules",
   "sensitiveCommand.confirmExecution": "Confirm execution",
   "chatInput.placeholder":

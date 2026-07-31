@@ -168,6 +168,10 @@ impl McpService for BashService {
                         "type": "string",
                         "description": "Terminal command to execute directly."
                     },
+                    "description": {
+                        "type": "string",
+                        "description": "REQUIRED: A short, user-friendly explanation of what this command will do, so the user can understand it at a glance. MUST be written in the SAME language as the user's latest query."
+                    },
                     "workingDirectory": {
                         "type": "string",
                         "description": "REQUIRED: Working directory where the command should be executed. Can be a local path (e.g., \"D:/projects/myapp\")."
@@ -183,7 +187,7 @@ impl McpService for BashService {
                         "default": false
                     }
                 },
-                "required": ["command", "workingDirectory", "timeout"]
+                "required": ["command", "description", "workingDirectory", "timeout"]
             }),
         }]
     }
@@ -219,6 +223,22 @@ impl BashService {
             .get("command")
             .and_then(Value::as_str)
             .ok_or_else(|| Error::new(Status::InvalidArg, "command is required".to_string()))?
+            .to_string();
+
+        // A short user-facing explanation of the command, written by the
+        // model in the user's language.  Required so the UI can always show
+        // why a command is being executed.
+        let description = args
+            .get("description")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                Error::new(
+                    Status::InvalidArg,
+                    "description is required: provide a brief user-friendly explanation of the command in the user's language"
+                        .to_string(),
+                )
+            })?
             .to_string();
 
         let working_directory = args
@@ -293,6 +313,7 @@ impl BashService {
                 "error": "SENSITIVE_COMMAND_DETECTED",
                 "message": "Command matched a sensitive command rule and requires confirmation",
                 "command": command,
+                "description": description,
                 "matches": sensitive_matches,
             });
             return Err(Error::new(

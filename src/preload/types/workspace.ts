@@ -31,6 +31,14 @@ export type FileSearchResult = {
   lineMatches: Array<{ line: number; text: string }>;
 };
 
+/** 自然语言文件搜索 agent 的进度回调数据（每次工具调用一条）。 */
+export type FileSearchAgentProgress = {
+  round: number;
+  tool: string;
+  argsJson: string;
+  resultPreview: string;
+};
+
 export type FileContentResult = {
   content: string;
   isBinary: boolean;

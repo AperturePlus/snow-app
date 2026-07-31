@@ -354,8 +354,11 @@ fn write_manifest(checkpoint_id: &str, manifest: &CheckpointManifest) -> Result<
 
 fn run_git(work_dir: &Path, args: &[&str]) -> Result<Output> {
     let mut command = Command::new("git");
+    // `safe.directory=*` bypasses Git's dubious-ownership check
+    // (CVE-2022-24765), so git works inside WSL (`\\wsl$\...`) and other
+    // UNC/network paths where the repo is owned by a different user.
     command
-        .args(["-c", "core.quotepath=false"])
+        .args(["-c", "core.quotepath=false", "-c", "safe.directory=*"])
         .args(args)
         .current_dir(work_dir);
 

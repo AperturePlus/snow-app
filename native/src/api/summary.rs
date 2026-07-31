@@ -147,7 +147,7 @@ async fn generate_summary_via_chat(
 
     let client = crate::api::http_client::build_proxied_client().await?;
 
-    let body: Value = send_summary_request_with_retry(
+    let body: Value = send_api_request_with_retry(
         &client,
         &endpoint,
         build_header_map(api_key, custom_headers)?,
@@ -194,7 +194,7 @@ async fn generate_summary_via_responses(
 
     let client = crate::api::http_client::build_proxied_client().await?;
 
-    let body: Value = send_summary_request_with_retry(
+    let body: Value = send_api_request_with_retry(
         &client,
         &endpoint,
         build_header_map(api_key, custom_headers)?,
@@ -234,7 +234,7 @@ async fn generate_summary_via_anthropic(
 
     let client = crate::api::http_client::build_proxied_client().await?;
 
-    let body: Value = send_summary_request_with_retry(
+    let body: Value = send_api_request_with_retry(
         &client,
         &endpoint,
         build_anthropic_header_map(api_key, custom_headers)?,
@@ -279,7 +279,7 @@ async fn generate_summary_via_gemini(
 
     let client = crate::api::http_client::build_proxied_client().await?;
 
-    let body: Value = send_summary_request_with_retry(
+    let body: Value = send_api_request_with_retry(
         &client,
         &endpoint,
         build_gemini_header_map(custom_headers)?,
@@ -293,9 +293,10 @@ async fn generate_summary_via_gemini(
     Ok(content)
 }
 
-/// Send a non-streaming summary request with retry logic.
+/// Send a non-streaming API request with retry logic.
 /// Wraps the HTTP send + status check + JSON parse in a retry loop.
-async fn send_summary_request_with_retry(
+/// Shared by summary generation and other internal API helpers.
+pub(crate) async fn send_api_request_with_retry(
     client: &reqwest::Client,
     endpoint: &str,
     headers: reqwest::header::HeaderMap,
@@ -311,7 +312,7 @@ async fn send_summary_request_with_retry(
             .send()
             .await
             .map_err(|error| {
-                Error::from_reason(format!("Summary request failed: {}", error))
+                Error::from_reason(format!("API request failed: {}", error))
             });
 
         match response {
@@ -320,7 +321,7 @@ async fn send_summary_request_with_retry(
                 if !status.is_success() {
                     let error_body = response.text().await.unwrap_or_default();
                     let error = Error::from_reason(format!(
-                        "Summary request failed: {} {}",
+                        "API request failed: {} {}",
                         status, error_body
                     ));
 
@@ -339,7 +340,7 @@ async fn send_summary_request_with_retry(
                     .await
                     .map_err(|error| {
                         Error::from_reason(format!(
-                            "Failed to parse summary response: {}",
+                            "Failed to parse API response: {}",
                             error
                         ))
                     })?;
@@ -460,7 +461,7 @@ fn extract_gemini_content(body: &Value) -> String {
     String::new()
 }
 
-fn resolve_anthropic_endpoint(api_config: &crate::storage::ApiConfigRecord) -> String {
+pub(crate) fn resolve_anthropic_endpoint(api_config: &crate::storage::ApiConfigRecord) -> String {
     let normalized_base_url = normalize_base_url(&api_config.base_url);
     if normalized_base_url.is_empty() {
         return String::new();
@@ -480,7 +481,7 @@ fn resolve_anthropic_endpoint(api_config: &crate::storage::ApiConfigRecord) -> S
     format!("{}/messages", resolved_base)
 }
 
-fn resolve_gemini_endpoint(
+pub(crate) fn resolve_gemini_endpoint(
     api_config: &crate::storage::ApiConfigRecord,
     model: &str,
     api_key: &str,
@@ -516,7 +517,7 @@ fn resolve_gemini_endpoint(
     url
 }
 
-fn build_anthropic_header_map(
+pub(crate) fn build_anthropic_header_map(
     api_key: &str,
     custom_headers: &HashMap<String, String>,
 ) -> Result<HeaderMap> {
@@ -559,7 +560,7 @@ fn build_anthropic_header_map(
     Ok(headers)
 }
 
-fn build_gemini_header_map(
+pub(crate) fn build_gemini_header_map(
     custom_headers: &HashMap<String, String>,
 ) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
@@ -594,7 +595,7 @@ fn build_gemini_header_map(
     Ok(headers)
 }
 
-fn resolve_chat_endpoint(api_config: &crate::storage::ApiConfigRecord) -> String {
+pub(crate) fn resolve_chat_endpoint(api_config: &crate::storage::ApiConfigRecord) -> String {
     let normalized_base_url = normalize_base_url(&api_config.base_url);
     if normalized_base_url.is_empty() {
         return String::new();
@@ -738,7 +739,7 @@ fn normalize_role(role: &str) -> &str {
     }
 }
 
-fn build_header_map(api_key: &str, custom_headers: &HashMap<String, String>) -> Result<HeaderMap> {
+pub(crate) fn build_header_map(api_key: &str, custom_headers: &HashMap<String, String>) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));

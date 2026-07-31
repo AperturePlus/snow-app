@@ -21,7 +21,10 @@ type SensitiveCommandConfirmDialogProps = {
 
 const BASH_TOOL_NAME = "bash-terminal-execute";
 
-const parseBashCommand = (toolCall: ToolCallInfo): string | null => {
+const parseBashArgument = (
+  toolCall: ToolCallInfo,
+  key: "command" | "description"
+): string | null => {
   if (toolCall.name !== BASH_TOOL_NAME) {
     return null;
   }
@@ -34,9 +37,9 @@ const parseBashCommand = (toolCall: ToolCallInfo): string | null => {
     if (
       typeof parsed === "object" &&
       parsed !== null &&
-      typeof parsed.command === "string"
+      typeof parsed[key] === "string"
     ) {
-      return parsed.command;
+      return parsed[key] as string;
     }
   } catch {
     // fall through
@@ -64,7 +67,9 @@ const SensitiveCommandItem = ({
 }): React.JSX.Element => {
   const { t } = useI18n();
   const [rejectionReason, setRejectionReason] = useState("");
-  const command = parseBashCommand(toolCall) ?? toolCall.arguments ?? "";
+  const command =
+    parseBashArgument(toolCall, "command") ?? toolCall.arguments ?? "";
+  const description = parseBashArgument(toolCall, "description");
 
   return (
     <article className="tool-authorization-prompt-item sensitive-command-item">
@@ -76,6 +81,15 @@ const SensitiveCommandItem = ({
       </div>
 
       <div className="tool-authorization-args">
+        {description ? (
+          <div className="sensitive-command-description">
+            <span className="tool-authorization-tool-label">
+              {t("sensitiveCommand.description")}
+            </span>
+            <p>{description}</p>
+          </div>
+        ) : null}
+
         <span className="tool-authorization-tool-label">
           {t("sensitiveCommand.command")}
         </span>

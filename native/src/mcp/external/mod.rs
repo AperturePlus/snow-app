@@ -434,6 +434,23 @@ macro_rules! impl_client_handle {
 impl_client_handle!(stdio::StdioMcpClient);
 impl_client_handle!(http::HttpMcpClient);
 
+/// Returns true when an `Auto`-mode negotiation failed with a JSON-RPC error
+/// that the rmcp SDK could not negotiate around on its own (anything other
+/// than -32601 Method Not Found / -32022 Unsupported Protocol Version, which
+/// the SDK already handles internally by falling back or retrying versions).
+/// Legacy servers such as deepwiki reply -32600 "Unsupported protocol version"
+/// here, so retrying with the legacy `initialize` handshake is worthwhile.
+pub(super) fn should_retry_with_legacy_handshake(
+    error: &rmcp::service::ClientInitializeError,
+) -> bool {
+    matches!(
+        error,
+        rmcp::service::ClientInitializeError::JsonRpcError(error_data)
+            if error_data.code != rmcp::model::ErrorCode::METHOD_NOT_FOUND
+                && error_data.code != rmcp::model::ErrorCode::UNSUPPORTED_PROTOCOL_VERSION
+    )
+}
+
 /// A transport-agnostic external MCP client. The underlying connection is
 /// managed by the rmcp SDK and automatically negotiated using the
 /// `ClientLifecycleMode::Auto` strategy, which prefers the 2026-07-28

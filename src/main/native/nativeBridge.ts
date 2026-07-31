@@ -269,6 +269,10 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to search files")
         ),
+      searchFilesByAgent: (_query, _workspacePath, _onProgress) =>
+        Promise.reject(
+          new Error("Rust native bridge is required to run AI file search")
+        ),
       listMcpServerConfigs: () =>
         Promise.reject(
           new Error("Rust native bridge is required to list MCP server configs")
@@ -528,6 +532,12 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required for AI commit message generation"
           )
         ),
+      generateCommitMessageFromDiff: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required for AI commit message generation"
+          )
+        ),
       generateThemePalette: () =>
         Promise.reject(
           new Error(
@@ -749,10 +759,10 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to list codebase indexed files"
           )
         ),
-      getCodebaseFileEmbeddings: () =>
+      getCodebaseSphereLayout: () =>
         Promise.reject(
           new Error(
-            "Rust native bridge is required to get codebase file embeddings"
+            "Rust native bridge is required to compute codebase sphere layout"
           )
         ),
       clearCodebaseIndex: () =>

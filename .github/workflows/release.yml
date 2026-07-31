@@ -7,12 +7,28 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "v0.1.10"
+        description: "v0.1.11"
         required: true
         type: string
       release_notes:
         description: |
-          - fix: inject login shell PATH when starting external MCP stdio, fixing the issue where npx cannot be found when launched from GUI
+          ## New Features
+
+          - **Codebase Panel**: Added a dedicated codebase panel with indexed file table and 3D similarity sphere visualization, showing file relationships based on embedding similarity.
+          - **AI Natural-Language File Search**: Type `@?<query>` in the chat input to search workspace files using natural language — an AI agent autonomously calls grep and filesystem tools to locate matching files, with real-time progress display.
+          - **Remote Git Support (SSH)**: Git panel now fully supports `ssh://` remote repositories — discover repos, view status, diff, stage, commit, and push on remote workspaces via SSH.
+
+          ## Improvements
+
+          - **3D Sphere Layout Moved to Rust**: The similarity sphere force-directed layout computation has been moved from the renderer (synchronous, blocking UI) to the Rust backend (async on background thread), eliminating frame drops on large codebases.
+          - **MCP External Server Compatibility**: Added legacy `initialize` handshake fallback for older MCP servers that reject the 2026-07-28 stateless protocol (e.g., deepwiki), improving connection reliability across different server implementations.
+          - **Filesystem Search Enhancements**: Expanded Rust-side filesystem explorer with line-level content match support and improved search result granularity.
+          - **Remote Git Polling**: Remote (SSH) repositories without local file watchers now auto-refresh git status via polling every 10 seconds.
+
+          ## Bug Fixes
+
+          - Removed unused timeout constants (`DEFAULT_TIMEOUT_MS`) from MCP stdio and HTTP clients (dead code cleanup).
+          - Fixed `CodebaseSphereView` component to consume Rust-computed layout data instead of computing synchronously in the renderer.
 
         required: false
         type: string

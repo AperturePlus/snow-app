@@ -267,14 +267,33 @@ export type CodebaseIndexedFilePage = {
   pageSize: number;
 };
 
-export type CodebaseFileEmbedding = {
+export type CodebaseSphereRelatedFile = {
+  index: number;
+  similarity: number;
+};
+
+export type CodebaseSphereNode = {
+  index: number;
   relativePath: string;
-  filePath: string;
   chunkCount: number;
   startLine: number;
   endLine: number;
   sizeBytes: number;
-  embedding: number[];
+  x: number;
+  y: number;
+  z: number;
+  related: CodebaseSphereRelatedFile[];
+};
+
+export type CodebaseSphereEdge = {
+  a: number;
+  b: number;
+  similarity: number;
+};
+
+export type CodebaseSphereLayout = {
+  nodes: CodebaseSphereNode[];
+  edges: CodebaseSphereEdge[];
 };
 
 export type CodebaseScanPreview = {
@@ -739,6 +758,13 @@ export type BashStreamChunk = {
   data: string;
 };
 
+export type FileSearchAgentProgress = {
+  round: number;
+  tool: string;
+  argsJson: string;
+  resultPreview: string;
+};
+
 export type BrowserCommand = {
   operation: string;
   argsJson: string;
@@ -934,10 +960,10 @@ export type NativeBridge = {
     page: number,
     pageSize: number
   ) => Promise<CodebaseIndexedFilePage>;
-  getCodebaseFileEmbeddings: (
+  getCodebaseSphereLayout: (
     projectId: string,
     limit: number
-  ) => Promise<CodebaseFileEmbedding[]>;
+  ) => Promise<CodebaseSphereLayout>;
   clearCodebaseIndex: (projectId: string) => Promise<void>;
   startCodebaseWatch: (
     projectId: string,
@@ -988,6 +1014,11 @@ export type NativeBridge = {
   readFileContent: (filePath: string) => Promise<FileContentResult>;
   writeFileContent: (filePath: string, content: string) => Promise<void>;
   searchFiles: (rootDir: string, query: string) => Promise<FileSearchResult[]>;
+  searchFilesByAgent: (
+    query: string,
+    workspacePath: string,
+    onProgress: ((chunk: FileSearchAgentProgress) => void) | undefined
+  ) => Promise<FileSearchResult[]>;
   listMcpServerConfigs: () => Promise<McpServerConfigRecord[]>;
   upsertMcpServerConfig: (item: McpServerConfigInput) => Promise<void>;
   deleteMcpServerConfig: (serverId: string) => Promise<void>;
@@ -1232,6 +1263,11 @@ export type NativeBridge = {
   stopGitWatch: (repoPath: string) => void;
   generateCommitMessage: (
     repoPath: string,
+    onChunk: (chunk: ResponsesApiStreamChunk) => void,
+    streamId: string
+  ) => Promise<ResponsesApiResult>;
+  generateCommitMessageFromDiff: (
+    diff: string,
     onChunk: (chunk: ResponsesApiStreamChunk) => void,
     streamId: string
   ) => Promise<ResponsesApiResult>;

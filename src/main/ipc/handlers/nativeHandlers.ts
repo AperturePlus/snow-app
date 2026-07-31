@@ -299,7 +299,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     }
   );
   ipcMain.handle(
-    "codebase:get-file-embeddings",
+    "codebase:get-sphere-layout",
     (_event, projectId: unknown, limit: unknown) => {
       if (typeof projectId !== "string" || !projectId.trim()) {
         throw new Error("Project id is required");
@@ -312,7 +312,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       ) {
         throw new Error("Limit must be an integer between 1 and 2000");
       }
-      return native.getCodebaseFileEmbeddings(projectId.trim(), limit);
+      return native.getCodebaseSphereLayout(projectId.trim(), limit);
     }
   );
   ipcMain.handle("codebase:clear-index", (_event, projectId: unknown) => {

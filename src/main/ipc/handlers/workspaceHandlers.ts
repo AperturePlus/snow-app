@@ -1,11 +1,17 @@
 import { BrowserWindow, dialog, ipcMain } from "electron";
 import { promises as fs } from "fs";
-import type { NativeBridge } from "../../native/types";
+import type {
+  FileSearchAgentProgress,
+  NativeBridge,
+} from "../../native/types";
 import {
   normalizeWorkspaceDirectory,
   normalizeWorkspaceDirectoryList,
 } from "../../settings/workspaceDirectories";
 import { startDirectoryWatch, stopDirectoryWatch } from "../../utils/fsWatcher";
+
+const AGENT_SEARCH_PROGRESS_CHANNEL =
+  "workspace-directories:search-files-by-agent:progress";
 
 const broadcastDirectoryListChanged = (): void => {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -203,6 +209,36 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
       }
 
       return native.searchFiles(dirPath.trim(), query.trim());
+    }
+  );
+
+  ipcMain.handle(
+    "workspace-directories:search-files-by-agent",
+    (event, query: unknown, workspacePath: unknown, streamId: unknown) => {
+      if (typeof query !== "string" || !query.trim()) {
+        return [];
+      }
+      if (typeof workspacePath !== "string" || !workspacePath.trim()) {
+        return [];
+      }
+      if (typeof streamId !== "string" || !streamId.trim()) {
+        throw new Error("Agent search stream ID is required");
+      }
+
+      const normalizedStreamId = streamId.trim();
+      return native.searchFilesByAgent(
+        query.trim(),
+        workspacePath.trim(),
+        (chunk: FileSearchAgentProgress) => {
+          if (event.sender.isDestroyed()) {
+            return;
+          }
+          event.sender.send(AGENT_SEARCH_PROGRESS_CHANNEL, {
+            streamId: normalizedStreamId,
+            chunk,
+          });
+        }
+      );
     }
   );
 

@@ -5,18 +5,13 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import { useI18n } from "../../i18n";
 import { getFileTypeIcon } from "../../utils/fileIcons";
-import type { CodebaseFileEmbedding } from "../../../preload";
+import type { CodebaseSphereLayout } from "../../../preload";
 
 // 布局计算为 O(n²)，提供数量阈值选项让用户权衡完整度与等待时间。
 const LIMIT_OPTIONS = [300, 500, 700] as const;
 type NodeLimit = "all" | (typeof LIMIT_OPTIONS)[number];
-// Rust 端 get_codebase_file_embeddings 的硬上限。
+// Rust 端 get_codebase_sphere_layout 的硬上限。
 const MAX_API_LIMIT = 2000;
-const SPHERE_RADIUS = 1.0;
-const LAYOUT_ITERATIONS = 300;
-// 悬停时高亮的最相似文件数量与最低相似度阈值。
-const RELATED_COUNT = 8;
-const RELATED_MIN_SIM = 0.2;
 
 type SphereNode = {
   index: number;
@@ -28,12 +23,8 @@ type SphereNode = {
   x: number;
   y: number;
   z: number;
-};
-
-type SphereEdge = {
-  a: number;
-  b: number;
-  similarity: number;
+  // 悬停高亮的最相似文件索引列表，由 Rust 端预计算。
+  related: number[];
 };
 
 type TooltipData = {
@@ -55,186 +46,6 @@ const formatBytes = (bytes: number): string => {
 
 const getBaseName = (path: string): string =>
   path.split(/[\\/]/).filter(Boolean).pop() ?? path;
-
-const cosineSimilarity = (a: number[], b: number[]): number => {
-  let dot = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  if (normA === 0 || normB === 0) {
-    return 0;
-  }
-  // Clamp: floating point rounding can push the ratio slightly beyond [-1, 1],
-  // which would otherwise break Math.pow(1 - sim, ...) below (NaN).
-  const raw = dot / Math.sqrt(normA * normB);
-  return Math.max(-1, Math.min(1, raw));
-};
-
-const buildSimilarityMatrix = (files: CodebaseFileEmbedding[]): number[][] => {
-  const n = files.length;
-  const sim: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      const s = cosineSimilarity(files[i].embedding, files[j].embedding);
-      sim[i][j] = s;
-      sim[j][i] = s;
-    }
-  }
-  return sim;
-};
-
-// 每个节点连接相似度最高的两个邻居（无向去重），构成真实相似度关系网。
-const buildEdges = (n: number, sim: number[][]): SphereEdge[] => {
-  const edges: SphereEdge[] = [];
-  const seen = new Set<string>();
-  for (let i = 0; i < n; i++) {
-    const ranked: { j: number; s: number }[] = [];
-    for (let j = 0; j < n; j++) {
-      if (j === i) {
-        continue;
-      }
-      ranked.push({ j, s: sim[i][j] });
-    }
-    ranked.sort((a, b) => b.s - a.s);
-    for (const { j, s } of ranked.slice(0, 2)) {
-      if (s < 0.25) {
-        continue;
-      }
-      const key = i < j ? `${i}-${j}` : `${j}-${i}`;
-      if (seen.has(key)) {
-        continue;
-      }
-      seen.add(key);
-      edges.push({ a: i, b: j, similarity: s });
-    }
-  }
-  return edges;
-};
-
-// 3D 力导向布局：以真实余弦相似度映射为弹簧目标距离，相似文件聚拢、
-// 不相似文件远离，形成离散的球形关系图。
-const runForceLayout = (nodes: SphereNode[], sim: number[][]): void => {
-  const n = nodes.length;
-  const R = SPHERE_RADIUS;
-
-  // 初始位置：均匀分布在球面上（带少量径向扰动）。
-  for (const node of nodes) {
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-    const r = R * (0.92 + 0.08 * Math.random());
-    node.x = r * Math.sin(phi) * Math.cos(theta);
-    node.y = r * Math.sin(phi) * Math.sin(theta);
-    node.z = r * Math.cos(phi);
-  }
-
-  const force = new Float64Array(n * 3);
-  const springK = 0.14;
-  const repulsionK = 0.11;
-  const centeringK = 0.03;
-  let alpha = 1;
-
-  for (let iter = 0; iter < LAYOUT_ITERATIONS; iter++) {
-    force.fill(0);
-
-    for (let i = 0; i < n; i++) {
-      const ax = nodes[i].x;
-      const ay = nodes[i].y;
-      const az = nodes[i].z;
-      for (let j = i + 1; j < n; j++) {
-        let dx = ax - nodes[j].x;
-        let dy = ay - nodes[j].y;
-        let dz = az - nodes[j].z;
-        let d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (d < 1e-6) {
-          dx = Math.random() - 0.5;
-          dy = Math.random() - 0.5;
-          dz = Math.random() - 0.5;
-          d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-3;
-        }
-
-        // 相似度越高目标距离越近；低相似文件被推到球体边缘。
-        const target = Math.min(
-          1.5 * R,
-          Math.max(
-            0.12 * R,
-            R * Math.pow(Math.max(0, 1 - sim[i][j]), 1.4) * 0.62
-          )
-        );
-        const spring = (target - d) * springK * alpha;
-        const fx = (spring * dx) / d;
-        const fy = (spring * dy) / d;
-        const fz = (spring * dz) / d;
-        force[i * 3] += fx;
-        force[i * 3 + 1] += fy;
-        force[i * 3 + 2] += fz;
-        force[j * 3] -= fx;
-        force[j * 3 + 1] -= fy;
-        force[j * 3 + 2] -= fz;
-
-        // 全局排斥，让簇与簇之间保持间隙（离散感）。
-        const rep = (repulsionK * alpha) / (d * d + 0.001);
-        const rx = (rep * dx) / d;
-        const ry = (rep * dy) / d;
-        const rz = (rep * dz) / d;
-        force[i * 3] += rx;
-        force[i * 3 + 1] += ry;
-        force[i * 3 + 2] += rz;
-        force[j * 3] -= rx;
-        force[j * 3 + 1] -= ry;
-        force[j * 3 + 2] -= rz;
-      }
-    }
-
-    for (let i = 0; i < n; i++) {
-      nodes[i].x += force[i * 3];
-      nodes[i].y += force[i * 3 + 1];
-      nodes[i].z += force[i * 3 + 2];
-      const pull = 1 - centeringK * alpha;
-      nodes[i].x *= pull;
-      nodes[i].y *= pull;
-      nodes[i].z *= pull;
-    }
-
-    alpha *= 0.987;
-  }
-
-  // 防御：任何坐标非有限值（NaN/Infinity）的节点重置为球面随机点，
-  // 避免污染后续的几何数据。
-  for (const node of nodes) {
-    if (
-      !Number.isFinite(node.x) ||
-      !Number.isFinite(node.y) ||
-      !Number.isFinite(node.z)
-    ) {
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      node.x = R * Math.sin(phi) * Math.cos(theta);
-      node.y = R * Math.sin(phi) * Math.sin(theta);
-      node.z = R * Math.cos(phi);
-    }
-  }
-
-  // 整体缩放，让散点始终铺满球体空间（保持离散球形态）。
-  let maxNorm = 0;
-  for (const node of nodes) {
-    const norm = Math.hypot(node.x, node.y, node.z);
-    if (norm > maxNorm) {
-      maxNorm = norm;
-    }
-  }
-  if (maxNorm > 0.05 * R) {
-    const scale = R / maxNorm;
-    for (const node of nodes) {
-      node.x *= scale;
-      node.y *= scale;
-      node.z *= scale;
-    }
-  }
-};
 
 type CodebaseSphereViewProps = {
   projectId: string;
@@ -295,25 +106,27 @@ export const CodebaseSphereView = ({
           nodeLimit === "all"
             ? Math.max(1, Math.min(total, MAX_API_LIMIT))
             : Math.max(1, Math.min(total, nodeLimit));
-        const files = await window.snow.getCodebaseFileEmbeddings(
+        // 布局（相似度矩阵 + 力导向 + 连线）在 Rust 后台线程计算，
+        // 渲染进程等待期间保持响应，不再阻塞整个应用。
+        const layout = await window.snow.getCodebaseSphereLayout(
           projectId,
           limit
         );
         if (disposed) {
           return;
         }
-        if (files.length === 0) {
+        if (layout.nodes.length === 0) {
           setState("empty");
           return;
         }
-        setShownCount(files.length);
-        // 先让 loading 帧渲染，再同步计算布局与构建场景。
+        setShownCount(layout.nodes.length);
+        // 先让 loading 帧渲染，再同步构建场景（仅轻量几何创建）。
         requestAnimationFrame(() => {
           if (disposed) {
             return;
           }
           try {
-            sceneApiRef.current = setupScene(files);
+            sceneApiRef.current = setupScene(layout);
             setState("ready");
             // 场景（重建）就绪后，重新应用搜索状态。
             const pendingQuery = queryRef.current.trim();
@@ -337,21 +150,25 @@ export const CodebaseSphereView = ({
       }
     })();
 
-    function setupScene(files: CodebaseFileEmbedding[]): () => void {
-      const nodes: SphereNode[] = files.map((file, index) => ({
-        index,
-        path: file.relativePath,
-        chunkCount: file.chunkCount,
-        startLine: file.startLine,
-        endLine: file.endLine,
-        sizeBytes: file.sizeBytes,
-        x: 0,
-        y: 0,
-        z: 0,
+    function setupScene(layout: CodebaseSphereLayout): SphereSceneApi {
+      // 重新获取 container 并在闭包内收窄类型，避免跨闭包 null 检查失效。
+      const container = containerRef.current;
+      if (!container) {
+        throw new Error("Sphere container is not available");
+      }
+      const nodes: SphereNode[] = layout.nodes.map((node) => ({
+        index: node.index,
+        path: node.relativePath,
+        chunkCount: node.chunkCount,
+        startLine: node.startLine,
+        endLine: node.endLine,
+        sizeBytes: node.sizeBytes,
+        x: node.x,
+        y: node.y,
+        z: node.z,
+        related: node.related.map((item) => item.index),
       }));
-      const sim = buildSimilarityMatrix(files);
-      runForceLayout(nodes, sim);
-      const edges = buildEdges(nodes.length, sim);
+      const edges = layout.edges;
 
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(
@@ -372,8 +189,9 @@ export const CodebaseSphereView = ({
       renderer.setSize(container.clientWidth, container.clientHeight);
       container.appendChild(renderer.domElement);
 
-      // 手动拖拽旋转，不自转。
+      // 手动拖拽旋转，不自转；target 固定为球心原点，保证拖拽始终中心旋转。
       const controls = new OrbitControls(camera, renderer.domElement);
+      controls.target.set(0, 0, 0);
       controls.enableDamping = true;
       controls.dampingFactor = 0.08;
       controls.rotateSpeed = 0.9;
@@ -481,27 +299,10 @@ export const CodebaseSphereView = ({
           .slice(0, 3);
 
       // 悬停时高亮悬停点本身 + 与其最相似的一批文件，其余节点变暗，
-      // 形成“以一点为中心的关系聚焦”效果。
-      const getRelatedSet = (index: number): Set<number> => {
-        const ranked: { j: number; s: number }[] = [];
-        for (let j = 0; j < sim.length; j++) {
-          if (j === index) {
-            continue;
-          }
-          ranked.push({ j, s: sim[index][j] });
-        }
-        ranked.sort((a, b) => b.s - a.s);
-        const related = new Set<number>();
-        for (const { j, s } of ranked.slice(0, RELATED_COUNT)) {
-          if (s >= RELATED_MIN_SIM) {
-            related.add(j);
-          }
-        }
-        return related;
-      };
-
+      // 形成“以一点为中心的关系聚焦”效果。关联列表由 Rust 端预计算。
       const applyHoverHighlight = (index: number | null): void => {
-        const related = index !== null ? getRelatedSet(index) : null;
+        const related =
+          index !== null ? new Set(nodes[index].related) : null;
 
         nodeMeshes.forEach((mesh, i) => {
           const material = mesh.material as THREE.MeshBasicMaterial;
@@ -578,7 +379,7 @@ export const CodebaseSphereView = ({
         raycaster.setFromCamera(pointer, camera);
         const hits = raycaster.intersectObjects(hitMeshes, false);
         if (hits.length > 0) {
-          const index = meshToIndex.get(hits[0].object) ?? null;
+          const index = meshToIndex.get(hits[0].object as THREE.Mesh) ?? null;
           if (index !== hoveredIndex) {
             hoveredIndex = index;
             applyHoverHighlight(index);
@@ -636,23 +437,25 @@ export const CodebaseSphereView = ({
         );
       };
 
-      // 平滑聚焦到目标节点：平移 controls.target 与相机，保持相对视角。
+      // 平滑聚焦到目标节点：仅把相机移动到“球心→节点”方向（保持当前
+      // 距离），target 始终锁定球心原点，拖拽旋转中心不随聚焦漂移。
       const focus = (index: number): void => {
         cancelAnimationFrame(focusRafId);
         const node = nodes[index];
-        const startTarget = controls.target.clone();
-        const endTarget = new THREE.Vector3(node.x, node.y, node.z);
-        const offset = new THREE.Vector3()
-          .copy(camera.position)
-          .sub(controls.target);
+        const direction = new THREE.Vector3(node.x, node.y, node.z);
+        if (direction.lengthSq() < 1e-8) {
+          direction.set(0, 1, 0);
+        } else {
+          direction.normalize();
+        }
+        const distance = camera.position.distanceTo(controls.target);
         const startPos = camera.position.clone();
-        const endPos = endTarget.clone().add(offset);
+        const endPos = direction.multiplyScalar(distance);
         const duration = 450;
         const startTime = performance.now();
         const step = (): void => {
           const t = Math.min(1, (performance.now() - startTime) / duration);
           const eased = 1 - Math.pow(1 - t, 3);
-          controls.target.lerpVectors(startTarget, endTarget, eased);
           camera.position.lerpVectors(startPos, endPos, eased);
           camera.lookAt(controls.target);
           if (t < 1) {
@@ -706,8 +509,7 @@ export const CodebaseSphereView = ({
             if (mesh.geometry) {
               mesh.geometry.dispose();
             }
-            const material =
-              mesh.material as THREE.Material | THREE.Material[];
+            const material = mesh.material as THREE.Material | THREE.Material[];
             if (Array.isArray(material)) {
               material.forEach((m) => m.dispose());
             } else if (material) {
@@ -800,9 +602,7 @@ export const CodebaseSphereView = ({
             className="codebase-sphere-limit-select"
             value={nodeLimit}
             title={t("codebase.panel.sphereLimitTitle")}
-            onChange={(event) =>
-              setNodeLimit(event.target.value as NodeLimit)
-            }
+            onChange={(event) => setNodeLimit(event.target.value as NodeLimit)}
           >
             <option value="all">{t("codebase.panel.sphereLimitAll")}</option>
             {LIMIT_OPTIONS.map((value) => (

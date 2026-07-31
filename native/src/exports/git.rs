@@ -209,3 +209,31 @@ pub async fn generate_commit_message(
     result
 }
 
+/// Generate a commit message from a raw staged-diff string.
+///
+/// Identical to `generate_commit_message` but skips the local `git diff
+/// --cached` step. Used by remote (SSH) repositories, where the diff is
+/// produced on the remote host and streamed back to this process before
+/// the AI generation runs here.
+#[napi(
+    ts_args_type = "diff: string, onChunk: (chunk: ResponsesApiStreamChunk) => void, streamId: string",
+    ts_return_type = "Promise<ResponsesApiResult>"
+)]
+pub async fn generate_commit_message_from_diff(
+    diff: String,
+    on_chunk: ResponsesApiStreamCallback,
+    stream_id: String,
+) -> napi::Result<ResponsesApiResult> {
+    if diff.trim().is_empty() {
+        return Err(napi::Error::from_reason(
+            "No staged changes found. Please stage your changes first.",
+        ));
+    }
+
+    let cancel_token = crate::api::cancel::create_and_register(&stream_id);
+    let result = generate_commit_message_stream(diff, on_chunk, cancel_token).await;
+    crate::api::cancel::unregister_stream(&stream_id);
+
+    result
+}
+

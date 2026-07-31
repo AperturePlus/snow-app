@@ -9,14 +9,13 @@ type UseGitReposResult = {
   refresh: () => void;
 };
 
-const isSshPath = (path: string): boolean => path.startsWith("ssh://");
-
 /**
  * Discovers all git repositories within the active workspace directory.
  *
- * When the workspace directory changes, this hook calls the Rust backend
- * to recursively scan for `.git` folders. The first discovered repo
- * (or the workspace directory itself if it is a repo) is auto-selected.
+ * When the workspace directory changes, this hook calls the backend to
+ * recursively scan for `.git` folders — the Rust backend for local paths,
+ * an SSH-backed scan for remote (`ssh://`) paths. The first discovered
+ * repo (or the workspace directory itself if it is a repo) is auto-selected.
  *
  * If exactly one repo is found, it is selected automatically. If multiple
  * repos are found, the user can switch between them via the RepoSelector
@@ -35,7 +34,7 @@ export const useGitRepos = (
 
   const fetchRepos = useCallback(async () => {
     const path = workspacePathRef.current;
-    if (!path || isSshPath(path)) {
+    if (!path) {
       setRepos([]);
       setSelectedRepoPathState(null);
       return;

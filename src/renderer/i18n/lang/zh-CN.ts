@@ -1313,6 +1313,10 @@ export const zhCN = {
   "fileMention.searching": "搜索中...",
   "fileMention.noResults": "未找到结果",
   "fileMention.typeToSearch": "输入以搜索文件...",
+  "fileMention.aiSearching": "AI 正在搜索文件...",
+  "fileMention.aiNoResults": "未找到相关文件",
+  "fileMention.aiHint": "用自然语言描述你要找的文件",
+  "fileMention.aiError": "AI 搜索失败，请检查 API 配置后重试",
   "fileMention.results": "{{count}} 个结果",
   "fileMention.selected": "已选 {{count}}",
   "fileMention.navigate": "导航",
@@ -1362,6 +1366,7 @@ export const zhCN = {
   "sensitiveCommand.message":
     "此命令匹配了敏感命令规则。即使在 YOLO 模式下也需要确认。",
   "sensitiveCommand.command": "命令",
+  "sensitiveCommand.description": "命令释义",
   "sensitiveCommand.matchedRules": "匹配的规则",
   "sensitiveCommand.confirmExecution": "确认执行",
   "chatInput.placeholder":

@@ -15,6 +15,9 @@ use crate::api::models::{
 use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback,
 };
+use crate::api::file_search_agent::{
+    run_file_search_agent as run_agent, FileSearchAgentProgressCallback,
+};
 use crate::api::summary::generate_conversation_summary as generate_summary;
 use crate::api::theme_palette::generate_theme_palette_stream;
 use crate::mcp::servers::bash::{
@@ -37,6 +40,7 @@ use crate::mcp::tools::{
     McpProjectServerStatus, McpProjectToolStatus, McpToolDefinition,
 };
 use crate::storage::initialize_app_storage;
+use crate::storage::services::fs_explorer::FileSearchResult;
 
 #[napi]
 pub async fn fetch_available_models() -> napi::Result<Vec<Model>> {
@@ -152,6 +156,27 @@ pub async fn generate_conversation_summary(conversation_id: String) -> napi::Res
 pub fn cancel_conversation_summary(conversation_id: String) -> napi::Result<bool> {
     Ok(crate::api::cancel::cancel_summary(&conversation_id))
 }
+
+/// Run a natural-language file search agent over a workspace.
+///
+/// The agent drives the configured basic model with the read-only MCP tools
+/// (`grep-search`, `filesystem-read`) in a loop of at most 10 tool-call
+/// rounds, then returns the matching files as `FileSearchResult` entries.
+/// Request scheme follows the active API config (chat / responses /
+/// anthropic / gemini). `onProgress` is invoked after every tool execution
+/// so the UI can display the search process.
+#[napi(
+    ts_args_type = "query: string, workspacePath: string, onProgress: ((chunk: FileSearchAgentProgress) => void) | undefined"
+)]
+pub async fn search_files_by_agent(
+    query: String,
+    workspace_path: String,
+    on_progress: Option<FileSearchAgentProgressCallback>,
+) -> napi::Result<Vec<FileSearchResult>> {
+    let token = CancellationToken::new();
+    run_agent(query, workspace_path, token, on_progress).await
+}
+
 #[napi]
 pub async fn list_mcp_tools() -> napi::Result<Vec<McpToolDefinition>> {
     list_all_mcp_tools().await

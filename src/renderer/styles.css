@@ -8429,6 +8429,24 @@ input {
   user-select: text;
 }
 
+.tool-call-bash-description {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.45;
+  user-select: text;
+}
+
+.tool-call-bash-description svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--accent-blue-text);
+}
+
 .tool-call-bash .tool-call-bash-command {
   display: flex;
   align-items: flex-start;
@@ -12576,6 +12594,62 @@ input {
   padding: 20px;
   color: var(--text-muted);
   font-size: 12.5px;
+}
+
+.file-mention-agent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+}
+
+.file-mention-agent-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  padding: 2px 0 4px;
+}
+
+.file-mention-agent-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.agent-step {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.agent-step-round {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--accent-color, #3b82f6);
+  font-weight: 600;
+}
+
+.agent-step-tool {
+  flex-shrink: 0;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-size: 10.5px;
+}
+
+.agent-step-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .file-mention-skeleton {
@@ -16879,6 +16953,20 @@ input {
   font: 11.5px/1.5 var(--font-mono);
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.sensitive-command-description {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sensitive-command-description p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  user-select: text;
 }
 
 .tool-authorization-rejection-reason {

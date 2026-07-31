@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Send, Timer } from "lucide-react";
+import { AlertCircle, Info, Send, Timer } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
@@ -10,6 +10,7 @@ type BashToolCallProps = {
 
 type ParsedBashArgs = {
   command: string;
+  description?: string;
   workingDirectory: string;
   timeout?: number;
   isInteractive?: boolean;
@@ -51,6 +52,10 @@ const parseArgs = (args: string): ParsedBashArgs | null => {
         : undefined;
     return {
       command: parsed.command,
+      description:
+        typeof parsed.description === "string" && parsed.description.trim()
+          ? parsed.description
+          : undefined,
       workingDirectory: parsed.workingDirectory,
       timeout,
       isInteractive,
@@ -319,6 +324,13 @@ export const BashToolCall = ({
           {parsedArgs?.workingDirectory ? (
             <div className="tool-call-bash-workdir">
               {parsedArgs.workingDirectory}
+            </div>
+          ) : null}
+
+          {parsedArgs?.description ? (
+            <div className="tool-call-bash-description">
+              <Info size={12} aria-hidden="true" />
+              <span>{parsedArgs.description}</span>
             </div>
           ) : null}
 

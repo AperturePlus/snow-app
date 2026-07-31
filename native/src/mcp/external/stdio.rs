@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::process::Stdio;
-use std::time::Duration;
 
 use napi::{Error, Result};
 use rmcp::model::ClientInfo;
@@ -12,8 +11,6 @@ use crate::storage::McpServerConfigRecord;
 
 use super::super::protocol::RemoteMcpTool;
 
-const DEFAULT_TIMEOUT_MS: u64 = 300_000;
-
 pub(super) type StdioRunningClient = RunningService<rmcp::RoleClient, ClientInfo>;
 
 pub(super) struct StdioMcpClient {
@@ -22,70 +19,57 @@ pub(super) struct StdioMcpClient {
 
 impl StdioMcpClient {
     pub(super) async fn connect(config: &McpServerConfigRecord) -> Result<Self> {
-        let command_name = config.command.trim();
-        if command_name.is_empty() {
+        if config.command.trim().is_empty() {
             return Err(Error::from_reason(format!(
                 "External MCP server {} has no command",
                 config.name
             )));
         }
 
-        let args = parse_string_array(&config.args_json, "args")?;
-        let environment = parse_string_map(&config.env_json, "environment")?;
-        let _timeout = config_timeout(config);
-
-        let mut command = Command::new(command_name);
-        command.args(args);
-
-        // GUI 启动的 Electron（macOS Finder / Windows 资源管理器）进程 PATH 不完整，
-        // 不含 Homebrew/nvm 等路径，导致 npx 等命令无法解析。注入 login shell
-        // （Unix 上冒号分隔）或注册表（Windows 上分号分隔）的 PATH。
-        // WSL 命令跳过：resolve_login_path 在 Windows 上返回的是 Windows 注册表
-        // PATH（分号分隔），注入会覆盖 WSL 内有效的 Linux PATH（冒号分隔）；
-        // WSL 通过 bash -l 自行从 .profile 加载正确的 Linux PATH。
-        if detect_shell_family(command_name) != "wsl" {
-            if let Some(path) = resolve_login_path().await {
-                command.env("PATH", path);
-            }
-        }
-
-        // 配置里显式声明的 env 最后注入，覆盖 login PATH（如用户自定义 PATH）。
-        command.envs(environment);
-
-        #[cfg(target_os = "windows")]
-        {
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-            use std::os::windows::process::CommandExt;
-            command.creation_flags(CREATE_NO_WINDOW);
-        }
-
-        // Use the builder so we can pipe stderr for diagnostics while keeping
-        // stdin/stdout piped (the defaults).
-        let (transport, _stderr_opt) = rmcp::transport::TokioChildProcess::builder(command)
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| {
-                Error::from_reason(format!(
-                    "Failed to start external MCP server {}: {error}",
-                    config.name
-                ))
-            })?;
-
-        let client_info = ClientInfo::default();
-        let lifecycle = ClientLifecycleMode::Auto {
+        // 优先尝试 2026-07-28 无状态协议。SDK 的 Auto 模式只对规范协商错误
+        // （-32601 Method Not Found / -32022 Unsupported Protocol Version）
+        // 自动降级或换版本重试；旧服务器若返回其他 JSON-RPC 错误（如 deepwiki
+        // 的 -32600 "Unsupported protocol version"），需在下面用 legacy
+        // initialize 握手手动重试一次。
+        let auto_lifecycle = ClientLifecycleMode::Auto {
             preferred_versions: vec![rmcp::model::ProtocolVersion::V_2026_07_28],
             legacy_version: Some(rmcp::model::ProtocolVersion::V_2025_11_25),
         };
 
-        let running = client_info
-            .serve_with_lifecycle(transport, lifecycle)
+        let client_info = ClientInfo::default();
+        let running = match client_info
+            .clone()
+            .serve_with_lifecycle(spawn_transport(config).await?, auto_lifecycle)
             .await
-            .map_err(|error| {
-                Error::from_reason(format!(
+        {
+            Ok(running) => running,
+            Err(error) if super::should_retry_with_legacy_handshake(&error) => {
+                // 旧子进程的管道已随 transport 关闭，重新 spawn 一个，
+                // 改用 legacy 握手重连一次。
+                match client_info
+                    .serve_with_lifecycle(
+                        spawn_transport(config).await?,
+                        ClientLifecycleMode::Initialize,
+                    )
+                    .await
+                {
+                    Ok(running) => running,
+                    // 重试失败时保留原始 Auto 错误（含版本协商诊断信息）
+                    Err(_) => {
+                        return Err(Error::from_reason(format!(
+                            "Failed to initialize external MCP stdio server {}: {error}",
+                            config.name
+                        )))
+                    }
+                }
+            }
+            Err(error) => {
+                return Err(Error::from_reason(format!(
                     "Failed to initialize external MCP stdio server {}: {error}",
                     config.name
-                ))
-            })?;
+                )))
+            }
+        };
 
         Ok(Self { client: running })
     }
@@ -119,6 +103,73 @@ impl StdioMcpClient {
     pub(super) async fn close(mut self) {
         let _ = self.client.close().await;
     }
+}
+
+/// Spawns the stdio subprocess for an external MCP server. Extracted so a
+/// failed protocol negotiation can re-spawn a fresh child for the legacy
+/// `initialize` handshake retry.
+async fn spawn_transport(
+    config: &McpServerConfigRecord,
+) -> Result<rmcp::transport::TokioChildProcess> {
+    let command_name = config.command.trim();
+    let args = parse_string_array(&config.args_json, "args")?;
+    let environment = parse_string_map(&config.env_json, "environment")?;
+
+    // GUI 启动的 Electron（macOS Finder / Windows 资源管理器）进程 PATH 不完整，
+    // 不含 Homebrew/nvm 等路径，导致 npx 等命令无法解析。注入 login shell
+    // （Unix 上冒号分隔）或注册表（Windows 上分号分隔）的 PATH。
+    // WSL 命令跳过：resolve_login_path 在 Windows 上返回的是 Windows 注册表
+    // PATH（分号分隔），注入会覆盖 WSL 内有效的 Linux PATH（冒号分隔）；
+    // WSL 通过 bash -l 自行从 .profile 加载正确的 Linux PATH。
+    let login_path = if detect_shell_family(command_name) != "wsl" {
+        resolve_login_path().await
+    } else {
+        None
+    };
+
+    // Windows 上 Rust 的 Command（CreateProcess）不会按 PATHEXT 搜索
+    // .cmd/.bat 文件。npx、uvx 等命令实际是 npx.cmd、uvx.bat，直接
+    // Command::new("npx") 会报 "program not found"。这里先用 login PATH
+    // 做 PATHEXT 解析，若命中 .cmd/.bat 则自动套 cmd /c 包装。
+    #[cfg(target_os = "windows")]
+    let (actual_command, prefix_args) = {
+        let fallback_path = std::env::var("PATH").unwrap_or_default();
+        let path_env = login_path.as_deref().unwrap_or(&fallback_path);
+        resolve_windows_command(command_name, path_env)
+    };
+    #[cfg(not(target_os = "windows"))]
+    let (actual_command, prefix_args) = (command_name.to_string(), Vec::new());
+
+    let mut command = Command::new(&actual_command);
+    command.args(&prefix_args);
+    command.args(args);
+
+    if let Some(path) = login_path {
+        command.env("PATH", path);
+    }
+
+    // 配置里显式声明的 env 最后注入，覆盖 login PATH（如用户自定义 PATH）。
+    command.envs(environment);
+
+    #[cfg(target_os = "windows")]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    // Use the builder so we can pipe stderr for diagnostics while keeping
+    // stdin/stdout piped (the defaults).
+    let (transport, _stderr_opt) = rmcp::transport::TokioChildProcess::builder(command)
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| {
+            Error::from_reason(format!(
+                "Failed to start external MCP server {}: {error}",
+                config.name
+            ))
+        })?;
+
+    Ok(transport)
 }
 
 fn rmcp_tool_to_remote(tool: rmcp::model::Tool) -> RemoteMcpTool {
@@ -156,11 +207,60 @@ fn parse_string_map(value: &str, field: &str) -> Result<HashMap<String, String>>
     })
 }
 
-fn config_timeout(config: &McpServerConfigRecord) -> Duration {
-    let timeout_ms = config
-        .timeout_ms
-        .filter(|timeout| *timeout > 0)
-        .map(|timeout| timeout as u64)
-        .unwrap_or(DEFAULT_TIMEOUT_MS);
-    Duration::from_millis(timeout_ms)
+/// On Windows, resolves a bare command name against PATH + PATHEXT.
+/// Rust's `std::process::Command` (CreateProcess) only finds `.exe`
+/// files — it does NOT search PATHEXT for `.cmd`/`.bat`. So commands
+/// like `npx` (npx.cmd) or `uvx` (uvx.bat) fail with "program not
+/// found" unless wrapped in `cmd /c`.
+///
+/// Returns `(executable, prefix_args)`:
+/// - `.cmd`/`.bat` → `("cmd", ["/c", resolved_path])`
+/// - `.exe` or other → `(resolved_path, [])`
+/// - not found → `(command_name, [])` (let CreateProcess fail with a clear error)
+#[cfg(target_os = "windows")]
+fn resolve_windows_command(command_name: &str, path_env: &str) -> (String, Vec<String>) {
+    use std::path::PathBuf;
+
+    let lower = command_name.to_lowercase();
+    let has_path_sep = command_name.contains('\\') || command_name.contains('/');
+
+    // Already a .cmd/.bat file — must wrap with cmd /c
+    if lower.ends_with(".cmd") || lower.ends_with(".bat") {
+        return (
+            "cmd".to_string(),
+            vec!["/c".to_string(), command_name.to_string()],
+        );
+    }
+
+    // Already has a path separator or .exe extension — use as-is
+    if has_path_sep || lower.ends_with(".exe") {
+        return (command_name.to_string(), Vec::new());
+    }
+
+    // Bare command name — search PATH with PATHEXT extensions
+    let pathext: Vec<String> = std::env::var("PATHEXT")
+        .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC".to_string())
+        .split(';')
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    for dir in path_env.split(';') {
+        if dir.is_empty() {
+            continue;
+        }
+        for ext in &pathext {
+            let candidate = PathBuf::from(dir).join(format!("{}{}", command_name, ext));
+            if candidate.exists() {
+                let resolved = candidate.to_string_lossy().to_string();
+                if ext == ".cmd" || ext == ".bat" {
+                    return ("cmd".to_string(), vec!["/c".to_string(), resolved]);
+                }
+                return (resolved, Vec::new());
+            }
+        }
+    }
+
+    // Not found in PATH — return as-is and let CreateProcess produce the error
+    (command_name.to_string(), Vec::new())
 }

@@ -35,10 +35,7 @@ export function GitPanelContent({
   const [splitRatio, setSplitRatio] = useState(SPLIT_DEFAULT);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const workspacePath =
-    activeDirectory?.path && !activeDirectory.path.startsWith("ssh://")
-      ? activeDirectory.path
-      : null;
+  const workspacePath = activeDirectory?.path ? activeDirectory.path : null;
 
   const { repos, selectedRepoPath, setSelectedRepoPath } =
     useGitRepos(workspacePath);

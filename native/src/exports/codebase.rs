@@ -16,9 +16,9 @@ use crate::storage::services::codebase_embed_sessions::{
     self, EmbedSessionRecord,
 };
 use crate::storage::services::codebase_index::{
-    self, delete_vectors_for_file, ensure_vector_table, get_file_embeddings,
-    get_index_stats, get_indexed_file_hashes, get_indexed_file_paths, insert_vectors,
-    list_indexed_files, VectorInsert,
+    self, delete_vectors_for_file, ensure_vector_table, get_index_stats,
+    get_indexed_file_hashes, get_indexed_file_paths, insert_vectors, list_indexed_files,
+    VectorInsert,
 };
 use crate::storage::services::codebase_watcher::{
     self, CodebaseChangeCallback,
@@ -80,19 +80,6 @@ pub struct CodebaseIndexedFilePage {
     pub total: i32,
     pub page: i32,
     pub page_size: i32,
-}
-
-/// A file with its aggregated (mean) embedding vector, used by the 3D
-/// similarity sphere view.
-#[napi(object)]
-pub struct CodebaseFileEmbedding {
-    pub relative_path: String,
-    pub file_path: String,
-    pub chunk_count: i32,
-    pub start_line: i32,
-    pub end_line: i32,
-    pub size_bytes: i64,
-    pub embedding: Vec<f64>,
 }
 
 // ============================================================================
@@ -1183,42 +1170,6 @@ pub async fn list_codebase_indexed_files(
         page: page as i32,
         page_size: page_size as i32,
     })
-}
-
-/// Get per-file mean embeddings (up to `limit` files) for the 3D similarity
-/// sphere visualization.
-#[napi]
-pub async fn get_codebase_file_embeddings(
-    project_id: String,
-    limit: i32,
-) -> Result<Vec<CodebaseFileEmbedding>> {
-    let storage_info = crate::storage::initialize_app_storage()?;
-    let database_path = PathBuf::from(&storage_info.database_path);
-    let pid = project_id.clone();
-    let limit = limit.clamp(1, 2000) as i64;
-
-    let records = tokio::task::spawn_blocking(move || {
-        // If the table doesn't exist yet, return an empty list.
-        match get_file_embeddings(&database_path, &pid, limit) {
-            Ok(result) => result,
-            Err(_) => Vec::new(),
-        }
-    })
-    .await
-    .map_err(|e| Error::from_reason(format!("Failed to get file embeddings: {e}")))?;
-
-    Ok(records
-        .into_iter()
-        .map(|record| CodebaseFileEmbedding {
-            relative_path: record.relative_path,
-            file_path: record.file_path,
-            chunk_count: record.chunk_count as i32,
-            start_line: record.start_line as i32,
-            end_line: record.end_line as i32,
-            size_bytes: record.size_bytes,
-            embedding: record.embedding,
-        })
-        .collect())
 }
 
 /// Clear all indexed vectors for a project (drop the vector table).

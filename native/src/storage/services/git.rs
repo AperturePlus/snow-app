@@ -102,7 +102,11 @@ pub struct GitRepoInfo {
 
 fn run_git(repo_path: &str, args: &[&str]) -> Result<String> {
     let mut cmd = Command::new("git");
-    cmd.args(["-c", "core.quotepath=false"])
+    // `safe.directory=*` bypasses Git's dubious-ownership check
+    // (CVE-2022-24765). Without it, Windows Git refuses to run inside
+    // WSL (`\\wsl$\...`) or other network/UNC paths because the repo files
+    // are owned by the Linux user, not the current Windows user.
+    cmd.args(["-c", "core.quotepath=false", "-c", "safe.directory=*"])
         .args(args)
         .current_dir(repo_path);
 
@@ -134,7 +138,8 @@ fn run_git(repo_path: &str, args: &[&str]) -> Result<String> {
 /// Using `run_git` would treat that as an error and discard the stdout.
 fn run_git_raw(repo_path: &str, args: &[&str]) -> Result<String> {
     let mut cmd = Command::new("git");
-    cmd.args(["-c", "core.quotepath=false"])
+    // Same `safe.directory=*` bypass as `run_git` — see its comment.
+    cmd.args(["-c", "core.quotepath=false", "-c", "safe.directory=*"])
         .args(args)
         .current_dir(repo_path);
 

@@ -350,7 +350,6 @@ pub struct IndexedFileRecord {
 #[derive(Debug, Clone, Default)]
 pub struct FileEmbeddingRecord {
     pub relative_path: String,
-    pub file_path: String,
     pub chunk_count: i64,
     pub start_line: i64,
     pub end_line: i64,
@@ -413,7 +412,6 @@ pub fn get_file_embeddings(
                     (
                         FileEmbeddingRecord {
                             relative_path: relative_path.clone(),
-                            file_path: file_path.clone(),
                             chunk_count: 0,
                             start_line: i64::MAX,
                             end_line: 0,

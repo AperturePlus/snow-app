@@ -769,6 +769,14 @@ pub async fn call_mcp_tool(
     let (args, uses_remote_workspace) =
         prepare_remote_workspace_args(&tool_full_name, args, project_id.as_deref()).await?;
 
+    // 本地（非 SSH）filesystem 工具：将 filePath 的相对路径（如 "."）解析到
+    // 当前项目根目录，避免其被解析为 Electron 进程的工作目录。
+    let args = if uses_remote_workspace {
+        args
+    } else {
+        resolve_local_filesystem_args(&tool_full_name, args, project_id.as_deref()).await?
+    };
+
     let checkpoint_capture = if uses_remote_workspace {
         ToolCheckpointCapture::None
     } else {
@@ -1139,6 +1147,70 @@ fn remote_workspace_path_field(tool_full_name: &str) -> Option<&'static str> {
         "bash-terminal-execute" => Some("workingDirectory"),
         _ => None,
     }
+}
+
+/// 解析 project_id 对应的本地（非 SSH）工作区根目录。
+/// 通过应用数据库中的 workspace_directories 表查询该项目的本地根路径。
+/// 数据库访问放在 Tokio 阻塞池中执行，避免阻塞 N-API 异步运行时。
+/// SSH 工作区不在此处理，由 prepare_remote_workspace_args 统一路由到远端。
+async fn resolve_local_project_root(project_id: Option<&str>) -> napi::Result<Option<String>> {
+    let Some(project_id) = project_id.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let project_id = project_id.to_string();
+
+    let workspace_path = tokio::task::spawn_blocking(move || {
+        let storage_info = crate::storage::initialize_app_storage()?;
+        let database_path = std::path::PathBuf::from(storage_info.database_path);
+        crate::storage::services::workspace_directories::get_workspace_directory_path(
+            &database_path,
+            &project_id,
+        )
+    })
+    .await
+    .map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to resolve local project workspace: {error}"),
+        )
+    })??;
+
+    Ok(workspace_path.filter(|path| !is_ssh_path(path)))
+}
+
+/// 将本地 filesystem 工具的 filePath 相对路径解析到当前项目根目录。
+/// 当 AI 以 "."、"./src"、"src/main.ts" 等相对路径调用 filesystem 工具时，
+/// 避免它们被 Rust 解析为 Electron 进程的工作目录（通常并非项目根目录）。
+/// 绝对路径、空路径、SSH 路径或无法解析出项目根目录时保持原样。
+async fn resolve_local_filesystem_args(
+    tool_full_name: &str,
+    mut args: Value,
+    project_id: Option<&str>,
+) -> napi::Result<Value> {
+    if !tool_full_name.starts_with("filesystem-") {
+        return Ok(args);
+    }
+    let Some(file_path) = args.get("filePath").and_then(Value::as_str) else {
+        return Ok(args);
+    };
+    let trimmed = file_path.trim();
+    if trimmed.is_empty() || is_ssh_path(trimmed) {
+        return Ok(args);
+    }
+    let path = Path::new(trimmed);
+    if path.is_absolute() {
+        return Ok(args);
+    }
+    let Some(project_root) = resolve_local_project_root(project_id).await? else {
+        return Ok(args);
+    };
+
+    let resolved = Path::new(&project_root)
+        .join(path)
+        .to_string_lossy()
+        .to_string();
+    args["filePath"] = Value::String(resolved);
+    Ok(args)
 }
 
 fn parse_tool_args(tool_full_name: &str, args_json: &str) -> napi::Result<Value> {
