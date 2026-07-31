@@ -7,6 +7,7 @@ use rmcp::model::ClientInfo;
 use rmcp::service::{ClientLifecycleMode, ClientServiceExt, RunningService};
 use tokio::process::Command;
 
+use crate::exports::terminal::{detect_shell_family, resolve_login_path};
 use crate::storage::McpServerConfigRecord;
 
 use super::super::protocol::RemoteMcpTool;
@@ -34,7 +35,22 @@ impl StdioMcpClient {
         let _timeout = config_timeout(config);
 
         let mut command = Command::new(command_name);
-        command.args(args).envs(environment);
+        command.args(args);
+
+        // GUI 启动的 Electron（macOS Finder / Windows 资源管理器）进程 PATH 不完整，
+        // 不含 Homebrew/nvm 等路径，导致 npx 等命令无法解析。注入 login shell
+        // （Unix 上冒号分隔）或注册表（Windows 上分号分隔）的 PATH。
+        // WSL 命令跳过：resolve_login_path 在 Windows 上返回的是 Windows 注册表
+        // PATH（分号分隔），注入会覆盖 WSL 内有效的 Linux PATH（冒号分隔）；
+        // WSL 通过 bash -l 自行从 .profile 加载正确的 Linux PATH。
+        if detect_shell_family(command_name) != "wsl" {
+            if let Some(path) = resolve_login_path().await {
+                command.env("PATH", path);
+            }
+        }
+
+        // 配置里显式声明的 env 最后注入，覆盖 login PATH（如用户自定义 PATH）。
+        command.envs(environment);
 
         #[cfg(target_os = "windows")]
         {

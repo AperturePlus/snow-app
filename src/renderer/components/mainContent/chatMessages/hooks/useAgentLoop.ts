@@ -603,11 +603,20 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           sessionDirId
         );
 
-        // 非 YOLO 模式授权判定：单工具被拒绝，或多工具全部被拒绝时，
-        // AI 流程直接结束；部分拒绝时，已拒绝的工具返回拒绝结果给 AI，
-        // 已批准的工具正常执行，Loop 继续。
+        // 非 YOLO 模式授权判定：
+        // - 全部工具被拒绝且用户未填写任何拒绝理由（直接拒绝/中断/
+        //   hook abort）：AI 流程直接结束，不再向模型追加工具结果。
+        // - 任一拒绝携带了用户填写的理由：拒绝理由作为工具结果回传
+        //   AI，Loop 继续，让 AI 根据理由调整后续行动。
+        // - 部分拒绝：已拒绝的工具返回拒绝结果给 AI，已批准的工具
+        //   正常执行，Loop 继续。
         const allToolsRejected = authorizationDecisions.every(
           (decision) => decision.status === "rejected"
+        );
+        const hasUserProvidedRejectionReason = authorizationDecisions.some(
+          (decision) =>
+            decision.status === "rejected" &&
+            decision.userProvidedReason === true
         );
 
         const toolExecutor = createToolExecutor({
@@ -702,10 +711,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           return;
         }
 
-        // 非 YOLO 模式：当本批次所有工具均被用户拒绝时，AI 流程直接结束，
-        // 不再向模型追加工具结果或发起新一轮请求。部分拒绝时本分支不触发，
-        // Loop 照常继续，已拒绝工具的拒绝结果已在上方写入 toolResults。
-        if (allToolsRejected) {
+        // 全部工具被拒绝且没有任何用户填写的拒绝理由时，AI 流程直接
+        // 结束，不再发起新一轮请求。若用户填写了拒绝理由，则拒绝结果
+        // 已在上方写入 toolResults，走正常续跑分支让 AI 继续处理。
+        if (allToolsRejected && !hasUserProvidedRejectionReason) {
           ctx.pendingQueueRef.current.delete(effectiveKey);
           ctx.setActivePendingMessages([]);
           if (response.conversationId) {

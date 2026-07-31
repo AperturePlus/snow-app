@@ -411,6 +411,14 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         const subAllToolsRejected = subAuthorizationDecisions.every(
           (decision) => decision.status === "rejected"
         );
+        // 用户填写了拒绝理由时，拒绝理由作为工具结果回传子代理 AI，
+        // 子代理 Loop 继续；仅当全部拒绝且没有用户理由时才终止。
+        const subHasUserProvidedRejectionReason =
+          subAuthorizationDecisions.some(
+            (decision) =>
+              decision.status === "rejected" &&
+              decision.userProvidedReason === true
+          );
 
         const subToolResults: string[] = [];
         const subStructuredResults: {
@@ -685,7 +693,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
           return "Sub-agent stopped because the main conversation must approve the Plan Mode plan before delegated writes can run.";
         }
 
-        if (subAllToolsRejected) {
+        if (subAllToolsRejected && !subHasUserProvidedRejectionReason) {
           ctx.pendingQueueRef.current.delete(subConvId);
           ctx.setActivePendingMessages([]);
           return subToolResults.join("\n\n");

@@ -11,7 +11,11 @@ type ToolAuthorizationDialogProps = {
   toolCalls: ToolCallInfo[];
   onApprove: (toolCall: ToolCallInfo) => void;
   onApproveAlways: (toolCall: ToolCallInfo) => void;
-  onReject: (toolCall: ToolCallInfo, reason: string) => void;
+  onReject: (
+    toolCall: ToolCallInfo,
+    reason: string,
+    userProvidedReason?: boolean
+  ) => void;
 };
 
 type FileMutationKind = "edit" | "create";
@@ -187,7 +191,11 @@ const AuthorizationToolItem = ({
   isSubmitting: boolean;
   onApprove: (toolCall: ToolCallInfo) => void;
   onApproveAlways: (toolCall: ToolCallInfo) => void;
-  onReject: (toolCall: ToolCallInfo, reason: string) => void;
+  onReject: (
+    toolCall: ToolCallInfo,
+    reason: string,
+    userProvidedReason?: boolean
+  ) => void;
 }): React.JSX.Element => {
   const { t } = useI18n();
   const [rejectionReason, setRejectionReason] = useState("");
@@ -239,10 +247,12 @@ const AuthorizationToolItem = ({
           className="tool-authorization-action tool-authorization-reject"
           disabled={isSubmitting}
           onClick={() => {
+            const trimmedReason = rejectionReason.trim();
             onReject(
               toolCall,
-              rejectionReason.trim() ||
-                t("toolAuthorization.defaultRejectionReason")
+              trimmedReason ||
+                t("toolAuthorization.defaultRejectionReason"),
+              trimmedReason.length > 0
             );
           }}
           type="button"
@@ -340,11 +350,11 @@ export const ToolAuthorizationDialog = ({
                 );
                 onApproveAlways(item);
               }}
-              onReject={(item, reason) => {
+              onReject={(item, reason, userProvidedReason) => {
                 setSubmittingAuthorizationId(
                   item.authorizationId ?? authorizationId
                 );
-                onReject(item, reason);
+                onReject(item, reason, userProvidedReason);
               }}
             />
           );

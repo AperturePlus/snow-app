@@ -341,11 +341,13 @@ export const useChatConversation = (
   const rejectToolAuthorization = useCallback(
     (
       toolCall: ConversationContextValue["pendingToolAuthorizations"][number],
-      reason: string
+      reason: string,
+      userProvidedReason?: boolean
     ) =>
       toolAuthApi.settleToolAuthorization(toolCall, {
         status: "rejected",
         reason: reason.trim() || "User declined tool execution",
+        ...(userProvidedReason ? { userProvidedReason: true } : {}),
       }),
     [toolAuthApi]
   );

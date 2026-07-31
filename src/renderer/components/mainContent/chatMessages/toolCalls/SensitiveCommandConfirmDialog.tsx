@@ -12,7 +12,11 @@ type SensitiveCommandMatch = {
 type SensitiveCommandConfirmDialogProps = {
   toolCalls: ToolCallInfo[];
   onApprove: (toolCall: ToolCallInfo) => void;
-  onReject: (toolCall: ToolCallInfo, reason: string) => void;
+  onReject: (
+    toolCall: ToolCallInfo,
+    reason: string,
+    userProvidedReason?: boolean
+  ) => void;
 };
 
 const BASH_TOOL_NAME = "bash-terminal-execute";
@@ -52,7 +56,11 @@ const SensitiveCommandItem = ({
   matches: SensitiveCommandMatch[];
   isSubmitting: boolean;
   onApprove: (toolCall: ToolCallInfo) => void;
-  onReject: (toolCall: ToolCallInfo, reason: string) => void;
+  onReject: (
+    toolCall: ToolCallInfo,
+    reason: string,
+    userProvidedReason?: boolean
+  ) => void;
 }): React.JSX.Element => {
   const { t } = useI18n();
   const [rejectionReason, setRejectionReason] = useState("");
@@ -116,13 +124,15 @@ const SensitiveCommandItem = ({
         <button
           className="tool-authorization-action tool-authorization-reject"
           disabled={isSubmitting}
-          onClick={() =>
+          onClick={() => {
+            const trimmedReason = rejectionReason.trim();
             onReject(
               toolCall,
-              rejectionReason.trim() ||
-                t("toolAuthorization.defaultRejectionReason")
-            )
-          }
+              trimmedReason ||
+                t("toolAuthorization.defaultRejectionReason"),
+              trimmedReason.length > 0
+            );
+          }}
           type="button"
         >
           {t("toolAuthorization.reject")}
@@ -189,9 +199,9 @@ export const SensitiveCommandConfirmDialog = ({
                 setSubmittingId(id);
                 onApprove(item);
               }}
-              onReject={(item, reason) => {
+              onReject={(item, reason, userProvidedReason) => {
                 setSubmittingId(id);
-                onReject(item, reason);
+                onReject(item, reason, userProvidedReason);
               }}
             />
           );

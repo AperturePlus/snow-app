@@ -239,7 +239,14 @@ export type RollbackPreview = {
 
 export type ToolAuthorizationDecision =
   | { status: "approved"; sensitiveCommandConfirmed?: boolean }
-  | { status: "rejected"; reason: string };
+  | {
+      status: "rejected";
+      reason: string;
+      /** 用户是否主动填写了拒绝理由。为 true 时拒绝理由作为工具结果
+       *  回传 AI 并继续 Loop；为 false 或缺失时（如直接拒绝、中断、
+       *  hook abort）全部拒绝则终止 AI 流程。 */
+      userProvidedReason?: boolean;
+    };
 
 export type PendingToolAuthorization = {
   toolCall: ToolCallInfo;
