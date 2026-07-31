@@ -302,6 +302,11 @@ pub(crate) fn detect_shell_family(shell_path: &str) -> String {
         "cmd".to_string()
     } else if file_name.contains("wsl") || lower.contains("wsl.exe") {
         "wsl".to_string()
+    } else if lower.contains("git") && (file_name.contains("bash") || file_name.contains("sh")) {
+        // Git Bash (MSYS2/MinGW)：路径通常位于 <root>\Git\bin\bash.exe、
+        // <root>\Git\usr\bin\bash.exe 或 git-bash.exe，属于 Windows 上的
+        // POSIX 兼容环境。判断放在 wsl 之后、posix 默认之前。
+        "gitbash".to_string()
     } else {
         "posix".to_string()
     }

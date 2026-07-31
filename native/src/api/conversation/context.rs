@@ -155,15 +155,27 @@ fn normalize_messages(messages: &[ChatContextMessage]) -> Vec<ChatContextMessage
 }
 
 /// Read the user's configured default shell type from the terminal settings
-/// stored in the database. Returns the shell identifier (e.g. "powershell",
-/// "cmd", "gitbash", "wsl") or an empty string when unavailable.
+/// stored in the database. The shell type is derived from the configured
+/// `shellPath` (e.g. "powershell", "cmd", "gitbash", "wsl", "posix") or an
+/// empty string when unavailable.
+///
+/// The environment described in the system prompt must follow the terminal
+/// settings rather than the local OS: the working directory can be a remote
+/// SSH location, where commands actually execute in the configured (remote)
+/// shell instead of the machine running Snow App.
 fn resolve_default_shell(database_path: &std::path::Path) -> String {
     let raw = match get_system_setting_value(database_path, "terminal_settings") {
         Ok(Some(value)) => value,
         _ => return String::new(),
     };
-    serde_json::from_str::<serde_json::Value>(&raw)
+    let shell_path = serde_json::from_str::<serde_json::Value>(&raw)
         .ok()
-        .and_then(|json| json.get("defaultShell").and_then(|v| v.as_str().map(String::from)))
-        .unwrap_or_default()
+        .and_then(|json| json.get("shellPath").and_then(|v| v.as_str().map(String::from)))
+        .unwrap_or_default();
+
+    if shell_path.trim().is_empty() {
+        return String::new();
+    }
+
+    crate::exports::terminal::detect_shell_family(&shell_path)
 }

@@ -176,21 +176,17 @@ fn get_working_directory_section(working_directory: &str) -> String {
     )
 }
 
-/// Build the platform-specific command requirements section based on the
-/// user's configured shell type and the current OS/architecture.
+/// Build the platform-specific command requirements section based entirely on
+/// the user's configured terminal shell type.
+///
+/// The environment must NOT follow the local OS (`std::env::consts::OS`): the
+/// working directory can be a remote SSH location (`ssh://`), where commands
+/// actually run in the configured (remote) shell. The terminal settings'
+/// `shellPath` is the source of truth for the execution environment.
 fn get_platform_section(shell_type: &str) -> String {
-    let os = std::env::consts::OS;
-    let arch = std::env::consts::ARCH;
-
-    let os_label = match os {
-        "windows" => "Windows",
-        "macos" => "macOS",
-        "linux" => "Linux",
-        other => other,
-    };
-
-    let (shell_label, guidance) = match shell_type {
+    let (env_label, shell_label, guidance) = match shell_type {
         "cmd" => (
+            "Windows",
             "CMD (cmd.exe)",
             "- Use: Windows CMD built-in commands (`del`, `copy`, `move`, `type`, `dir`, etc.)\n\
              - Shell operators: `&`, `&&`, `||`\n\
@@ -198,6 +194,7 @@ fn get_platform_section(shell_type: &str) -> String {
              - No PowerShell cmdlets — use CMD equivalents (e.g. `del` not `Remove-Item`)",
         ),
         "gitbash" => (
+            "Windows (Git Bash)",
             "Git Bash (MSYS2/MinGW)",
             "- Use: Unix/POSIX commands (`rm`, `cp`, `mv`, `cat`, `ls`, `grep`, etc.)\n\
              - Shell operators: `;`, `&&`, `||`, `|`\n\
@@ -205,6 +202,7 @@ fn get_platform_section(shell_type: &str) -> String {
              - Supports bash scripting syntax",
         ),
         "wsl" => (
+            "WSL (Linux)",
             "WSL (Windows Subsystem for Linux)",
             "- Use: Linux commands (`rm`, `cp`, `mv`, `cat`, `ls`, `grep`, etc.)\n\
              - Shell operators: `;`, `&&`, `||`, `|`\n\
@@ -212,24 +210,28 @@ fn get_platform_section(shell_type: &str) -> String {
              - Windows drives accessible via `/mnt/c/`, `/mnt/d/`, etc.\n\
              - Supports full bash/zsh scripting syntax",
         ),
-        // On non-Windows platforms, default to POSIX shell guidance.
-        _ if os != "windows" => (
-            "POSIX Shell",
-            "- Use: `rm`, `cp`, `mv`, `grep`, `cat`, `ls`, `mkdir`, `rmdir`, `find`, `sed`, `awk`\n\
-             - Supports: `&&`, `||`, pipes `|`, redirection `>`, `<`, `>>`",
-        ),
-        // Default on Windows: PowerShell
-        _ => (
+        "powershell" => (
+            "Windows",
             "PowerShell",
             "- Use: PowerShell cmdlets (`Remove-Item`, `Copy-Item`, `Move-Item`, `Get-Content`, etc.)\n\
              - Shell operators: `;`, `&&`, `||` (PowerShell 7+)\n\
              - Path separator: `\\` or `/` (both work)",
         ),
+        // POSIX shell (or unconfigured/unknown type): the exact OS cannot be
+        // inferred from the terminal settings — it may be the local machine or
+        // a remote host. Describe it generically as POSIX instead of assuming
+        // the OS of the machine running Snow App.
+        _ => (
+            "POSIX",
+            "POSIX Shell",
+            "- Use: `rm`, `cp`, `mv`, `grep`, `cat`, `ls`, `mkdir`, `rmdir`, `find`, `sed`, `awk`\n\
+             - Supports: `&&`, `||`, pipes `|`, redirection `>`, `<`, `>>`",
+        ),
     };
 
     format!(
         "## Platform-Specific Command Requirements\n\n\
-         **Current Environment: {os_label} ({arch})**\n\
+         **Current Environment: {env_label}**\n\
          **Active Shell: {shell_label}**\n\n\
          {guidance}"
     )

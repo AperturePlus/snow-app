@@ -17105,6 +17105,11 @@ input {
 
 .git-graph-svg {
   flex-shrink: 0;
+  /* Let lane strokes extend 1px past the row boundary so they overlap the
+     adjacent row's lines instead of being clipped by the SVG viewport,
+     keeping the branch column visually continuous across rows. */
+  display: block;
+  overflow: visible;
 }
 
 .git-graph-info {
