@@ -138,7 +138,7 @@ async fn spawn_transport(
         resolve_windows_command(command_name, path_env)
     };
     #[cfg(not(target_os = "windows"))]
-    let (actual_command, prefix_args) = (command_name.to_string(), Vec::new());
+    let (actual_command, prefix_args) = (command_name.to_string(), Vec::<String>::new());
 
     let mut command = Command::new(&actual_command);
     command.args(&prefix_args);
