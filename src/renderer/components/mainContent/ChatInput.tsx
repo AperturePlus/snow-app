@@ -18,6 +18,7 @@ export const ChatInput = ({
   onDraftRestored,
   pendingMessages = [],
   onWithdrawPendingMessage,
+  onSendPendingMessageNow,
   onCompactConversation,
   yoloMode = false,
   isUpdatingYoloMode = false,
@@ -58,6 +59,7 @@ export const ChatInput = ({
       tokenUsage={tokenUsage}
       pendingMessages={pendingMessages}
       onWithdrawPendingMessage={onWithdrawPendingMessage}
+      onSendPendingMessageNow={onSendPendingMessageNow}
       onCompactConversation={onCompactConversation}
       yoloMode={yoloMode}
       isUpdatingYoloMode={isUpdatingYoloMode}

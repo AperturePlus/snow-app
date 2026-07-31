@@ -473,6 +473,47 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       );
     }
   );
+  ipcMain.handle(
+    "skills:install-github",
+    (_event, url: unknown, location: unknown, projectId: unknown) => {
+      if (typeof url !== "string" || !url.trim()) {
+        throw new Error("GitHub URL is required");
+      }
+      if (location !== "global" && location !== "project") {
+        throw new Error('Location must be "global" or "project"');
+      }
+      if (
+        projectId !== undefined &&
+        (typeof projectId !== "string" || !projectId.trim())
+      ) {
+        throw new Error("Project id must be a non-empty string");
+      }
+      return native.installSkillFromGithub(
+        url.trim(),
+        location,
+        typeof projectId === "string" ? projectId.trim() : undefined
+      );
+    }
+  );
+  ipcMain.handle(
+    "skills:uninstall-github",
+    (_event, skillId: unknown, projectId: unknown) => {
+      if (typeof skillId !== "string" || !skillId.trim()) {
+        throw new Error("Skill id is required");
+      }
+      if (
+        projectId !== undefined &&
+        (typeof projectId !== "string" || !projectId.trim())
+      ) {
+        throw new Error("Project id must be a non-empty string");
+      }
+      return native.uninstallGithubSkill(
+        skillId.trim(),
+        typeof projectId === "string" ? projectId.trim() : undefined
+      );
+    }
+  );
+  ipcMain.handle("skills:list-github", () => native.listGithubSkills());
   ipcMain.handle("mcp:list-server-tools", (_event, configServerId: unknown) => {
     if (typeof configServerId !== "string" || !configServerId.trim()) {
       throw new Error("MCP server id is required");

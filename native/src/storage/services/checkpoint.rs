@@ -354,7 +354,10 @@ fn write_manifest(checkpoint_id: &str, manifest: &CheckpointManifest) -> Result<
 
 fn run_git(work_dir: &Path, args: &[&str]) -> Result<Output> {
     let mut command = Command::new("git");
-    command.args(args).current_dir(work_dir);
+    command
+        .args(["-c", "core.quotepath=false"])
+        .args(args)
+        .current_dir(work_dir);
 
     #[cfg(target_os = "windows")]
     {

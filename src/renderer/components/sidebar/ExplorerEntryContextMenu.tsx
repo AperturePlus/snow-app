@@ -1,5 +1,5 @@
 import { AlertTriangle, Pencil, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { useI18n } from "../../i18n";
@@ -27,6 +27,21 @@ export function ExplorerEntryContextMenu({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
+  const [top, setTop] = useState(position.y);
+
+  // 测量菜单实际高度，避免超出窗口底部；三种模式高度不同，切换时重新测量。
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    if (!menu) {
+      return;
+    }
+    const rect = menu.getBoundingClientRect();
+    if (rect.bottom > window.innerHeight) {
+      setTop(Math.max(8, window.innerHeight - rect.height - 8));
+    } else if (rect.top < 8) {
+      setTop(8);
+    }
+  }, [mode]);
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent): void => {
@@ -100,7 +115,6 @@ export function ExplorerEntryContextMenu({
 
   const menuWidth = 208;
   const left = Math.min(position.x, window.innerWidth - menuWidth - 8);
-  const top = Math.min(position.y, window.innerHeight - 150);
 
   return createPortal(
     <div

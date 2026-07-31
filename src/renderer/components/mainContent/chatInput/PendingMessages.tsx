@@ -1,14 +1,16 @@
-import { Clock, Trash2 } from "lucide-react";
+import { ArrowUp, Clock, Trash2 } from "lucide-react";
 import { useI18n } from "../../../i18n";
 
 type PendingMessagesProps = {
   messages: string[];
   onWithdraw?: (index: number) => string | null;
+  onSendNow?: (index: number) => void;
 };
 
 export const PendingMessages = ({
   messages,
   onWithdraw,
+  onSendNow,
 }: PendingMessagesProps): React.JSX.Element | null => {
   const { t } = useI18n();
 
@@ -26,6 +28,13 @@ export const PendingMessages = ({
     }
   };
 
+  const handleSendNow = (index: number) => {
+    if (!onSendNow) {
+      return;
+    }
+    onSendNow(index);
+  };
+
   return (
     <div className="pending-messages-area" role="status" aria-live="polite">
       <div className="pending-messages-header">
@@ -36,6 +45,17 @@ export const PendingMessages = ({
         {messages.map((msg, index) => (
           <li key={index} className="pending-message-item">
             <span className="pending-message-text">{msg}</span>
+            {onSendNow && (
+              <button
+                type="button"
+                className="pending-message-send-now"
+                onClick={() => handleSendNow(index)}
+                aria-label={t("chatInput.sendNow")}
+                title={t("chatInput.sendNow")}
+              >
+                <ArrowUp size={12} />
+              </button>
+            )}
             {onWithdraw && (
               <button
                 type="button"

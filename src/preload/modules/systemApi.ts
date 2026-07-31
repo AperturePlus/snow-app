@@ -14,9 +14,12 @@ import type {
   McpProjectServerStatus,
   McpProjectToolStatus,
   McpToolDefinition,
+  GithubSkillRecord,
   ProjectSkillDefinition,
   ResumableCodebaseSession,
+  SkillBatchInstallResult,
   SkillDefinition,
+  SkillUninstallResult,
   UpdateStatus,
   UserQuestionRequest,
   UserQuestionResponse,
@@ -374,6 +377,19 @@ export const systemApi = {
       skillId,
       enabled
     ),
+  installSkillFromGithub: (
+    url: string,
+    location: "global" | "project",
+    projectId?: string
+  ): Promise<SkillBatchInstallResult> =>
+    ipcRenderer.invoke("skills:install-github", url, location, projectId),
+  uninstallGithubSkill: (
+    skillId: string,
+    projectId?: string
+  ): Promise<SkillUninstallResult> =>
+    ipcRenderer.invoke("skills:uninstall-github", skillId, projectId),
+  listGithubSkills: (): Promise<GithubSkillRecord[]> =>
+    ipcRenderer.invoke("skills:list-github"),
   listMcpServerTools: (configServerId: string): Promise<McpToolDefinition[]> =>
     ipcRenderer.invoke("mcp:list-server-tools", configServerId),
   listMcpProjectServers: (

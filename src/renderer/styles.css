@@ -4435,6 +4435,72 @@ input {
   flex-shrink: 0;
 }
 
+/* ===== Skills Install ===== */
+.skills-settings-install-section {
+  margin-top: 4px;
+}
+
+.skills-settings-install-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skills-settings-install-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.skills-settings-install-input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  outline: none;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.skills-settings-install-input:focus {
+  border-color: var(--text-muted);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.skills-settings-install-input:disabled {
+  cursor: default;
+  opacity: 0.68;
+}
+
+.skills-settings-install-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.skills-settings-install-target {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.skills-settings-github-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.skills-settings-uninstall-btn {
+  color: var(--text-muted);
+}
+
+.skills-settings-uninstall-btn:hover:not(:disabled) {
+  color: var(--accent-red-text);
+}
+
 .spin {
   animation: snow-spin 0.85s linear infinite;
 }
@@ -10743,6 +10809,31 @@ input {
   -webkit-box-orient: vertical;
 }
 
+.pending-message-send-now {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin-left: auto;
+  border: none;
+  border-radius: 50%;
+  background: var(--text-primary);
+  color: var(--on-solid);
+  cursor: pointer;
+  transition: opacity 0.12s;
+}
+
+.pending-message-send-now:hover {
+  opacity: 0.85;
+}
+
+.pending-message-send-now:focus-visible {
+  outline: none;
+}
+
 .pending-message-withdraw {
   flex-shrink: 0;
   display: inline-flex;
@@ -10751,18 +10842,14 @@ input {
   width: 20px;
   height: 20px;
   padding: 0;
-  margin-left: auto;
+  margin-left: 0;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.6;
   transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
-}
-
-.pending-message-item:hover .pending-message-withdraw {
-  opacity: 0.7;
 }
 
 .pending-message-withdraw:hover {

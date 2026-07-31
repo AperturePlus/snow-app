@@ -442,6 +442,7 @@ export type UseChatConversationResult = {
   handleSendMessage: (message: string, options: ChatInputSendOptions) => void;
   pendingMessages: string[];
   withdrawPendingMessage: (index: number) => string | null;
+  sendPendingMessageNow: (index: number) => void;
   compactConversation: (model?: string) => Promise<void>;
   compactionPreview: string;
   compactionError: string | null;

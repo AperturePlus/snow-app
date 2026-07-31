@@ -102,7 +102,9 @@ pub struct GitRepoInfo {
 
 fn run_git(repo_path: &str, args: &[&str]) -> Result<String> {
     let mut cmd = Command::new("git");
-    cmd.args(args).current_dir(repo_path);
+    cmd.args(["-c", "core.quotepath=false"])
+        .args(args)
+        .current_dir(repo_path);
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
@@ -132,7 +134,9 @@ fn run_git(repo_path: &str, args: &[&str]) -> Result<String> {
 /// Using `run_git` would treat that as an error and discard the stdout.
 fn run_git_raw(repo_path: &str, args: &[&str]) -> Result<String> {
     let mut cmd = Command::new("git");
-    cmd.args(args).current_dir(repo_path);
+    cmd.args(["-c", "core.quotepath=false"])
+        .args(args)
+        .current_dir(repo_path);
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);

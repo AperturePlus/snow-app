@@ -523,6 +523,49 @@ export const useConversationManagement = (
     ]
   );
 
+  /**
+   * Immediately send a pending message: abort the current in-flight session,
+   * remove the message from the pending queue, and dispatch it via
+   * handleSendMessage so a fresh agent loop starts right away.
+   *
+   * This is used when the user does not want to wait for the current AI
+   * response to finish — the ongoing stream is cancelled and the selected
+   * pending message is sent immediately.
+   */
+  const sendPendingMessageNow = useCallback(
+    (index: number): void => {
+      const sessionKey =
+        ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+      const queue = ctx.pendingQueueRef.current.get(sessionKey);
+      if (!queue || index < 0 || index >= queue.length) {
+        return;
+      }
+
+      // Abort the current streaming session so isSending flips to false
+      // and handleSendMessage will start a new agent loop instead of
+      // re-queuing the message.
+      handleAbort();
+
+      // Remove the target message (and its original send options) from
+      // the pending queue.
+      const [removed] = queue.splice(index, 1);
+      if (queue.length === 0) {
+        ctx.pendingQueueRef.current.delete(sessionKey);
+      }
+      ctx.setActivePendingMessages(queue.map((item) => item.text));
+
+      if (!removed) {
+        return;
+      }
+
+      // Dispatch the pending message as a fresh send. handleSendMessage
+      // will create a new agent loop because handleAbort already reset
+      // isSending on the session ref.
+      ctx.handleSendMessageRef.current(removed.text, removed.options ?? {});
+    },
+    [handleAbort, ctx]
+  );
+
   const refreshConversations = useCallback((): void => {
     ctx.setConversationVersion((version) => version + 1);
   }, []);
@@ -565,6 +608,7 @@ export const useConversationManagement = (
 
   return {
     withdrawPendingMessage,
+    sendPendingMessageNow,
     handleSelectConversation,
     loadOlderMessages,
     handleNewChat,

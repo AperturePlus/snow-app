@@ -413,6 +413,7 @@ export const useChatConversation = (
     handleSendMessage: agentLoopApi.handleSendMessage,
     pendingMessages: activePendingMessages,
     withdrawPendingMessage: conversationManagementApi.withdrawPendingMessage,
+    sendPendingMessageNow: conversationManagementApi.sendPendingMessageNow,
     compactConversation: compactionApi.compactConversation,
     compactionPreview,
     compactionError,

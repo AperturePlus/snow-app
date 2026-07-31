@@ -82,6 +82,7 @@ export const ChatInputView = ({
   tokenUsage,
   pendingMessages,
   onWithdrawPendingMessage,
+  onSendPendingMessageNow,
   onCompactConversation,
   yoloMode,
   isUpdatingYoloMode,
@@ -831,6 +832,13 @@ export const ChatInputView = ({
     [onWithdrawPendingMessage, restoreContent]
   );
 
+  const handleSendPendingNow = useCallback(
+    (index: number): void => {
+      onSendPendingMessageNow?.(index);
+    },
+    [onSendPendingMessageNow]
+  );
+
   const handleOpenCustomThinking = useCallback(() => {
     setCustomThinkingValue(isCustomThinkingValue ? thinkingValue : "");
     setIsCustomThinkingMode(true);
@@ -916,6 +924,7 @@ export const ChatInputView = ({
         <PendingMessages
           messages={pendingMessages}
           onWithdraw={handleWithdrawPending}
+          onSendNow={handleSendPendingNow}
         />
         {isStreaming ? (
           <div className="stream-metrics-bar">

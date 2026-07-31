@@ -591,6 +591,18 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to update project Skills")
         ),
+      installSkillFromGithub: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to install Skills")
+        ),
+      uninstallGithubSkill: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to uninstall Skills")
+        ),
+      listGithubSkills: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to list GitHub Skills")
+        ),
       listMcpServerTools: () =>
         Promise.reject(
           new Error("Rust native bridge is required to list MCP server tools")

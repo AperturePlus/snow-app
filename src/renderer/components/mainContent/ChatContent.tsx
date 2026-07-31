@@ -58,6 +58,7 @@ const ChatContentBody = ({
     cancelRollback,
     pendingMessages,
     withdrawPendingMessage,
+    sendPendingMessageNow,
     compactConversation,
     compactionPreview,
     compactionError,
@@ -650,6 +651,7 @@ const ChatContentBody = ({
           onDraftRestored={clearDraftToRestore}
           pendingMessages={pendingMessages}
           onWithdrawPendingMessage={withdrawPendingMessage}
+          onSendPendingMessageNow={sendPendingMessageNow}
           onCompactConversation={compactConversation}
           yoloMode={yoloMode}
           isUpdatingYoloMode={isUpdatingYoloMode}
