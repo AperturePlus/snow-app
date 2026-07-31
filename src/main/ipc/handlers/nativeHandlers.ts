@@ -278,6 +278,43 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     }
     return native.getCodebaseIndexStats(projectId.trim());
   });
+  ipcMain.handle(
+    "codebase:list-indexed-files",
+    (_event, projectId: unknown, page: unknown, pageSize: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      if (typeof page !== "number" || !Number.isInteger(page) || page < 1) {
+        throw new Error("Page must be a positive integer");
+      }
+      if (
+        typeof pageSize !== "number" ||
+        !Number.isInteger(pageSize) ||
+        pageSize < 1 ||
+        pageSize > 100
+      ) {
+        throw new Error("Page size must be an integer between 1 and 100");
+      }
+      return native.listCodebaseIndexedFiles(projectId.trim(), page, pageSize);
+    }
+  );
+  ipcMain.handle(
+    "codebase:get-file-embeddings",
+    (_event, projectId: unknown, limit: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      if (
+        typeof limit !== "number" ||
+        !Number.isInteger(limit) ||
+        limit < 1 ||
+        limit > 2000
+      ) {
+        throw new Error("Limit must be an integer between 1 and 2000");
+      }
+      return native.getCodebaseFileEmbeddings(projectId.trim(), limit);
+    }
+  );
   ipcMain.handle("codebase:clear-index", (_event, projectId: unknown) => {
     if (typeof projectId !== "string" || !projectId.trim()) {
       throw new Error("Project id is required");

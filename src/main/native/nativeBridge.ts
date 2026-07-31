@@ -743,6 +743,18 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to get codebase index stats"
           )
         ),
+      listCodebaseIndexedFiles: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list codebase indexed files"
+          )
+        ),
+      getCodebaseFileEmbeddings: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to get codebase file embeddings"
+          )
+        ),
       clearCodebaseIndex: () =>
         Promise.reject(
           new Error("Rust native bridge is required to clear codebase index")

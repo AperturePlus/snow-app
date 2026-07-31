@@ -28,6 +28,7 @@ import {
 import { generateComparePatch } from "../utils/generateComparePatch";
 import type {
   BrowserTabData,
+  CodebaseTabData,
   DiffTabData,
   FileDiffPreviewTabData,
   FileViewerTabData,
@@ -57,12 +58,19 @@ const BrowserPanelContent = lazy(() =>
     default: m.BrowserPanelContent,
   }))
 );
+const CodebasePanelContent = lazy(() =>
+  import("./rightPanel/CodebasePanelContent").then((m) => ({
+    default: m.CodebasePanelContent,
+  }))
+);
 
 const GIT_TAB_ID = "git";
+const CODEBASE_TAB_ID = "codebase";
 
 export type RightPanelRef = {
   openTerminal: (cwd: string) => void;
   openBrowser: (url?: string) => void;
+  openCodebase: (projectId: string, projectName: string) => void;
   openFile: (
     filePath: string,
     fileName: string,
@@ -183,6 +191,103 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       },
       []
     );
+
+    // 打开（或切换到已存在的）代码库数据 tab。tab id 固定，避免同一时间
+    // 存在多个代码库 tab；切换项目时通过更新 data 复用同一个 tab。
+    const handleOpenCodebaseTab = useCallback(
+      (projectId: string, projectName: string) => {
+        setTabs((prev) => {
+          const existing = prev.find((t) => t.id === CODEBASE_TAB_ID);
+          if (existing) {
+            return prev.map((t) =>
+              t.id === CODEBASE_TAB_ID
+                ? {
+                    ...t,
+                    data: { projectId, projectName } as CodebaseTabData,
+                  }
+                : t
+            );
+          }
+          const codebaseData: CodebaseTabData = { projectId, projectName };
+          return [
+            ...prev,
+            {
+              id: CODEBASE_TAB_ID,
+              type: "codebase",
+              title: t("rightPanel.codebaseTab"),
+              data: codebaseData,
+            },
+          ];
+        });
+        setActiveTabId(CODEBASE_TAB_ID);
+      },
+      [t]
+    );
+
+    // 项目切换后重新判断代码库 tab：
+    // - 新项目有索引（totalChunks > 0）：更新 tab 数据，触发列表重新加载。
+    // - 新项目没有索引：自动关闭代码库 tab。
+    const handleCodebaseProjectChanged = useCallback(
+      (projectId: string) => {
+        const hasCodebaseTab = tabs.some((t) => t.type === "codebase");
+        if (!hasCodebaseTab) {
+          return;
+        }
+        let cancelled = false;
+        void window.snow
+          .getCodebaseIndexStats(projectId)
+          .then((stats) => {
+            if (cancelled) {
+              return;
+            }
+            if (stats.totalChunks > 0) {
+              setTabs((prev) =>
+                prev.map((tab) =>
+                  tab.type === "codebase"
+                    ? {
+                        ...tab,
+                        data: {
+                          projectId,
+                          projectName: activeDirectory?.name ?? tab.title,
+                        } as CodebaseTabData,
+                      }
+                    : tab
+                )
+              );
+            } else {
+              setTabs((prev) => prev.filter((t) => t.type !== "codebase"));
+              setActiveTabId((currentActive) => {
+                if (currentActive !== CODEBASE_TAB_ID) {
+                  return currentActive;
+                }
+                // 回退到左侧相邻 tab；没有则回到 Git tab。
+                const currentIndex = tabs.findIndex(
+                  (t) => t.id === CODEBASE_TAB_ID
+                );
+                if (currentIndex > 0) {
+                  return tabs[currentIndex - 1].id;
+                }
+                const gitTab = tabs.find((t) => t.id === GIT_TAB_ID);
+                return gitTab ? GIT_TAB_ID : (tabs[1]?.id ?? currentActive);
+              });
+            }
+          })
+          .catch(() => {
+            // 查询失败时保守处理：保留 tab，由用户手动关闭。
+          });
+        return () => {
+          cancelled = true;
+        };
+      },
+      [tabs, activeDirectory]
+    );
+
+    useEffect(() => {
+      if (!activeDirectory?.directoryId) {
+        return;
+      }
+      return handleCodebaseProjectChanged(activeDirectory.directoryId);
+    }, [activeDirectory?.directoryId, handleCodebaseProjectChanged]);
 
     const handleOpenFileTab = useCallback(
       (
@@ -320,6 +425,9 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         openBrowser: (url?: string) => {
           handleOpenBrowserTab(url);
         },
+        openCodebase: (projectId: string, projectName: string) => {
+          handleOpenCodebaseTab(projectId, projectName);
+        },
         openFile: (
           filePath: string,
           fileName: string,
@@ -336,7 +444,12 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
           );
         },
       }),
-      [handleOpenTerminalTab, handleOpenBrowserTab, handleOpenFileTab]
+      [
+        handleOpenTerminalTab,
+        handleOpenBrowserTab,
+        handleOpenCodebaseTab,
+        handleOpenFileTab,
+      ]
     );
 
     const handleCloseTab = useCallback(
@@ -513,6 +626,13 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
               isActive={activeTabId === tab.id}
               onTitleChange={(title) => handleBrowserTitleChange(tab.id, title)}
             />
+          ) : tab.type === "codebase" ? (
+            (tab.data as CodebaseTabData) ? (
+              <CodebasePanelContent
+                projectId={(tab.data as CodebaseTabData).projectId}
+                projectName={(tab.data as CodebaseTabData).projectName}
+              />
+            ) : null
           ) : tab.type === "diff" ? (
             (tab.data as DiffTabData) ? (
               <DiffViewer

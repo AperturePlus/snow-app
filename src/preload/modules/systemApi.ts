@@ -6,6 +6,8 @@ import type {
   CheckpointFileChange,
   CheckpointFileDiff,
   CodebaseEmbedProgress,
+  CodebaseFileEmbedding,
+  CodebaseIndexedFilePage,
   CodebaseIndexStats,
   CodebaseProjectScopeSettings,
   CodebaseScanPreview,
@@ -200,6 +202,17 @@ export const systemApi = {
   },
   getCodebaseIndexStats: (projectId: string): Promise<CodebaseIndexStats> =>
     ipcRenderer.invoke("codebase:get-index-stats", projectId),
+  listCodebaseIndexedFiles: (
+    projectId: string,
+    page: number,
+    pageSize: number
+  ): Promise<CodebaseIndexedFilePage> =>
+    ipcRenderer.invoke("codebase:list-indexed-files", projectId, page, pageSize),
+  getCodebaseFileEmbeddings: (
+    projectId: string,
+    limit: number
+  ): Promise<CodebaseFileEmbedding[]> =>
+    ipcRenderer.invoke("codebase:get-file-embeddings", projectId, limit),
   clearCodebaseIndex: (projectId: string): Promise<void> =>
     ipcRenderer.invoke("codebase:clear-index", projectId),
   startCodebaseWatch: (projectId: string, projectPath: string): Promise<void> =>

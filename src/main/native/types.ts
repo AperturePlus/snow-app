@@ -250,6 +250,33 @@ export type CodebaseIndexStats = {
   isIndexed: boolean;
 };
 
+export type CodebaseIndexedFile = {
+  relativePath: string;
+  filePath: string;
+  chunkCount: number;
+  startLine: number;
+  endLine: number;
+  sizeBytes: number;
+  updatedAt: string;
+};
+
+export type CodebaseIndexedFilePage = {
+  items: CodebaseIndexedFile[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type CodebaseFileEmbedding = {
+  relativePath: string;
+  filePath: string;
+  chunkCount: number;
+  startLine: number;
+  endLine: number;
+  sizeBytes: number;
+  embedding: number[];
+};
+
 export type CodebaseScanPreview = {
   fileCount: number;
   estimatedChunks: number;
@@ -902,6 +929,15 @@ export type NativeBridge = {
   cancelCodebaseEmbedding: (sessionId: string) => Promise<boolean>;
   isCodebaseEmbeddingActive: (projectId: string) => Promise<boolean>;
   getCodebaseIndexStats: (projectId: string) => Promise<CodebaseIndexStats>;
+  listCodebaseIndexedFiles: (
+    projectId: string,
+    page: number,
+    pageSize: number
+  ) => Promise<CodebaseIndexedFilePage>;
+  getCodebaseFileEmbeddings: (
+    projectId: string,
+    limit: number
+  ) => Promise<CodebaseFileEmbedding[]>;
   clearCodebaseIndex: (projectId: string) => Promise<void>;
   startCodebaseWatch: (
     projectId: string,

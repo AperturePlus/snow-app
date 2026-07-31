@@ -215,6 +215,33 @@ export type CodebaseIndexStats = {
   isIndexed: boolean;
 };
 
+export type CodebaseIndexedFile = {
+  relativePath: string;
+  filePath: string;
+  chunkCount: number;
+  startLine: number;
+  endLine: number;
+  sizeBytes: number;
+  updatedAt: string;
+};
+
+export type CodebaseIndexedFilePage = {
+  items: CodebaseIndexedFile[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type CodebaseFileEmbedding = {
+  relativePath: string;
+  filePath: string;
+  chunkCount: number;
+  startLine: number;
+  endLine: number;
+  sizeBytes: number;
+  embedding: number[];
+};
+
 export type CodebaseScanPreview = {
   fileCount: number;
   estimatedChunks: number;

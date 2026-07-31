@@ -182,6 +182,18 @@ export const App = (): React.JSX.Element => {
     });
   }, [isRightPanelCollapsed]);
 
+  const handleOpenCodebase = useCallback(
+    (projectId: string, projectName: string) => {
+      if (isRightPanelCollapsed) {
+        setIsRightPanelCollapsed(false);
+      }
+      requestAnimationFrame(() => {
+        rightPanelRef.current?.openCodebase(projectId, projectName);
+      });
+    },
+    [isRightPanelCollapsed]
+  );
+
   const handleOpenFile = useCallback(
     (
       filePath: string,
@@ -336,6 +348,7 @@ export const App = (): React.JSX.Element => {
             }
             onOpenTerminal={handleOpenTerminal}
             onOpenBrowser={handleOpenBrowser}
+            onOpenCodebase={handleOpenCodebase}
           />
           <div className="app-layout">
             <Sidebar
