@@ -52,6 +52,18 @@ tree-sitter-yaml = "0.7"
 tree-sitter-bash = "0.23"
 tree-sitter-lua = "0.5"
 
+# Official MCP Rust SDK (2026-07-28 spec). Replaces hand-rolled JSON-RPC client.
+rmcp = { version = "3.0.1", default-features = false, features = [
+    "client",
+    "transport-child-process",
+    "transport-streamable-http-client-reqwest",
+] }
+# The `http` crate provides HeaderName / HeaderValue types used by rmcp's
+# StreamableHttpClientTransportConfig::custom_headers API. It is already pulled
+# in transitively by rmcp + reqwest, but we declare it explicitly so we can
+# reference it directly in our code.
+http = "1"
+
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
 

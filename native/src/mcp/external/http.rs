@@ -1,30 +1,24 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use futures::StreamExt;
+use http::header::{HeaderName, HeaderValue};
 use napi::{Error, Result};
-use reqwest::header::{
-    HeaderMap, HeaderName, HeaderValue, ACCEPT, CONTENT_TYPE,
+use rmcp::model::ClientInfo;
+use rmcp::service::{ClientLifecycleMode, ClientServiceExt, RunningService};
+use rmcp::transport::{
+    streamable_http_client::StreamableHttpClientTransportConfig, StreamableHttpClientTransport,
 };
-use serde_json::{json, Value};
 
 use crate::storage::McpServerConfigRecord;
 
-use super::super::protocol::{
-    initialize_params, notification, parse_tools_page, request, response_id_matches,
-    response_result, RemoteMcpTool, MCP_PROTOCOL_VERSION,
-};
+use super::super::protocol::RemoteMcpTool;
 
 const DEFAULT_TIMEOUT_MS: u64 = 300_000;
-const MCP_SESSION_ID_HEADER: &str = "mcp-session-id";
-const MCP_PROTOCOL_VERSION_HEADER: &str = "mcp-protocol-version";
+
+pub(super) type HttpRunningClient = RunningService<rmcp::RoleClient, ClientInfo>;
 
 pub(super) struct HttpMcpClient {
-    client: reqwest::Client,
-    url: String,
-    session_id: Option<String>,
-    protocol_version: String,
-    next_id: i64,
+    client: HttpRunningClient,
 }
 
 impl HttpMcpClient {
@@ -37,237 +31,97 @@ impl HttpMcpClient {
             )));
         }
 
-        let default_headers = parse_headers(&config.headers_json)?;
-        let client = reqwest::Client::builder()
-            .default_headers(default_headers)
-            .timeout(config_timeout(config))
-            .build()
-            .map_err(|error| {
-                Error::from_reason(format!("Failed to create external MCP HTTP client: {error}"))
-            })?;
-        let mut mcp = Self {
-            client,
-            url: url.to_string(),
-            session_id: None,
-            protocol_version: MCP_PROTOCOL_VERSION.to_string(),
-            next_id: 1,
+        let custom_headers = parse_headers(&config.headers_json)?;
+        let _timeout = config_timeout(config);
+
+        let mut transport_config = StreamableHttpClientTransportConfig::with_uri(url);
+        if !custom_headers.is_empty() {
+            transport_config = transport_config.custom_headers(custom_headers);
+        }
+
+        let transport: StreamableHttpClientTransport<_> =
+            StreamableHttpClientTransport::from_config(transport_config);
+
+        let client_info = ClientInfo::default();
+        let lifecycle = ClientLifecycleMode::Auto {
+            preferred_versions: vec![rmcp::model::ProtocolVersion::V_2026_07_28],
+            legacy_version: Some(rmcp::model::ProtocolVersion::V_2025_11_25),
         };
 
-        let initialize_result = mcp
-            .send_request("initialize", initialize_params(), false)
-            .await?;
-        mcp.protocol_version = initialize_result
-            .get("protocolVersion")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|version| !version.is_empty())
-            .ok_or_else(|| {
+        let running = client_info
+            .serve_with_lifecycle(transport, lifecycle)
+            .await
+            .map_err(|error| {
                 Error::from_reason(format!(
-                    "External MCP server {} returned an invalid initialize result",
+                    "Failed to connect external MCP HTTP server {}: {error}",
                     config.name
                 ))
-            })?
-            .to_string();
-        mcp.send_notification("notifications/initialized", json!({}))
-            .await?;
-
-        Ok(mcp)
-    }
-
-    pub(super) async fn list_all_tools(&mut self) -> Result<Vec<RemoteMcpTool>> {
-        let mut tools = Vec::new();
-        let mut cursor: Option<String> = None;
-
-        loop {
-            let params = cursor
-                .as_ref()
-                .map(|cursor| json!({ "cursor": cursor }))
-                .unwrap_or_else(|| json!({}));
-            let result = self.send_request("tools/list", params, true).await?;
-            let (page, next_cursor) = parse_tools_page(&result)?;
-            tools.extend(page);
-            cursor = next_cursor;
-            if cursor.is_none() {
-                break;
-            }
-        }
-
-        Ok(tools)
-    }
-
-    pub(super) async fn call_tool(&mut self, name: &str, arguments: &Value) -> Result<Value> {
-        self.send_request(
-            "tools/call",
-            json!({
-                "name": name,
-                "arguments": arguments,
-            }),
-            true,
-        )
-        .await
-    }
-
-    pub(super) async fn close(self) {
-        if self.session_id.is_none() {
-            return;
-        }
-        let mut request = self.client.delete(&self.url);
-        request = self.apply_session_headers(request);
-        let _ = request.send().await;
-    }
-
-    async fn send_request(
-        &mut self,
-        method: &str,
-        params: Value,
-        include_protocol_version: bool,
-    ) -> Result<Value> {
-        let id = self.next_id;
-        self.next_id += 1;
-        let mut request_builder = self
-            .client
-            .post(&self.url)
-            .header(ACCEPT, "application/json, text/event-stream")
-            .header(CONTENT_TYPE, "application/json");
-        if include_protocol_version {
-            request_builder = self.apply_session_headers(request_builder);
-        }
-        let response = request_builder
-            .json(&request(id, method, params))
-            .send()
-            .await
-            .map_err(|error| {
-                Error::from_reason(format!("External MCP HTTP request {method} failed: {error}"))
             })?;
 
-        if let Some(session_id) = response
-            .headers()
-            .get(MCP_SESSION_ID_HEADER)
-            .and_then(|value| value.to_str().ok())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            self.session_id = Some(session_id.to_string());
-        }
-        let message = parse_http_response(response, method, id).await?;
-        response_result(message, method)
+        Ok(Self { client: running })
     }
 
-    async fn send_notification(&self, method: &str, params: Value) -> Result<()> {
-        let request_builder = self
-            .client
-            .post(&self.url)
-            .header(ACCEPT, "application/json, text/event-stream")
-            .header(CONTENT_TYPE, "application/json");
-        let response = self
-            .apply_session_headers(request_builder)
-            .json(&notification(method, params))
-            .send()
-            .await
-            .map_err(|error| {
-                Error::from_reason(format!(
-                    "External MCP HTTP notification {method} failed: {error}"
-                ))
-            })?;
-        ensure_success(response, method).await.map(|_| ())
+    pub(super) async fn list_all_tools(&self) -> Result<Vec<RemoteMcpTool>> {
+        let tools = self.client.list_all_tools().await.map_err(|error| {
+            Error::from_reason(format!("External MCP tools/list failed: {error}"))
+        })?;
+        Ok(tools.into_iter().map(rmcp_tool_to_remote).collect())
     }
 
-    fn apply_session_headers(
+    pub(super) async fn call_tool(
         &self,
-        mut request: reqwest::RequestBuilder,
-    ) -> reqwest::RequestBuilder {
-        request = request.header(MCP_PROTOCOL_VERSION_HEADER, &self.protocol_version);
-        if let Some(session_id) = &self.session_id {
-            request = request.header(MCP_SESSION_ID_HEADER, session_id);
-        }
-        request
-    }
-}
+        name: &str,
+        arguments: &serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        let params = rmcp::model::CallToolRequestParams::new(name.to_string());
+        let params = if let Some(obj) = arguments.as_object() {
+            params.with_arguments(obj.clone())
+        } else {
+            params
+        };
 
-async fn parse_http_response(
-    response: reqwest::Response,
-    method: &str,
-    expected_id: i64,
-) -> Result<Value> {
-    let response = ensure_success(response, method).await?;
-    let is_sse = response
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.to_ascii_lowercase().contains("text/event-stream"));
-
-    if !is_sse {
-        let message = response.json::<Value>().await.map_err(|error| {
-            Error::from_reason(format!(
-                "Failed to parse external MCP HTTP response for {method}: {error}"
-            ))
+        let result = self.client.call_tool(params).await.map_err(|error| {
+            Error::from_reason(format!("External MCP tools/call failed: {error}"))
         })?;
-        if response_id_matches(&message, expected_id) {
-            return Ok(message);
-        }
-        return Err(Error::from_reason(format!(
-            "External MCP HTTP response for {method} has an unexpected request id"
-        )));
+
+        Ok(call_tool_result_to_value(result))
     }
 
-    let mut stream = response.bytes_stream();
-    let mut buffer = String::new();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|error| {
-            Error::from_reason(format!(
-                "Failed to read external MCP HTTP event stream for {method}: {error}"
-            ))
-        })?;
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
-        buffer = buffer.replace("\r\n", "\n");
-
-        while let Some(boundary) = buffer.find("\n\n") {
-            let event = buffer[..boundary].to_string();
-            buffer.drain(..boundary + 2);
-            let data = event
-                .lines()
-                .filter_map(|line| line.strip_prefix("data:"))
-                .map(str::trim_start)
-                .collect::<Vec<_>>()
-                .join("\n");
-            if data.is_empty() {
-                continue;
-            }
-            let Ok(message) = serde_json::from_str::<Value>(&data) else {
-                continue;
-            };
-            if response_id_matches(&message, expected_id) {
-                return Ok(message);
-            }
-        }
+    pub(super) async fn close(mut self) {
+        let _ = self.client.close().await;
     }
-
-    Err(Error::from_reason(format!(
-        "External MCP HTTP event stream ended before {method} returned a response"
-    )))
 }
 
-async fn ensure_success(
-    response: reqwest::Response,
-    method: &str,
-) -> Result<reqwest::Response> {
-    if response.status().is_success() {
-        return Ok(response);
+fn rmcp_tool_to_remote(tool: rmcp::model::Tool) -> RemoteMcpTool {
+    let name = tool.name.to_string();
+    let description = tool
+        .description
+        .as_deref()
+        .unwrap_or_default()
+        .to_string();
+    let input_schema = serde_json::to_value(tool.input_schema.as_ref()).unwrap_or_else(|_| {
+        serde_json::json!({ "type": "object", "properties": {} })
+    });
+    RemoteMcpTool {
+        name,
+        description,
+        input_schema,
     }
-
-    let status = response.status();
-    let body = response.text().await.unwrap_or_default();
-    Err(Error::from_reason(format!(
-        "External MCP HTTP request {method} failed with {status}: {}",
-        body.chars().take(500).collect::<String>()
-    )))
 }
 
-fn parse_headers(value: &str) -> Result<HeaderMap> {
+fn call_tool_result_to_value(result: rmcp::model::CallToolResult) -> serde_json::Value {
+    // Serialize the entire CallToolResult as JSON. This preserves content blocks,
+    // is_error flag, and structured_content so callers can interpret it fully.
+    serde_json::to_value(&result).unwrap_or_else(|_| {
+        serde_json::json!({ "content": [], "isError": false })
+    })
+}
+
+fn parse_headers(value: &str) -> Result<HashMap<HeaderName, HeaderValue>> {
     let headers: HashMap<String, String> = serde_json::from_str(value).map_err(|error| {
         Error::from_reason(format!("Invalid external MCP headers JSON: {error}"))
     })?;
-    let mut result = HeaderMap::new();
+    let mut result = HashMap::new();
     for (name, value) in headers {
         let name = name.parse::<HeaderName>().map_err(|error| {
             Error::from_reason(format!("Invalid external MCP header name: {error}"))

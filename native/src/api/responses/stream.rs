@@ -179,6 +179,13 @@ pub(super) async fn collect_streaming_response(
     // "incomplete" so the frontend can still process any collected content
     // and tool calls instead of treating it as a hard failure.
     let mut stream_completed_normally = false;
+    // Whether any `response.reasoning_text.delta` (full reasoning text)
+    // events were observed. Some models/relays stream the complete reasoning
+    // text even when `reasoning.summary` is "auto", and also emit the summary
+    // deltas afterwards. Appending both would duplicate the thinking block
+    // (summary is a condensed re-statement of the full reasoning), so once
+    // the full reasoning text is streaming we suppress the summary deltas.
+    let mut reasoning_text_streamed = false;
 
     loop {
         tokio::select! {
@@ -228,7 +235,14 @@ pub(super) async fn collect_streaming_response(
                             );
                         }
                     }
-                    "response.reasoning_summary_text.delta" => {
+                    // Full reasoning text delta. This is the primary thinking
+                    // stream for reasoning models: it arrives BEFORE any
+                    // `response.output_text.delta` (reasoning happens first),
+                    // so it must be pushed to the frontend in real time —
+                    // otherwise the thinking block only appears after the
+                    // entire response has finished rendering.
+                    "response.reasoning_text.delta" => {
+                        reasoning_text_streamed = true;
                         let thinking_delta = read_stream_text_delta(event.get("delta"));
                         if !thinking_delta.is_empty() {
                             thinking_chunks.push(thinking_delta.clone());
@@ -245,11 +259,14 @@ pub(super) async fn collect_streaming_response(
                             );
                         }
                     }
-                    "response.reasoning_summary.delta" => {
-                        if let Some(delta) = event.get("delta") {
-                            let mut delta_chunks = Vec::new();
-                            collect_text_values(delta, &mut delta_chunks);
-                            let thinking_delta = delta_chunks.join("");
+                    "response.reasoning_summary_text.delta" => {
+                        // The summary is a condensed re-statement of the full
+                        // reasoning text. If the full text was already
+                        // streamed via `response.reasoning_text.delta`,
+                        // appending the summary would duplicate the thinking
+                        // block, so suppress it in that case.
+                        if !reasoning_text_streamed {
+                            let thinking_delta = read_stream_text_delta(event.get("delta"));
                             if !thinking_delta.is_empty() {
                                 thinking_chunks.push(thinking_delta.clone());
                                 if ttft_ms == 0 {
@@ -263,6 +280,31 @@ pub(super) async fn collect_streaming_response(
                                     stream_start.elapsed().as_millis() as i64,
                                     ttft_ms,
                                 );
+                            }
+                        }
+                    }
+                    "response.reasoning_summary.delta" => {
+                        // See reasoning_summary_text.delta above: skip the
+                        // summary when the full reasoning text is streamed.
+                        if !reasoning_text_streamed {
+                            if let Some(delta) = event.get("delta") {
+                                let mut delta_chunks = Vec::new();
+                                collect_text_values(delta, &mut delta_chunks);
+                                let thinking_delta = delta_chunks.join("");
+                                if !thinking_delta.is_empty() {
+                                    thinking_chunks.push(thinking_delta.clone());
+                                    if ttft_ms == 0 {
+                                        ttft_ms = stream_start.elapsed().as_millis() as i64;
+                                    }
+                                    emit_stream_chunk(
+                                        on_chunk,
+                                        String::new(),
+                                        thinking_delta,
+                                        &mut stream_token_count,
+                                        stream_start.elapsed().as_millis() as i64,
+                                        ttft_ms,
+                                    );
+                                }
                             }
                         }
                     }

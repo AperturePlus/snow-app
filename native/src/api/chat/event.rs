@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use napi::bindgen_prelude::*;
 use serde_json::Value;
 use crate::api::common::{
-    push_trimmed_string, read_first_i64, read_string,
+    push_reasoning_text, push_trimmed_string, read_first_i64, read_string,
 };
 use crate::storage::services::chat_conversations::ChatTokenUsage;
 
@@ -148,7 +148,11 @@ fn process_chat_completion_event(
         for choice in choices {
             if let Some(delta) = choice.get("delta") {
                 push_trimmed_string(delta.get("content"), content_chunks);
-                push_trimmed_string(delta.get("reasoning_content"), thinking_chunks);
+                // Normalise reasoning across providers: DeepSeek emits
+                // `reasoning_content`, OpenRouter emits `reasoning` /
+                // `reasoning_details`. `push_reasoning_text` checks all three
+                // so the thinking block is populated regardless of provider.
+                push_reasoning_text(Some(delta), thinking_chunks);
                 // Extract tool-call argument deltas so the token probe can
                 // reflect long tool arguments in real time. The full
                 // arguments are still assembled by `collect_tool_calls`; we
@@ -159,7 +163,7 @@ fn process_chat_completion_event(
 
             if let Some(message) = choice.get("message") {
                 push_trimmed_string(message.get("content"), content_chunks);
-                push_trimmed_string(message.get("reasoning_content"), thinking_chunks);
+                push_reasoning_text(Some(message), thinking_chunks);
                 collect_tool_calls(message.get("tool_calls"), tool_calls, tool_call_positions_by_index, false);
             }
 
