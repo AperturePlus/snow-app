@@ -9,6 +9,7 @@ import type {
 import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
 import {
   createMessageId,
+  directoryIdToPath,
   formatMessageTime,
   formatToolResultsContent,
   getErrorMessage,
@@ -829,10 +830,13 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         }
 
         let checkpointId: string | undefined;
-        if (ctx.directoryPath && !ctx.directoryPath.startsWith("ssh://")) {
+        // checkpoint 绑定会话自己的目录(而非运行时全局目录),保证
+        // manifest.work_dir 与工具执行的 cwd 始终一致。
+        const sessionDirPath = directoryIdToPath(sessionDirId) ?? ctx.directoryPath;
+        if (sessionDirPath && !sessionDirPath.startsWith("ssh://")) {
           try {
             checkpointId = await window.snow.createCheckpoint(
-              ctx.directoryPath
+              sessionDirPath
             );
             const ref = ctx.sessionsRefData.current.get(sessionKey);
             if (ref) {
@@ -856,7 +860,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         try {
           const hookContext = JSON.stringify({
             message: trimmed,
-            cwd: ctx.directoryPath ?? "",
+            cwd: sessionDirPath ?? "",
             sessionId:
               sessionKey === PENDING_SESSION_KEY ? undefined : sessionKey,
           });
@@ -999,7 +1003,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               finalSessionKey === PENDING_SESSION_KEY
                 ? undefined
                 : finalSessionKey,
-            cwd: ctx.directoryPath ?? "",
+            cwd: directoryIdToPath(stopDirId) ?? ctx.directoryPath ?? "",
             reason: isRunCancelled(finalSessionKey) ? "aborted" : "completed",
           });
           void runHook("onStop", stopDirId ?? undefined, onStopContext)

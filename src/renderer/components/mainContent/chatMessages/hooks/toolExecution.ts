@@ -1,4 +1,5 @@
 import {
+  directoryIdToPath,
   formatMcpToolResultForModel,
   getErrorMessage,
   isUserQuestionCancellationResult,
@@ -68,6 +69,11 @@ export function createToolExecutor(
     planApprovedSessionKeysRef,
     planModeRef,
   } = deps;
+
+  // 工具 cwd / checkpoint 目录跟随会话自己的目录,而非运行时全局
+  // activeDirectory:切换项目后旧会话仍在自己的目录执行,checkpoint
+  // 与 cwd 天然一致,不会被后端以目录不匹配拦截。
+  const sessionDirPath = directoryIdToPath(sessionDirId) ?? directoryPath;
 
   return async (
     toolCalls: ToolCallInfo[],
@@ -352,7 +358,7 @@ export function createToolExecutor(
                 const beforeHookContext = JSON.stringify({
                   toolName: toolCall.name,
                   args: JSON.parse(toolArgs),
-                  cwd: directoryPath ?? "",
+                  cwd: sessionDirPath ?? "",
                 });
                 const beforeHookResult = await runHook(
                   "beforeToolCall",
@@ -474,7 +480,7 @@ export function createToolExecutor(
                   toolArgs,
                   sessionDirId,
                   checkpointIds,
-                  checkpointIds.length > 0 ? directoryPath : undefined,
+                  checkpointIds.length > 0 ? sessionDirPath : undefined,
                   sensitiveAuthorizationToken,
                   (chunk) => {
                     if (!chunk.data) {
@@ -568,7 +574,7 @@ export function createToolExecutor(
                     toolName: toolCall.name,
                     args: JSON.parse(toolArgs),
                     result: JSON.parse(result),
-                    cwd: directoryPath ?? "",
+                    cwd: sessionDirPath ?? "",
                   });
                   const afterHookResult = await runHook(
                     "afterToolCall",

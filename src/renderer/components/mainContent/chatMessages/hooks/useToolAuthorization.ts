@@ -4,7 +4,11 @@ import type {
   ToolCallInfo,
   ToolAuthorizationDecision,
 } from "../utils/conversationTypes";
-import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
+import {
+  appendHookExecutionToMessage,
+  runHook,
+} from "./hookOutcome";
+import { directoryIdToPath } from "../utils/conversationHelpers";
 
 /**
  * 工具授权逻辑：YOLO 模式、敏感命令检查、批量授权闸门等。
@@ -499,7 +503,7 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
             const toolConfirmContext = JSON.stringify({
               toolName: toolCall.name,
               args: JSON.parse(toolCall.arguments || "{}"),
-              cwd: ctx.directoryPath ?? "",
+              cwd: directoryIdToPath(projectId) ?? ctx.directoryPath ?? "",
             });
             const confirmResult = await runHook(
               "toolConfirmation",

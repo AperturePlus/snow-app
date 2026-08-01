@@ -10,6 +10,7 @@ import {
 import {
   buildConversationMessages,
   deleteCheckpoints,
+  directoryIdToPath,
   killRunningBashExecutions,
 } from "../utils/conversationHelpers";
 import {
@@ -192,7 +193,8 @@ export const useConversationManagement = (
       ]?.messages.findLast((message) => message.role !== "tool")?.id;
       const onSessionStartContext = JSON.stringify({
         conversationId: trimmedId,
-        cwd: ctx.directoryPath ?? "",
+        cwd:
+          directoryIdToPath(conversationDirId) ?? ctx.directoryPath ?? "",
         directoryId: conversationDirId ?? "",
       });
       void runHook(

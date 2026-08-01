@@ -13,6 +13,21 @@ export const deleteCheckpoints = (checkpointIds: string[]): void => {
 };
 
 /**
+ * 从 directoryId(local:<path> 或 ssh://... )提取工作目录路径。
+ * 会话绑定创建时的 directoryId,而 checkpoint / 工具 cwd 需要真实路径。
+ * 工具的 cwd 必须跟随会话自己的目录,而非运行时全局 activeDirectory,
+ * 否则切换项目后 checkpoint 目录不匹配,所有工具都会被后端拦截。
+ */
+export const directoryIdToPath = (
+  directoryId: string | undefined
+): string | undefined => {
+  if (!directoryId) return undefined;
+  return directoryId.startsWith("local:")
+    ? directoryId.slice("local:".length)
+    : directoryId;
+};
+
+/**
  * Kill every in-flight bash subprocess of a session.  Iterates the running
  * tool calls and calls the Rust abort API for each known execution id, so
  * stopping a session also terminates the underlying OS process (and its

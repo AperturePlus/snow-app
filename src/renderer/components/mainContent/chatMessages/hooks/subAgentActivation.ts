@@ -6,6 +6,7 @@ import type {
 } from "../utils/conversationTypes";
 import {
   createMessageId,
+  directoryIdToPath,
   formatMessageTime,
   formatMcpToolResultForModel,
   formatToolResultsContent,
@@ -57,7 +58,9 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
       ctx.sessionsRefData.current.get(parentConversationId)?.checkpointIds ??
       [];
     const subCheckpointWorkDir =
-      parentCheckpointIds.length > 0 ? ctx.directoryPath : undefined;
+      parentCheckpointIds.length > 0
+        ? directoryIdToPath(dirId) ?? ctx.directoryPath
+        : undefined;
 
     const parsedArgs = JSON.parse(argsJson) as Record<string, unknown>;
     const agentId =
@@ -98,7 +101,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
           agentName: config.name,
           prompt,
           parentConversationId,
-          cwd: ctx.directoryPath ?? "",
+          cwd: directoryIdToPath(dirId) ?? ctx.directoryPath ?? "",
         });
         const subHookResult = await runHook(
           "beforeSubAgentStart",
@@ -781,7 +784,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
           prompt,
           summary,
           parentConversationId,
-          cwd: ctx.directoryPath ?? "",
+          cwd: directoryIdToPath(dirId) ?? ctx.directoryPath ?? "",
         });
         const onCompleteResult = await runHook(
           "onSubAgentComplete",
