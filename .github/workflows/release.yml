@@ -135,6 +135,10 @@ jobs:
       - name: Merge macOS update yml (arm64 + x64)
         run: node scripts/merge-mac-yml.cjs
 
+      # 生成无签名更新清单 latest-mac.json（版本号 + 各架构 zip 的 SHA-256）
+      - name: Generate latest-mac.json
+        run: node scripts/generate-latest-json.cjs ${{ inputs.tag || github.ref_name }}
+
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
@@ -149,3 +153,4 @@ jobs:
             release/*.AppImage
             release/*.deb
             release/latest*.yml
+            release/latest-mac.json
