@@ -5,7 +5,6 @@ pub mod codebase;
 pub mod codelens;
 pub mod filesystem;
 pub mod grep;
-pub mod plan_mode;
 pub mod remote_workspace;
 pub mod skills;
 pub mod skills_installer;

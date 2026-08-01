@@ -480,7 +480,10 @@ export function createToolExecutor(
                     if (!chunk.data) {
                       return;
                     }
-                    if (chunk.stream === "interactive_session") {
+                    if (
+                      chunk.stream === "interactive_session" ||
+                      chunk.stream === "tool_execution"
+                    ) {
                       ctx.updateSessionMessages(
                         effectiveKey,
                         (currentMessages) =>
@@ -499,7 +502,14 @@ export function createToolExecutor(
                                 ["pending", "running"],
                                 (currentToolCall) => ({
                                   ...currentToolCall,
-                                  interactiveSessionId: chunk.data,
+                                  interactiveSessionId:
+                                    chunk.stream === "interactive_session"
+                                      ? chunk.data
+                                      : currentToolCall.interactiveSessionId,
+                                  toolExecutionId:
+                                    chunk.stream === "tool_execution"
+                                      ? chunk.data
+                                      : currentToolCall.toolExecutionId,
                                 })
                               ),
                             };

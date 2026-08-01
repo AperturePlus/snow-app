@@ -152,13 +152,15 @@ fn get_working_directory_section(working_directory: &str) -> String {
     )
 }
 
-/// Build the platform-specific command requirements section based entirely on
-/// the user's configured terminal shell type.
+/// Build the platform-specific command requirements section based on the
+/// user's configured terminal shell type.
 ///
-/// The environment must NOT follow the local OS (`std::env::consts::OS`): the
-/// working directory can be a remote SSH location (`ssh://`), where commands
-/// actually run in the configured (remote) shell. The terminal settings'
-/// `shellPath` is the source of truth for the execution environment.
+/// Bash commands always execute in the shell resolved from the terminal
+/// settings' `shellPath`; when unconfigured, the local OS default terminal is
+/// used instead (see `resolve_shell_and_args`). The guidance therefore follows
+/// `shell_type` when known, and falls back to the local OS otherwise —
+/// claiming POSIX on a Windows machine would mislead the AI into using Unix
+/// commands that fail in PowerShell/CMD.
 fn get_platform_section(shell_type: &str) -> String {
     let (env_label, shell_label, guidance) = match shell_type {
         "cmd" => (
@@ -191,12 +193,21 @@ fn get_platform_section(shell_type: &str) -> String {
             "PowerShell",
             "- Use: PowerShell cmdlets (`Remove-Item`, `Copy-Item`, `Move-Item`, `Get-Content`, etc.)\n\
              - Shell operators: `;`, `&&`, `||` (PowerShell 7+)\n\
-             - Path separator: `\\` or `/` (both work)",
+             - Path separator: `\\` or `/` (both work)\n\
+             - No Unix commands — use PowerShell cmdlet equivalents (e.g. `Get-ChildItem` not `ls`, `Get-Content` not `cat`, `Remove-Item` not `rm`)",
         ),
-        // POSIX shell (or unconfigured/unknown type): the exact OS cannot be
-        // inferred from the terminal settings — it may be the local machine or
-        // a remote host. Describe it generically as POSIX instead of assuming
-        // the OS of the machine running Snow App.
+        // Unconfigured/unknown shell type: commands still execute in the local
+        // OS default terminal (see resolve_shell_and_args), so fall back to the
+        // local OS instead of claiming POSIX — on Windows that would mislead
+        // the AI into using Unix commands that do not exist in PowerShell/CMD.
+        _ if cfg!(target_os = "windows") => (
+            "Windows",
+            "Default Windows shell (PowerShell or CMD)",
+            "- Use: PowerShell cmdlets (`Get-ChildItem`, `Get-Content`, `Remove-Item`, `Copy-Item`, etc.) or CMD built-ins (`dir`, `type`, `del`, `copy`)\n\
+             - Shell operators: `;` (PowerShell) or `&`, `&&`, `||` (CMD)\n\
+             - Path separator: `\\`\n\
+             - No Unix commands — use the Windows equivalents",
+        ),
         _ => (
             "POSIX",
             "POSIX Shell",
@@ -288,7 +299,7 @@ Before writing any plan, thoroughly investigate the codebase using read-only too
 
 ### Step 2: User Confirmation (Gate — Confirm Once, Then Execute All)
 
-**You MUST call `plan-mode-requestApproval` to get explicit user approval before any execution.**
+**You MUST call `app-control-requestApproval` to get explicit user approval before any execution.**
 
 This dedicated tool is the **only action that can unlock Plan Mode writes**. Ordinary chat text and `user-interaction-askUserQuestion` results never approve the plan. Call the approval tool by itself, wait for its structured result, and proceed only when it returns `approved: true`.
 
@@ -298,11 +309,11 @@ This dedicated tool is the **only action that can unlock Plan Mode writes**. Ord
 - Make it clear that approval means the entire plan will be executed
 
 **Rules for confirmation**:
-- Never assume approval — always call `plan-mode-requestApproval` before executing
+- Never assume approval — always call `app-control-requestApproval` before executing
 - If it returns `approved: false`, keep planning and do not modify project files
 - If the plan changes materially after rejection, update it before requesting approval again
 - Once it returns `approved: true`, execute all phases to completion
-- If `filesystem-replace_edit` or `filesystem-create` returns a Plan Mode write-block error, do not retry the write in a loop; call `plan-mode-requestApproval` first
+- If `filesystem-replace_edit` or `filesystem-create` returns a Plan Mode write-block error, do not retry the write in a loop; call `app-control-requestApproval` first
 
 ### Step 3: Continuous Execution (via Sub-Agents)
 
@@ -358,7 +369,8 @@ The `todo-todo-manage` tool complements the plan file: the plan file is the sour
 - Delete obsolete items when the plan changes
 - NEVER call the TODO tool alone in a turn: pair get/add/update/delete with the actual work tools (read/edit/search/build) in the same turn. A standalone TODO-only turn wastes a full round-trip for bookkeeping
 - Batch ALL independent tool calls (reads, searches, TODO updates) in a single turn; only sequence calls when one genuinely depends on another's result
-- **Interactive tools are strictly single-use**: `plan-mode-requestApproval` and `user-interaction-askUserQuestion` block for human input and MUST each be the **only** tool call in their turn. Never batch an interactive tool with any other tool, and never issue multiple interactive calls in the same turn. Wait for the user's answer before continuing.
+- **Interactive tools are strictly single-use**: `app-control-requestApproval` and `user-interaction-askUserQuestion` block for human input and MUST each be the **only** tool call in their turn. Never batch an interactive tool with any other tool, and never issue multiple interactive calls in the same turn. Wait for the user's answer before continuing.
+- **Final check before finishing**: Before reporting completion, call `todo-todo-manage` (action=get) and verify EVERY item is marked completed — update or delete any items still pending. NEVER finish work with unconfirmed TODO items
 
 ## Git Safety
 
@@ -370,7 +382,7 @@ The `todo-todo-manage` tool complements the plan file: the plan file is the sour
 ## Rules
 
 1. **Plan files go in `.snow/plan/`** — always
-2. **Confirm once, then execute all** — use `plan-mode-requestApproval`, then execute all phases continuously only after `approved: true`
+2. **Confirm once, then execute all** — use `app-control-requestApproval`, then execute all phases continuously only after `approved: true`
 3. **Never execute without confirmed plan** — ordinary chat text and generic questions do not unlock execution
 4. **Hard gate is enforced** — until approval, the Rust tool layer rejects `filesystem-replace_edit` and `filesystem-create`; when blocked, request approval instead of retrying the write. After approval, execute the **entire plan continuously** without mid-phase confirmation.
 5. **Don't interrupt between phases** — verify each phase yourself and keep going

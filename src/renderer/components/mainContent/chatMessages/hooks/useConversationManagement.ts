@@ -10,6 +10,7 @@ import {
 import {
   buildConversationMessages,
   deleteCheckpoints,
+  killRunningBashExecutions,
 } from "../utils/conversationHelpers";
 import {
   appendHookExecutionToMessage,
@@ -412,6 +413,11 @@ export const useConversationManagement = (
         };
       })
     );
+    // Kill every in-flight bash subprocess of this session so the OS
+    // process does not keep running until its timeout.
+    killRunningBashExecutions(
+      ctx.sessionsRef.current?.[key]?.messages ?? []
+    );
     ctx.updateSessionField(key, "isStreaming", false);
     ctx.updateSessionField(key, "streamStartedAt", 0);
     ctx.updateSessionField(key, "isAborting", false);
@@ -442,6 +448,9 @@ export const useConversationManagement = (
       }
       subRef.isAbortRequested = true;
       subRef.isSending = false;
+      killRunningBashExecutions(
+        ctx.sessionsRef.current?.[subKey]?.messages ?? []
+      );
 
       ctx.updateSessionMessages(subKey, (currentMessages) =>
         currentMessages.map((message) => ({
@@ -493,6 +502,9 @@ export const useConversationManagement = (
 
       rejectAllToolAuthorizations();
       rejectPendingUserQuestions(conversationId);
+      killRunningBashExecutions(
+        ctx.sessionsRef.current?.[conversationId]?.messages ?? []
+      );
       if (ref?.streamId) {
         void window.snow.abortResponseStream(ref.streamId);
         ref.streamId = null;

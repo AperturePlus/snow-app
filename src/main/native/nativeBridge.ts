@@ -497,6 +497,7 @@ export const loadNativeBridge = (): NativeBridge => {
           new Error("Rust native bridge is required to stream AI responses")
         ),
       abortResponseStream: () => false,
+      abortToolExecution: () => false,
       engineInfo: () => "Rust native bridge is not built yet",
       sum: (a: number, b: number) => a + b,
       detectTerminals: () =>

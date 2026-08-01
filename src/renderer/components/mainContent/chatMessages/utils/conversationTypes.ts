@@ -85,6 +85,11 @@ export type ToolCallInfo = {
    *  interactive mode (isInteractive=true).  The frontend uses this ID
    *  to send user input to the process stdin via `writeInteractiveStdin`. */
   interactiveSessionId?: string;
+  /** UUID assigned by the Rust backend for every bash execution.  The
+   *  frontend uses it to kill the subprocess on demand via
+   *  `abortToolExecution` (the UI stop button and session aborts), instead
+   *  of waiting for the timeout. */
+  toolExecutionId?: string;
 };
 
 export type ChatConversationMessage = {

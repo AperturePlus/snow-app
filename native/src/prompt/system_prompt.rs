@@ -176,13 +176,15 @@ fn get_working_directory_section(working_directory: &str) -> String {
     )
 }
 
-/// Build the platform-specific command requirements section based entirely on
-/// the user's configured terminal shell type.
+/// Build the platform-specific command requirements section based on the
+/// user's configured terminal shell type.
 ///
-/// The environment must NOT follow the local OS (`std::env::consts::OS`): the
-/// working directory can be a remote SSH location (`ssh://`), where commands
-/// actually run in the configured (remote) shell. The terminal settings'
-/// `shellPath` is the source of truth for the execution environment.
+/// Bash commands always execute in the shell resolved from the terminal
+/// settings' `shellPath`; when unconfigured, the local OS default terminal is
+/// used instead (see `resolve_shell_and_args`). The guidance therefore follows
+/// `shell_type` when known, and falls back to the local OS otherwise —
+/// claiming POSIX on a Windows machine would mislead the AI into using Unix
+/// commands that fail in PowerShell/CMD.
 fn get_platform_section(shell_type: &str) -> String {
     let (env_label, shell_label, guidance) = match shell_type {
         "cmd" => (
@@ -215,12 +217,21 @@ fn get_platform_section(shell_type: &str) -> String {
             "PowerShell",
             "- Use: PowerShell cmdlets (`Remove-Item`, `Copy-Item`, `Move-Item`, `Get-Content`, etc.)\n\
              - Shell operators: `;`, `&&`, `||` (PowerShell 7+)\n\
-             - Path separator: `\\` or `/` (both work)",
+             - Path separator: `\\` or `/` (both work)\n\
+             - No Unix commands — use PowerShell cmdlet equivalents (e.g. `Get-ChildItem` not `ls`, `Get-Content` not `cat`, `Remove-Item` not `rm`)",
         ),
-        // POSIX shell (or unconfigured/unknown type): the exact OS cannot be
-        // inferred from the terminal settings — it may be the local machine or
-        // a remote host. Describe it generically as POSIX instead of assuming
-        // the OS of the machine running Snow App.
+        // Unconfigured/unknown shell type: commands still execute in the local
+        // OS default terminal (see resolve_shell_and_args), so fall back to the
+        // local OS instead of claiming POSIX — on Windows that would mislead
+        // the AI into using Unix commands that do not exist in PowerShell/CMD.
+        _ if cfg!(target_os = "windows") => (
+            "Windows",
+            "Default Windows shell (PowerShell or CMD)",
+            "- Use: PowerShell cmdlets (`Get-ChildItem`, `Get-Content`, `Remove-Item`, `Copy-Item`, etc.) or CMD built-ins (`dir`, `type`, `del`, `copy`)\n\
+             - Shell operators: `;` (PowerShell) or `&`, `&&`, `||` (CMD)\n\
+             - Path separator: `\\`\n\
+             - No Unix commands — use the Windows equivalents",
+        ),
         _ => (
             "POSIX",
             "POSIX Shell",
@@ -331,6 +342,7 @@ The `todo-todo-manage` tool is the standard workflow for multi-step work — it 
 3. **Keep it accurate**: Delete obsolete, incorrect, or superseded items; refine wording with action=update when the plan changes
 4. **Never call TODO alone**: TODO calls (get/add/update/delete) must be paired in the same turn with the actual work tools (read/edit/search/build). A standalone TODO-only turn wastes a full round-trip for bookkeeping
 5. **Language**: Follow the language used by the user when adding a todo
+6. **Final check before finishing**: Before ending any task or reporting completion, call `todo-todo-manage` (action=get) and verify EVERY item is marked completed — update or delete any items still pending. NEVER finish work with unconfirmed TODO items left behind
 
 ## Sub-Agents
 

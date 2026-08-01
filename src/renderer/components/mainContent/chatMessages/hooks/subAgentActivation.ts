@@ -536,7 +536,10 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
                 if (!chunk.data) {
                   return;
                 }
-                if (chunk.stream === "interactive_session") {
+                if (
+                  chunk.stream === "interactive_session" ||
+                  chunk.stream === "tool_execution"
+                ) {
                   ctx.updateSessionMessages(subConvId, (currentMessages) =>
                     currentMessages.map((currentMessage) => {
                       if (currentMessage.id !== subAssistantMessageId) {
@@ -550,7 +553,14 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
                           ["pending", "running"],
                           (currentToolCall) => ({
                             ...currentToolCall,
-                            interactiveSessionId: chunk.data,
+                            interactiveSessionId:
+                              chunk.stream === "interactive_session"
+                                ? chunk.data
+                                : currentToolCall.interactiveSessionId,
+                            toolExecutionId:
+                              chunk.stream === "tool_execution"
+                                ? chunk.data
+                                : currentToolCall.toolExecutionId,
                           })
                         ),
                       };

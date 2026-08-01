@@ -4,6 +4,7 @@ import {
   CircleDot,
   ListChecks,
   Pin,
+  Plus,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -33,6 +34,18 @@ const todoStatusIcon = (status: TodoStatus): typeof Circle => {
       return CircleDot;
     default:
       return Circle;
+  }
+};
+
+// 点击状态图标时循环切换：待完成 → 进行中 → 已完成 → 待完成
+const nextTodoStatus = (status: TodoStatus): TodoStatus => {
+  switch (status) {
+    case "completed":
+      return "pending";
+    case "inProgress":
+      return "completed";
+    default:
+      return "inProgress";
   }
 };
 
@@ -72,10 +85,7 @@ export const TodoPanelButton = ({
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [selectedTodoIds, setSelectedTodoIds] = useState<Set<string>>(
-    () => new Set()
-  );
+  const [isMutating, setIsMutating] = useState(false);
   const [confirmDeleteIds, setConfirmDeleteIds] = useState<string[] | null>(
     null
   );
@@ -84,6 +94,7 @@ export const TodoPanelButton = ({
   const [fallbackSessionId, setFallbackSessionId] = useState<string | null>(
     null
   );
+  const [newTodoContent, setNewTodoContent] = useState("");
   const panelRef = useRef<HTMLDivElement>(null);
 
   const panel = useTodoPanel(messages);
@@ -135,7 +146,7 @@ export const TodoPanelButton = ({
   const sessionId = panelSessionId ?? fallbackSessionId;
   // Priority: user-initiated localTodos > panelTodos (from loaded messages)
   // > fallbackTodos (from backend query). When sessionId exists, localTodos
-  // takes precedence so delete operations are reflected immediately.
+  // takes precedence so user operations are reflected immediately.
   const todos = sessionId
     ? localTodos ?? (panelSessionId ? panelTodos : fallbackTodos ?? [])
     : [];
@@ -144,8 +155,6 @@ export const TodoPanelButton = ({
     (todo) => todo.status === "completed"
   ).length;
   const incompleteCount = totalCount - completedCount;
-  const selectedCount = selectedTodoIds.size;
-  const allSelected = selectedCount === totalCount;
 
   useEffect(() => {
     if (!sessionId) {
@@ -185,7 +194,6 @@ export const TodoPanelButton = ({
   }, [isOpen, onOpenChange]);
 
   // 订阅快捷键事件：Ctrl/Cmd+T 切换待办面板。
-  // 仅当有待办项时（totalCount > 0）才响应，否则按钮本就不渲染。
   useEffect(() => {
     return shortcutEvents.on("toggle-todo", () => {
       setIsOpen((prev) => !prev);
@@ -198,7 +206,6 @@ export const TodoPanelButton = ({
 
   useEffect(() => {
     if (!isOpen) {
-      setSelectedTodoIds(new Set());
       return undefined;
     }
 
@@ -220,11 +227,78 @@ export const TodoPanelButton = ({
     };
   }, [isOpen, isPinned]);
 
-  useEffect(() => {
-    if (isRunning) {
-      setSelectedTodoIds(new Set());
+  const todoStatusLabel = (status: TodoStatus): string => {
+    switch (status) {
+      case "completed":
+        return t("topBar.todo.statusCompleted");
+      case "inProgress":
+        return t("topBar.todo.statusInProgress");
+      default:
+        return t("topBar.todo.statusPending");
     }
-  }, [isRunning]);
+  };
+
+  const handleAdd = useCallback(async (): Promise<void> => {
+    const content = newTodoContent.trim();
+    if (!content || !sessionId) {
+      return;
+    }
+
+    setIsMutating(true);
+    try {
+      const result = await window.snow.callMcpTool(
+        "todo-todo-manage",
+        JSON.stringify({ action: "add", sessionId, content }),
+        projectId,
+        undefined,
+        undefined,
+        undefined
+      );
+      const newTodos = parseTodos(result);
+      if (newTodos) {
+        setLocalTodos(newTodos);
+        setNewTodoContent("");
+      }
+    } catch {
+      // Silent fail
+    } finally {
+      setIsMutating(false);
+    }
+  }, [newTodoContent, projectId, sessionId]);
+
+  const handleStatusChange = useCallback(
+    async (todo: TodoItem): Promise<void> => {
+      if (!sessionId) {
+        return;
+      }
+
+      setIsMutating(true);
+      try {
+        const result = await window.snow.callMcpTool(
+          "todo-todo-manage",
+          JSON.stringify({
+            action: "update",
+            sessionId,
+            todoId: todo.id,
+            status: nextTodoStatus(todo.status),
+          }),
+          projectId,
+          undefined,
+          undefined,
+          undefined
+        );
+        const newTodos = parseTodos(result);
+        if (newTodos) {
+          setLocalTodos(newTodos);
+        }
+      } catch {
+        // Silent fail
+      } finally {
+        setIsMutating(false);
+      }
+    },
+    [projectId, sessionId]
+  );
 
   const handleDelete = useCallback(
     async (todoIds: string[]): Promise<void> => {
@@ -232,7 +306,7 @@ export const TodoPanelButton = ({
         return;
       }
 
-      setIsDeleting(true);
+      setIsMutating(true);
       try {
         const result = await window.snow.callMcpTool(
           "todo-todo-manage",
@@ -245,36 +319,18 @@ export const TodoPanelButton = ({
         const newTodos = parseTodos(result);
         if (newTodos) {
           setLocalTodos(newTodos);
-          setSelectedTodoIds(new Set());
         }
       } catch {
         // Silent fail
       } finally {
-        setIsDeleting(false);
+        setIsMutating(false);
       }
     },
     [projectId, sessionId]
   );
 
-  const toggleTodoSelection = (todoId: string): void => {
-    setSelectedTodoIds((current) => {
-      const next = new Set(current);
-      if (next.has(todoId)) {
-        next.delete(todoId);
-      } else {
-        next.add(todoId);
-      }
-      return next;
-    });
-  };
-
-  const toggleAllSelection = (): void => {
-    setSelectedTodoIds(() =>
-      allSelected ? new Set() : new Set(todos.map((todo) => todo.id))
-    );
-  };
-
-  if (totalCount === 0) {
+  // 无 TODO 会话时（AI 尚未在会话中使用过待办工具）不渲染按钮。
+  if (!sessionId) {
     return null;
   }
 
@@ -317,63 +373,33 @@ export const TodoPanelButton = ({
               </button>
             </div>
           </div>
-          {!isRunning ? (
-            <div className="top-bar-todo-selection-toolbar">
-              <label className="top-bar-todo-select-all">
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={toggleAllSelection}
-                  aria-label={t("topBar.todo.selectAll")}
-                />
-                <span>{t("topBar.todo.selectAll")}</span>
-              </label>
-              {selectedCount > 0 ? (
-                <>
-                  <span className="top-bar-todo-selected-count">
-                    {t("topBar.todo.selectedCount", {
-                      values: { count: selectedCount },
-                    })}
-                  </span>
-                  <button
-                    className="top-bar-todo-delete-selected"
-                    type="button"
-                    disabled={isDeleting || !sessionId}
-                    onClick={() =>
-                      setConfirmDeleteIds(Array.from(selectedTodoIds))
-                    }
-                  >
-                    <Trash2 size={12} aria-hidden="true" />
-                    <span>{t("topBar.todo.deleteSelected")}</span>
-                  </button>
-                </>
-              ) : null}
-            </div>
-          ) : null}
           <ul className="top-bar-todo-list">
             {todos.map((todo) => {
               const StatusIcon = todoStatusIcon(todo.status);
-              const isSelected = selectedTodoIds.has(todo.id);
+              const nextStatusLabel = todoStatusLabel(nextTodoStatus(todo.status));
               return (
                 <li
                   key={todo.id}
                   className={`top-bar-todo-item top-bar-todo-item-${todo.status}`}
                 >
-                  {!isRunning ? (
-                    <input
-                      className="top-bar-todo-item-select"
-                      type="checkbox"
-                      checked={isSelected}
-                      disabled={isDeleting || !sessionId}
-                      onChange={() => toggleTodoSelection(todo.id)}
-                      aria-label={t("topBar.todo.selectTodo")}
+                  <button
+                    className="top-bar-todo-item-status"
+                    type="button"
+                    aria-label={t("topBar.todo.cycleStatus", {
+                      values: { status: nextStatusLabel },
+                    })}
+                    title={t("topBar.todo.cycleStatus", {
+                      values: { status: nextStatusLabel },
+                    })}
+                    disabled={isMutating || isRunning}
+                    onClick={() => void handleStatusChange(todo)}
+                  >
+                    <StatusIcon
+                      size={13}
+                      className="top-bar-todo-item-icon"
+                      aria-hidden="true"
                     />
-                  ) : null}
-                  <StatusIcon
-                    size={13}
-                    className="top-bar-todo-item-icon"
-                    aria-hidden="true"
-                  />
+                  </button>
                   <span className="top-bar-todo-item-content">
                     {todo.content}
                   </span>
@@ -383,29 +409,50 @@ export const TodoPanelButton = ({
                       type="button"
                       aria-label={t("topBar.todo.confirmDelete")}
                       title={t("topBar.todo.confirmDelete")}
-                      disabled={isDeleting || !sessionId}
+                      disabled={isMutating}
                       onClick={() => setConfirmDeleteIds([todo.id])}
                     >
-                      <Trash2 size={12} />
+                      <Trash2 size={12} aria-hidden="true" />
                     </button>
                   ) : null}
                 </li>
               );
             })}
           </ul>
+          {!isRunning ? (
+            <div className="top-bar-todo-add-bar">
+              <input
+                className="top-bar-todo-add-input"
+                type="text"
+                value={newTodoContent}
+                placeholder={t("topBar.todo.addPlaceholder")}
+                disabled={isMutating}
+                onChange={(event) => setNewTodoContent(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    void handleAdd();
+                  }
+                }}
+              />
+              <button
+                className="top-bar-todo-add-btn"
+                type="button"
+                aria-label={t("topBar.todo.add")}
+                title={t("topBar.todo.add")}
+                disabled={isMutating || !newTodoContent.trim()}
+                onClick={() => void handleAdd()}
+              >
+                <Plus size={14} aria-hidden="true" />
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
       <ConfirmDialog
         open={confirmDeleteIds !== null}
         variant="danger"
         title={t("topBar.todo.confirmDeleteTitle")}
-        message={
-          confirmDeleteIds?.length === 1
-            ? t("topBar.todo.confirmDeleteMessage")
-            : t("topBar.todo.confirmDeleteMultipleMessage", {
-                values: { count: confirmDeleteIds?.length ?? 0 },
-              })
-        }
+        message={t("topBar.todo.confirmDeleteMessage")}
         confirmLabel={t("topBar.todo.confirmDelete")}
         cancelLabel={t("topBar.todo.cancelDelete")}
         onConfirm={() => {

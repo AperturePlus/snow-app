@@ -159,4 +159,33 @@ pub fn unregister_summary(conversation_id: &str) {
     });
 }
 
+// ============================================================================
+// Tool execution cancellation (bash subprocesses and similar long-running
+// tools).  Each in-flight tool execution gets its own UUID, stored under a
+// dedicated prefix so it can never collide with a stream id.  Session aborts
+// and the per-tool UI stop button both cancel by this id, which races the
+// child process wait in the executing service and kills the process tree.
+// ============================================================================
+
+const TOOL_EXECUTION_PREFIX: &str = "tool:";
+
+/// Register a fresh cancellation token for a tool execution.  If a cancel
+/// was already requested before registration (pre-cancelled), the returned
+/// token is created already-cancelled so the execution aborts immediately.
+pub fn register_tool_execution(tool_execution_id: &str) -> CancellationToken {
+    create_and_register(&format!("{TOOL_EXECUTION_PREFIX}{tool_execution_id}"))
+}
+
+/// Trigger cancellation for a tool execution and remove its token from the
+/// registry.  Returns `true` if a token was found and cancelled.
+pub fn cancel_tool_execution(tool_execution_id: &str) -> bool {
+    cancel_stream(&format!("{TOOL_EXECUTION_PREFIX}{tool_execution_id}"))
+}
+
+/// Remove the tool-execution token without cancelling it.  Called when the
+/// execution finishes normally (success, timeout or error).
+pub fn unregister_tool_execution(tool_execution_id: &str) {
+    unregister_stream(&format!("{TOOL_EXECUTION_PREFIX}{tool_execution_id}"));
+}
+
 

@@ -27,7 +27,6 @@ use super::servers::codebase::CodebaseService;
 use super::servers::codelens::CodeLensService;
 use super::servers::filesystem::FilesystemService;
 use super::servers::grep::GrepService;
-use super::servers::plan_mode::{PlanModeService, SERVER_ID as PLAN_MODE_SERVER_ID};
 use super::servers::remote_workspace::{
     is_ssh_path, resolve_remote_project_workspace, resolve_remote_workspace_path,
     RemoteWorkspaceCallback,
@@ -80,6 +79,9 @@ impl McpTool {
     }
 }
 
+/// requestApproval 工具全名（隶属于 app-control 服务器，仅 Plan Mode 下暴露）。
+const REQUEST_APPROVAL_FULL_NAME: &str = "app-control-requestApproval";
+
 /// 所有内置 MCP 服务器 ID（含动态注册的 skills），按长度降序排列，
 /// 用于工具名最长前缀匹配。新格式 `{server_id}-{tool_name}` 中，server_id
 /// 可能含 `-`（如 `user-interaction`），需通过此列表消除歧义；外部工具的
@@ -87,7 +89,6 @@ impl McpTool {
 pub const BUILTIN_SERVER_IDS: &[&str] = &[
     "user-interaction",
     "app-control",
-    "plan-mode",
     "filesystem",
     "sub-agents",
     "websearch",
@@ -373,7 +374,7 @@ pub async fn collect_all_mcp_tools(
         .filter(|tool| {
             // The dedicated approval tool is request-scoped: it must only be
             // exposed to the model while the current request is in Plan Mode.
-            if tool.server_id == PLAN_MODE_SERVER_ID {
+            if tool.full_name() == REQUEST_APPROVAL_FULL_NAME {
                 return include_plan_mode_tool;
             }
             // Exclude codebase search tool unless the project has codebase
@@ -510,7 +511,6 @@ fn builtin_server_name(server_id: &str) -> &str {
         "websearch" => "Web search",
         "browser" => "Browser",
         "user-interaction" => "User interaction",
-        "plan-mode" => "Plan Mode",
         "app-control" => "App Control",
         "sub-agents" => "Sub-agents",
         "codebase" => "Codebase",
@@ -711,18 +711,18 @@ pub async fn call_mcp_tool(
     let tool_full_name = super::builtin::sanitize_tool_full_name(&tool_full_name);
     let is_sub_agent_call = sub_agent_allowed_tools.is_some();
 
-    if tool_full_name == "plan-mode-requestApproval" {
+    if tool_full_name == REQUEST_APPROVAL_FULL_NAME {
         if is_sub_agent_call {
             return Err(Error::new(
                 Status::GenericFailure,
-                "plan-mode-requestApproval is reserved for the main conversation; sub-agents cannot request or grant Plan Mode approval"
+                "app-control-requestApproval is reserved for the main conversation; sub-agents cannot request or grant Plan Mode approval"
                     .to_string(),
             ));
         }
         if !plan_mode {
             return Err(Error::new(
                 Status::GenericFailure,
-                "plan-mode-requestApproval is only available while Plan Mode is active"
+                "app-control-requestApproval is only available while Plan Mode is active"
                     .to_string(),
             ));
         }
@@ -744,7 +744,7 @@ pub async fn call_mcp_tool(
             )
         } else {
             format!(
-                "Plan Mode write blocked: {tool_full_name} cannot run before explicit user approval. Only plan documents inside .snow/plan or .trellis/tasks may be written during planning. Call plan-mode-requestApproval first, and retry project-file writes only when that tool returns approved=true."
+                "Plan Mode write blocked: {tool_full_name} cannot run before explicit user approval. Only plan documents inside .snow/plan or .trellis/tasks may be written during planning. Call app-control-requestApproval first, and retry project-file writes only when that tool returns approved=true."
             )
         };
         return Err(Error::new(Status::GenericFailure, message));
@@ -852,13 +852,9 @@ pub async fn call_mcp_tool(
         UserInteractionService::new()
             .execute_async(&args, &on_user_question)
             .await?
-    } else if tool_full_name == "plan-mode-requestApproval" {
-        PlanModeService::new()
-            .execute_async(&args, &on_user_question)
-            .await?
     } else if let Some(app_control_tool) = tool_full_name.strip_prefix("app-control-") {
         AppControlService::new()
-            .execute_async(app_control_tool, &args, &on_app_control)
+            .execute_async(app_control_tool, &args, &on_app_control, &on_user_question)
             .await?
     } else if tool_full_name == "skills-skill-execute" {
         SkillsService::new()

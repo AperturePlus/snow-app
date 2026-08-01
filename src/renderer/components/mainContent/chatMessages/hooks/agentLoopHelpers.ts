@@ -10,7 +10,7 @@ import { appendHookExecutionToMessage } from "./hookOutcome";
 // Constants
 // ---------------------------------------------------------------------------
 
-export const PLAN_APPROVAL_TOOL_NAME = "plan-mode-requestApproval";
+export const PLAN_APPROVAL_TOOL_NAME = "app-control-requestApproval";
 export const PARENT_PLAN_APPROVAL_REQUIRED = "PARENT_PLAN_APPROVAL_REQUIRED";
 
 // ---------------------------------------------------------------------------

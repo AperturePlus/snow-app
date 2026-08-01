@@ -683,6 +683,15 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     }
   );
   ipcMain.handle(
+    "mcp:abort-tool-execution",
+    (_event, toolExecutionId: unknown) => {
+      if (typeof toolExecutionId !== "string" || !toolExecutionId.trim()) {
+        throw new Error("Tool execution ID is required");
+      }
+      return native.abortToolExecution(toolExecutionId.trim());
+    }
+  );
+  ipcMain.handle(
     "mcp:call-tool",
     async (
       event,

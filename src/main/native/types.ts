@@ -754,7 +754,7 @@ export type McpProjectServerStatus = {
 };
 
 export type BashStreamChunk = {
-  stream: "stdout" | "stderr";
+  stream: "stdout" | "stderr" | "interactive_session" | "tool_execution";
   data: string;
 };
 
@@ -1149,6 +1149,7 @@ export type NativeBridge = {
     streamId: string
   ) => Promise<ResponsesApiResult>;
   abortResponseStream: (streamId: string) => boolean;
+  abortToolExecution: (toolExecutionId: string) => boolean;
   listMcpTools: () => Promise<McpToolDefinition[]>;
   listAvailableSkills: (projectId?: string) => Promise<SkillDefinition[]>;
   setSkillEnabled: (

@@ -69,7 +69,7 @@ export type McpProjectServerStatus = {
   error?: string;
 };
 export type BashStreamChunk = {
-  stream: "stdout" | "stderr" | "interactive_session";
+  stream: "stdout" | "stderr" | "interactive_session" | "tool_execution";
   data: string;
 };
 

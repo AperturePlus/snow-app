@@ -6,7 +6,10 @@ import type {
   RollbackTodoItem,
 } from "../utils/conversationTypes";
 import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
-import { deleteCheckpoints } from "../utils/conversationHelpers";
+import {
+  deleteCheckpoints,
+  killRunningBashExecutions,
+} from "../utils/conversationHelpers";
 
 /**
  * 回滚逻辑：中止流、预览文件变更、确认/取消回滚。
@@ -49,6 +52,10 @@ export const useRollback = (ctx: ConversationContextValue) => {
       if (!session) {
         return;
       }
+
+      // Kill every in-flight bash subprocess before truncating the
+      // conversation, so no orphaned OS process keeps running afterwards.
+      killRunningBashExecutions(session.messages);
 
       const messages = session.messages;
       const targetIndex = messages.findIndex((m) => m.id === messageId);

@@ -12,6 +12,35 @@ export const deleteCheckpoints = (checkpointIds: string[]): void => {
   }
 };
 
+/**
+ * Kill every in-flight bash subprocess of a session.  Iterates the running
+ * tool calls and calls the Rust abort API for each known execution id, so
+ * stopping a session also terminates the underlying OS process (and its
+ * process tree) instead of leaving it running until its timeout.
+ * Fire-and-forget: a process that just finished naturally is a no-op.
+ */
+export const killRunningBashExecutions = (
+  messages: ChatConversationMessage[]
+): void => {
+  const executionIds = new Set<string>();
+  for (const message of messages) {
+    for (const toolCall of message.toolCalls ?? []) {
+      if (
+        toolCall.name === "bash-terminal-execute" &&
+        (toolCall.status === "running" || toolCall.status === "pending") &&
+        toolCall.toolExecutionId
+      ) {
+        executionIds.add(toolCall.toolExecutionId);
+      }
+    }
+  }
+  for (const executionId of executionIds) {
+    void window.snow.abortToolExecution(executionId).catch(() => {
+      // The process may have just finished; nothing to do.
+    });
+  }
+};
+
 export const formatMessageTime = (): string =>
   new Date().toLocaleTimeString("zh-CN", {
     hour: "2-digit",

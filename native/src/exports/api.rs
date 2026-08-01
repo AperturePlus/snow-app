@@ -96,6 +96,23 @@ pub fn abort_response_stream(stream_id: String) -> napi::Result<bool> {
     Ok(crate::api::cancel::cancel_stream(&stream_id))
 }
 
+/// Abort an in-flight tool execution (e.g. a bash subprocess) by the
+/// execution id that was streamed to the frontend as a `tool_execution`
+/// chunk.  The executing service races its wait against this cancellation
+/// and kills the process tree.  Returns `true` if a running execution was
+/// found and cancelled.
+#[napi]
+pub fn abort_tool_execution(tool_execution_id: String) -> napi::Result<bool> {
+    let trimmed = tool_execution_id.trim();
+    if trimmed.is_empty() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Tool execution ID is required".to_string(),
+        ));
+    }
+    Ok(crate::api::cancel::cancel_tool_execution(trimmed))
+}
+
 /// Generate a theme palette JSON from a background image using the selected
 /// API config's **advanced model** (must support vision). Dispatches to
 /// whichever provider (chat / responses / anthropic / gemini) the config
