@@ -217,6 +217,7 @@ export const zhCN = {
   "chat.quickActionCustomizeTheme": "个性化外观",
   "chat.quickActionCustomizeThemeDesc": "选择主题、浅色或深色模式",
   "chat.selectModel": "选择模型",
+  "chat.selectApiProfile": "选择 API 提供商",
   "chat.model": "模型",
   "chat.manualModel": "手动输入模型",
   "chat.manualModelPlaceholder": "例如 gpt-4.1",
@@ -1264,6 +1265,7 @@ export const zhCN = {
   "settings.shortcutOpenTodo": "打开待办列表",
   "settings.shortcutCycleProject": "循环切换项目",
   "settings.shortcutOpenExplorer": "打开当前项目明细",
+  "settings.shortcutCycleApiProfile": "循环切换 API 提供商",
   "settings.shortcutEnabled": "启用",
   "settings.shortcutForegroundOnly": "仅台前生效",
   "settings.shortcutForegroundOnlyNote":

@@ -222,6 +222,7 @@ export const en = {
   "chat.quickActionCustomizeTheme": "Customize appearance",
   "chat.quickActionCustomizeThemeDesc": "Choose theme, light or dark mode",
   "chat.selectModel": "Select model",
+  "chat.selectApiProfile": "Select API provider",
   "chat.model": "Model",
   "chat.manualModel": "Enter model manually",
   "chat.manualModelPlaceholder": "e.g. gpt-4.1",
@@ -1322,6 +1323,7 @@ export const en = {
   "settings.shortcutOpenTodo": "Open todo list",
   "settings.shortcutCycleProject": "Cycle through projects",
   "settings.shortcutOpenExplorer": "Open current project explorer",
+  "settings.shortcutCycleApiProfile": "Cycle through API providers",
   "settings.shortcutEnabled": "Enabled",
   "settings.shortcutForegroundOnly": "Foreground only",
   "settings.shortcutForegroundOnlyNote":

@@ -217,6 +217,7 @@ export const zhTW = {
   "chat.quickActionCustomizeTheme": "個人化外觀",
   "chat.quickActionCustomizeThemeDesc": "選擇主題、淺色或深色模式",
   "chat.selectModel": "選擇模型",
+  "chat.selectApiProfile": "選擇 API 提供商",
   "chat.model": "模型",
   "chat.manualModel": "手動輸入模型",
   "chat.manualModelPlaceholder": "例如 gpt-4.1",
