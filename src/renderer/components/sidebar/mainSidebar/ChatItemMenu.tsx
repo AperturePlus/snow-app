@@ -8,19 +8,23 @@ import {
   Download,
   ChevronRight,
   ChevronLeft,
+  SmilePlus,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { useI18n } from "../../../i18n";
 import { useMenuPosition } from "./useMenuPosition";
+import { EmojiPicker } from "./EmojiPicker";
 
 export type ExportFormat = "markdown" | "html" | "json" | "csv";
 
 type ChatItemMenuProps = {
   isPinned: boolean;
+  emoji: string;
   onPin: () => void;
   onRename: () => void;
+  onSetEmoji: (emoji: string) => void | Promise<void>;
   onDelete: () => void;
   onExport: (format: ExportFormat) => void;
   onOpenChange?: (isOpen: boolean) => void;
@@ -28,8 +32,10 @@ type ChatItemMenuProps = {
 
 export function ChatItemMenu({
   isPinned,
+  emoji,
   onPin,
   onRename,
+  onSetEmoji,
   onDelete,
   onExport,
   onOpenChange,
@@ -38,11 +44,13 @@ export function ChatItemMenu({
   const [isOpen, setIsOpen] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showExport, setShowExport] = useState(false);
+  const [showEmoji, setShowEmoji] = useState(false);
   const containerRef = useRef<HTMLSpanElement>(null);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const exportPanelRef = useRef<HTMLDivElement>(null);
   const exportTriggerRef = useRef<HTMLButtonElement>(null);
+  const emojiTriggerRef = useRef<HTMLButtonElement>(null);
   const onOpenChangeRef = useRef(onOpenChange);
   onOpenChangeRef.current = onOpenChange;
 
@@ -98,6 +106,7 @@ export function ChatItemMenu({
       setIsOpen(false);
       setShowConfirm(false);
       setShowExport(false);
+      setShowEmoji(false);
     };
 
     document.addEventListener("mousedown", handleClickOutside);
@@ -112,6 +121,7 @@ export function ChatItemMenu({
     setIsOpen((prev) => !prev);
     setShowConfirm(false);
     setShowExport(false);
+    setShowEmoji(false);
   };
 
   const handlePin = (): void => {
@@ -127,6 +137,7 @@ export function ChatItemMenu({
   const handleDeleteClick = (): void => {
     setShowConfirm(true);
     setShowExport(false);
+    setShowEmoji(false);
   };
 
   const handleDeleteConfirm = (): void => {
@@ -142,11 +153,34 @@ export function ChatItemMenu({
   const handleExportClick = (): void => {
     setShowExport((prev) => !prev);
     setShowConfirm(false);
+    setShowEmoji(false);
   };
 
   const handleExportSelect = (format: ExportFormat): void => {
     onExport(format);
     setIsOpen(false);
+    setShowExport(false);
+  };
+
+  const handleEmojiClick = (): void => {
+    setShowEmoji((prev) => !prev);
+    setShowConfirm(false);
+    setShowExport(false);
+  };
+
+  const handleEmojiSelect = (emoji: string): void => {
+    void onSetEmoji(emoji);
+    setIsOpen(false);
+    setShowEmoji(false);
+    setShowConfirm(false);
+    setShowExport(false);
+  };
+
+  // Escape / 焦点离开面板等场景：关闭整个菜单
+  const handleEmojiClose = (): void => {
+    setIsOpen(false);
+    setShowEmoji(false);
+    setShowConfirm(false);
     setShowExport(false);
   };
 
@@ -245,6 +279,30 @@ export function ChatItemMenu({
                   </button>
                   <button
                     type="button"
+                    ref={emojiTriggerRef}
+                    className={`chat-item-menu-item${
+                      showEmoji ? " active" : ""
+                    }`}
+                    onClick={handleEmojiClick}
+                    role="menuitem"
+                    aria-expanded={showEmoji}
+                    aria-haspopup="menu"
+                  >
+                    {emoji ? (
+                      <span className="chat-item-menu-emoji">{emoji}</span>
+                    ) : (
+                      <SmilePlus size={13} />
+                    )}
+                    <span>
+                      {t("sidebar.chatActionIcon", { defaultValue: "Icon" })}
+                    </span>
+                    <ChevronRight
+                      size={11}
+                      className="chat-item-menu-sub-arrow"
+                    />
+                  </button>
+                  <button
+                    type="button"
                     ref={exportTriggerRef}
                     className={`chat-item-menu-item${
                       showExport ? " active" : ""
@@ -323,6 +381,15 @@ export function ChatItemMenu({
             document.body
           )
         : null}
+      {isOpen && showEmoji && (
+        <EmojiPicker
+          triggerRef={emojiTriggerRef}
+          currentEmoji={emoji}
+          onSelect={handleEmojiSelect}
+          onClose={handleEmojiClose}
+          focusOutKeepRef={menuRef}
+        />
+      )}
     </span>
   );
 }
