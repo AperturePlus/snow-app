@@ -18,14 +18,13 @@ import { snowLog } from "../../utils/snowLogger";
 /**
  * 系统托盘模块。
  *
- * 图标：
- * - macOS：黑白脱色单色模板图标（纯黑 + alpha，系统自动反色适配明暗菜单栏），
- *   由像素级绘制雪片 + 内置 PNG 编码器在运行时生成，零外部资源依赖。
- * - Windows/Linux：应用彩色 favicon 小图（16px + 32px @2x 双表示，DPI 精确匹配）。
- * - 活动态（有会话进行中）：Windows/Linux 右下角叠加绿色圆点，
- *   macOS 模板图加实心圆点，提醒后台仍有任务在跑。
+ * 图标（统一使用应用 LOGO，不自行绘制）：
+ * - macOS：LOGO 的黑白脱色模板版（提取 alpha → 纯黑 + 透明，系统自动反色
+ *   适配明暗菜单栏），16px @1x + 32px @2x 双表示。
+ * - Windows/Linux：LOGO 彩色 favicon 小图（16px + 32px @2x 双表示，DPI 精确匹配）。
+ * - 活动态（有会话进行中）：右下角叠加圆点（macOS 纯黑、Windows/Linux 绿色）。
  *
- * 悬停 tooltip（emoji 美化）展示快速信息：
+ * 悬停 tooltip 展示快速信息（原生纯文本，无图标）：
  * 进行中会话 / 活跃终端 / 项目 / 待办备忘录 / 今日 Token 用量。
  *
  * 数据来源：进行中会话由渲染进程 IPC 推送；其余指标由主进程定时
@@ -201,21 +200,21 @@ const decodePng = (
 const overlayActivityDot = (
   rgba: Uint8Array,
   width: number,
-  height: number
+  height: number,
+  color: [number, number, number, number]
 ): void => {
   const cx = width - 3.6;
   const cy = height - 3.6;
   const radius = 3.1;
-  const dot = [34, 197, 94, 255]; // 绿色，与主题 accentGreen 一致
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
       if (d <= radius) {
         const idx = (y * width + x) * 4;
-        rgba[idx] = dot[0];
-        rgba[idx + 1] = dot[1];
-        rgba[idx + 2] = dot[2];
-        rgba[idx + 3] = dot[3];
+        rgba[idx] = color[0];
+        rgba[idx + 1] = color[1];
+        rgba[idx + 2] = color[2];
+        rgba[idx + 3] = color[3];
       }
     }
   }
@@ -223,103 +222,103 @@ const overlayActivityDot = (
 
 // ─── 图标生成 ─────────────────────────────────────────────────────────────
 
-const TEMPLATE_ICON_SIZE = 16;
+// 活动态圆点颜色：macOS 模板图为纯黑（与 LOGO 同色，反色后一致）；
+// Windows/Linux 用绿色（与主题 accentGreen #22c55e 一致）。
+const BLACK_DOT: [number, number, number, number] = [0, 0, 0, 255];
+const GREEN_DOT: [number, number, number, number] = [34, 197, 94, 255];
 
-/** 点到线段的距离。 */
-const distToSegment = (
-  px: number,
-  py: number,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number
-): number => {
-  const vx = x2 - x1;
-  const vy = y2 - y1;
-  const wx = px - x1;
-  const wy = py - y1;
-  const c2 = vx * vx + vy * vy;
-  const t = c2 === 0 ? 0 : Math.min(1, Math.max(0, (vx * wx + vy * wy) / c2));
-  return Math.hypot(px - (x1 + t * vx), py - (y1 + t * vy));
+/** 从 256px LOGO 缩小生成 16px/32px 模板图（16 → 16，16 → 32 均为整数倍，面积平均质量最佳）。 */
+const LOGO_SOURCE_SIZE = 256;
+const TEMPLATE_SIZES = [16, 32] as const;
+
+/** 黑白脱色：提取 alpha 通道，RGB 置 0，得到 macOS 模板图所需的纯黑 + 透明。 */
+const toBlackTemplateRgba = (
+  rgba: Uint8Array,
+  width: number,
+  height: number
+): Uint8Array => {
+  const out = new Uint8Array(width * height * 4);
+  for (let i = 0; i < width * height; i++) {
+    out[i * 4 + 3] = rgba[i * 4 + 3];
+  }
+  return out;
 };
 
-/** 像素级绘制雪片掩码：三条直径 + 每条臂两处短枝。 */
-const drawSnowflakeMask = (size: number): boolean[] => {
-  const mask = new Array<boolean>(size * size).fill(false);
-  const c = size / 2;
-  const r = c - 1.2;
-  const segments: Array<[number, number, number, number]> = [];
-  for (const angleDeg of [0, 60, 120]) {
-    const rad = (angleDeg * Math.PI) / 180;
-    const dx = Math.cos(rad);
-    const dy = Math.sin(rad);
-    // 直径
-    segments.push([c, c, c + dx * r, c + dy * r]);
-    segments.push([c, c, c - dx * r, c - dy * r]);
-    // 每侧两处短枝（与臂成 ±60°）
-    for (const d of [r * 0.55, r * 0.95]) {
-      const branch = 1.7;
-      const b1x = Math.cos(rad + Math.PI / 3) * branch;
-      const b1y = Math.sin(rad + Math.PI / 3) * branch;
-      const b2x = Math.cos(rad - Math.PI / 3) * branch;
-      const b2y = Math.sin(rad - Math.PI / 3) * branch;
-      const px = c + dx * d;
-      const py = c + dy * d;
-      const mx = c - dx * d;
-      const my = c - dy * d;
-      segments.push(
-        [px, py, px + b1x, py + b1y],
-        [px, py, px + b2x, py + b2y],
-        [mx, my, mx + b1x, my + b1y],
-        [mx, my, mx + b2x, my + b2y]
-      );
-    }
-  }
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const px = x + 0.5;
-      const py = y + 0.5;
-      for (const seg of segments) {
-        if (distToSegment(px, py, ...seg) <= 1.05) {
-          mask[y * size + x] = true;
-          break;
+/** 面积平均缩小（处理 alpha 通道，保留抗锯齿边缘）。 */
+const scaleDownRgba = (
+  rgba: Uint8Array,
+  width: number,
+  height: number,
+  targetWidth: number,
+  targetHeight: number
+): Uint8Array => {
+  const out = new Uint8Array(targetWidth * targetHeight * 4);
+  for (let ty = 0; ty < targetHeight; ty++) {
+    const sy0 = Math.floor((ty * height) / targetHeight);
+    const sy1 = Math.max(sy0 + 1, Math.floor(((ty + 1) * height) / targetHeight));
+    for (let tx = 0; tx < targetWidth; tx++) {
+      const sx0 = Math.floor((tx * width) / targetWidth);
+      const sx1 = Math.max(sx0 + 1, Math.floor(((tx + 1) * width) / targetWidth));
+      let alphaSum = 0;
+      for (let sy = sy0; sy < sy1; sy++) {
+        for (let sx = sx0; sx < sx1; sx++) {
+          alphaSum += rgba[(sy * width + sx) * 4 + 3];
         }
       }
+      const alpha = Math.round(alphaSum / ((sy1 - sy0) * (sx1 - sx0)));
+      const outIdx = (ty * targetWidth + tx) * 4;
+      out[outIdx + 3] = alpha; // RGB 保持 0（纯黑模板）
     }
   }
-  return mask;
+  return out;
 };
 
-/** 在掩码右下角绘制实心圆点（活动指示，模板图下为纯黑圆点）。 */
-const drawActivityDot = (mask: boolean[], size: number): void => {
-  const cx = size - 3.6;
-  const cy = size - 3.6;
-  const radius = 3.1;
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      if (Math.hypot(x + 0.5 - cx, y + 0.5 - cy) <= radius) {
-        mask[y * size + x] = true;
-      }
-    }
-  }
-};
+/**
+ * macOS 模板图标：应用 LOGO 的黑白脱色版（纯黑 + alpha，系统自动反色适配明暗菜单栏），
+ * 16px @1x + 32px @2x 双表示。active 时右下角带实心圆点。
+ */
+const createMacTemplateIcons = (): {
+  normal: NativeImage;
+  active: NativeImage;
+} => {
+  const buildIcons = (rgba: Uint8Array): {
+    normal: NativeImage;
+    active: NativeImage;
+  } => {
+    const [size16, size32] = TEMPLATE_SIZES;
+    const rgba16 = scaleDownRgba(rgba, LOGO_SOURCE_SIZE, LOGO_SOURCE_SIZE, size16, size16);
+    const rgba32 = scaleDownRgba(rgba, LOGO_SOURCE_SIZE, LOGO_SOURCE_SIZE, size32, size32);
+    const rgba16Active = Uint8Array.from(rgba16);
+    const rgba32Active = Uint8Array.from(rgba32);
+    overlayActivityDot(rgba16Active, size16, size16, BLACK_DOT);
+    overlayActivityDot(rgba32Active, size32, size32, BLACK_DOT);
 
-/** macOS 模板图：纯黑 + alpha，系统菜单栏自动反色适配明暗。active 时带活动圆点。 */
-const createMacTemplateIcon = (active: boolean): NativeImage => {
-  const size = TEMPLATE_ICON_SIZE;
-  const mask = drawSnowflakeMask(size);
-  if (active) {
-    drawActivityDot(mask, size);
-  }
-  const rgba = new Uint8Array(size * size * 4);
-  for (let i = 0; i < mask.length; i++) {
-    if (mask[i]) {
-      rgba[i * 4 + 3] = 255; // 黑色通道保持 0
+    const normal = nativeImage.createFromBuffer(encodePng(rgba16, size16, size16));
+    const active = nativeImage.createFromBuffer(
+      encodePng(rgba16Active, size16, size16)
+    );
+    const normal2x = encodePng(rgba32, size32, size32);
+    const active2x = encodePng(rgba32Active, size32, size32);
+    normal.addRepresentation({ scaleFactor: 2, width: size32, height: size32, buffer: normal2x });
+    active.addRepresentation({ scaleFactor: 2, width: size32, height: size32, buffer: active2x });
+    normal.setTemplateImage(true);
+    active.setTemplateImage(true);
+    return { normal, active };
+  };
+
+  try {
+    const decoded = decodePng(readFileSync(APP_ICON_PATH));
+    if (decoded) {
+      return buildIcons(
+        toBlackTemplateRgba(decoded.rgba, decoded.width, decoded.height)
+      );
     }
+  } catch {
+    // fallthrough to colored fallback below
   }
-  const image = nativeImage.createFromBuffer(encodePng(rgba, size, size));
-  image.setTemplateImage(true);
-  return image;
+  // 解码失败保底：直接用彩色 LOGO（非模板，菜单栏显示原色）。
+  const fallback = nativeImage.createFromPath(APP_ICON_PATH);
+  return { normal: fallback, active: fallback };
 };
 
 /** 构建 Windows 双表示图标：16px @1x + 32px @2x，DPI 精确匹配。 */
@@ -340,7 +339,7 @@ const withActivityDot = (pngPath: string): NativeImage => {
     if (!decoded) {
       return nativeImage.createFromPath(pngPath);
     }
-    overlayActivityDot(decoded.rgba, decoded.width, decoded.height);
+    overlayActivityDot(decoded.rgba, decoded.width, decoded.height, GREEN_DOT);
     return nativeImage.createFromBuffer(
       encodePng(decoded.rgba, decoded.width, decoded.height)
     );
@@ -522,12 +521,7 @@ export const initTray = (native: NativeBridge): void => {
   try {
     nativeBridge = native;
     const isMacOS = process.platform === "darwin";
-    icons = isMacOS
-      ? {
-          normal: createMacTemplateIcon(false),
-          active: createMacTemplateIcon(true),
-        }
-      : createColorIcons();
+    icons = isMacOS ? createMacTemplateIcons() : createColorIcons();
 
     tray = new Tray(icons.normal);
     tray.setToolTip("Snow App");
