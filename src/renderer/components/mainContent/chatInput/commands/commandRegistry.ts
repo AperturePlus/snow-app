@@ -13,7 +13,6 @@ import type { ChatCommand } from "./types";
  * 后续新增指令若需在运行中禁用，只需在此列表中追加其 id。
  */
 export const RUNNING_DISABLED_COMMAND_IDS: ReadonlySet<string> = new Set([
-  "clear",
   "compact",
   "role",
   "sensitive-commands",
@@ -75,10 +74,7 @@ export const createChatCommands = ({
     isRunning && RUNNING_DISABLED_COMMAND_IDS.has(id);
 
   const commands: ChatCommand[] = [
-    {
-      ...createClearCommand(onNewChat, labels.clearDescription),
-      disabled: isRunningDisabled("clear"),
-    },
+    createClearCommand(onNewChat, labels.clearDescription),
     {
       ...createMcpCommand(onOpenMcpPanel, labels.mcpDescription, mcpDisabled),
       disabled: mcpDisabled || isRunningDisabled("mcp"),

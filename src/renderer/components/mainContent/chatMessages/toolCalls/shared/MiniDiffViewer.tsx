@@ -1,12 +1,7 @@
-import { lazy, memo, Suspense } from "react";
+import { memo } from "react";
 import { ExternalLink } from "lucide-react";
 
-// GitDiffView 依赖 @git-diff-view（~1.2MB），懒加载避免打入首屏 chunk。
-const GitDiffView = lazy(() =>
-  import("../../../../common/GitDiffView").then((m) => ({
-    default: m.GitDiffView,
-  }))
-);
+import { GitDiffView } from "../../../../common/GitDiffView";
 
 type MiniDiffViewerProps = {
   fileName: string;
@@ -38,16 +33,14 @@ export const MiniDiffViewer = memo(
   }: MiniDiffViewerProps): React.JSX.Element => (
     <div className="tool-call-diff-content">
       <div className="tool-call-diff-view">
-        <Suspense fallback={null}>
-          <GitDiffView
-            fileName={fileName}
-            oldContent={oldContent}
-            newContent={newContent}
-            fontSize={11}
-            oldStartLine={startLine}
-            newStartLine={startLine}
-          />
-        </Suspense>
+        <GitDiffView
+          fileName={fileName}
+          oldContent={oldContent}
+          newContent={newContent}
+          fontSize={11}
+          oldStartLine={startLine}
+          newStartLine={startLine}
+        />
       </div>
       {onOpenInTab ? (
         <button
