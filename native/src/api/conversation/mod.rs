@@ -35,4 +35,8 @@ pub struct ConversationContextRequest<'a> {
     /// contents and injected as leading `system` messages, mirroring
     /// Snow CLI's `getCustomSystemPromptForConfig`.
     pub system_prompt_ids_json: &'a str,
+    /// Project ROLE.md content for an SSH (`ssh://`) workspace, injected by
+    /// the Electron main process (Rust cannot perform SSH I/O). `None` for
+    /// local workspaces, where the prompt builder reads the file directly.
+    pub remote_role_content: Option<&'a str>,
 }

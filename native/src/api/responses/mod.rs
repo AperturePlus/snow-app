@@ -73,6 +73,10 @@ pub struct ResponsesApiRequest {
     /// When true, replace the built-in system prompt with the Goal Mode prompt
     /// that instructs the AI to work autonomously toward a defined objective.
     pub goal_mode: Option<bool>,
+    /// Project ROLE.md content of an SSH (`ssh://`) workspace, resolved by the
+    /// Electron main process over SSH (mirrors RoleEditorPanel's access path).
+    /// Absent for local workspaces — Rust reads the file itself.
+    pub remote_role_content: Option<String>,
 }
 
 #[napi(object)]
@@ -209,6 +213,7 @@ async fn create_response_async(
         plan_mode: request.plan_mode.unwrap_or(false),
         goal_mode: request.goal_mode.unwrap_or(false),
         system_prompt_ids_json: &api_config.system_prompt_ids_json,
+        remote_role_content: request.remote_role_content.as_deref(),
     })?;
 
     // Inject conversation_id and session_id as request headers for prompt

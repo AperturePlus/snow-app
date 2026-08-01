@@ -204,6 +204,38 @@ const writeRemoteText = async (
   );
 };
 
+/**
+ * Read the project ROLE.md from a remote SSH workspace.
+ *
+ * Mirrors RoleEditorPanel's SSH access path (`<remotePath>/ROLE.md`) so the
+ * Rust prompt builder can inject the project role even for `ssh://`
+ * workspaces. Returns `null` when the file does not exist, is binary, or SSH
+ * is unavailable — callers then fall back to the global ROLE.md.
+ */
+export const readRemoteRoleContent = async (
+  workspacePath: string
+): Promise<string | null> => {
+  try {
+    return await withSshSession(
+      workspacePath,
+      async (sessionId, remotePath) => {
+        const rolePath = `${remotePath.replace(/\/+$/, "")}/ROLE.md`;
+        const file = processFileContent(
+          rolePath,
+          await readSshFile(sessionId, rolePath)
+        );
+        if (file.isBinary || file.isImage) {
+          return null;
+        }
+        const content = file.content.trim();
+        return content || null;
+      }
+    );
+  } catch {
+    return null;
+  }
+};
+
 const buildRemoteMkdirCommand = (remotePath: string): string =>
   `mkdir -p -- ${shellQuote(remotePath)}`;
 
