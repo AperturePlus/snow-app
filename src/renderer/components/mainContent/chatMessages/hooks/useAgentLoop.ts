@@ -157,6 +157,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             lastMessagePreview: preview,
             messageCount: 1,
             model: options.model ?? "",
+            apiProfileName: options.apiProfile ?? "",
             status: "active",
             directoryId: sessionDirId ?? "",
             forkedFromConversationId: "",
@@ -258,6 +259,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           {
             messages: requestMessages,
             model: options.model,
+            apiProfile: options.apiProfile,
             conversationId: currentConversationId,
             directoryId: sessionDirId,
             checkpointId,
