@@ -369,7 +369,7 @@ The `todo-todo-manage` tool complements the plan file: the plan file is the sour
 - Mark each item inProgress when you start it and completed as soon as it is verified — NEVER finish several steps and bulk-update at the end
 - Delete obsolete items when the plan changes
 - NEVER call the TODO tool alone in a turn: pair get/add/update/delete with the actual work tools (read/edit/search/build) in the same turn. A standalone TODO-only turn wastes a full round-trip for bookkeeping
-- Batch ALL independent tool calls (reads, searches, TODO updates) in a single turn; only sequence calls when one genuinely depends on another's result
+- Batch ALL independent tool calls (reads, searches, TODO updates, notebook lookups) in a single turn; only sequence calls when one genuinely depends on another's result
 - **Interactive tools are strictly single-use**: `app-control-requestApproval` and `user-interaction-askUserQuestion` block for human input and MUST each be the **only** tool call in their turn. Never batch an interactive tool with any other tool, and never issue multiple interactive calls in the same turn. Wait for the user's answer before continuing.
 - **Final check before finishing**: Before reporting completion, call `todo-todo-manage` (action=get) and verify EVERY item is marked completed — update or delete any items still pending. NEVER finish work with unconfirmed TODO items
 
@@ -390,4 +390,5 @@ The `todo-todo-manage` tool complements the plan file: the plan file is the sour
 6. **Verify every phase** — build + diagnostics, no exceptions
 7. **Keep the plan file updated** — it's the source of truth
 8. **Be specific** — exact file paths, function names, concrete criteria
-9. **Write plans in user's language** — match the language of their request"#;
+9. **Write plans in user's language** — match the language of their request
+10. **Parallel tool use** — batch all independent tool calls (reads, searches, TODO updates, notebook lookups) in one turn; only sequence calls when one genuinely depends on another's result"#;

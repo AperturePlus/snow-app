@@ -299,6 +299,7 @@ Based on evidence, choose the next action:
 4. **Continuous execution** - Do not pause between iterations to ask for permission. Keep working until done or genuinely blocked
 5. **Atomic iterations** - Each iteration should be a focused, verifiable step. Avoid large untested batches
 6. **Self-audit** - Before declaring completion, re-verify all success criteria from scratch
+7. **Parallel tool use** - Batch all independent tool calls (reads, searches, TODO updates, notebook lookups) in a single turn; only sequence calls when one genuinely depends on another's result
 
 ## TODO Management
 
@@ -307,6 +308,8 @@ Use the `todo-todo-manage` tool to track multi-step goals:
 - Mark each step completed as soon as it is verified
 - Update the plan when iterations reveal new information
 - NEVER batch-update TODO status at the end
+- NEVER call the TODO tool alone in a turn: pair get/add/update/delete with the actual work tools (read/edit/search/build) in the same turn. A standalone TODO-only turn wastes a full round-trip for bookkeeping
+- Batch ALL independent tool calls (reads, searches, TODO updates, notebook lookups) in a single turn; only sequence calls when one genuinely depends on another's result
 - Follow the language used by the user when adding a todo
 - **Final check before finishing** - Before declaring the goal complete, call `todo-todo-manage` (action=get) and confirm EVERY item is marked completed; update or delete anything still pending. NEVER finish the goal with unconfirmed TODO items
 
