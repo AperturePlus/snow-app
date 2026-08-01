@@ -12,7 +12,7 @@ use async_openai::{config::OpenAIConfig, error::OpenAIError, Client};
 use futures::StreamExt;
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
 
 use crate::api::common::emit_stream_chunk;
@@ -23,10 +23,10 @@ use crate::api::responses::{
 };
 use crate::api::token_counter::count_tokens;
 use crate::storage::services::chat_conversations::ChatTokenUsage;
-
 use super::event::{
-    collect_reasoning_text, collect_text_values, collect_tool_calls, extract_output_text,
-    extract_response_thinking, extract_token_usage, read_response_string, read_stream_text_delta,
+    collect_reasoning_items, collect_reasoning_text, collect_text_values, collect_tool_calls,
+    extract_output_text, extract_response_thinking, extract_token_usage, read_response_string,
+    read_stream_text_delta,
 };
 
 pub(super) struct StreamingResponseResult {
@@ -557,6 +557,34 @@ pub(super) async fn collect_streaming_response(
 
             if tool_calls.is_empty() {
                 collect_tool_calls(response.get("output"), &mut tool_calls);
+            }
+
+            // Fallback: extract reasoning items from the completed response's
+            // output tree. Some providers (e.g. DeepSeek's Responses API) stream
+            // reasoning via `response.reasoning_text.delta` events but do NOT
+            // emit `output_item.added`/`done` with type=reasoning, so the
+            // streaming capture above leaves reasoning_items empty. Without
+            // these items the next request cannot round-trip reasoning, and
+            // DeepSeek rejects it with HTTP 400 "The reasoning_text in the
+            // thinking mode must be passed back to the API."
+            if reasoning_items.is_empty() {
+                collect_reasoning_items(response.get("output"), &mut reasoning_items);
+            }
+        }
+
+        // Last-resort synthesis: if we still have no structured reasoning
+        // items but did receive reasoning text (via reasoning_text.delta or
+        // reasoning_summary_text.delta), build a minimal reasoning item so
+        // the next request can round-trip it. The item carries the full
+        // text in a `reasoning_text` field — the same field DeepSeek
+        // expects to receive back.
+        if reasoning_items.is_empty() {
+            let thinking = thinking_chunks.join("").trim().to_string();
+            if !thinking.is_empty() {
+                reasoning_items.push(json!({
+                    "type": "reasoning",
+                    "reasoning_text": thinking,
+                }));
             }
         }
 
