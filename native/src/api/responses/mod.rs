@@ -56,6 +56,12 @@ pub struct ResponsesApiMessage {
 pub struct ResponsesApiRequest {
     pub messages: Vec<ResponsesApiMessage>,
     pub model: Option<String>,
+    /// API config profile that should serve this request. When present it
+    /// wins over the conversation's bound profile; when absent the backend
+    /// falls back to the conversation's `api_profile_name` and finally to
+    /// the global active profile. Used to bind a brand-new conversation to a
+    /// provider on its first message.
+    pub api_profile: Option<String>,
     pub conversation_id: Option<String>,
     pub previous_response_id: Option<String>,
     pub directory_id: Option<String>,
@@ -312,6 +318,7 @@ async fn create_response_async(
                 response_id: &streamed_response.id,
                 checkpoint_id: request.checkpoint_id.as_deref().unwrap_or(""),
                 model: &streamed_response.model,
+                api_profile_name: &api_config.profile_name,
                 status: &streamed_response.status,
                 raw_response_json: &raw_response_json,
                 token_usage: streamed_response.token_usage,

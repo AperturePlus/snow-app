@@ -57,6 +57,7 @@ fn build_request(staged_diff: &str) -> ResponsesApiRequest {
         ],
         // Force the basic model for this lightweight task.
         model: None, // will be set after resolving context
+        api_profile: None,
         conversation_id: None,
         previous_response_id: None,
         directory_id: None,
