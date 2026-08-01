@@ -1717,6 +1717,8 @@ export const zhCN = {
   "app.closeConfirmMessage": "确定要退出应用吗？",
   "app.closeConfirm": "退出",
   "app.closeCancel": "取消",
+  "app.closeMinimize": "最小化到托盘",
+  "app.closeMinimizeMac": "仅保留菜单栏",
   "settings.usageSettings": "用量统计",
   "settings.usageSettingsInfo":
     "跟踪所有 API 调用的 token 用量，包括输入、输出和缓存统计。",

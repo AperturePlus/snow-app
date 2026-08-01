@@ -64,13 +64,19 @@ const clamp = (value: number, min: number, max: number): number =>
  */
 const ShortcutHandlerBridge = (): null => {
   const { registerHandler } = useKeyboardShortcutsSettings();
-  const { handleAbort } = useChatConversationContext();
+  const { handleAbort, streamingConversationIds } =
+    useChatConversationContext();
 
   // 使用 ref 持有最新的 handleAbort，避免每次渲染都重新注册 handler
   const handleAbortRef = useRef(handleAbort);
   useEffect(() => {
     handleAbortRef.current = handleAbort;
   }, [handleAbort]);
+
+  // 同步"进行中会话"数量到主进程托盘 tooltip（渲染层是流式状态的唯一持有者）。
+  useEffect(() => {
+    void window.snow.setTrayActiveSessions(streamingConversationIds.size);
+  }, [streamingConversationIds]);
 
   useEffect(() => {
     const unsubCancel = registerHandler("cancelSession", () => {
@@ -125,6 +131,7 @@ export const App = (): React.JSX.Element => {
   const [showSshWizard, setShowSshWizard] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const isWindows = navigator.userAgent.includes("Win");
+  const isMacOS = navigator.userAgent.includes("Mac");
   const { t } = useI18n();
   useTheme();
   useAppControl({ activeDirectory, setActiveMainView });
@@ -157,6 +164,13 @@ export const App = (): React.JSX.Element => {
 
   const handleCancelClose = useCallback((): void => {
     setShowCloseConfirm(false);
+  }, []);
+
+  // 关闭提醒中的"最小化"选项：隐藏窗口到托盘（Windows/Linux），
+  // macOS 则移除 Dock 图标、仅保留菜单栏托盘。会话/任务保持后台运行。
+  const handleMinimizeClose = useCallback((): void => {
+    setShowCloseConfirm(false);
+    void window.snow.hideWindowToTray();
   }, []);
 
   const handleOpenTerminal = useCallback(() => {
@@ -404,6 +418,10 @@ export const App = (): React.JSX.Element => {
             message={t("app.closeConfirmMessage")}
             confirmLabel={t("app.closeConfirm")}
             cancelLabel={t("app.closeCancel")}
+            extraLabel={t(
+              isMacOS ? "app.closeMinimizeMac" : "app.closeMinimize"
+            )}
+            onExtra={handleMinimizeClose}
             onConfirm={handleConfirmClose}
             onCancel={handleCancelClose}
             variant="warning"

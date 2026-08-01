@@ -1806,6 +1806,8 @@ export const en = {
   "app.closeConfirmMessage": "Are you sure you want to quit the application?",
   "app.closeConfirm": "Quit",
   "app.closeCancel": "Cancel",
+  "app.closeMinimize": "Minimize to Tray",
+  "app.closeMinimizeMac": "Menu Bar Only",
   "settings.usageSettings": "Usage statistics",
   "settings.usageSettingsInfo":
     "Track token usage across all API calls, including input, output, and cache statistics.",

@@ -1691,6 +1691,8 @@ export const zhTW = {
   "app.closeConfirmMessage": "確定要結束應用程式嗎？",
   "app.closeConfirm": "結束",
   "app.closeCancel": "取消",
+  "app.closeMinimize": "最小化到系統匣",
+  "app.closeMinimizeMac": "僅保留選單列",
   "settings.usageSettings": "用量統計",
   "settings.usageSettingsInfo":
     "追蹤所有 API 呼叫的 token 用量，包括輸入、輸出和快取統計。",
