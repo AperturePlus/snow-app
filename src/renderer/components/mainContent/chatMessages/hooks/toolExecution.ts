@@ -11,6 +11,7 @@ import {
   isStructuredPlanApproval,
 } from "./agentLoopHelpers";
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
+import { extractFileChangeFromTool } from "./fileChangeTracking";
 import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
 import type {
   ConversationContextValue,
@@ -561,6 +562,31 @@ export function createToolExecutor(
                   planModeRef.current,
                   planApprovedSessionKeysRef.current.has(effectiveKey)
                 );
+
+                // Record successful file modifications (filesystem-create /
+                // filesystem-replace_edit) into the conversation's file-change
+                // stats. Done right after the tool returns — before
+                // afterToolCall hooks may append context to the result — so
+                // the success JSON is always parseable. The pending session
+                // has no persisted conversation, so its changes are skipped;
+                // they land in the real session once it is created.
+                if (
+                  effectiveKey !== PENDING_SESSION_KEY &&
+                  result !== undefined
+                ) {
+                  const fileChange = extractFileChangeFromTool(
+                    toolCall.name,
+                    toolCall.arguments,
+                    result
+                  );
+                  if (fileChange) {
+                    ctx.recordFileChange(effectiveKey, {
+                      ...fileChange,
+                      agent: "main",
+                      timestamp: Date.now(),
+                    });
+                  }
+                }
               }
 
               // Execute afterToolCall hooks (with matcher) after the tool call completes.

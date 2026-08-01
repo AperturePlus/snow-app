@@ -45,6 +45,24 @@ export const useChatConversation = (
     },
     []
   );
+  // File-change stats collected at tool-execution time, keyed by
+  // conversationId. Sub-agent changes are stored under the sub-agent's own
+  // conversationId; the parent merges them via childSubAgentIds for display.
+  const [fileChangeStats, setFileChangeStats] = useState<
+    ConversationContextValue["fileChangeStats"]
+  >({});
+  const recordFileChange = useCallback(
+    (
+      conversationId: string,
+      record: ConversationContextValue["fileChangeStats"][string][number]
+    ) => {
+      setFileChangeStats((prev) => ({
+        ...prev,
+        [conversationId]: [...(prev[conversationId] ?? []), record],
+      }));
+    },
+    []
+  );
   const [streamingConversationIds, setStreamingConversationIds] = useState<
     Set<string>
   >(new Set());
@@ -197,6 +215,8 @@ export const useChatConversation = (
     conversationVersion,
     upsertedConversation,
     subAgentSessionEvents,
+    fileChangeStats,
+    recordFileChange,
     streamingConversationIds,
     completedConversationIds,
     isLoadingInitialHistory,
@@ -397,6 +417,8 @@ export const useChatConversation = (
     conversationVersion,
     upsertedConversation,
     subAgentSessionEvents,
+    fileChangeStats,
+    recordFileChange,
     sessions,
     activeConversationId,
     conversationDirectoryId: activeSession?.directoryId,
