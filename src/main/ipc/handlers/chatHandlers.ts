@@ -66,6 +66,8 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
   return {
     messages,
     model: typeof source.model === "string" ? source.model : undefined,
+    apiProfile:
+      typeof source.apiProfile === "string" ? source.apiProfile : undefined,
     conversationId:
       typeof source.conversationId === "string"
         ? source.conversationId
