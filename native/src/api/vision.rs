@@ -500,8 +500,9 @@ async fn send_vision_request(
 /// - gemini:    `contents[].parts[].inlineData.data`
 ///
 /// 只输出每张图片 URL 的前 300 字符，避免把整张 base64 图片塞进错误信息。
+/// 同时避免在错误路径上持有完整 base64 字符串：仅保存 (完整长度, 预览)。
 fn summarize_vision_payload(payload: &Value) -> String {
-    let mut urls: Vec<String> = Vec::new();
+    let mut images: Vec<(usize, String)> = Vec::new();
 
     // chat / anthropic 共用 messages[].content[]
     if let Some(messages) = payload.get("messages").and_then(|m| m.as_array()) {
@@ -513,9 +514,11 @@ fn summarize_vision_payload(payload: &Value) -> String {
                 if let Some(url) = block.get("image_url") {
                     // chat: { "image_url": { "url": ... } }
                     if let Some(url_str) = url.get("url").and_then(|u| u.as_str()) {
-                        urls.push(url_str.to_string());
+                        let preview: String = url_str.chars().take(300).collect();
+                        images.push((url_str.len(), preview));
                     } else if let Some(url_str) = url.as_str() {
-                        urls.push(url_str.to_string());
+                        let preview: String = url_str.chars().take(300).collect();
+                        images.push((url_str.len(), preview));
                     }
                 }
                 // anthropic: { "source": { "media_type": ..., "data": ... } }
@@ -525,7 +528,11 @@ fn summarize_vision_payload(payload: &Value) -> String {
                             .get("media_type")
                             .and_then(|m| m.as_str())
                             .unwrap_or("unknown");
-                        urls.push(format!("data:{media_type};base64,{data}"));
+                        let preview: String = data.chars().take(300).collect();
+                        images.push((
+                            data.len(),
+                            format!("data:{media_type};base64,{preview}"),
+                        ));
                     }
                 }
             }
@@ -540,7 +547,8 @@ fn summarize_vision_payload(payload: &Value) -> String {
             };
             for block in content {
                 if let Some(url) = block.get("image_url").and_then(|u| u.as_str()) {
-                    urls.push(url.to_string());
+                    let preview: String = url.chars().take(300).collect();
+                    images.push((url.len(), preview));
                 }
             }
         }
@@ -559,26 +567,32 @@ fn summarize_vision_payload(payload: &Value) -> String {
                             .get("mimeType")
                             .and_then(|m| m.as_str())
                             .unwrap_or("unknown");
-                        urls.push(format!("data:{mime_type};base64,{data}"));
+                        let preview: String = data.chars().take(300).collect();
+                        images.push((
+                            data.len(),
+                            format!("data:{mime_type};base64,{preview}"),
+                        ));
                     }
                 }
             }
         }
     }
 
-    if urls.is_empty() {
+    if images.is_empty() {
         return format!(
             "payload_size={} bytes, image_url fields not found in payload",
             payload.to_string().len()
         );
     }
 
-    let mut summary = format!("payload_size={} bytes, {} image(s)", payload.to_string().len(), urls.len());
-    for (i, url) in urls.iter().enumerate() {
-        let preview: String = url.chars().take(300).collect();
+    let mut summary = format!(
+        "payload_size={} bytes, {} image(s)",
+        payload.to_string().len(),
+        images.len()
+    );
+    for (i, (full_len, preview)) in images.iter().enumerate() {
         summary.push_str(&format!(
-            "\nimage[{i}] url_len={} preview={preview:?}",
-            url.len()
+            "\nimage[{i}] url_len={full_len} preview={preview:?}"
         ));
     }
     summary

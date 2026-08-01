@@ -173,12 +173,22 @@ export const useChatInputController = ({
         }
         setIsSubAgentConversation(subAgentConversation);
 
-        const runtimeConfig = requestedProfile
-          ? configs.find((config) => config.profileName === requestedProfile) ??
-            configs.find((config) => config.isActive) ??
-            configs[0] ??
-            null
-          : configs.find((config) => config.isActive) ?? configs[0] ?? null;
+        // Sub-agent conversations are strictly bound to the agent's
+        // configProfile: if the profile is missing, fail fast instead of
+        // silently routing to the global active profile (which could send a
+        // sub-agent task to the wrong provider/model).
+        const runtimeConfig = subAgentConversation
+          ? (configs.find(
+              (config) => config.profileName === requestedProfile
+            ) ?? null)
+          : requestedProfile
+            ? (configs.find(
+                (config) => config.profileName === requestedProfile
+              ) ??
+              configs.find((config) => config.isActive) ??
+              configs[0] ??
+              null)
+            : configs.find((config) => config.isActive) ?? configs[0] ?? null;
         if (!runtimeConfig) {
           throw new Error(
             requestedProfile

@@ -272,16 +272,18 @@ export const registerConversationHandlers = (native: NativeBridge): void => {
       }
 
       const normalizedProfileName = profileName.trim();
+      await native.updateConversationApiProfile(
+        conversationId.trim(),
+        normalizedProfileName
+      );
+      // Log only after the native update succeeded, so a failure is not
+      // misreported as an applied change.
       snowLog.info({
         module: "ipc/conversation",
         func: "update-api-profile",
         message: "Conversation API profile updated",
         context: `conversation=${conversationId.trim()} profile=${normalizedProfileName || "(unbound)"}`,
       });
-      await native.updateConversationApiProfile(
-        conversationId.trim(),
-        normalizedProfileName
-      );
     }
   );
   ipcMain.handle(
