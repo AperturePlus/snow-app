@@ -18,9 +18,11 @@ import { snowLog } from "../../utils/snowLogger";
 /**
  * 系统托盘模块。
  *
- * 图标（统一使用应用 LOGO，不自行绘制）：
- * - macOS：LOGO 的黑白脱色模板版（提取 alpha → 纯黑 + 透明，系统自动反色
- *   适配明暗菜单栏），16px @1x + 32px @2x 双表示。
+ * 图标：
+ * - macOS：从应用 LOGO 抠出的雪花去色模板版（纯黑 + 透明，系统自动反色
+ *   适配明暗菜单栏）。LOGO 是"白色圆角方形底 + 蓝色雪花"，直接提取 alpha
+ *   会把白底一起带上、缩到 16px 糊成实心方块，故反解蓝色雪花覆盖度抠出
+ *   雪花造型并去色，与 LOGO 完全统一，16px @1x + 32px @2x 双表示。
  * - Windows/Linux：LOGO 彩色 favicon 小图（16px + 32px @2x 双表示，DPI 精确匹配）。
  * - 活动态（有会话进行中）：右下角叠加圆点（macOS 纯黑、Windows/Linux 绿色）。
  *
@@ -222,96 +224,220 @@ const overlayActivityDot = (
 
 // ─── 图标生成 ─────────────────────────────────────────────────────────────
 
-// 活动态圆点颜色：macOS 模板图为纯黑（与 LOGO 同色，反色后一致）；
+// 活动态圆点颜色：macOS 模板图为纯黑（与雪花线条同色，反色后一致）；
 // Windows/Linux 用绿色（与主题 accentGreen #22c55e 一致）。
 const BLACK_DOT: [number, number, number, number] = [0, 0, 0, 255];
 const GREEN_DOT: [number, number, number, number] = [34, 197, 94, 255];
 
-/** 从 256px LOGO 缩小生成 16px/32px 模板图（16 → 16，16 → 32 均为整数倍，面积平均质量最佳）。 */
-const LOGO_SOURCE_SIZE = 256;
-const TEMPLATE_SIZES = [16, 32] as const;
-
-/** 黑白脱色：提取 alpha 通道，RGB 置 0，得到 macOS 模板图所需的纯黑 + 透明。 */
-const toBlackTemplateRgba = (
+/**
+ * 从 LOGO 中抠出雪花图形，返回雪花覆盖度 mask（0~1 的 Float32Array）。
+ *
+ * LOGO 是"白色圆角方形底 + 蓝色雪花"。直接提取 alpha 会把白底一起带上，
+ * 缩到 16px 糊成实心方块（即此前的"方块"图标）。这里反解蓝色雪花在白底
+ * 上的覆盖度：雪花纯色的 r 通道（动态检测）与白底 r=255 差距最大，用 r
+ * 通道线性反推每个像素属于雪花的比例 t = (255 - r) / (255 - snowR)，
+ * 白底 t≈0 自动变透明，只留下与 LOGO 完全统一的雪花造型。
+ *
+ * LOGO 雪花线条较细，缩到托盘尺寸会过淡，故对 mask 做适度膨胀加粗。
+ */
+const extractSnowflakeMask = (
   rgba: Uint8Array,
   width: number,
   height: number
-): Uint8Array => {
-  const out = new Uint8Array(width * height * 4);
+): Float32Array => {
+  // 动态检测雪花纯色的 r 基准：取最蓝像素（b - max(r,g) 最大者）的 r 均值
+  let bestBlue = -1;
+  let rSum = 0;
+  let rCount = 0;
   for (let i = 0; i < width * height; i++) {
-    out[i * 4 + 3] = rgba[i * 4 + 3];
+    if (rgba[i * 4 + 3] < 128) {
+      continue;
+    }
+    const r = rgba[i * 4];
+    const g = rgba[i * 4 + 1];
+    const b = rgba[i * 4 + 2];
+    const blue = b - Math.max(r, g);
+    if (blue > bestBlue) {
+      bestBlue = blue;
+      rSum = r;
+      rCount = 1;
+    } else if (blue === bestBlue) {
+      rSum += r;
+      rCount++;
+    }
   }
-  return out;
+  const snowR = rCount > 0 ? rSum / rCount : 114;
+
+  // 反解雪花覆盖度：白底 r≈255 → 0，雪花纯色 r≈snowR → 1
+  const cover = new Float32Array(width * height);
+  const span = 255 - snowR;
+  for (let i = 0; i < width * height; i++) {
+    const a = rgba[i * 4 + 3] / 255;
+    if (a <= 0) {
+      continue;
+    }
+    const t = (255 - rgba[i * 4]) / span;
+    cover[i] = Math.max(0, Math.min(1, t)) * a;
+  }
+
+  // 可分离膨胀（max filter）轻微加粗线条以改善小尺寸下的抗锯齿。
+  // LOGO 雪花本身较粗，膨胀过大会粘连分支糊成一团，故半径取很小值（256px 下约 2px）。
+  const radius = Math.max(1, Math.round(width * 0.008));
+  const tmp = new Float32Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let m = 0;
+      for (let k = -radius; k <= radius; k++) {
+        const xx = x + k;
+        if (xx < 0 || xx >= width) {
+          continue;
+        }
+        const v = cover[y * width + xx];
+        if (v > m) {
+          m = v;
+        }
+      }
+      tmp[y * width + x] = m;
+    }
+  }
+  const dilated = new Float32Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let m = 0;
+      for (let k = -radius; k <= radius; k++) {
+        const yy = y + k;
+        if (yy < 0 || yy >= height) {
+          continue;
+        }
+        const v = tmp[yy * width + x];
+        if (v > m) {
+          m = v;
+        }
+      }
+      dilated[y * width + x] = m;
+    }
+  }
+  return dilated;
 };
 
-/** 面积平均缩小（处理 alpha 通道，保留抗锯齿边缘）。 */
-const scaleDownRgba = (
-  rgba: Uint8Array,
+/**
+ * 计算雪花内容的正方形裁剪区。LOGO 画布四周有较大透明边距（雪花仅占约
+ * 59%），若不裁剪直接缩放，托盘图标会比其他应用小一圈。这里取内容边界框
+ * 的长边扩展为正方形，让雪花占满目标图标（不留边距，最大化显示尺寸）。
+ */
+const computeContentCrop = (
+  mask: Float32Array,
   width: number,
-  height: number,
+  height: number
+): { x: number; y: number; side: number } => {
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (mask[y * width + x] > 0.15) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) {
+    // 无内容兜底：用整个画布的居中正方形
+    const side = Math.min(width, height);
+    return { x: Math.floor((width - side) / 2), y: Math.floor((height - side) / 2), side };
+  }
+  const side = Math.max(maxX - minX + 1, maxY - minY + 1);
+  const cropSide = side;
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  return {
+    x: Math.round(cx - cropSide / 2),
+    y: Math.round(cy - cropSide / 2),
+    side: cropSide,
+  };
+};
+
+/**
+ * 从裁剪区面积平均缩放雪花 mask 到目标尺寸，输出纯黑模板 RGBA
+ *（RGB 全 0，alpha 为覆盖度）。裁剪区外的像素按透明处理。
+ */
+const maskToTemplateRgba = (
+  mask: Float32Array,
+  srcWidth: number,
+  srcHeight: number,
+  crop: { x: number; y: number; side: number },
   targetWidth: number,
   targetHeight: number
 ): Uint8Array => {
   const out = new Uint8Array(targetWidth * targetHeight * 4);
+  const sample = (sx: number, sy: number): number => {
+    if (sx < 0 || sx >= srcWidth || sy < 0 || sy >= srcHeight) {
+      return 0;
+    }
+    return mask[sy * srcWidth + sx];
+  };
   for (let ty = 0; ty < targetHeight; ty++) {
-    const sy0 = Math.floor((ty * height) / targetHeight);
-    const sy1 = Math.max(sy0 + 1, Math.floor(((ty + 1) * height) / targetHeight));
+    const sy0 = Math.floor(crop.y + (ty * crop.side) / targetHeight);
+    const sy1 = Math.max(sy0 + 1, Math.floor(crop.y + ((ty + 1) * crop.side) / targetHeight));
     for (let tx = 0; tx < targetWidth; tx++) {
-      const sx0 = Math.floor((tx * width) / targetWidth);
-      const sx1 = Math.max(sx0 + 1, Math.floor(((tx + 1) * width) / targetWidth));
-      let alphaSum = 0;
+      const sx0 = Math.floor(crop.x + (tx * crop.side) / targetWidth);
+      const sx1 = Math.max(sx0 + 1, Math.floor(crop.x + ((tx + 1) * crop.side) / targetWidth));
+      let sum = 0;
+      let n = 0;
       for (let sy = sy0; sy < sy1; sy++) {
         for (let sx = sx0; sx < sx1; sx++) {
-          alphaSum += rgba[(sy * width + sx) * 4 + 3];
+          sum += sample(sx, sy);
+          n++;
         }
       }
-      const alpha = Math.round(alphaSum / ((sy1 - sy0) * (sx1 - sx0)));
-      const outIdx = (ty * targetWidth + tx) * 4;
-      out[outIdx + 3] = alpha; // RGB 保持 0（纯黑模板）
+      const idx = (ty * targetWidth + tx) * 4;
+      out[idx + 3] = Math.round((sum / n) * 255); // RGB 保持 0（纯黑模板）
     }
   }
   return out;
 };
 
 /**
- * macOS 模板图标：应用 LOGO 的黑白脱色版（纯黑 + alpha，系统自动反色适配明暗菜单栏），
- * 16px @1x + 32px @2x 双表示。active 时右下角带实心圆点。
+ * macOS 模板图标：从 LOGO 抠出的雪花去色版（纯黑 + alpha，系统自动反色
+ * 适配明暗菜单栏），16px @1x + 32px @2x 双表示。active 时右下角带实心圆点。
  */
 const createMacTemplateIcons = (): {
   normal: NativeImage;
   active: NativeImage;
 } => {
-  const buildIcons = (rgba: Uint8Array): {
-    normal: NativeImage;
-    active: NativeImage;
-  } => {
-    const [size16, size32] = TEMPLATE_SIZES;
-    const rgba16 = scaleDownRgba(rgba, LOGO_SOURCE_SIZE, LOGO_SOURCE_SIZE, size16, size16);
-    const rgba32 = scaleDownRgba(rgba, LOGO_SOURCE_SIZE, LOGO_SOURCE_SIZE, size32, size32);
-    const rgba16Active = Uint8Array.from(rgba16);
-    const rgba32Active = Uint8Array.from(rgba32);
-    overlayActivityDot(rgba16Active, size16, size16, BLACK_DOT);
-    overlayActivityDot(rgba32Active, size32, size32, BLACK_DOT);
-
-    const normal = nativeImage.createFromBuffer(encodePng(rgba16, size16, size16));
-    const active = nativeImage.createFromBuffer(
-      encodePng(rgba16Active, size16, size16)
-    );
-    const normal2x = encodePng(rgba32, size32, size32);
-    const active2x = encodePng(rgba32Active, size32, size32);
-    normal.addRepresentation({ scaleFactor: 2, width: size32, height: size32, buffer: normal2x });
-    active.addRepresentation({ scaleFactor: 2, width: size32, height: size32, buffer: active2x });
-    normal.setTemplateImage(true);
-    active.setTemplateImage(true);
-    return { normal, active };
+  const build = (
+    mask: Float32Array,
+    srcWidth: number,
+    srcHeight: number,
+    crop: { x: number; y: number; side: number },
+    size: number
+  ): { png: Buffer; activePng: Buffer } => {
+    const rgba = maskToTemplateRgba(mask, srcWidth, srcHeight, crop, size, size);
+    const activeRgba = Uint8Array.from(rgba);
+    overlayActivityDot(activeRgba, size, size, BLACK_DOT);
+    return {
+      png: encodePng(rgba, size, size),
+      activePng: encodePng(activeRgba, size, size),
+    };
   };
 
   try {
     const decoded = decodePng(readFileSync(APP_ICON_PATH));
     if (decoded) {
-      return buildIcons(
-        toBlackTemplateRgba(decoded.rgba, decoded.width, decoded.height)
-      );
+      const mask = extractSnowflakeMask(decoded.rgba, decoded.width, decoded.height);
+      const crop = computeContentCrop(mask, decoded.width, decoded.height);
+      const s16 = build(mask, decoded.width, decoded.height, crop, 16);
+      const s32 = build(mask, decoded.width, decoded.height, crop, 32);
+      const normal = nativeImage.createFromBuffer(s16.png);
+      const active = nativeImage.createFromBuffer(s16.activePng);
+      normal.addRepresentation({ scaleFactor: 2, width: 32, height: 32, buffer: s32.png });
+      active.addRepresentation({ scaleFactor: 2, width: 32, height: 32, buffer: s32.activePng });
+      normal.setTemplateImage(true);
+      active.setTemplateImage(true);
+      return { normal, active };
     }
   } catch {
     // fallthrough to colored fallback below
