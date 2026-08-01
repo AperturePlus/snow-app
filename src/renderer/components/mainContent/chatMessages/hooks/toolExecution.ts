@@ -318,6 +318,23 @@ export function createToolExecutor(
               }
             }
 
+            // Inject the current session id for bash-terminal-execute so child
+            // processes receive SNOW_SESSION_ID / TRELLIS_CONTEXT_ID — the
+            // Snow platform contract Trellis scripts rely on to track the
+            // active task per session.
+            if (toolCall.name === "bash-terminal-execute") {
+              try {
+                const parsedArgs = JSON.parse(toolArgs) as Record<
+                  string,
+                  unknown
+                >;
+                parsedArgs.sessionId = effectiveKey;
+                toolArgs = JSON.stringify(parsedArgs);
+              } catch {
+                // If args are not valid JSON, let the tool fail naturally.
+              }
+            }
+
             let sensitiveAuthorizationToken: string | undefined;
             if (
               toolCall.name === "bash-terminal-execute" &&
