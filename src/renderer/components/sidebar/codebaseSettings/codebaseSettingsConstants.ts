@@ -6,8 +6,8 @@ export const CODEBASE_SETTING_CODE = "codebase_settings";
 export const DEFAULT_CODEBASE_SETTINGS: CodebaseSettingsInput = {
   profileName: "default",
   embeddingType: "jina",
-  embeddingModelName: "",
-  embeddingBaseUrl: "",
+  embeddingModelName: "text-embedding-3-small",
+  embeddingBaseUrl: "https://api.openai.com/v1",
   embeddingApiKey: "",
   embeddingDimensions: 1536,
   batchMaxLines: 10,

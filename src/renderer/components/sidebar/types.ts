@@ -14,5 +14,11 @@ export type SidebarContentProps = {
   onSwitchContent: (content: SidebarContentKey) => void;
   onSwitchToExplorer?: (directoryId: string) => void;
   onOpenSshWizard?: () => void;
-  onOpenFile?: (filePath: string, fileName: string) => void;
+  onOpenFile?: (
+    filePath: string,
+    fileName: string,
+    isSsh?: boolean,
+    sshSessionId?: string | null,
+    focusLine?: number
+  ) => void;
 };

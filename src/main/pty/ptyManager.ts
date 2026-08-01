@@ -1,7 +1,7 @@
 import { type WebContents } from "electron";
 import { createRequire } from "node:module";
 import { chmodSync, existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, isAbsolute, join } from "node:path";
 import type { IPty } from "node-pty";
 
 import { isSshPath, parseSshUrl } from "../ssh/sshManager";
@@ -54,6 +54,61 @@ const getShellArgs = (): string[] => {
     return [];
   }
   return ["-l"];
+};
+
+/**
+ * Resolve a bare command name (e.g. "ssh") to a full absolute path on
+ * Windows. node-pty's ConPTY native module (startProcess) does NOT search
+ * PATH like POSIX execvp — it requires an absolute or at least resolvable
+ * path. On non-Windows platforms the name is returned unchanged.
+ */
+const resolveWindowsExecutable = (name: string): string => {
+  if (process.platform !== "win32") {
+    return name;
+  }
+  // Already an absolute path — nothing to resolve.
+  if (isAbsolute(name)) {
+    return name;
+  }
+
+  const withExt = name.toLowerCase().endsWith(".exe") ? name : `${name}.exe`;
+
+  // Check well-known OpenSSH location first (fastest path).
+  const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
+  const openSshPath = join(systemRoot, "System32", "OpenSSH", withExt);
+  if (existsSync(openSshPath)) {
+    return openSshPath;
+  }
+
+  // Search PATH directories.
+  const pathDirs = (process.env.PATH ?? "").split(delimiter);
+  for (const dir of pathDirs) {
+    if (!dir) continue;
+    const candidate = join(dir, withExt);
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  // Fallback: return original name and let node-pty surface the error.
+  return name;
+};
+
+/**
+ * Whether the given shell path points to WSL (wsl.exe). WSL must be launched
+ * with `--cd <windowsPath>` because it does NOT inherit the Windows process
+ * working directory as a Linux cwd — without `--cd` the Linux shell starts in
+ * the user's home directory instead of the project directory.
+ */
+const isWslShell = (shellPath: string): boolean => {
+  const base =
+    shellPath
+      .replace(/\\/g, "/")
+      .split("/")
+      .pop()
+      ?.toLowerCase()
+      .replace(/\.exe$/, "") ?? "";
+  return base === "wsl";
 };
 
 const sanitizeEnv = (): Record<string, string> => {
@@ -144,7 +199,7 @@ const buildSshSpawnConfig = (cwd: string): SshSpawnConfig | null => {
   // Look up stored credentials
   const credential = getSshCredential(host, port, username);
   const config: SshSpawnConfig = {
-    shell: "ssh",
+    shell: resolveWindowsExecutable("ssh"),
     args: [...sshArgs, `${username}@${host}`],
   };
 
@@ -195,8 +250,17 @@ export const createPtySession = (
     spawnCwd = undefined; // Remote path, not a local cwd
   } else if (customShell && existsSync(customShell)) {
     shell = customShell;
-    shellArgs = isWindows ? [] : ["-l"];
-    spawnCwd = options.cwd || undefined;
+    if (isWindows && isWslShell(customShell)) {
+      // WSL ignores the Windows process cwd; pass the project directory via
+      // `--cd` so the Linux shell opens inside it. wsl.exe accepts Windows
+      // paths and translates them to /mnt/<drive>/... automatically.
+      shellArgs =
+        options.cwd && options.cwd.trim() ? ["--cd", options.cwd] : [];
+      spawnCwd = undefined;
+    } else {
+      shellArgs = isWindows ? [] : ["-l"];
+      spawnCwd = options.cwd || undefined;
+    }
   } else {
     shell = getShell();
     shellArgs = getShellArgs();

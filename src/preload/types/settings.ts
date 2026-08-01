@@ -1,5 +1,6 @@
 export type ProxyBrowserSettings = {
   enabled: boolean;
+  host: string;
   port: number;
   browserPath: string;
   browserDebugPort: number;
@@ -94,7 +95,7 @@ export type ThemeSettings = {
 export type DetectedTerminal = {
   name: string;
   path: string;
-  family: "powershell" | "cmd" | "posix";
+  family: "powershell" | "cmd" | "wsl" | "posix";
 };
 
 export type CodebaseSettingsInput = {
@@ -214,6 +215,52 @@ export type CodebaseIndexStats = {
   isIndexed: boolean;
 };
 
+export type CodebaseIndexedFile = {
+  relativePath: string;
+  filePath: string;
+  chunkCount: number;
+  startLine: number;
+  endLine: number;
+  sizeBytes: number;
+  updatedAt: string;
+};
+
+export type CodebaseIndexedFilePage = {
+  items: CodebaseIndexedFile[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type CodebaseSphereRelatedFile = {
+  index: number;
+  similarity: number;
+};
+
+export type CodebaseSphereNode = {
+  index: number;
+  relativePath: string;
+  chunkCount: number;
+  startLine: number;
+  endLine: number;
+  sizeBytes: number;
+  x: number;
+  y: number;
+  z: number;
+  related: CodebaseSphereRelatedFile[];
+};
+
+export type CodebaseSphereEdge = {
+  a: number;
+  b: number;
+  similarity: number;
+};
+
+export type CodebaseSphereLayout = {
+  nodes: CodebaseSphereNode[];
+  edges: CodebaseSphereEdge[];
+};
+
 export type CodebaseScanPreview = {
   fileCount: number;
   estimatedChunks: number;
@@ -324,3 +371,33 @@ export type ProjectSensitiveCommandConfigRecord =
     isPreset: boolean;
     source: string;
   };
+
+// ===== Keyboard shortcuts =====
+
+export type KeyboardShortcutAction =
+  | "cancelSession"
+  | "openSearch"
+  | "openMemo"
+  | "openTodo"
+  | "cycleProject"
+  | "openProjectExplorer";
+
+export type KeyboardShortcutConfig = {
+  /**
+   * 平台无关的规范化按键绑定。
+   * `mod` 代表平台主修饰键（macOS=Cmd，其他=Ctrl），主键用小写。
+   * 例如 `mod+f`、`escape`、`mod+backtick`。
+   */
+  key: string;
+  enabled: boolean;
+  foregroundOnly: boolean;
+};
+
+export type KeyboardShortcutsSettings = {
+  cancelSession: KeyboardShortcutConfig;
+  openSearch: KeyboardShortcutConfig;
+  openMemo: KeyboardShortcutConfig;
+  openTodo: KeyboardShortcutConfig;
+  cycleProject: KeyboardShortcutConfig;
+  openProjectExplorer: KeyboardShortcutConfig;
+};

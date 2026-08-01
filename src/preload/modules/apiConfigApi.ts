@@ -8,6 +8,7 @@ import type {
   DailyUsageBreakdown,
   DetectedTerminal,
   ImportSnowCliApiConfigsResult,
+  KeyboardShortcutsSettings,
   Model,
   PrivacySettings,
   ProxyBrowserSettings,
@@ -78,10 +79,22 @@ export const apiConfigApi = {
     ipcRenderer.invoke("settings:get-plan-mode"),
   setPlanMode: (enabled: boolean): Promise<void> =>
     ipcRenderer.invoke("settings:set-plan-mode", enabled),
+  getGoalMode: (): Promise<boolean> =>
+    ipcRenderer.invoke("settings:get-goal-mode"),
+  setGoalMode: (enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke("settings:set-goal-mode", enabled),
+  getGoalModeTokenBudget: (): Promise<number> =>
+    ipcRenderer.invoke("settings:get-goal-mode-token-budget"),
+  setGoalModeTokenBudget: (budget: number): Promise<void> =>
+    ipcRenderer.invoke("settings:set-goal-mode-token-budget", budget),
   getRequestLogging: (): Promise<boolean> =>
     ipcRenderer.invoke("settings:get-request-logging"),
   setRequestLogging: (enabled: boolean): Promise<void> =>
     ipcRenderer.invoke("settings:set-request-logging", enabled),
+  getRequestLoggingExpiry: (): Promise<number> =>
+    ipcRenderer.invoke("settings:get-request-logging-expiry"),
+  setRequestLoggingExpiry: (expiresAtMs: number): Promise<void> =>
+    ipcRenderer.invoke("settings:set-request-logging-expiry", expiresAtMs),
   getPrivacySettings: (): Promise<PrivacySettings> =>
     ipcRenderer.invoke("settings:get-privacy-settings"),
   setPrivacySettings: (settings: PrivacySettings): Promise<void> =>
@@ -164,6 +177,8 @@ export const apiConfigApi = {
     ipcRenderer.invoke("api-configs:import-snow-cli"),
   importSnowCliProxyConfig: (): Promise<ProxyBrowserSettings> =>
     ipcRenderer.invoke("proxy-browser-settings:import-snow-cli"),
+  applyProxySettings: (): Promise<void> =>
+    ipcRenderer.invoke("proxy-browser-settings:apply"),
   importSnowCliCodebaseSettings: (): Promise<CodebaseSettingsInput> =>
     ipcRenderer.invoke("codebase-settings:import-snow-cli"),
   selectBrowserExecutable: (dialogTitle?: string): Promise<string | null> =>
@@ -235,4 +250,11 @@ export const apiConfigApi = {
   ): Promise<AppLogPage> =>
     ipcRenderer.invoke("logs:list", level, module, since, until, limit, offset),
   clearAppLogs: (): Promise<number> => ipcRenderer.invoke("logs:clear"),
+
+  getKeyboardShortcutsSettings: (): Promise<KeyboardShortcutsSettings> =>
+    ipcRenderer.invoke("settings:get-keyboard-shortcuts"),
+  setKeyboardShortcutsSettings: (
+    settings: KeyboardShortcutsSettings
+  ): Promise<void> =>
+    ipcRenderer.invoke("settings:set-keyboard-shortcuts", settings),
 };

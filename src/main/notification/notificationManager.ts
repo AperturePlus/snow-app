@@ -1,5 +1,5 @@
 import { app, BrowserWindow, Notification } from "electron";
-import { APP_ICON_PATH } from "../app/constants";
+import { APP_ICON_PATH, isMacOS } from "../app/constants";
 
 export type AppNotificationOptions = {
   title: string;
@@ -72,10 +72,15 @@ export const showAppNotification = (options: AppNotificationOptions): void => {
     return;
   }
 
+  // macOS 通知左上角的发送方图标由系统从进程 bundle 自动读取，
+  // 代码无法干预（preview 模式下显示 Electron 图标属正常现象，打包后为 Snow App）。
+  // 若再传入 icon 选项，系统会在通知正文里额外渲染一张缩略图，
+  // 导致出现"左上角应用图标 + 正文内图标"两个图标叠加，因此 macOS 下不设置 icon。
+  // Windows / Linux 的通知则依赖显式 icon 显示应用标识，必须传入。
   const notification = new Notification({
     title: options.title,
     body: options.body,
-    icon: APP_ICON_PATH,
+    ...(isMacOS ? {} : { icon: APP_ICON_PATH }),
     silent: options.silent ?? false,
   });
 

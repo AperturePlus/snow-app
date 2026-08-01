@@ -470,6 +470,26 @@ pub fn set_plan_mode(enabled: bool) -> Result<()> {
     services::plan_settings::set_plan_mode(&database_path, enabled)
 }
 
+pub fn get_goal_mode() -> Result<bool> {
+    let database_path = ensure_database_file()?;
+    services::goal_settings::get_goal_mode(&database_path)
+}
+
+pub fn set_goal_mode(enabled: bool) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::goal_settings::set_goal_mode(&database_path, enabled)
+}
+
+pub fn get_goal_mode_token_budget() -> Result<i64> {
+    let database_path = ensure_database_file()?;
+    services::goal_settings::get_goal_mode_token_budget(&database_path)
+}
+
+pub fn set_goal_mode_token_budget(budget: i64) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::goal_settings::set_goal_mode_token_budget(&database_path, budget)
+}
+
 pub fn get_request_logging() -> Result<bool> {
     let database_path = ensure_database_file()?;
     services::request_logging_settings::get_request_logging(&database_path)
@@ -478,6 +498,16 @@ pub fn get_request_logging() -> Result<bool> {
 pub fn set_request_logging(enabled: bool) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::request_logging_settings::set_request_logging(&database_path, enabled)
+}
+
+pub fn get_request_logging_expiry() -> Result<i64> {
+    let database_path = ensure_database_file()?;
+    services::request_logging_settings::get_request_logging_expiry(&database_path)
+}
+
+pub fn set_request_logging_expiry(expires_at_ms: i64) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::request_logging_settings::set_request_logging_expiry(&database_path, expires_at_ms)
 }
 
 pub fn get_privacy_settings() -> Result<services::system_settings::PrivacySettings> {
@@ -1390,6 +1420,7 @@ pub fn ensure_database_file() -> Result<PathBuf> {
     services::api_configs::seed_default_api_config(&database_path)?;
     services::sub_agent_configs::seed_default_sub_agent_configs(&database_path)?;
     services::sensitive_command_configs::seed_default_sensitive_command_configs(&database_path)?;
+    services::workspace_directories::seed_default_workspace_directory(&database_path)?;
 
     // Store into the cache so all future calls hit the fast path.
     let _ = DATABASE_PATH_CACHE.set(database_path.clone());
@@ -1462,4 +1493,19 @@ pub fn delete_memo(memo_id: String) -> Result<()> {
 pub fn get_memo_count_summary(directory_id: String) -> Result<MemoCountSummary> {
     let database_path = ensure_database_file()?;
     services::memos::get_memo_count_summary(&database_path, &directory_id)
+}
+
+// ===== Keyboard shortcuts =====
+
+pub fn get_keyboard_shortcuts_settings(
+) -> Result<services::keyboard_shortcuts::KeyboardShortcutsSettings> {
+    let database_path = ensure_database_file()?;
+    services::keyboard_shortcuts::get_keyboard_shortcuts_settings(&database_path)
+}
+
+pub fn set_keyboard_shortcuts_settings(
+    settings: services::keyboard_shortcuts::KeyboardShortcutsSettings,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::keyboard_shortcuts::set_keyboard_shortcuts_settings(&database_path, &settings)
 }

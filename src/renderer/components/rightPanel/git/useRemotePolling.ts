@@ -6,7 +6,8 @@ const REMOTE_POLL_INTERVAL_MS = 60_000;
  * Periodically runs `git fetch` against the remote so the ahead/behind
  * counts in the status snapshot stay fresh (git only reports "behind"
  * relative to the last fetched remote refs). After each successful fetch
- * `onFetched` is invoked so callers can refresh their status.
+ * `onFetched` is invoked so callers can refresh their status. Works for
+ * both local repos (Rust backend) and SSH (`ssh://`) repos.
  *
  * Failures (offline, auth required, no remote) are ignored silently —
  * this is unattended background polling and must never surface errors.
@@ -16,7 +17,7 @@ export const useRemotePolling = (
   onFetched: () => void
 ): void => {
   useEffect(() => {
-    if (!repoPath || repoPath.startsWith("ssh://")) {
+    if (!repoPath) {
       return;
     }
 

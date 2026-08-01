@@ -105,48 +105,67 @@ export function CustomHeadersEditor({
           </div>
         ))}
       </div>
+    </>
+  );
+}
 
-      <div className="api-settings-form-actions">
-        <button
-          className="api-settings-form-btn secondary"
-          onClick={onAddHeaderPair}
-          type="button"
-          disabled={isBusy}
-        >
-          <Plus size={15} />
-          <span>
-            {t("settings.customHeadersAddHeader", {
-              defaultValue: "Add header",
-            })}
-          </span>
-        </button>
-        <button
-          className="api-settings-form-btn secondary"
-          onClick={onCancel}
-          type="button"
-          disabled={isBusy}
-        >
-          <X size={15} strokeWidth={1.9} />
-          <span>{t("settings.cancel", { defaultValue: "Cancel" })}</span>
-        </button>
-        <button
-          className="api-settings-form-btn primary"
-          onClick={onSave}
-          type="button"
-          disabled={isBusy}
-        >
-          {isSaving ? (
-            <Loader2 size={15} className="spin" />
-          ) : (
-            <Save size={15} strokeWidth={1.9} />
-          )}
-          <span>
-            {t("settings.saveCustomHeaders", {
-              defaultValue: "Save scheme",
-            })}
-          </span>
-        </button>
-      </div>
+type CustomHeadersEditorActionsProps = {
+  isBusy: boolean;
+  isSaving: boolean;
+  onAddHeaderPair: () => void;
+  onCancel: () => void;
+  onSave: () => void;
+};
+
+export function CustomHeadersEditorActions({
+  isBusy,
+  isSaving,
+  onAddHeaderPair,
+  onCancel,
+  onSave,
+}: CustomHeadersEditorActionsProps): React.JSX.Element {
+  const { t } = useI18n();
+  return (
+    <>
+      <button
+        className="api-settings-form-btn secondary"
+        onClick={onAddHeaderPair}
+        type="button"
+        disabled={isBusy}
+      >
+        <Plus size={15} />
+        <span>
+          {t("settings.customHeadersAddHeader", {
+            defaultValue: "Add header",
+          })}
+        </span>
+      </button>
+      <button
+        className="api-settings-form-btn secondary"
+        onClick={onCancel}
+        type="button"
+        disabled={isBusy}
+      >
+        <X size={15} strokeWidth={1.9} />
+        <span>{t("settings.cancel", { defaultValue: "Cancel" })}</span>
+      </button>
+      <button
+        className="api-settings-form-btn primary"
+        onClick={onSave}
+        type="button"
+        disabled={isBusy}
+      >
+        {isSaving ? (
+          <Loader2 size={15} className="spin" />
+        ) : (
+          <Save size={15} strokeWidth={1.9} />
+        )}
+        <span>
+          {t("settings.saveCustomHeaders", {
+            defaultValue: "Save scheme",
+          })}
+        </span>
+      </button>
     </>
   );
 }

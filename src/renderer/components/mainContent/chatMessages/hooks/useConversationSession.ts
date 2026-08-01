@@ -23,12 +23,16 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
       if (!ctx.sessionsRefData.current.has(key)) {
         ctx.sessionsRefData.current.set(key, {
           streamId: null,
+          streamPromise: null,
+          summaryPromise: null,
           isSending: false,
           isAbortRequested: false,
           runId: 0,
           directoryId: dirId,
           checkpointIds: [],
-          hasAutoCompacted: false,
+          childSubAgentIds: new Set(),
+          planMode: ctx.planModeRef.current,
+          goalMode: ctx.goalModeRef.current,
         });
       }
       ctx.setSessions((prev) => {
@@ -56,7 +60,7 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
         };
       });
     },
-    [ctx.sessionsRefData, ctx.setSessions]
+    [ctx.sessionsRefData, ctx.setSessions, ctx.planModeRef, ctx.goalModeRef]
   );
 
   const updateSessionMessages = useCallback(

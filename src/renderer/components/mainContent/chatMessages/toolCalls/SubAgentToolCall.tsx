@@ -173,7 +173,7 @@ export const SubAgentToolCall = ({
     sessions,
     handleSelectConversation,
     activeConversationId,
-    subAgentSessionEvent,
+    subAgentSessionEvents,
   } = useChatConversationContext();
 
   const parsedArgs = useMemo(
@@ -185,21 +185,38 @@ export const SubAgentToolCall = ({
     [toolCall.result]
   );
 
-  // Match the sub-agent session event to this tool call by agentId and
-  // parent conversation. This allows us to obtain the sub-agent conversation
-  // ID while the tool is still running (before the result is available).
+  // Match the sub-agent session event to this tool call so the sub-agent
+  // conversation id is available while the tool is still running (before the
+  // result is available). Multiple sub-agents can run in parallel with the
+  // same agentId, so the unique toolCallInteractionId is the primary key; the
+  // agentId match only serves as a fallback for legacy events.
   const matchedEvent = useMemo(() => {
-    if (!subAgentSessionEvent || !parsedArgs) {
+    if (!parsedArgs) {
       return null;
     }
-    if (
-      subAgentSessionEvent.agentId === parsedArgs.agentId &&
-      subAgentSessionEvent.parentConversationId === activeConversationId
-    ) {
-      return subAgentSessionEvent;
+    const events = Object.values(subAgentSessionEvents);
+
+    const byInteractionId = events.find(
+      (event) =>
+        event.toolCallInteractionId === toolCall.interactionId &&
+        event.parentConversationId === activeConversationId
+    );
+    if (byInteractionId) {
+      return byInteractionId;
     }
-    return null;
-  }, [subAgentSessionEvent, parsedArgs, activeConversationId]);
+
+    const byAgentId = events.find(
+      (event) =>
+        event.agentId === parsedArgs.agentId &&
+        event.parentConversationId === activeConversationId
+    );
+    return byAgentId ?? null;
+  }, [
+    subAgentSessionEvents,
+    parsedArgs,
+    activeConversationId,
+    toolCall.interactionId,
+  ]);
 
   // The sub-agent conversation id may come from the parsed result (once the
   // activation call resolves) or from the live session event (while running).

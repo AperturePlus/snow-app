@@ -26,6 +26,8 @@ pub mod usage_records;
 pub mod workspace_directories;
 pub mod yolo_settings;
 pub mod plan_settings;
+pub mod goal_settings;
 pub mod privacy_settings;
 pub mod request_logging_settings;
 pub mod memos;
+pub mod keyboard_shortcuts;

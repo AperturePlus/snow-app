@@ -198,12 +198,51 @@ impl McpService for BrowserService {
                     }
                 }),
             },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "close".to_string(),
+                description: "Close an embedded browser tab and destroy its webview. Omit instanceId to close the most recently focused browser tab. Use the list tool to see available browser tabs and their IDs.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "Optional browser instance ID to close. Omit it or use current to close the most recently focused embedded browser tab."
+                        }
+                    }
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "focus".to_string(),
+                description: "Switch to (activate) an embedded browser tab by its instance ID, bringing it to the foreground. Use the list tool to see available browser tabs and their IDs.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "instanceId": {
+                            "type": "string",
+                            "description": "The browser instance ID to switch to."
+                        }
+                    },
+                    "required": ["instanceId"]
+                }),
+            },
+            McpTool {
+                server_id: SERVER_ID.to_string(),
+                name: "list".to_string(),
+                description: "List all open embedded browser tabs with their instance IDs, titles, URLs, and active state. Use this to discover available tabs before closing or switching.".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            },
         ]
     }
 
     fn execute(&self, tool_name: &str, _args: &Value) -> napi::Result<Value> {
         match tool_name {
-            "create" | "navigate" | "click" | "screenshot" | "devtools" => Err(Error::new(
+            "create" | "navigate" | "click" | "screenshot" | "devtools" | "close" | "focus"
+            | "list" => Err(Error::new(
                 Status::GenericFailure,
                 "Browser tools must be executed through the asynchronous Electron command bridge"
                     .to_string(),
@@ -284,6 +323,13 @@ fn validate_and_normalize_args(tool_name: &str, args: &Value) -> napi::Result<Va
                 json!(max_content_length),
             );
         }
+        "close" => {
+            optional_non_empty_string(args, "instanceId")?;
+        }
+        "focus" => {
+            required_non_empty_string(args, "instanceId", tool_name)?;
+        }
+        "list" => {}
         _ => return Err(unknown_tool_error(tool_name)),
     }
 
@@ -384,7 +430,7 @@ fn unknown_tool_error(tool_name: &str) -> Error {
     Error::new(
         Status::GenericFailure,
         format!(
-            "Unknown tool: \"{tool_name}\" for MCP server \"browser\". Available tools: [browser-create, browser-navigate, browser-click, browser-screenshot, browser-devtools]"
+            "Unknown tool: \"{tool_name}\" for MCP server \"browser\". Available tools: [browser-create, browser-navigate, browser-click, browser-screenshot, browser-devtools, browser-close, browser-focus, browser-list]"
         ),
     )
 }

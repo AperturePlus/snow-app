@@ -1,7 +1,9 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { MainSidebarContent } from "./sidebar/MainSidebarContent";
 import { ProjectExplorerContent } from "./sidebar/ProjectExplorerContent";
 import { SettingsSidebarContent } from "./sidebar/SettingsSidebarContent";
+import { shortcutEvents } from "./shortcutEvents";
+import { APP_CONTROL_OPEN_SETTINGS_EVENT } from "../hooks/useAppControl";
 import type { SidebarContentKey, SidebarContentProps } from "./sidebar/types";
 
 type SidebarProps = {
@@ -11,7 +13,13 @@ type SidebarProps = {
   onActiveDirectoryChange?: SidebarContentProps["onActiveDirectoryChange"];
   onSelectMainView: SidebarContentProps["onSelectMainView"];
   onOpenSshWizard?: () => void;
-  onOpenFile?: (filePath: string, fileName: string) => void;
+  onOpenFile?: (
+    filePath: string,
+    fileName: string,
+    isSsh?: boolean,
+    sshSessionId?: string | null,
+    focusLine?: number
+  ) => void;
 };
 
 export const Sidebar = ({
@@ -43,6 +51,26 @@ export const Sidebar = ({
   const handleSwitchToExplorer = useCallback((directoryId: string): void => {
     setExplorerDirectoryId(directoryId);
     setActiveContent("explorer");
+  }, []);
+
+  // 订阅快捷键事件：Ctrl/Cmd+D 打开当前项目明细（Explorer 视图）。
+  // 使用当前激活的工作区目录作为 explorer 目标。
+  useEffect(() => {
+    return shortcutEvents.on("open-project-explorer", () => {
+      if (activeDirectory?.directoryId) {
+        handleSwitchToExplorer(activeDirectory.directoryId);
+      }
+    });
+  }, [activeDirectory, handleSwitchToExplorer]);
+
+  useEffect(() => {
+    const handler = () => {
+      setActiveContent("settings");
+    };
+    window.addEventListener(APP_CONTROL_OPEN_SETTINGS_EVENT, handler);
+    return () => {
+      window.removeEventListener(APP_CONTROL_OPEN_SETTINGS_EVENT, handler);
+    };
   }, []);
 
   const sidebarProps: SidebarContentProps = {

@@ -40,15 +40,28 @@ export function ApiModelCombobox({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
+  // Kept separate from `value`: the input value holds the selected model id,
+  // and filtering by it would hide every other model when the list reopens.
+  // The keyword only applies to text the user typed since the list was opened.
+  const [filterKeyword, setFilterKeyword] = useState("");
 
   const filteredModels = useMemo(() => {
-    const keyword = value.trim().toLowerCase();
+    const keyword = filterKeyword.trim().toLowerCase();
     const matchedModels = keyword
       ? models.filter((model) => model.id.toLowerCase().includes(keyword))
       : models;
 
     return matchedModels.slice(0, MAX_VISIBLE_MODELS);
-  }, [models, value]);
+  }, [models, filterKeyword]);
+
+  useEffect(() => {
+    // Prefer the currently selected model when it is visible so that
+    // reopening the list highlights what is already configured.
+    const selectedIndex = filteredModels.findIndex(
+      (model) => model.id === value
+    );
+    setHighlightedIndex(selectedIndex >= 0 ? selectedIndex : 0);
+  }, [value, filteredModels]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -68,10 +81,6 @@ export function ApiModelCombobox({
     };
   }, [isOpen]);
 
-  useEffect(() => {
-    setHighlightedIndex(0);
-  }, [value, models]);
-
   const openModelList = () => {
     if (disabled) {
       return;
@@ -79,6 +88,13 @@ export function ApiModelCombobox({
 
     setIsOpen(true);
     onRequestModels();
+  };
+
+  // Reopening a closed list must not reuse the previous filter keyword,
+  // otherwise the other models stay filtered out and the list looks broken.
+  const showFullModelList = () => {
+    setFilterKeyword("");
+    openModelList();
   };
 
   const handleSelectModel = (modelId: string) => {
@@ -94,7 +110,11 @@ export function ApiModelCombobox({
 
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      openModelList();
+      if (isOpen) {
+        openModelList();
+      } else {
+        showFullModelList();
+      }
       setHighlightedIndex((index) =>
         Math.min(index + 1, Math.max(filteredModels.length - 1, 0))
       );
@@ -125,11 +145,13 @@ export function ApiModelCombobox({
           <input
             value={value}
             onChange={(event) => {
-              onChange(event.target.value);
+              const nextValue = event.target.value;
+              onChange(nextValue);
+              setFilterKeyword(nextValue);
               openModelList();
             }}
-            onFocus={openModelList}
-            onClick={openModelList}
+            onFocus={showFullModelList}
+            onClick={showFullModelList}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             disabled={disabled}
@@ -176,7 +198,13 @@ export function ApiModelCombobox({
                         isSelected ? "selected" : ""
                       } ${isHighlighted ? "highlighted" : ""}`}
                       onMouseEnter={() => setHighlightedIndex(index)}
-                      onClick={() => handleSelectModel(model.id)}
+                      onClick={(event) => {
+                        // Prevent the wrapping <label> from forwarding the
+                        // click to the input (which would re-open the menu
+                        // via onFocus/onClick after the option is unmounted).
+                        event.preventDefault();
+                        handleSelectModel(model.id);
+                      }}
                       role="option"
                       aria-selected={isSelected}
                       title={model.id}

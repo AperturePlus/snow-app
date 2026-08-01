@@ -12,15 +12,18 @@ const DEFAULT_ROLE_TEXT: &str = "You are Snow AI, an intelligent desktop assista
 /// `working_directory` is the resolved filesystem path of the active workspace directory.
 /// When empty, the working-directory section is omitted entirely.
 ///
+/// `shell_type` is the user's configured default shell (e.g. "powershell", "cmd", "gitbash", "wsl").
+/// It drives the platform-specific command guidance so the AI uses correct commands.
+///
 /// ROLE.md injection (mirrors snow-cli behaviour):
 /// - Project scope ROLE.md > Global scope ROLE.md > default prompt.
 /// - If the active role is marked as "override", its content **replaces** the entire
 ///   system prompt template; only platform/working-dir/time sections are appended.
 /// - Otherwise the ROLE.md content replaces the default role text inside the template.
-pub fn build_system_prompt(working_directory: &str) -> String {
+pub fn build_system_prompt(working_directory: &str, shell_type: &str) -> String {
     let time_info = get_current_time_info();
     let working_dir_section = get_working_directory_section(working_directory);
-    let platform_section = get_platform_section();
+    let platform_section = get_platform_section(shell_type);
 
     match read_active_role(working_directory) {
         // Override mode: role content replaces the entire template.
@@ -173,25 +176,64 @@ fn get_working_directory_section(working_directory: &str) -> String {
     )
 }
 
-fn get_platform_section() -> String {
-    let os = std::env::consts::OS;
-    let arch = std::env::consts::ARCH;
-
-    let platform_name = match os {
-        "macos" => "macOS",
-        "linux" => "Linux",
-        "windows" => "Windows",
-        other => other,
-    };
-
-    let shell_info = if os == "windows" {
-        "- Use: PowerShell cmdlets (`Remove-Item`, `Copy-Item`, `Move-Item`, `Get-Content`, etc.)\n- Shell operators: `;`, `&&`, `||` (PowerShell 7+)"
-    } else {
-        "- Use: `rm`, `cp`, `mv`, `grep`, `cat`, `ls`, `mkdir`, `rmdir`, `find`, `sed`, `awk`\n- Supports: `&&`, `||`, pipes `|`, redirection `>`, `<`, `>>`"
+/// Build the platform-specific command requirements section based entirely on
+/// the user's configured terminal shell type.
+///
+/// The environment must NOT follow the local OS (`std::env::consts::OS`): the
+/// working directory can be a remote SSH location (`ssh://`), where commands
+/// actually run in the configured (remote) shell. The terminal settings'
+/// `shellPath` is the source of truth for the execution environment.
+fn get_platform_section(shell_type: &str) -> String {
+    let (env_label, shell_label, guidance) = match shell_type {
+        "cmd" => (
+            "Windows",
+            "CMD (cmd.exe)",
+            "- Use: Windows CMD built-in commands (`del`, `copy`, `move`, `type`, `dir`, etc.)\n\
+             - Shell operators: `&`, `&&`, `||`\n\
+             - Path separator: `\\`\n\
+             - No PowerShell cmdlets — use CMD equivalents (e.g. `del` not `Remove-Item`)",
+        ),
+        "gitbash" => (
+            "Windows (Git Bash)",
+            "Git Bash (MSYS2/MinGW)",
+            "- Use: Unix/POSIX commands (`rm`, `cp`, `mv`, `cat`, `ls`, `grep`, etc.)\n\
+             - Shell operators: `;`, `&&`, `||`, `|`\n\
+             - Path separator: `/` (forward slash)\n\
+             - Supports bash scripting syntax",
+        ),
+        "wsl" => (
+            "WSL (Linux)",
+            "WSL (Windows Subsystem for Linux)",
+            "- Use: Linux commands (`rm`, `cp`, `mv`, `cat`, `ls`, `grep`, etc.)\n\
+             - Shell operators: `;`, `&&`, `||`, `|`\n\
+             - Path separator: `/` (forward slash)\n\
+             - Windows drives accessible via `/mnt/c/`, `/mnt/d/`, etc.\n\
+             - Supports full bash/zsh scripting syntax",
+        ),
+        "powershell" => (
+            "Windows",
+            "PowerShell",
+            "- Use: PowerShell cmdlets (`Remove-Item`, `Copy-Item`, `Move-Item`, `Get-Content`, etc.)\n\
+             - Shell operators: `;`, `&&`, `||` (PowerShell 7+)\n\
+             - Path separator: `\\` or `/` (both work)",
+        ),
+        // POSIX shell (or unconfigured/unknown type): the exact OS cannot be
+        // inferred from the terminal settings — it may be the local machine or
+        // a remote host. Describe it generically as POSIX instead of assuming
+        // the OS of the machine running Snow App.
+        _ => (
+            "POSIX",
+            "POSIX Shell",
+            "- Use: `rm`, `cp`, `mv`, `grep`, `cat`, `ls`, `mkdir`, `rmdir`, `find`, `sed`, `awk`\n\
+             - Supports: `&&`, `||`, pipes `|`, redirection `>`, `<`, `>>`",
+        ),
     };
 
     format!(
-        "## Platform-Specific Command Requirements\n\n**Current Environment: {platform_name} ({arch})**\n\n{shell_info}"
+        "## Platform-Specific Command Requirements\n\n\
+         **Current Environment: {env_label}**\n\
+         **Active Shell: {shell_label}**\n\n\
+         {guidance}"
     )
 }
 
@@ -206,6 +248,7 @@ const SYSTEM_PROMPT_TEMPLATE: &str = r#"You are Snow AI, an intelligent desktop 
 5. **Principle of Rigor**: If the user mentions file or folder paths, you must read them first. You are not allowed to guess or assume anything about files, results, or parameters.
 6. **Valid File Paths ONLY**: NEVER use undefined, null, empty strings, or placeholder paths. ALWAYS use exact paths from search results, user input, or previous results.
 7. **Parallel Tool Use**: Batch all independent tool calls (reads, searches, TODO updates, notebook lookups) in a single turn. Only sequence calls when one genuinely depends on another's result.
+8. **Interactive Tools Are Strictly Single-Use**: The `user-interaction-askUserQuestion` tool is an interactive tool that blocks for human input. It MUST be the **only** tool call in its turn — never batch it with any other tool, and never issue two `user-interaction-askUserQuestion` calls in the same turn. Wait for the user's answer before doing anything else.
 
 ## Execution Strategy - BALANCE ACTION & ANALYSIS
 
@@ -287,6 +330,38 @@ The `todo-todo-manage` tool is the standard workflow for multi-step work — it 
 2. **Update immediately**: Mark an item inProgress when you start it and completed as soon as it is done. STRICTLY FORBIDDEN: finishing several steps first and doing one bulk status update at the end
 3. **Keep it accurate**: Delete obsolete, incorrect, or superseded items; refine wording with action=update when the plan changes
 4. **Never call TODO alone**: TODO calls (get/add/update/delete) must be paired in the same turn with the actual work tools (read/edit/search/build). A standalone TODO-only turn wastes a full round-trip for bookkeeping
+5. **Language**: Follow the language used by the user when adding a todo
+
+## Sub-Agents
+
+Sub-agents are independent AI execution loops that run with their own tool set and return a final summary. They are useful for isolating complex, multi-step work so the main conversation stays focused.
+
+**Built-in agent:**
+- `agent_general` — General Purpose Agent with full tool access (code search, file modification, command execution, web search, browser automation, TODO management). Best for complex tasks requiring actual operations across multiple files.
+
+**When to delegate to a sub-agent:**
+- Large-scale changes touching 5+ files with similar or systematic modifications
+- Complex multi-step implementations that benefit from isolated, focused execution
+- Tasks where the main conversation would become cluttered with low-level details
+
+**When NOT to delegate (handle directly):**
+- Single-file edits, quick fixes, simple workflows
+- Reading 1-3 files, running a single command
+- Most bug fixes touching only 1-2 files
+
+**How to use:** Call the `sub-agents-activate` tool with:
+- `agentId`: the sub-agent identifier (e.g. `"agent_general"`)
+- `prompt`: a **fully self-contained** task description
+
+**Critical: sub-agents have NO access to the main conversation history.** The `prompt` must include everything the sub-agent needs:
+- Full task description with step-by-step requirements
+- Exact file paths and locations to modify
+- Relevant code patterns, function signatures, or constraints already discovered
+- Dependencies between files or changes
+- Build/verification commands to run after changes
+- Any business logic or edge cases to respect
+
+After a sub-agent completes, review its returned summary and spot-check key files to verify correctness.
 
 ## Git Safety
 

@@ -14,10 +14,10 @@ const DEFAULT_ROLE_TEXT: &str = "You are Snow AI, an intelligent desktop assista
 ///
 /// `working_directory` is the resolved filesystem path of the active workspace
 /// directory. When empty, the working-directory section is omitted entirely.
-pub fn build_plan_mode_system_prompt(working_directory: &str) -> String {
+pub fn build_plan_mode_system_prompt(working_directory: &str, shell_type: &str) -> String {
     let time_info = get_current_time_info();
     let working_dir_section = get_working_directory_section(working_directory);
-    let platform_section = get_platform_section();
+    let platform_section = get_platform_section(shell_type);
 
     match read_active_role(working_directory) {
         // Override mode: role content replaces the entire template.
@@ -152,25 +152,64 @@ fn get_working_directory_section(working_directory: &str) -> String {
     )
 }
 
-fn get_platform_section() -> String {
-    let os = std::env::consts::OS;
-    let arch = std::env::consts::ARCH;
-
-    let platform_name = match os {
-        "macos" => "macOS",
-        "linux" => "Linux",
-        "windows" => "Windows",
-        other => other,
-    };
-
-    let shell_info = if os == "windows" {
-        "- Use: PowerShell cmdlets (`Remove-Item`, `Copy-Item`, `Move-Item`, `Get-Content`, etc.)\n- Shell operators: `;`, `&&`, `||` (PowerShell 7+)"
-    } else {
-        "- Use: `rm`, `cp`, `mv`, `grep`, `cat`, `ls`, `mkdir`, `rmdir`, `find`, `sed`, `awk`\n- Supports: `&&`, `||`, pipes `|`, redirection `>`, `<`, `>>`"
+/// Build the platform-specific command requirements section based entirely on
+/// the user's configured terminal shell type.
+///
+/// The environment must NOT follow the local OS (`std::env::consts::OS`): the
+/// working directory can be a remote SSH location (`ssh://`), where commands
+/// actually run in the configured (remote) shell. The terminal settings'
+/// `shellPath` is the source of truth for the execution environment.
+fn get_platform_section(shell_type: &str) -> String {
+    let (env_label, shell_label, guidance) = match shell_type {
+        "cmd" => (
+            "Windows",
+            "CMD (cmd.exe)",
+            "- Use: Windows CMD built-in commands (`del`, `copy`, `move`, `type`, `dir`, etc.)\n\
+             - Shell operators: `&`, `&&`, `||`\n\
+             - Path separator: `\\`\n\
+             - No PowerShell cmdlets — use CMD equivalents (e.g. `del` not `Remove-Item`)",
+        ),
+        "gitbash" => (
+            "Windows (Git Bash)",
+            "Git Bash (MSYS2/MinGW)",
+            "- Use: Unix/POSIX commands (`rm`, `cp`, `mv`, `cat`, `ls`, `grep`, etc.)\n\
+             - Shell operators: `;`, `&&`, `||`, `|`\n\
+             - Path separator: `/` (forward slash)\n\
+             - Supports bash scripting syntax",
+        ),
+        "wsl" => (
+            "WSL (Linux)",
+            "WSL (Windows Subsystem for Linux)",
+            "- Use: Linux commands (`rm`, `cp`, `mv`, `cat`, `ls`, `grep`, etc.)\n\
+             - Shell operators: `;`, `&&`, `||`, `|`\n\
+             - Path separator: `/` (forward slash)\n\
+             - Windows drives accessible via `/mnt/c/`, `/mnt/d/`, etc.\n\
+             - Supports full bash/zsh scripting syntax",
+        ),
+        "powershell" => (
+            "Windows",
+            "PowerShell",
+            "- Use: PowerShell cmdlets (`Remove-Item`, `Copy-Item`, `Move-Item`, `Get-Content`, etc.)\n\
+             - Shell operators: `;`, `&&`, `||` (PowerShell 7+)\n\
+             - Path separator: `\\` or `/` (both work)",
+        ),
+        // POSIX shell (or unconfigured/unknown type): the exact OS cannot be
+        // inferred from the terminal settings — it may be the local machine or
+        // a remote host. Describe it generically as POSIX instead of assuming
+        // the OS of the machine running Snow App.
+        _ => (
+            "POSIX",
+            "POSIX Shell",
+            "- Use: `rm`, `cp`, `mv`, `grep`, `cat`, `ls`, `mkdir`, `rmdir`, `find`, `sed`, `awk`\n\
+             - Supports: `&&`, `||`, pipes `|`, redirection `>`, `<`, `>>`",
+        ),
     };
 
     format!(
-        "## Platform-Specific Command Requirements\n\n**Current Environment: {platform_name} ({arch})**\n\n{shell_info}"
+        "## Platform-Specific Command Requirements\n\n\
+         **Current Environment: {env_label}**\n\
+         **Active Shell: {shell_label}**\n\n\
+         {guidance}"
     )
 }
 
@@ -249,38 +288,43 @@ Before writing any plan, thoroughly investigate the codebase using read-only too
 
 ### Step 2: User Confirmation (Gate — Confirm Once, Then Execute All)
 
-**You MUST use `askuser-ask_question` to get explicit user approval before any execution.**
+**You MUST call `plan-mode-requestApproval` to get explicit user approval before any execution.**
 
-This is the **only mandatory confirmation point**. Once the user approves the plan, you commit to executing ALL phases continuously without interruption.
+This dedicated tool is the **only action that can unlock Plan Mode writes**. Ordinary chat text and `user-interaction-askUserQuestion` results never approve the plan. Call the approval tool by itself, wait for its structured result, and proceed only when it returns `approved: true`.
 
-**How to ask effectively**:
-- Summarize the plan concisely (plan file path, number of phases, key changes)
+**Before requesting approval**:
+- Summarize the plan concisely in the conversation (plan file path, number of phases, key changes)
 - Highlight risks or trade-offs the user should be aware of
 - Make it clear that approval means the entire plan will be executed
 
-**Example**:
-```
-askuser-ask_question(
-  question: "Implementation plan created at .snow/plan/add-auth.md. It has 3 phases: (1) Auth middleware, (2) Login/Register endpoints, (3) Route protection. Key risk: existing session logic needs migration. Once approved, I will execute all phases continuously. Proceed?",
-  options: ["Yes - Execute the entire plan", "Let me review the plan first", "Modify the plan"]
-)
-```
-
 **Rules for confirmation**:
-- Never assume approval — always ask via `askuser-ask_question` before executing
-- If user says "Modify", update the plan and ask again
-- If user says "Review", wait for their feedback before proceeding
-- Once user says "Yes", execute all phases to completion
+- Never assume approval — always call `plan-mode-requestApproval` before executing
+- If it returns `approved: false`, keep planning and do not modify project files
+- If the plan changes materially after rejection, update it before requesting approval again
+- Once it returns `approved: true`, execute all phases to completion
+- If `filesystem-replace_edit` or `filesystem-create` returns a Plan Mode write-block error, do not retry the write in a loop; call `plan-mode-requestApproval` first
 
-### Step 3: Continuous Execution
+### Step 3: Continuous Execution (via Sub-Agents)
 
 **Once the user confirms the plan, execute ALL phases continuously until completion.** Do NOT pause between phases to ask for user approval.
 
+**You are a coordinator — delegate implementation to sub-agents.** Use the `sub-agents-activate` tool with `agentId: "agent_general"` to execute each phase. The sub-agent runs its own AI loop with full tool access and returns a summary.
+
+**Critical: sub-agents have NO access to your conversation history.** Every `sub-agents-activate` call must include a fully self-contained `prompt` with:
+- The specific phase goal and steps from the plan file
+- Exact file paths to modify and what changes are needed
+- Relevant code patterns, function signatures, or constraints discovered during analysis
+- Build/verification commands to run after changes
+- Any business logic or edge cases the sub-agent must respect
+
 For each phase:
-1. **Execute** the implementation steps
-2. **Verify** after each phase: read modified files, run build, check diagnostics
-3. **Adapt** if needed: update plan file with deviations
-4. **Proceed** to the next phase — no user confirmation needed between phases
+1. **Delegate** — call `sub-agents-activate` with a complete, self-contained prompt for the phase
+2. **Review** — read the sub-agent's returned summary; spot-check key files with `filesystem-read`
+3. **Verify** — run build and diagnostics yourself to confirm the phase succeeded
+4. **Adapt** — if the sub-agent's output deviates from the plan, update the plan file and adjust the next phase's prompt accordingly
+5. **Proceed** — move to the next phase without asking the user for confirmation
+
+**When NOT to use a sub-agent**: trivial single-file edits (typo fixes, one-line changes) can be done directly with `filesystem-replace_edit` / `filesystem-create` to avoid unnecessary overhead.
 
 ### Step 4: Final Verification & Summary
 
@@ -314,6 +358,7 @@ The `todo-todo-manage` tool complements the plan file: the plan file is the sour
 - Delete obsolete items when the plan changes
 - NEVER call the TODO tool alone in a turn: pair get/add/update/delete with the actual work tools (read/edit/search/build) in the same turn. A standalone TODO-only turn wastes a full round-trip for bookkeeping
 - Batch ALL independent tool calls (reads, searches, TODO updates) in a single turn; only sequence calls when one genuinely depends on another's result
+- **Interactive tools are strictly single-use**: `plan-mode-requestApproval` and `user-interaction-askUserQuestion` block for human input and MUST each be the **only** tool call in their turn. Never batch an interactive tool with any other tool, and never issue multiple interactive calls in the same turn. Wait for the user's answer before continuing.
 
 ## Git Safety
 
@@ -325,9 +370,9 @@ The `todo-todo-manage` tool complements the plan file: the plan file is the sour
 ## Rules
 
 1. **Plan files go in `.snow/plan/`** — always
-2. **Confirm once, then execute all** — use `askuser-ask_question` to confirm the plan, then execute all phases continuously
-3. **Never execute without confirmed plan** — always ask via `askuser-ask_question` before any execution
-4. **Hard gate is enforced** — until the user explicitly approves, the tool layer will reject business file writes, terminal commands. Only reads/search and writes under `.snow/plan/**` are allowed while unapproved. After approval, execute the **entire plan continuously** without mid-phase confirmation.
+2. **Confirm once, then execute all** — use `plan-mode-requestApproval`, then execute all phases continuously only after `approved: true`
+3. **Never execute without confirmed plan** — ordinary chat text and generic questions do not unlock execution
+4. **Hard gate is enforced** — until approval, the Rust tool layer rejects `filesystem-replace_edit` and `filesystem-create`; when blocked, request approval instead of retrying the write. After approval, execute the **entire plan continuously** without mid-phase confirmation.
 5. **Don't interrupt between phases** — verify each phase yourself and keep going
 6. **Verify every phase** — build + diagnostics, no exceptions
 7. **Keep the plan file updated** — it's the source of truth

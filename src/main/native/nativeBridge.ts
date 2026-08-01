@@ -69,9 +69,41 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to write Plan mode")
         ),
+      getGoalMode: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to read Goal mode")
+        ),
+      setGoalMode: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write Goal mode")
+        ),
+      getGoalModeTokenBudget: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to read Goal mode token budget"
+          )
+        ),
+      setGoalModeTokenBudget: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to write Goal mode token budget"
+          )
+        ),
       getRequestLogging: () =>
         Promise.reject(
           new Error("Rust native bridge is required to read Request logging")
+        ),
+      getRequestLoggingExpiry: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to read Request logging expiry"
+          )
+        ),
+      setRequestLoggingExpiry: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to write Request logging expiry"
+          )
         ),
       setRequestLogging: () =>
         Promise.reject(
@@ -92,6 +124,18 @@ export const loadNativeBridge = (): NativeBridge => {
       setThemeSettings: () =>
         Promise.reject(
           new Error("Rust native bridge is required to write theme settings")
+        ),
+      getKeyboardShortcutsSettings: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to read keyboard shortcuts settings"
+          )
+        ),
+      setKeyboardShortcutsSettings: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to write keyboard shortcuts settings"
+          )
         ),
       saveThemeBackgroundImage: () =>
         Promise.reject(
@@ -224,6 +268,10 @@ export const loadNativeBridge = (): NativeBridge => {
       searchFiles: () =>
         Promise.reject(
           new Error("Rust native bridge is required to search files")
+        ),
+      searchFilesByAgent: (_query, _workspacePath, _onProgress) =>
+        Promise.reject(
+          new Error("Rust native bridge is required to run AI file search")
         ),
       listMcpServerConfigs: () =>
         Promise.reject(
@@ -435,6 +483,7 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to generate conversation summary"
           )
         ),
+      cancelConversationSummary: () => false,
       fetchAvailableModels: () =>
         Promise.reject(
           new Error("Rust native bridge is required to fetch available models")
@@ -472,7 +521,18 @@ export const loadNativeBridge = (): NativeBridge => {
       getGitCommitFiles: () => {
         throw new Error("Rust native bridge is required for git commit files");
       },
+      discoverGitRepos: () => {
+        throw new Error(
+          "Rust native bridge is required for git repo discovery"
+        );
+      },
       generateCommitMessage: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required for AI commit message generation"
+          )
+        ),
+      generateCommitMessageFromDiff: () =>
         Promise.reject(
           new Error(
             "Rust native bridge is required for AI commit message generation"
@@ -541,6 +601,18 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to update project Skills")
         ),
+      installSkillFromGithub: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to install Skills")
+        ),
+      uninstallGithubSkill: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to uninstall Skills")
+        ),
+      listGithubSkills: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to list GitHub Skills")
+        ),
       listMcpServerTools: () =>
         Promise.reject(
           new Error("Rust native bridge is required to list MCP server tools")
@@ -574,6 +646,10 @@ export const loadNativeBridge = (): NativeBridge => {
           new Error(
             "Rust native bridge is required to authorize sensitive commands"
           )
+        ),
+      writeInteractiveStdin: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to write interactive stdin")
         ),
       callMcpTool: () =>
         Promise.reject(
@@ -677,6 +753,18 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to get codebase index stats"
           )
         ),
+      listCodebaseIndexedFiles: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list codebase indexed files"
+          )
+        ),
+      getCodebaseSphereLayout: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to compute codebase sphere layout"
+          )
+        ),
       clearCodebaseIndex: () =>
         Promise.reject(
           new Error("Rust native bridge is required to clear codebase index")
@@ -764,6 +852,10 @@ export const loadNativeBridge = (): NativeBridge => {
       getMemoCountSummary: () =>
         Promise.reject(
           new Error("Rust native bridge is required to count memos")
+        ),
+      sha256File: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to compute sha256")
         ),
     };
   }

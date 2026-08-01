@@ -11,6 +11,11 @@ import {
   buildConversationMessages,
   deleteCheckpoints,
 } from "../utils/conversationHelpers";
+import {
+  appendHookExecutionToMessage,
+  runHook,
+  toNonBlockingRecord,
+} from "./hookOutcome";
 
 export type UseConversationManagementParams = {
   ctx: ConversationContextValue;
@@ -74,6 +79,21 @@ export const useConversationManagement = (
       // intent so the UI follows the active conversation normally.
       ctx.setNewChatRequested(false);
 
+      // Restore Plan/Goal Mode from the target session's stored state.
+      const targetRef = ctx.sessionsRefData.current.get(trimmedId);
+      const targetPlanMode = targetRef?.planMode ?? false;
+      const targetGoalMode = targetRef?.goalMode ?? false;
+      if (ctx.planModeRef.current !== targetPlanMode) {
+        ctx.planModeRef.current = targetPlanMode;
+        ctx.setPlanModeState(targetPlanMode);
+        void window.snow.setPlanMode(targetPlanMode);
+      }
+      if (ctx.goalModeRef.current !== targetGoalMode) {
+        ctx.goalModeRef.current = targetGoalMode;
+        ctx.setGoalModeState(targetGoalMode);
+        void window.snow.setGoalMode(targetGoalMode);
+      }
+
       if (hasLoadedCachedHistory) {
         ctx.updateSessionField(trimmedId, "hasNewContent", false);
         ctx.setCompletedConversationIds((prev) => {
@@ -120,12 +140,16 @@ export const useConversationManagement = (
 
         ctx.sessionsRefData.current.set(trimmedId, {
           streamId: null,
+          streamPromise: null,
+          summaryPromise: null,
           isSending: false,
           isAbortRequested: false,
           runId: 0,
           directoryId: conversationDirId,
           checkpointIds,
-          hasAutoCompacted: false,
+          childSubAgentIds: new Set(),
+          planMode: false,
+          goalMode: false,
         });
         ctx.setSessions((prev) => ({
           ...prev,
@@ -158,8 +182,48 @@ export const useConversationManagement = (
           ctx.setIsLoadingInitialHistory(false);
         }
       }
+
+      // Execute onSessionStart hooks (fire-and-forget) when the user opens
+      // an existing conversation. These are diagnostic/audit hooks that run
+      // after the history is loaded — they cannot block the session switch.
+      const onSessionStartMessageId = ctx.sessionsRef.current[
+        trimmedId
+      ]?.messages.findLast((message) => message.role !== "tool")?.id;
+      const onSessionStartContext = JSON.stringify({
+        conversationId: trimmedId,
+        cwd: ctx.directoryPath ?? "",
+        directoryId: conversationDirId ?? "",
+      });
+      void runHook(
+        "onSessionStart",
+        conversationDirId ?? undefined,
+        onSessionStartContext
+      )
+        .then((hookResult) => {
+          if (hookResult) {
+            ctx.updateSessionMessages(trimmedId, (currentMessages) =>
+              appendHookExecutionToMessage(
+                currentMessages,
+                toNonBlockingRecord(hookResult.record),
+                onSessionStartMessageId
+              )
+            );
+          }
+        })
+        .catch(() => {
+          // onSessionStart hook failures must not block the session switch
+        });
     },
-    [ctx.setActiveId, ctx.updateSessionField, ctx.setNewChatRequested]
+    [
+      ctx.setActiveId,
+      ctx.updateSessionField,
+      ctx.setNewChatRequested,
+      ctx.sessionsRefData,
+      ctx.planModeRef,
+      ctx.setPlanModeState,
+      ctx.goalModeRef,
+      ctx.setGoalModeState,
+    ]
   );
 
   const loadOlderMessages = useCallback(async (): Promise<void> => {
@@ -258,6 +322,20 @@ export const useConversationManagement = (
     // auto-switching back to the migrated conversation once it finishes.
     ctx.setNewChatRequested(true);
 
+    // Reset Plan Mode so a new chat always starts with it disabled.
+    if (ctx.planModeRef.current) {
+      ctx.planModeRef.current = false;
+      ctx.setPlanModeState(false);
+      void window.snow.setPlanMode(false);
+    }
+
+    // Reset Goal Mode so a new chat always starts with it disabled.
+    if (ctx.goalModeRef.current) {
+      ctx.goalModeRef.current = false;
+      ctx.setGoalModeState(false);
+      void window.snow.setGoalMode(false);
+    }
+
     // Clear stale pending session only if it is NOT actively streaming.
     // When the pending session is streaming, we keep it alive so the AI
     // loop continues in the background and eventually persists the
@@ -274,7 +352,14 @@ export const useConversationManagement = (
     }
 
     ctx.setActiveId(undefined);
-  }, [ctx.setActiveId, ctx.setNewChatRequested]);
+  }, [
+    ctx.setActiveId,
+    ctx.setNewChatRequested,
+    ctx.planModeRef,
+    ctx.setPlanModeState,
+    ctx.goalModeRef,
+    ctx.setGoalModeState,
+  ]);
 
   const handleAbort = useCallback((): void => {
     const key = ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
@@ -285,6 +370,13 @@ export const useConversationManagement = (
 
     rejectAllToolAuthorizations();
     rejectPendingUserQuestions(key);
+    for (const [decisionId, pendingDecision] of ctx.pendingHookDecisionRef
+      .current) {
+      if (pendingDecision.sessionKey === key) {
+        ctx.pendingHookDecisionRef.current.delete(decisionId);
+        pendingDecision.resolve(false);
+      }
+    }
 
     // Wake up the pause checkpoint so the blocked agent loop can observe
     // the cancellation and exit. Without this, a paused loop would hang
@@ -330,6 +422,62 @@ export const useConversationManagement = (
     if (ref.streamId) {
       void window.snow.abortResponseStream(ref.streamId);
     }
+
+    // Cancel any in-flight summary generation so its
+    // update_conversation_summary write transaction is skipped. Without this,
+    // a cancel-then-rollback flow would wait on the summary promise (which may
+    // be stuck in an HTTP retry loop) and the database would remain locked
+    // when the rollback's delete/truncate runs.
+    if (key !== PENDING_SESSION_KEY) {
+      void window.snow.cancelConversationSummary(key);
+    }
+
+    // Cascade the abort to every sub-agent spawned by this conversation (and
+    // recursively to their own sub-agents). Without this, stopping the main
+    // flow would leave sub-agents streaming in the background.
+    const abortSubAgentTree = (subKey: string): void => {
+      const subRef = ctx.sessionsRefData.current.get(subKey);
+      if (!subRef || subRef.isAbortRequested) {
+        return;
+      }
+      subRef.isAbortRequested = true;
+      subRef.isSending = false;
+
+      ctx.updateSessionMessages(subKey, (currentMessages) =>
+        currentMessages.map((message) => ({
+          ...message,
+          status: message.status === "sending" ? "sent" : message.status,
+          isRetrying: message.status === "sending" ? false : message.isRetrying,
+          toolCalls: message.toolCalls?.map((toolCall) =>
+            toolCall.status === "running" || toolCall.status === "pending"
+              ? {
+                  ...toolCall,
+                  status: "error",
+                  result: toolCall.result ?? "Interrupted by user",
+                }
+              : toolCall
+          ),
+        }))
+      );
+      ctx.updateSessionField(subKey, "isStreaming", false);
+      ctx.updateSessionField(subKey, "streamStartedAt", 0);
+      ctx.updateSessionField(subKey, "isAborting", false);
+      ctx.updateSessionField(subKey, "isPaused", false);
+      ctx.pauseControllerRef.current.delete(subKey);
+      ctx.removeStreamingId(subKey);
+
+      if (subRef.streamId) {
+        void window.snow.abortResponseStream(subRef.streamId);
+      }
+
+      for (const grandChildId of subRef.childSubAgentIds) {
+        abortSubAgentTree(grandChildId);
+      }
+    };
+
+    for (const subAgentId of ref.childSubAgentIds) {
+      abortSubAgentTree(subAgentId);
+    }
   }, [
     ctx.removeStreamingId,
     rejectAllToolAuthorizations,
@@ -342,6 +490,7 @@ export const useConversationManagement = (
   const abortConversation = useCallback(
     (conversationId: string): void => {
       const ref = ctx.sessionsRefData.current.get(conversationId);
+
       rejectAllToolAuthorizations();
       rejectPendingUserQuestions(conversationId);
       if (ref?.streamId) {
@@ -372,6 +521,49 @@ export const useConversationManagement = (
       rejectPendingUserQuestions,
       ctx.updateSessionField,
     ]
+  );
+
+  /**
+   * Immediately send a pending message: abort the current in-flight session,
+   * remove the message from the pending queue, and dispatch it via
+   * handleSendMessage so a fresh agent loop starts right away.
+   *
+   * This is used when the user does not want to wait for the current AI
+   * response to finish — the ongoing stream is cancelled and the selected
+   * pending message is sent immediately.
+   */
+  const sendPendingMessageNow = useCallback(
+    (index: number): void => {
+      const sessionKey =
+        ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+      const queue = ctx.pendingQueueRef.current.get(sessionKey);
+      if (!queue || index < 0 || index >= queue.length) {
+        return;
+      }
+
+      // Abort the current streaming session so isSending flips to false
+      // and handleSendMessage will start a new agent loop instead of
+      // re-queuing the message.
+      handleAbort();
+
+      // Remove the target message (and its original send options) from
+      // the pending queue.
+      const [removed] = queue.splice(index, 1);
+      if (queue.length === 0) {
+        ctx.pendingQueueRef.current.delete(sessionKey);
+      }
+      ctx.setActivePendingMessages(queue.map((item) => item.text));
+
+      if (!removed) {
+        return;
+      }
+
+      // Dispatch the pending message as a fresh send. handleSendMessage
+      // will create a new agent loop because handleAbort already reset
+      // isSending on the session ref.
+      ctx.handleSendMessageRef.current(removed.text, removed.options ?? {});
+    },
+    [handleAbort, ctx]
   );
 
   const refreshConversations = useCallback((): void => {
@@ -416,6 +608,7 @@ export const useConversationManagement = (
 
   return {
     withdrawPendingMessage,
+    sendPendingMessageNow,
     handleSelectConversation,
     loadOlderMessages,
     handleNewChat,

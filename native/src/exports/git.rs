@@ -4,7 +4,7 @@ use crate::api::commit_message::generate_commit_message_stream;
 use crate::api::responses::{ResponsesApiResult, ResponsesApiStreamCallback};
 use crate::storage::services::git::{
     GitBranch, GitCheckoutResult, GitCommitFile, GitCommitResult, GitDiffResult,
-    GitLogEntry, GitPushPullResult, GitStageResult, GitStatusResult,
+    GitLogEntry, GitPushPullResult, GitRepoInfo, GitStageResult, GitStatusResult,
 };
 use crate::storage::services::git_watcher::{GitChangeCallback};
 
@@ -43,14 +43,32 @@ pub async fn git_commit(repo_path: String, message: String) -> napi::Result<GitC
     crate::storage::services::git::commit_changes(&repo_path, &message)
 }
 
+/// Push local commits to the remote. Runs on the blocking thread pool
+/// because `git push` performs network I/O and may take seconds — it
+/// must never block the async runtime.
 #[napi]
 pub async fn git_push(repo_path: String) -> napi::Result<GitPushPullResult> {
-    crate::storage::services::git::push_changes(&repo_path)
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::push_changes(&repo_path)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to push to remote: {join_error}"))
+    })?
 }
 
+/// Pull changes from the remote. Runs on the blocking thread pool
+/// because `git pull` performs network I/O and may take seconds — it
+/// must never block the async runtime.
 #[napi]
 pub async fn git_pull(repo_path: String) -> napi::Result<GitPushPullResult> {
-    crate::storage::services::git::pull_changes(&repo_path)
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::pull_changes(&repo_path)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to pull from remote: {join_error}"))
+    })?
 }
 
 /// Fetch from the remote without merging. Runs on the blocking thread
@@ -114,6 +132,23 @@ pub async fn get_git_commit_files(
     crate::storage::services::git::get_commit_files(&repo_path, &hash)
 }
 
+/// Discover all git repositories within a directory tree.
+///
+/// Recursively scans `root_path` for subdirectories containing a `.git`
+/// entry. When a repo is found, its contents are not recursed into.
+/// Runs on the blocking thread pool because filesystem traversal and
+/// `git rev-parse` calls may be slow on large directory trees.
+#[napi]
+pub async fn discover_git_repos(root_path: String) -> napi::Result<Vec<GitRepoInfo>> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::discover_git_repos(&root_path)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to discover git repos: {join_error}"))
+    })?
+}
+
 #[napi(
     ts_args_type = "repoPath: string, onChange: (repoPath: string) => void",
     ts_return_type = "void"
@@ -169,6 +204,34 @@ pub async fn generate_commit_message(
     let result = generate_commit_message_stream(staged_diff, on_chunk, cancel_token).await;
 
     // 4. Unregister stream
+    crate::api::cancel::unregister_stream(&stream_id);
+
+    result
+}
+
+/// Generate a commit message from a raw staged-diff string.
+///
+/// Identical to `generate_commit_message` but skips the local `git diff
+/// --cached` step. Used by remote (SSH) repositories, where the diff is
+/// produced on the remote host and streamed back to this process before
+/// the AI generation runs here.
+#[napi(
+    ts_args_type = "diff: string, onChunk: (chunk: ResponsesApiStreamChunk) => void, streamId: string",
+    ts_return_type = "Promise<ResponsesApiResult>"
+)]
+pub async fn generate_commit_message_from_diff(
+    diff: String,
+    on_chunk: ResponsesApiStreamCallback,
+    stream_id: String,
+) -> napi::Result<ResponsesApiResult> {
+    if diff.trim().is_empty() {
+        return Err(napi::Error::from_reason(
+            "No staged changes found. Please stage your changes first.",
+        ));
+    }
+
+    let cancel_token = crate::api::cancel::create_and_register(&stream_id);
+    let result = generate_commit_message_stream(diff, on_chunk, cancel_token).await;
     crate::api::cancel::unregister_stream(&stream_id);
 
     result

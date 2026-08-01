@@ -1,11 +1,13 @@
 pub mod anthropic;
 pub mod cancel;
 pub mod chat;
+pub mod common;
 pub mod codebase_review;
 pub mod commit_message;
 pub mod config;
 pub mod conversation;
 pub mod embedding;
+pub mod file_search_agent;
 pub mod gemini;
 pub mod http_client;
 pub mod models;

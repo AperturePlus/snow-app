@@ -1,7 +1,9 @@
 import { ipcRenderer } from "electron";
 import type {
   FileContentResult,
+  FileSearchResult,
   ParsedSshUrl,
+  RemoteWorkspaceFileSearchOptions,
   SshConnectParams,
   SshCredentialRecord,
   SshDirectoryEntry,
@@ -16,6 +18,13 @@ export const sshApi = {
     remotePath: string
   ): Promise<SshDirectoryEntry[]> =>
     ipcRenderer.invoke("ssh:list-directory", sessionId, remotePath),
+  sshExecuteCommand: (sessionId: string, command: string): Promise<string> =>
+    ipcRenderer.invoke("ssh:execute-command", sessionId, command),
+  searchRemoteWorkspaceFiles: (
+    workspacePath: string,
+    options: RemoteWorkspaceFileSearchOptions
+  ): Promise<FileSearchResult[]> =>
+    ipcRenderer.invoke("ssh:search-workspace-files", workspacePath, options),
   sshReadFile: (
     sessionId: string,
     remotePath: string
@@ -27,6 +36,14 @@ export const sshApi = {
     content: string
   ): Promise<void> =>
     ipcRenderer.invoke("ssh:write-file", sessionId, remotePath, content),
+  sshDeleteEntry: (sessionId: string, remotePath: string): Promise<void> =>
+    ipcRenderer.invoke("ssh:delete-entry", sessionId, remotePath),
+  sshRenameEntry: (
+    sessionId: string,
+    remotePath: string,
+    newName: string
+  ): Promise<void> =>
+    ipcRenderer.invoke("ssh:rename-entry", sessionId, remotePath, newName),
   sshDisconnect: (sessionId: string): Promise<void> =>
     ipcRenderer.invoke("ssh:disconnect", sessionId),
   sshSaveCredential: (params: {

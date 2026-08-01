@@ -19,6 +19,7 @@ export type ChatInputProps = {
   onDraftRestored?: () => void;
   pendingMessages?: string[];
   onWithdrawPendingMessage?: (index: number) => string | null;
+  onSendPendingMessageNow?: (index: number) => void;
   onCompactConversation?: (model?: string) => void | Promise<void>;
   yoloMode?: boolean;
   isUpdatingYoloMode?: boolean;
@@ -28,6 +29,12 @@ export type ChatInputProps = {
   isUpdatingPlanMode?: boolean;
   onPlanModeChange?: (enabled: boolean) => void;
   onRefreshPlanMode?: () => Promise<boolean | void>;
+  goalMode?: boolean;
+  isUpdatingGoalMode?: boolean;
+  onGoalModeChange?: (enabled: boolean) => void;
+  onRefreshGoalMode?: () => Promise<boolean | void>;
+  goalModeTokenBudget?: number;
+  onGoalModeTokenBudgetChange?: (budget: number) => void;
   autoScrollEnabled?: boolean;
   onAutoScrollChange?: (enabled: boolean) => void;
   isCompacting?: boolean;
@@ -105,6 +112,7 @@ export type ChatInputViewProps = ChatInputState &
     tokenUsage: TokenUsage | null;
     pendingMessages: string[];
     onWithdrawPendingMessage?: (index: number) => string | null;
+    onSendPendingMessageNow?: (index: number) => void;
     onCompactConversation?: (model?: string) => void | Promise<void>;
     yoloMode: boolean;
     isUpdatingYoloMode: boolean;
@@ -114,6 +122,12 @@ export type ChatInputViewProps = ChatInputState &
     isUpdatingPlanMode: boolean;
     onPlanModeChange?: (enabled: boolean) => void;
     onRefreshPlanMode?: () => Promise<boolean | void>;
+    goalMode: boolean;
+    isUpdatingGoalMode: boolean;
+    onGoalModeChange?: (enabled: boolean) => void;
+    onRefreshGoalMode?: () => Promise<boolean | void>;
+    goalModeTokenBudget: number;
+    onGoalModeTokenBudgetChange?: (budget: number) => void;
     autoScrollEnabled: boolean;
     onAutoScrollChange?: (enabled: boolean) => void;
     isCompacting: boolean;

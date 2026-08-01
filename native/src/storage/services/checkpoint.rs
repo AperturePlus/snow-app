@@ -14,6 +14,8 @@ use napi_derive::napi;
 use serde::{Deserialize, Serialize};
 use similar::TextDiff;
 
+use super::gitignore::GitignoreMatcher;
+
 const CHECKPOINT_DIR_NAME: &str = "checkpoints";
 const OBJECT_DIR_NAME: &str = "objects";
 const PENDING_DIR_NAME: &str = "pending";
@@ -39,6 +41,7 @@ const SKIP_DIRS: &[&str] = &[
     "venv",
     ".idea",
     ".vscode",
+    ".vs",
     ".snow",
     ".snowapp",
     "release",
@@ -351,7 +354,13 @@ fn write_manifest(checkpoint_id: &str, manifest: &CheckpointManifest) -> Result<
 
 fn run_git(work_dir: &Path, args: &[&str]) -> Result<Output> {
     let mut command = Command::new("git");
-    command.args(args).current_dir(work_dir);
+    // `safe.directory=*` bypasses Git's dubious-ownership check
+    // (CVE-2022-24765), so git works inside WSL (`\\wsl$\...`) and other
+    // UNC/network paths where the repo is owned by a different user.
+    command
+        .args(["-c", "core.quotepath=false", "-c", "safe.directory=*"])
+        .args(args)
+        .current_dir(work_dir);
 
     #[cfg(target_os = "windows")]
     {
@@ -414,6 +423,7 @@ fn update_checkpoint_git_ref(
 }
 
 fn collect_worktree_file_paths(root: &Path) -> Result<HashSet<String>> {
+    let matcher = GitignoreMatcher::from_project_root(root);
     let mut paths = HashSet::new();
     let mut directories = vec![root.to_path_buf()];
 
@@ -448,10 +458,16 @@ fn collect_worktree_file_paths(root: &Path) -> Result<HashSet<String>> {
             if file_type.is_symlink() {
                 continue;
             }
+
+            let relative_path = to_forward_slashes(relative);
+            if matcher.is_ignored(&relative_path, file_type.is_dir()) {
+                continue;
+            }
+
             if file_type.is_dir() {
                 directories.push(path);
             } else if file_type.is_file() {
-                paths.insert(to_forward_slashes(relative));
+                paths.insert(relative_path);
             }
         }
     }
@@ -809,6 +825,12 @@ pub fn record_checkpoint_worktree_after(capture: CheckpointWorktreeCapture) -> R
 /// Restore only paths that were recorded by mutating tools after this checkpoint.
 pub fn restore_checkpoint(checkpoint_id: String, work_dir: String) -> Result<()> {
     let _guard = checkpoint_guard()?;
+    // If the manifest no longer exists (checkpoint was deleted or corrupted),
+    // there is nothing to restore. Return Ok so the rollback flow continues
+    // to delete messages without being blocked by a missing checkpoint.
+    if !checkpoint_manifest_exists(&checkpoint_id) {
+        return Ok(());
+    }
     let manifest = read_manifest(&checkpoint_id)?;
     let root = validate_manifest_work_dir(&manifest, &work_dir)?;
 
@@ -1040,6 +1062,9 @@ pub fn list_checkpoint_changes(
     work_dir: String,
 ) -> Result<Vec<CheckpointFileChange>> {
     let _guard = checkpoint_guard()?;
+    if !checkpoint_manifest_exists(&checkpoint_id) {
+        return Ok(Vec::new());
+    }
     let manifest = read_manifest(&checkpoint_id)?;
     let root = validate_manifest_work_dir(&manifest, &work_dir)?;
     let tracked = collect_tracked_entries(&manifest);
@@ -1079,6 +1104,9 @@ pub fn list_checkpoint_diffs(
     work_dir: String,
 ) -> Result<Vec<CheckpointFileDiff>> {
     let _guard = checkpoint_guard()?;
+    if !checkpoint_manifest_exists(&checkpoint_id) {
+        return Ok(Vec::new());
+    }
     let manifest = read_manifest(&checkpoint_id)?;
     let root = validate_manifest_work_dir(&manifest, &work_dir)?;
     let tracked = collect_tracked_entries(&manifest);

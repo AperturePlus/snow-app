@@ -554,7 +554,10 @@ export const ProjectCodebasePanel = ({
                   </div>
                 ) : null}
 
-                {embedding.embedState === "completed" && indexStats ? (
+                {(embedding.embedState === "completed" ||
+                  indexStats?.isIndexed) &&
+                indexStats &&
+                !isEmbedding ? (
                   <div className="project-codebase-index-stats">
                     <div className="project-codebase-stat-item">
                       <span className="project-codebase-stat-label">
@@ -667,7 +670,8 @@ export const ProjectCodebasePanel = ({
                     >
                       <Play size={14} />
                       <span>
-                        {embedding.embedState === "completed"
+                        {embedding.embedState === "completed" ||
+                        indexStats?.isIndexed
                           ? t("projectCodebase.embedding.reindex")
                           : t("projectCodebase.embedding.start")}
                       </span>

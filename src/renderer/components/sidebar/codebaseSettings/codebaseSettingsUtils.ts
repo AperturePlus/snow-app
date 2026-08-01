@@ -63,9 +63,18 @@ export const normalizeCodebaseSettings = (
   return {
     profileName: profileName || DEFAULT_CODEBASE_SETTINGS.profileName,
     embeddingType: embeddingType || DEFAULT_CODEBASE_SETTINGS.embeddingType,
-    embeddingModelName: toText(source.embeddingModelName).trim(),
-    embeddingBaseUrl: toText(source.embeddingBaseUrl).trim(),
-    embeddingApiKey: toText(source.embeddingApiKey),
+    embeddingModelName: toText(
+      source.embeddingModelName,
+      DEFAULT_CODEBASE_SETTINGS.embeddingModelName
+    ).trim(),
+    embeddingBaseUrl: toText(
+      source.embeddingBaseUrl,
+      DEFAULT_CODEBASE_SETTINGS.embeddingBaseUrl
+    ).trim(),
+    embeddingApiKey: toText(
+      source.embeddingApiKey,
+      DEFAULT_CODEBASE_SETTINGS.embeddingApiKey
+    ),
     embeddingDimensions: toPositiveInteger(
       source.embeddingDimensions,
       DEFAULT_CODEBASE_SETTINGS.embeddingDimensions

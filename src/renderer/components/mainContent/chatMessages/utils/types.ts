@@ -1,8 +1,9 @@
-import type { ToolCallInfo } from "./conversationTypes";
+import type { HookExecutionRecord, ToolCallInfo } from "./conversationTypes";
 export type UserMessageProps = {
   content: string;
   isStreaming: boolean;
   onRollback: () => void;
+  hookExecutions?: HookExecutionRecord[];
 };
 
 export type AiResponseSection = {
@@ -35,7 +36,11 @@ export type AiResponseProps = {
   pendingToolAuthorizations?: ToolCallInfo[];
   onApproveToolAuthorization?: (toolCall: ToolCallInfo) => void;
   onApproveToolAuthorizationAlways?: (toolCall: ToolCallInfo) => void;
-  onRejectToolAuthorization?: (toolCall: ToolCallInfo, reason: string) => void;
+  onRejectToolAuthorization?: (
+    toolCall: ToolCallInfo,
+    reason: string,
+    userProvidedReason?: boolean
+  ) => void;
   conversationId?: string;
   responseId?: string;
   onFork?: (conversationId: string, upToResponseId: string) => void;

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -20,11 +20,18 @@ enum ToolCheckpointCapture {
 use super::builtin::{
     execute_builtin_tool, get_builtin_servers_with_tools, get_builtin_tools,
 };
+use super::servers::app_control::{AppControlCallback, AppControlService};
 use super::servers::bash::{BashService, BashStreamCallback};
 use super::servers::browser::{BrowserCommandCallback, BrowserService};
 use super::servers::codebase::CodebaseService;
 use super::servers::codelens::CodeLensService;
+use super::servers::filesystem::FilesystemService;
 use super::servers::grep::GrepService;
+use super::servers::plan_mode::{PlanModeService, SERVER_ID as PLAN_MODE_SERVER_ID};
+use super::servers::remote_workspace::{
+    is_ssh_path, resolve_remote_project_workspace, resolve_remote_workspace_path,
+    RemoteWorkspaceCallback,
+};
 use super::servers::skills::SkillsService;
 use super::servers::todo::TodoService;
 use super::servers::user_interaction::{UserInteractionService, UserQuestionCallback};
@@ -79,6 +86,8 @@ impl McpTool {
 /// server_name 经 `sanitize_name` 后不含 `-`，可安全用第一个 `-` 分割。
 pub const BUILTIN_SERVER_IDS: &[&str] = &[
     "user-interaction",
+    "app-control",
+    "plan-mode",
     "filesystem",
     "sub-agents",
     "websearch",
@@ -112,7 +121,7 @@ pub fn split_tool_full_name(full_name: &str) -> Option<(&str, &str)> {
 }
 
 pub async fn list_mcp_tools() -> napi::Result<Vec<McpToolDefinition>> {
-    let tools = collect_all_mcp_tools(None).await?;
+    let tools = collect_all_mcp_tools(None, false).await?;
     Ok(to_tool_definitions(&tools))
 }
 
@@ -348,7 +357,10 @@ fn required_value(value: String, label: &str) -> Result<String> {
     Ok(normalized.to_string())
 }
 
-pub async fn collect_all_mcp_tools(project_id: Option<&str>) -> Result<Vec<McpTool>> {
+pub async fn collect_all_mcp_tools(
+    project_id: Option<&str>,
+    include_plan_mode_tool: bool,
+) -> Result<Vec<McpTool>> {
     let scope = load_project_scope(project_id).await?;
 
     // Determine whether the codebase search tool should be included.
@@ -359,6 +371,11 @@ pub async fn collect_all_mcp_tools(project_id: Option<&str>) -> Result<Vec<McpTo
     let mut tools = get_builtin_tools()
         .into_iter()
         .filter(|tool| {
+            // The dedicated approval tool is request-scoped: it must only be
+            // exposed to the model while the current request is in Plan Mode.
+            if tool.server_id == PLAN_MODE_SERVER_ID {
+                return include_plan_mode_tool;
+            }
             // Exclude codebase search tool unless the project has codebase
             // enabled and an existing index.
             if tool.server_id == "codebase" && !codebase_available {
@@ -380,7 +397,6 @@ pub async fn collect_all_mcp_tools(project_id: Option<&str>) -> Result<Vec<McpTo
     }
     Ok(tools)
 }
-
 /// Check whether the codebase search tool should be available for the
 /// given project: the project must have codebase enabled AND have at
 /// least one embedded chunk in its vector table.
@@ -439,7 +455,7 @@ pub async fn collect_allowed_mcp_tools(
         ));
     }
 
-    let all_tools = collect_all_mcp_tools(project_id).await?;
+    let all_tools = collect_all_mcp_tools(project_id, false).await?;
     if wildcard_enabled {
         return Ok(all_tools);
     }
@@ -494,6 +510,8 @@ fn builtin_server_name(server_id: &str) -> &str {
         "websearch" => "Web search",
         "browser" => "Browser",
         "user-interaction" => "User interaction",
+        "plan-mode" => "Plan Mode",
+        "app-control" => "App Control",
         "sub-agents" => "Sub-agents",
         "codebase" => "Codebase",
         "codelens" => "CodeLens",
@@ -681,12 +699,56 @@ pub async fn call_mcp_tool(
     on_chunk: BashStreamCallback,
     on_browser_command: BrowserCommandCallback,
     on_user_question: UserQuestionCallback,
+    on_app_control: AppControlCallback,
+    on_remote_workspace_command: RemoteWorkspaceCallback,
     sub_agent_allowed_tools: Option<Vec<String>>,
+    plan_mode: bool,
+    plan_approved: bool,
 ) -> napi::Result<String> {
     // Sanitize: AI may copy "[Tool: server-tool#callId]" from conversation
     // history or leak internal XML tags into the tool name. Normalize
     // before any matching or whitelist check.
     let tool_full_name = super::builtin::sanitize_tool_full_name(&tool_full_name);
+    let is_sub_agent_call = sub_agent_allowed_tools.is_some();
+
+    if tool_full_name == "plan-mode-requestApproval" {
+        if is_sub_agent_call {
+            return Err(Error::new(
+                Status::GenericFailure,
+                "plan-mode-requestApproval is reserved for the main conversation; sub-agents cannot request or grant Plan Mode approval"
+                    .to_string(),
+            ));
+        }
+        if !plan_mode {
+            return Err(Error::new(
+                Status::GenericFailure,
+                "plan-mode-requestApproval is only available while Plan Mode is active"
+                    .to_string(),
+            ));
+        }
+    }
+
+    let args = parse_tool_args(&tool_full_name, &args_json)?;
+    if plan_mode
+        && !plan_approved
+        && matches!(
+            tool_full_name.as_str(),
+            "filesystem-replace_edit" | "filesystem-create"
+        )
+        && (is_sub_agent_call
+            || !is_allowed_plan_document_write(project_id.as_deref(), &args).await?)
+    {
+        let message = if is_sub_agent_call {
+            format!(
+                "PARENT_PLAN_APPROVAL_REQUIRED: {tool_full_name} cannot run because the main conversation has not approved its Plan Mode plan. Stop this sub-agent task and return control to the main conversation. Do not retry this write and do not request approval from the sub-agent."
+            )
+        } else {
+            format!(
+                "Plan Mode write blocked: {tool_full_name} cannot run before explicit user approval. Only plan documents inside .snow/plan or .trellis/tasks may be written during planning. Call plan-mode-requestApproval first, and retry project-file writes only when that tool returns approved=true."
+            )
+        };
+        return Err(Error::new(Status::GenericFailure, message));
+    }
 
     ensure_project_tool_enabled(project_id.as_deref(), &tool_full_name).await?;
 
@@ -704,25 +766,38 @@ pub async fn call_mcp_tool(
         }
     }
 
-    let args = parse_tool_args(&tool_full_name, &args_json)?;
+    let (args, uses_remote_workspace) =
+        prepare_remote_workspace_args(&tool_full_name, args, project_id.as_deref()).await?;
 
-    let checkpoint_tool_name = tool_full_name.clone();
-    let checkpoint_args = args.clone();
-    let checkpoint_capture = tokio::task::spawn_blocking(move || {
-        capture_checkpoint_before_tool(
-            &checkpoint_tool_name,
-            &checkpoint_args,
-            checkpoint_ids,
-            checkpoint_work_dir,
-        )
-    })
-    .await
-    .map_err(|error| {
-        Error::new(
-            Status::GenericFailure,
-            format!("Failed to capture checkpoint before tool execution: {error}"),
-        )
-    })??;
+    // 本地（非 SSH）filesystem 工具：将 filePath 的相对路径（如 "."）解析到
+    // 当前项目根目录，避免其被解析为 Electron 进程的工作目录。
+    let args = if uses_remote_workspace {
+        args
+    } else {
+        resolve_local_filesystem_args(&tool_full_name, args, project_id.as_deref()).await?
+    };
+
+    let checkpoint_capture = if uses_remote_workspace {
+        ToolCheckpointCapture::None
+    } else {
+        let checkpoint_tool_name = tool_full_name.clone();
+        let checkpoint_args = args.clone();
+        tokio::task::spawn_blocking(move || {
+            capture_checkpoint_before_tool(
+                &checkpoint_tool_name,
+                &checkpoint_args,
+                checkpoint_ids,
+                checkpoint_work_dir,
+            )
+        })
+        .await
+        .map_err(|error| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to capture checkpoint before tool execution: {error}"),
+            )
+        })??
+    };
 
     let returns_plain_text = tool_full_name == "skills-skill-execute";
     let masking_tool_name = tool_full_name.clone();
@@ -733,6 +808,7 @@ pub async fn call_mcp_tool(
                 project_id.as_deref(),
                 sensitive_authorization_token.as_deref(),
                 on_chunk,
+                &on_remote_workspace_command,
             )
             .await;
         if let ToolCheckpointCapture::Worktree(Some(capture)) = checkpoint_capture {
@@ -749,7 +825,19 @@ pub async fn call_mcp_tool(
         }
         terminal_result?
     } else if tool_full_name == "grep-search" {
-        GrepService::new().execute_search(&args).await?
+        GrepService::new()
+            .execute_search(&args, &on_remote_workspace_command)
+            .await?
+    } else if uses_remote_workspace {
+        let filesystem_tool = tool_full_name.strip_prefix("filesystem-").ok_or_else(|| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Unsupported remote workspace MCP tool: {tool_full_name}"),
+            )
+        })?;
+        FilesystemService::new()
+            .execute_async(filesystem_tool, &args, &on_remote_workspace_command)
+            .await?
     } else if tool_full_name == "todo-todo-manage" {
         TodoService::new().execute_async(&args).await?
     } else if tool_full_name == "websearch-websearch-search" {
@@ -763,6 +851,14 @@ pub async fn call_mcp_tool(
     } else if tool_full_name == "user-interaction-askUserQuestion" {
         UserInteractionService::new()
             .execute_async(&args, &on_user_question)
+            .await?
+    } else if tool_full_name == "plan-mode-requestApproval" {
+        PlanModeService::new()
+            .execute_async(&args, &on_user_question)
+            .await?
+    } else if let Some(app_control_tool) = tool_full_name.strip_prefix("app-control-") {
+        AppControlService::new()
+            .execute_async(app_control_tool, &args, &on_app_control)
             .await?
     } else if tool_full_name == "skills-skill-execute" {
         SkillsService::new()
@@ -829,6 +925,292 @@ pub async fn call_mcp_tool(
         )
     })?;
     super::privacy_mask::mask_tool_result_if_needed(&masking_tool_name, &serialized).await
+}
+
+const PLAN_WRITE_DIRECTORIES: [[&str; 2]; 2] = [[".snow", "plan"], [".trellis", "tasks"]];
+
+async fn is_allowed_plan_document_write(
+    project_id: Option<&str>,
+    args: &Value,
+) -> napi::Result<bool> {
+    let Some(file_path) = args
+        .get("filePath")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+    else {
+        return Ok(false);
+    };
+    let Some(project_id) = project_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+    else {
+        return Ok(false);
+    };
+    let workspace_path = with_database_path(move |database_path| {
+        crate::storage::services::workspace_directories::get_workspace_directory_path(
+            &database_path,
+            &project_id,
+        )
+    })
+    .await?;
+    let Some(workspace_path) = workspace_path else {
+        return Ok(false);
+    };
+
+    if is_ssh_path(&workspace_path) {
+        return Ok(is_allowed_remote_plan_write(&workspace_path, file_path));
+    }
+
+    let workspace_path = PathBuf::from(workspace_path);
+    let requested_path = PathBuf::from(file_path);
+    tokio::task::spawn_blocking(move || {
+        is_allowed_local_plan_write(&workspace_path, &requested_path)
+    })
+    .await
+    .map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to validate Plan Mode write path: {error}"),
+        )
+    })
+}
+
+fn is_allowed_local_plan_write(workspace_path: &Path, requested_path: &Path) -> bool {
+    let Some(workspace_path) = lexical_normalize_path(workspace_path) else {
+        return false;
+    };
+    if !workspace_path.is_absolute() {
+        return false;
+    }
+
+    let candidate_path = if requested_path.is_absolute() {
+        lexical_normalize_path(requested_path)
+    } else {
+        lexical_normalize_path(&workspace_path.join(requested_path))
+    };
+    let Some(candidate_path) = candidate_path else {
+        return false;
+    };
+
+    PLAN_WRITE_DIRECTORIES.iter().any(|segments| {
+        let allowed_root = workspace_path.join(segments[0]).join(segments[1]);
+        path_is_descendant(&candidate_path, &allowed_root)
+            && !path_contains_symlink(&workspace_path, &candidate_path)
+    })
+}
+
+fn lexical_normalize_path(path: &Path) -> Option<PathBuf> {
+    let mut normalized = PathBuf::new();
+    let mut normal_depth = 0usize;
+
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if normal_depth == 0 || !normalized.pop() {
+                    return None;
+                }
+                normal_depth -= 1;
+            }
+            Component::Normal(segment) => {
+                normalized.push(segment);
+                normal_depth += 1;
+            }
+        }
+    }
+
+    Some(normalized)
+}
+
+fn path_is_descendant(candidate_path: &Path, root_path: &Path) -> bool {
+    let candidate_components = candidate_path.components().collect::<Vec<_>>();
+    let root_components = root_path.components().collect::<Vec<_>>();
+    candidate_components.len() > root_components.len()
+        && root_components
+            .iter()
+            .zip(candidate_components.iter())
+            .all(|(root, candidate)| local_component_eq(*root, *candidate))
+}
+
+fn local_component_eq(left: Component<'_>, right: Component<'_>) -> bool {
+    if cfg!(windows) {
+        left.as_os_str()
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&right.as_os_str().to_string_lossy())
+    } else {
+        left == right
+    }
+}
+
+fn path_contains_symlink(workspace_path: &Path, candidate_path: &Path) -> bool {
+    let workspace_depth = workspace_path.components().count();
+    let mut current_path = workspace_path.to_path_buf();
+
+    for component in candidate_path.components().skip(workspace_depth) {
+        current_path.push(component.as_os_str());
+        match std::fs::symlink_metadata(&current_path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => return true,
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return false,
+            Err(_) => return true,
+        }
+    }
+
+    false
+}
+
+fn is_allowed_remote_plan_write(workspace_path: &str, requested_path: &str) -> bool {
+    let resolved_path = resolve_remote_workspace_path(
+        workspace_path,
+        &requested_path.trim().replace('\\', "/"),
+    );
+    let Some((workspace_authority, workspace_segments)) = normalize_ssh_path(workspace_path) else {
+        return false;
+    };
+    let Some((candidate_authority, candidate_segments)) = normalize_ssh_path(&resolved_path) else {
+        return false;
+    };
+    if workspace_authority != candidate_authority
+        || !remote_segments_start_with(&candidate_segments, &workspace_segments)
+    {
+        return false;
+    }
+
+    let relative_segments = &candidate_segments[workspace_segments.len()..];
+    PLAN_WRITE_DIRECTORIES.iter().any(|segments| {
+        relative_segments.len() > segments.len()
+            && relative_segments[0] == segments[0]
+            && relative_segments[1] == segments[1]
+    })
+}
+
+fn normalize_ssh_path(path: &str) -> Option<(String, Vec<String>)> {
+    let normalized = path.trim().replace('\\', "/");
+    let remainder = normalized.strip_prefix("ssh://")?;
+    let (authority, raw_path) = remainder.split_once('/').unwrap_or((remainder, ""));
+    if authority.is_empty() {
+        return None;
+    }
+
+    let mut segments = Vec::new();
+    for segment in raw_path.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                segments.pop()?;
+            }
+            value => segments.push(value.to_string()),
+        }
+    }
+
+    Some((authority.to_string(), segments))
+}
+
+fn remote_segments_start_with(candidate: &[String], root: &[String]) -> bool {
+    candidate.len() >= root.len()
+        && root
+            .iter()
+            .zip(candidate.iter())
+            .all(|(root_segment, candidate_segment)| root_segment == candidate_segment)
+}
+
+async fn prepare_remote_workspace_args(
+    tool_full_name: &str,
+    mut args: Value,
+    project_id: Option<&str>,
+) -> napi::Result<(Value, bool)> {
+    let Some(path_field) = remote_workspace_path_field(tool_full_name) else {
+        return Ok((args, false));
+    };
+    let Some(path) = args.get(path_field).and_then(Value::as_str) else {
+        return Ok((args, false));
+    };
+    if is_ssh_path(path) {
+        return Ok((args, true));
+    }
+
+    let Some(workspace_path) = resolve_remote_project_workspace(project_id).await? else {
+        return Ok((args, false));
+    };
+    args[path_field] = Value::String(resolve_remote_workspace_path(&workspace_path, path));
+    Ok((args, true))
+}
+
+fn remote_workspace_path_field(tool_full_name: &str) -> Option<&'static str> {
+    match tool_full_name {
+        "filesystem-read" | "filesystem-replace_edit" | "filesystem-create" => Some("filePath"),
+        "grep-search" => Some("path"),
+        "bash-terminal-execute" => Some("workingDirectory"),
+        _ => None,
+    }
+}
+
+/// 解析 project_id 对应的本地（非 SSH）工作区根目录。
+/// 通过应用数据库中的 workspace_directories 表查询该项目的本地根路径。
+/// 数据库访问放在 Tokio 阻塞池中执行，避免阻塞 N-API 异步运行时。
+/// SSH 工作区不在此处理，由 prepare_remote_workspace_args 统一路由到远端。
+async fn resolve_local_project_root(project_id: Option<&str>) -> napi::Result<Option<String>> {
+    let Some(project_id) = project_id.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let project_id = project_id.to_string();
+
+    let workspace_path = tokio::task::spawn_blocking(move || {
+        let storage_info = crate::storage::initialize_app_storage()?;
+        let database_path = std::path::PathBuf::from(storage_info.database_path);
+        crate::storage::services::workspace_directories::get_workspace_directory_path(
+            &database_path,
+            &project_id,
+        )
+    })
+    .await
+    .map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to resolve local project workspace: {error}"),
+        )
+    })??;
+
+    Ok(workspace_path.filter(|path| !is_ssh_path(path)))
+}
+
+/// 将本地 filesystem 工具的 filePath 相对路径解析到当前项目根目录。
+/// 当 AI 以 "."、"./src"、"src/main.ts" 等相对路径调用 filesystem 工具时，
+/// 避免它们被 Rust 解析为 Electron 进程的工作目录（通常并非项目根目录）。
+/// 绝对路径、空路径、SSH 路径或无法解析出项目根目录时保持原样。
+async fn resolve_local_filesystem_args(
+    tool_full_name: &str,
+    mut args: Value,
+    project_id: Option<&str>,
+) -> napi::Result<Value> {
+    if !tool_full_name.starts_with("filesystem-") {
+        return Ok(args);
+    }
+    let Some(file_path) = args.get("filePath").and_then(Value::as_str) else {
+        return Ok(args);
+    };
+    let trimmed = file_path.trim();
+    if trimmed.is_empty() || is_ssh_path(trimmed) {
+        return Ok(args);
+    }
+    let path = Path::new(trimmed);
+    if path.is_absolute() {
+        return Ok(args);
+    }
+    let Some(project_root) = resolve_local_project_root(project_id).await? else {
+        return Ok(args);
+    };
+
+    let resolved = Path::new(&project_root)
+        .join(path)
+        .to_string_lossy()
+        .to_string();
+    args["filePath"] = Value::String(resolved);
+    Ok(args)
 }
 
 fn parse_tool_args(tool_full_name: &str, args_json: &str) -> napi::Result<Value> {

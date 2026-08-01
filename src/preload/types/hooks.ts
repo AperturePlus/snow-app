@@ -67,4 +67,10 @@ export type HookExecuteResult = {
   softSignal?: boolean | null;
   blocked?: boolean | null;
   blockMessage?: string | null;
+  /** When true, the soft-warning hook returned a decision JSON on stdout
+   *  and the caller must prompt the user to approve or reject the action. */
+  requiresDecision?: boolean | null;
+  /** The human-readable message from the decision JSON's `decision.message`.
+   *  Present only when `requiresDecision` is true. */
+  decisionMessage?: string | null;
 };

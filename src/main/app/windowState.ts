@@ -1,6 +1,7 @@
 import { app, screen } from "electron";
 import type { BrowserWindow, Rectangle } from "electron";
-import { readFile, unlink, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import { unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export interface WindowState {
@@ -20,9 +21,9 @@ export const DEFAULT_WINDOW_HEIGHT = 900;
 const getWindowStatePath = (): string =>
   join(app.getPath("userData"), "window-state.json");
 
-export const loadWindowState = async (): Promise<WindowState | null> => {
+export const loadWindowState = (): WindowState | null => {
   try {
-    const raw = await readFile(getWindowStatePath(), "utf-8");
+    const raw = readFileSync(getWindowStatePath(), "utf-8");
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null) {
       return null;

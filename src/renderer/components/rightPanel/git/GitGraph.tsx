@@ -356,6 +356,16 @@ export const GitGraph = ({ repoPath }: GitGraphProps): React.JSX.Element => {
       {rows.map((row) => {
         const dotColor = LANE_COLORS[row.dotLane % LANE_COLORS.length];
         const isSelected = selectedHash === row.commit.hash;
+        // At a branch point (curve leaving the dot), the curve leads into
+        // the target lane and only reaches it at the bottom of the row.
+        // If that lane had no line coming from above, drawing its vertical
+        // bottom line from the dot height would make the new branch appear
+        // to extend one extra segment before the curve actually joins it.
+        // Skip such lines — the next row's top line continues them.
+        const curveTargets = new Set(row.curves.map((c) => c.to));
+        const bottomLines = row.bottomLines.filter(
+          (lane) => !(curveTargets.has(lane) && !row.topLines.includes(lane))
+        );
         return (
           <div key={row.commit.hash}>
             <div
@@ -373,20 +383,20 @@ export const GitGraph = ({ repoPath }: GitGraphProps): React.JSX.Element => {
                   <line
                     key={`top-${lane}`}
                     x1={lane * LANE_WIDTH + LANE_WIDTH / 2}
-                    y1={0}
+                    y1={-LINE_WIDTH / 2}
                     x2={lane * LANE_WIDTH + LANE_WIDTH / 2}
                     y2={ROW_HEIGHT / 2}
                     stroke={LANE_COLORS[lane % LANE_COLORS.length]}
                     strokeWidth={LINE_WIDTH}
                   />
                 ))}
-                {row.bottomLines.map((lane) => (
+                {bottomLines.map((lane) => (
                   <line
                     key={`bottom-${lane}`}
                     x1={lane * LANE_WIDTH + LANE_WIDTH / 2}
                     y1={ROW_HEIGHT / 2}
                     x2={lane * LANE_WIDTH + LANE_WIDTH / 2}
-                    y2={ROW_HEIGHT}
+                    y2={ROW_HEIGHT + LINE_WIDTH / 2}
                     stroke={LANE_COLORS[lane % LANE_COLORS.length]}
                     strokeWidth={LINE_WIDTH}
                   />
@@ -399,7 +409,9 @@ export const GitGraph = ({ repoPath }: GitGraphProps): React.JSX.Element => {
                       key={`curve-${i}`}
                       d={`M ${fromX},${ROW_HEIGHT / 2} C ${fromX},${
                         ROW_HEIGHT * 0.75
-                      } ${toX},${ROW_HEIGHT * 0.75} ${toX},${ROW_HEIGHT}`}
+                      } ${toX},${ROW_HEIGHT * 0.75} ${toX},${
+                        ROW_HEIGHT + LINE_WIDTH / 2
+                      }`}
                       fill="none"
                       stroke={LANE_COLORS[c.to % LANE_COLORS.length]}
                       strokeWidth={LINE_WIDTH}

@@ -40,7 +40,12 @@ pub fn parse_chat_message_content(
 
         let data_url = &tag_value_and_rest[..tag_end];
         let full_tag_end = tag_value_start + tag_end + 2;
-        if let Some(image) = parse_image_tag_value(data_url, database_path)? {
+
+        // SVG is XML text — most AI models cannot interpret it as a raster
+        // image from base64. Inline the raw SVG source code instead.
+        if let Some(svg_text) = try_extract_svg_source(data_url, database_path) {
+            parsed.text.push_str(&svg_text);
+        } else if let Some(image) = parse_image_tag_value(data_url, database_path)? {
             // Insert an inline placeholder so the model can see the image's
             // position and order within the message text. The 1-based index
             // matches the order images appear in the `parsed.images` vector,
@@ -115,6 +120,36 @@ fn parse_base64_image_data_url(data_url: &str) -> Option<ChatImage> {
         data: data.to_string(),
         data_url: value.to_string(),
     })
+}
+
+/// If the image tag value refers to an SVG (either inline data URL or file path),
+/// decode/read it and return the raw SVG source text. Returns None for non-SVG.
+fn try_extract_svg_source(value: &str, database_path: &Path) -> Option<String> {
+    let value = value.trim();
+
+    // Case 1: inline data URL — data:image/svg+xml;base64,...
+    if value.starts_with("data:") {
+        let (metadata, data) = value.strip_prefix("data:")?.split_once(',')?;
+        let media_type = metadata.strip_suffix(";base64")?.trim();
+        if media_type != "image/svg+xml" {
+            return None;
+        }
+        let bytes = base64::engine::general_purpose::STANDARD.decode(data.trim()).ok()?;
+        return String::from_utf8(bytes).ok();
+    }
+
+    // Case 2: relative file path ending in .svg
+    if value.is_empty() || value.contains('{') || !value.contains('/') {
+        return None;
+    }
+    let file_path = database_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(value);
+    if file_path.extension().and_then(|e| e.to_str()).map(str::to_lowercase).as_deref() != Some("svg") {
+        return None;
+    }
+    fs::read_to_string(&file_path).ok()
 }
 
 pub fn persist_inline_images_to_disk(content: &str, database_path: &Path) -> Result<String> {

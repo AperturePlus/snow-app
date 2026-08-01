@@ -5,12 +5,14 @@ use napi::bindgen_prelude::*;
 use serde_json::Value;
 
 use super::service::McpService;
+use super::servers::app_control::AppControlService;
 use super::servers::bash::BashService;
 use super::servers::browser::BrowserService;
 use super::servers::codebase::CodebaseService;
 use super::servers::codelens::CodeLensService;
 use super::servers::filesystem::FilesystemService;
 use super::servers::grep::GrepService;
+use super::servers::plan_mode::PlanModeService;
 use super::servers::sub_agents::SubAgentsService;
 use super::servers::todo::TodoService;
 use super::servers::user_interaction::UserInteractionService;
@@ -34,6 +36,8 @@ fn builtin_services_in_order() -> Vec<Arc<dyn McpService>> {
         Arc::new(SubAgentsService::new()),
         Arc::new(CodebaseService::new()),
         Arc::new(CodeLensService::new()),
+        Arc::new(PlanModeService::new()),
+        Arc::new(AppControlService::new()),
     ]
 }
 

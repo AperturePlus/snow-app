@@ -91,11 +91,24 @@ pub struct GitCommitFile {
     pub status: String,
 }
 
+#[napi(object)]
+pub struct GitRepoInfo {
+    pub path: String,
+    pub name: String,
+    pub current_branch: String,
+}
+
 // ===== Internal helpers =====
 
 fn run_git(repo_path: &str, args: &[&str]) -> Result<String> {
     let mut cmd = Command::new("git");
-    cmd.args(args).current_dir(repo_path);
+    // `safe.directory=*` bypasses Git's dubious-ownership check
+    // (CVE-2022-24765). Without it, Windows Git refuses to run inside
+    // WSL (`\\wsl$\...`) or other network/UNC paths because the repo files
+    // are owned by the Linux user, not the current Windows user.
+    cmd.args(["-c", "core.quotepath=false", "-c", "safe.directory=*"])
+        .args(args)
+        .current_dir(repo_path);
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
@@ -125,7 +138,10 @@ fn run_git(repo_path: &str, args: &[&str]) -> Result<String> {
 /// Using `run_git` would treat that as an error and discard the stdout.
 fn run_git_raw(repo_path: &str, args: &[&str]) -> Result<String> {
     let mut cmd = Command::new("git");
-    cmd.args(args).current_dir(repo_path);
+    // Same `safe.directory=*` bypass as `run_git` — see its comment.
+    cmd.args(["-c", "core.quotepath=false", "-c", "safe.directory=*"])
+        .args(args)
+        .current_dir(repo_path);
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
@@ -191,6 +207,12 @@ fn derive_display_status(index_status: &str, workdir_status: &str) -> String {
 // ===== Public API =====
 
 pub fn get_git_status(repo_path: &str) -> Result<GitStatusResult> {
+    // Gracefully handle non-repo paths: return is_repo=false instead of
+    // propagating git's "fatal: not a git repository" error to the UI.
+    // This covers both the case where .git doesn't exist and the edge case
+    // where .git exists but git itself rejects the path (e.g. corrupted
+    // .git, broken worktree pointer, or .git file pointing to a missing
+    // gitdir).
     if !is_git_repo(repo_path) {
         return Ok(GitStatusResult {
             is_repo: false,
@@ -205,7 +227,28 @@ pub fn get_git_status(repo_path: &str) -> Result<GitStatusResult> {
         });
     }
 
-    let status_out = run_git(repo_path, &["status", "--porcelain=v1", "-b", "--find-renames", "-uall"])?;
+    // If is_git_repo returned true but git still fails (corrupted repo,
+    // broken worktree, etc.), treat it as a non-repo rather than surfacing
+    // a raw git error to the user.
+    let status_out = match run_git(
+        repo_path,
+        &["status", "--porcelain=v1", "-b", "--find-renames", "-uall"],
+    ) {
+        Ok(out) => out,
+        Err(_) => {
+            return Ok(GitStatusResult {
+                is_repo: false,
+                current_branch: String::new(),
+                upstream: None,
+                ahead: 0,
+                behind: 0,
+                files: Vec::new(),
+                staged_count: 0,
+                unstaged_count: 0,
+                untracked_count: 0,
+            });
+        }
+    };
     let lines: Vec<&str> = status_out.lines().filter(|l| !l.is_empty()).collect();
 
     let mut current_branch = String::new();
@@ -868,4 +911,130 @@ pub fn get_commit_files(repo_path: &str, hash: &str) -> Result<Vec<GitCommitFile
     }
 
     Ok(files)
+}
+
+/// Scan a directory for git repositories.
+///
+/// Recursively walks `root_path` looking for subdirectories containing a
+/// `.git` entry (either a directory or a `.git` file for worktrees/submodules).
+/// When a git repo is found, its subdirectories are NOT recursed into —
+/// nested repos inside an already-discovered repo are skipped (matching
+/// VSCode's behaviour where each workspace folder is treated independently).
+///
+/// Common directories that should never be traversed (node_modules, .git,
+/// dist, build, target, etc.) are skipped to keep the scan fast.
+///
+/// Returns a list of `GitRepoInfo` with the repo path, display name (the
+/// folder name), and current branch name.
+pub fn discover_git_repos(root_path: &str) -> Result<Vec<GitRepoInfo>> {
+    let root = Path::new(root_path);
+    if !root.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let mut repos: Vec<GitRepoInfo> = Vec::new();
+
+    // If the root directory itself is a git repo, add it and don't recurse
+    // into it. This handles the common case where the workspace directory
+    // IS the git repository (e.g. a single-project workspace), which
+    // scan_dir_for_repos would miss because it only checks children.
+    if root.join(".git").exists() {
+        let path_str = root.to_string_lossy().to_string();
+        let name = root
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| path_str.clone());
+        let current_branch = get_current_branch_name(&path_str).unwrap_or_default();
+        repos.push(GitRepoInfo {
+            path: path_str,
+            name,
+            current_branch,
+        });
+    } else {
+        scan_dir_for_repos(root, &mut repos);
+    }
+
+    // Sort by path for deterministic ordering
+    repos.sort_by(|a, b| a.path.cmp(&b.path));
+
+    Ok(repos)
+}
+
+/// Directories that should never be traversed during repo discovery.
+fn is_skip_dir(name: &str) -> bool {
+    matches!(
+        name,
+        ".git"
+            | "node_modules"
+            | "dist"
+            | "build"
+            | "out"
+            | "target"
+            | ".next"
+            | ".nuxt"
+            | ".cache"
+            | ".gradle"
+            | "__pycache__"
+            | ".venv"
+            | "venv"
+            | ".idea"
+            | ".vscode"
+            | "Pods"
+            | ".swiftpm"
+            | ".build"
+    )
+}
+
+fn scan_dir_for_repos(dir: &Path, repos: &mut Vec<GitRepoInfo>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+
+        // If this directory itself is a git repo, add it and don't recurse.
+        if path.join(".git").exists() {
+            let path_str = path.to_string_lossy().to_string();
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| path_str.clone());
+
+            // Attempt to get the current branch; if it fails (corrupted
+            // repo, detached HEAD, etc.) default to an empty string.
+            let current_branch = get_current_branch_name(&path_str).unwrap_or_default();
+
+            repos.push(GitRepoInfo {
+                path: path_str,
+                name,
+                current_branch,
+            });
+            continue;
+        }
+
+        // Otherwise, if it's a directory, recurse into it (unless it's
+        // a known heavy/skip directory).
+        if path.is_dir() {
+            if let Some(dir_name) = path.file_name() {
+                if is_skip_dir(&dir_name.to_string_lossy()) {
+                    continue;
+                }
+            }
+            scan_dir_for_repos(&path, repos);
+        }
+    }
+}
+
+/// Get the current branch name via `git rev-parse --abbrev-ref HEAD`.
+/// Returns an empty string for detached HEAD or on error.
+fn get_current_branch_name(repo_path: &str) -> Result<String> {
+    let output = run_git_raw(repo_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    let branch = output.trim();
+    if branch.is_empty() || branch == "HEAD" {
+        Ok(String::new())
+    } else {
+        Ok(branch.to_string())
+    }
 }

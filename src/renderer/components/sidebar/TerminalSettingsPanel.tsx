@@ -8,6 +8,7 @@ import {
 } from "react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { useI18n } from "../../i18n";
+import { useBlurAutoSave } from "../../hooks/useBlurAutoSave";
 import { TerminalSettingsForm } from "./terminalSettings/TerminalSettingsForm";
 import { TerminalSettingsSummary } from "./terminalSettings/TerminalSettingsSummary";
 import {
@@ -28,8 +29,6 @@ import type {
   TerminalSettingsValue,
 } from "./terminalSettings/types";
 
-const SAVE_DEBOUNCE_MS = 600;
-
 export function TerminalSettingsPanel({
   onClose,
 }: TerminalSettingsPanelProps): React.JSX.Element {
@@ -49,16 +48,11 @@ export function TerminalSettingsPanel({
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const isMountedRef = useRef(true);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
     };
   }, []);
 
@@ -166,31 +160,16 @@ export function TerminalSettingsPanel({
     [t]
   );
 
-  // 修改即保存：表单变化后 debounce 保存，验证失败则不保存。
-  useEffect(() => {
-    if (isLoading) {
-      return;
-    }
-    const validationError = validate(form);
-    if (validationError) {
-      setError((prev) => (prev === validationError ? prev : validationError));
-      return;
-    }
-    setError((prev) => (prev === "" ? prev : ""));
-
-    const settings = toTerminalSettings(form);
-    if (JSON.stringify(settings) === JSON.stringify(lastSaved)) {
-      return;
-    }
-
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-    }
-    saveTimerRef.current = setTimeout(() => {
-      saveTimerRef.current = null;
-      void saveSettings(settings);
-    }, SAVE_DEBOUNCE_MS);
-  }, [form, isLoading, lastSaved, saveSettings, validate]);
+  // 失焦保存：输入框真正失焦、下拉控件完成选择时立即保存（选择时携带新值调用），
+  // 验证失败则不保存，卸载时立即冲刷避免丢失。
+  const commitSave = useBlurAutoSave(
+    form,
+    validate,
+    toTerminalSettings,
+    lastSaved,
+    saveSettings,
+    setError
+  );
 
   const handleSelectExecutable = async () => {
     setIsSelectingExecutable(true);
@@ -206,6 +185,7 @@ export function TerminalSettingsPanel({
 
       if (selectedPath) {
         setForm((previous) => ({ ...previous, shellPath: selectedPath }));
+        commitSave({ ...form, shellPath: selectedPath });
       }
     } catch (e) {
       setError(
@@ -282,6 +262,7 @@ export function TerminalSettingsPanel({
             detectedTerminals={detectedTerminals}
             onUpdateField={updateField}
             onSetValue={setValue}
+            onBlurSave={commitSave}
             onShellPathChange={(path) =>
               setForm((previous) => ({ ...previous, shellPath: path }))
             }

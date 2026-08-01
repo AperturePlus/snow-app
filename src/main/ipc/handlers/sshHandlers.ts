@@ -4,11 +4,16 @@ import type { NativeBridge } from "../../native/types";
 import {
   connectSsh,
   disconnectSsh,
+  executeSshCommand,
   listSshDirectory,
   parseSshUrl,
   isSshPath,
   readSshFile,
   writeSshFile,
+  deleteSshFile,
+  renameSshFile,
+  deleteSshDirectory,
+  statSshEntry,
   type SshConnectParams,
 } from "../../ssh/sshManager";
 import { processFileContent } from "../../utils/fileReader";
@@ -19,6 +24,237 @@ import {
   listSshCredentials,
   deleteSshCredential,
 } from "../../ssh/sshCredentials";
+
+const REMOTE_SEARCH_MAX_DEPTH = 15;
+const REMOTE_SEARCH_MAX_RESULTS = 200;
+
+const shellQuote = (value: string): string =>
+  `'${value.replace(/'/g, `'"'"'`)}'`;
+
+const normalizeRemotePath = (path: string): string => {
+  const normalized = path.replace(/\/+$/, "");
+  return normalized || "/";
+};
+
+const getRemoteRelativePath = (path: string, rootPath: string): string => {
+  const normalizedPath = normalizeRemotePath(path);
+  const normalizedRoot = normalizeRemotePath(rootPath);
+
+  if (normalizedPath === normalizedRoot) {
+    return ".";
+  }
+  if (normalizedRoot === "/") {
+    return normalizedPath.replace(/^\/+/, "");
+  }
+  if (normalizedPath.startsWith(`${normalizedRoot}/`)) {
+    return normalizedPath.slice(normalizedRoot.length + 1);
+  }
+
+  return normalizedPath.replace(/^\/+/, "");
+};
+
+const buildRemoteWorkspaceUri = (
+  workspacePath: string,
+  remotePath: string,
+  remoteRootPath: string
+): string => {
+  const relativePath = getRemoteRelativePath(remotePath, remoteRootPath);
+  const normalizedWorkspacePath = workspacePath.replace(/\/+$/, "");
+
+  return relativePath === "."
+    ? normalizedWorkspacePath
+    : `${normalizedWorkspacePath}/${relativePath}`;
+};
+
+const getRemotePathName = (path: string): string => {
+  const normalizedPath = normalizeRemotePath(path);
+  const separatorIndex = normalizedPath.lastIndexOf("/");
+  return normalizedPath.slice(separatorIndex + 1) || "/";
+};
+
+const toRemoteWorkspaceSearchResult = (
+  workspacePath: string,
+  remotePath: string,
+  remoteRootPath: string,
+  isDirectory: boolean
+): {
+  path: string;
+  relativePath: string;
+  name: string;
+  isDirectory: boolean;
+  matchedName: boolean;
+  lineMatches: Array<{ line: number; text: string }>;
+} => ({
+  path: buildRemoteWorkspaceUri(workspacePath, remotePath, remoteRootPath),
+  relativePath: getRemoteRelativePath(remotePath, remoteRootPath),
+  name: getRemotePathName(remotePath),
+  isDirectory,
+  matchedName: true,
+  lineMatches: [],
+});
+
+const buildRemoteWorkspaceSearchCommand = (
+  rootPath: string,
+  query: string
+): string => {
+  // Path-aware search: a query containing "/" (e.g. "prompt/" or
+  // "prompt/utils") resolves the part before the last "/" as a directory
+  // path and lists the directory itself plus its children.
+  if (query.includes("/")) {
+    return buildRemoteWorkspacePathSearchCommand(rootPath, query);
+  }
+
+  const script = [
+    `root=${shellQuote(rootPath)}`,
+    `query=${shellQuote(query)}`,
+    `max_depth=${REMOTE_SEARCH_MAX_DEPTH}`,
+    `max_results=${REMOTE_SEARCH_MAX_RESULTS}`,
+    "count=0",
+    'find "$root" -maxdepth "$max_depth" \\( -type d \\( -name .git -o -name node_modules -o -name target -o -name dist -o -name build -o -name .next -o -name .snow \\) -prune \\) -o -mindepth 1 -print | while IFS= read -r path; do',
+    '  [ "$count" -ge "$max_results" ] && break',
+    "  name=${path##*/}",
+    '  case "$name" in .* ) continue ;; esac',
+    "  lower_name=$(printf '%s' \"$name\" | tr '[:upper:]' '[:lower:]')",
+    "  lower_query=$(printf '%s' \"$query\" | tr '[:upper:]' '[:lower:]')",
+    '  if printf \'%s\' "$lower_name" | grep -Fq -- "$lower_query"; then',
+    '    if [ -d "$path" ]; then kind=d; else kind=f; fi',
+    '    printf \'%s\\t%s\\n\' "$kind" "$path"',
+    "    count=$((count + 1))",
+    "  fi",
+    "done",
+  ].join("\n");
+
+  return `sh -lc ${shellQuote(script)}`;
+};
+
+// Path-aware search for remote workspaces: resolves the directory path from
+// the query segments, then lists the directory itself (when it is not the
+// workspace root) and its direct children filtered by the trailing name
+// query (empty means list all). Falls back to the regular name search when
+// the directory does not exist.
+const buildRemoteWorkspacePathSearchCommand = (
+  rootPath: string,
+  query: string
+): string => {
+  const parts = query.split("/");
+  const nameQuery = parts[parts.length - 1] ?? "";
+  const dirParts = parts.slice(0, -1).filter(Boolean);
+  const dirPath =
+    dirParts.length === 0
+      ? rootPath
+      : `${rootPath}/${dirParts.join("/")}`.replace(/\/+/g, "/");
+  // Directory segment used for workspace-wide matching when the exact
+  // directory does not exist (e.g. "prompt" for "prompt/utils/").
+  const matchSegment = dirParts[0] ?? nameQuery;
+
+  // Workspace-wide fallback: collect directories at any depth whose name
+  // starts with the first query segment, then list each directory itself
+  // plus its direct children filtered by the trailing name query.
+  const fallbackScript = [
+    `root=${shellQuote(rootPath)}`,
+    `seg=${shellQuote(matchSegment)}`,
+    `name_query=${shellQuote(nameQuery)}`,
+    `max_depth=${REMOTE_SEARCH_MAX_DEPTH}`,
+    `max_results=${REMOTE_SEARCH_MAX_RESULTS}`,
+    "count=0",
+    'find "$root" -maxdepth "$max_depth" \\( -type d \\( -name .git -o -name node_modules -o -name target -o -name dist -o -name build -o -name .next -o -name .snow \\) -prune \\) -o -type d -print | while IFS= read -r cand; do',
+    '  [ "$count" -ge "$max_results" ] && break',
+    '  [ "$cand" = "$root" ] && continue',
+    "  base=${cand##*/}",
+    '  case "$base" in .* ) continue ;; esac',
+    "  lower_base=$(printf '%s' \\\"$base\\\" | tr '[:upper:]' '[:lower:]')",
+    "  lower_seg=$(printf '%s' \\\"$seg\\\" | tr '[:upper:]' '[:lower:]')",
+    '  case "$lower_base" in "$lower_seg"* )',
+    "    printf 'd\\t%s\\n' \"$cand\"",
+    "    count=$((count + 1))",
+    '    find "$cand" -maxdepth 1 -mindepth 1 -print | while IFS= read -r path; do',
+    '      [ "$count" -ge "$max_results" ] && break',
+    "      name=${path##*/}",
+    '      case "$name" in .* ) continue ;; esac',
+    "      lower_name=$(printf '%s' \\\"$name\\\" | tr '[:upper:]' '[:lower:]')",
+    "      lower_query=$(printf '%s' \\\"$name_query\\\" | tr '[:upper:]' '[:lower:]')",
+    '      if [ -z "$name_query" ] || printf \'%s\' "$lower_name" | grep -Fq -- "$lower_query"; then',
+    '        if [ -d "$path" ]; then kind=d; else kind=f; fi',
+    '        printf \'%s\\t%s\\n\' "$kind" "$path"',
+    "        count=$((count + 1))",
+    "      fi",
+    "    done",
+    "    ;;",
+    "  esac",
+    "done",
+  ].join("\n");
+
+  const script = [
+    `root=${shellQuote(rootPath)}`,
+    `dir=${shellQuote(dirPath)}`,
+    `name_query=${shellQuote(nameQuery)}`,
+    `max_results=${REMOTE_SEARCH_MAX_RESULTS}`,
+    "count=0",
+    // Include the directory itself when it is not the workspace root.
+    'if [ -d "$dir" ] && [ "$dir" != "$root" ]; then',
+    "  printf 'd\\t%s\\n' \"$dir\"",
+    "  count=$((count + 1))",
+    "fi",
+    // List the direct children of the directory.
+    'if [ -d "$dir" ]; then',
+    '  find "$dir" -maxdepth 1 -mindepth 1 -print | while IFS= read -r path; do',
+    '    [ "$count" -ge "$max_results" ] && break',
+    "    name=${path##*/}",
+    '    case "$name" in .* ) continue ;; esac',
+    "    lower_name=$(printf '%s' \\\"$name\\\" | tr '[:upper:]' '[:lower:]')",
+    "    lower_query=$(printf '%s' \\\"$name_query\\\" | tr '[:upper:]' '[:lower:]')",
+    '    if [ -z "$name_query" ] || printf \'%s\' "$lower_name" | grep -Fq -- "$lower_query"; then',
+    '      if [ -d "$path" ]; then kind=d; else kind=f; fi',
+    '      printf \'%s\\t%s\\n\' "$kind" "$path"',
+    "      count=$((count + 1))",
+    "    fi",
+    "  done",
+    // Directory not found: fall back to the regular name search.
+    "else",
+    fallbackScript,
+    "fi",
+  ].join("\n");
+
+  return `sh -lc ${shellQuote(script)}`;
+};
+
+const parseRemoteWorkspaceSearchResults = (
+  output: string,
+  workspacePath: string,
+  remoteRootPath: string
+): Array<{
+  path: string;
+  relativePath: string;
+  name: string;
+  isDirectory: boolean;
+  matchedName: boolean;
+  lineMatches: Array<{ line: number; text: string }>;
+}> => {
+  return output
+    .split("\n")
+    .flatMap((line) => {
+      const [kind, remotePath] = line.split("\t", 2);
+      if ((kind !== "d" && kind !== "f") || !remotePath) {
+        return [];
+      }
+
+      return [
+        toRemoteWorkspaceSearchResult(
+          workspacePath,
+          remotePath,
+          remoteRootPath,
+          kind === "d"
+        ),
+      ];
+    })
+    .sort((left, right) => {
+      if (left.isDirectory !== right.isDirectory) {
+        return left.isDirectory ? -1 : 1;
+      }
+      return left.name.localeCompare(right.name);
+    })
+    .slice(0, REMOTE_SEARCH_MAX_RESULTS);
+};
 
 export const registerSshHandlers = (_native: NativeBridge): void => {
   const normalizeSshConnectParams = (value: unknown): SshConnectParams => {
@@ -76,6 +312,98 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
   );
 
   ipcMain.handle(
+    "ssh:execute-command",
+    async (_event, sessionId: unknown, command: unknown) => {
+      if (typeof sessionId !== "string" || !sessionId.trim()) {
+        throw new Error("SSH session ID is required");
+      }
+      if (typeof command !== "string" || !command.trim()) {
+        throw new Error("Remote command is required");
+      }
+      return executeSshCommand(sessionId.trim(), command);
+    }
+  );
+
+  ipcMain.handle(
+    "ssh:search-workspace-files",
+    async (_event, workspacePath: unknown, options: unknown) => {
+      if (
+        typeof workspacePath !== "string" ||
+        !isSshPath(workspacePath.trim())
+      ) {
+        throw new Error("Remote workspace path is required");
+      }
+      if (typeof options !== "object" || options === null) {
+        throw new Error("Remote workspace search options are required");
+      }
+
+      const { query, listChildren } = options as Record<string, unknown>;
+      if (typeof query !== "string") {
+        throw new Error("Remote workspace query must be a string");
+      }
+      if (typeof listChildren !== "boolean") {
+        throw new Error("Remote workspace listChildren option is required");
+      }
+      if (!listChildren && !query.trim()) {
+        return [];
+      }
+
+      const parsed = parseSshUrl(workspacePath.trim());
+      const credential = getSshCredential(
+        parsed.host,
+        parsed.port,
+        parsed.username
+      );
+      const connectParams: SshConnectParams = {
+        host: parsed.host,
+        port: parsed.port,
+        username: parsed.username,
+        authMethod: credential?.authMethod ?? "password",
+      };
+      if (credential?.privateKeyPath) {
+        connectParams.privateKeyPath = credential.privateKeyPath;
+      }
+      const secret = credential?.encryptedSecret
+        ? getDecryptedSecret(parsed.host, parsed.port, parsed.username)
+        : null;
+      if (secret) {
+        if (connectParams.authMethod === "password") {
+          connectParams.password = secret;
+        } else {
+          connectParams.passphrase = secret;
+        }
+      }
+
+      const sessionId = await connectSsh(connectParams);
+      try {
+        if (listChildren) {
+          return (await listSshDirectory(sessionId, parsed.remotePath)).map(
+            (entry) =>
+              toRemoteWorkspaceSearchResult(
+                workspacePath.trim(),
+                entry.path,
+                parsed.remotePath,
+                entry.isDirectory
+              )
+          );
+        }
+
+        const output = await executeSshCommand(
+          sessionId,
+          buildRemoteWorkspaceSearchCommand(parsed.remotePath, query.trim())
+        );
+        return parseRemoteWorkspaceSearchResults(
+          output,
+          workspacePath.trim(),
+          parsed.remotePath
+        );
+      } finally {
+        disconnectSsh(sessionId);
+      }
+    }
+  );
+
+  ipcMain.handle(
     "ssh:read-file",
     async (_event, sessionId: unknown, remotePath: unknown) => {
       if (typeof sessionId !== "string" || !sessionId.trim()) {
@@ -107,6 +435,68 @@ export const registerSshHandlers = (_native: NativeBridge): void => {
         throw new Error("File content must be a string");
       }
       return writeSshFile(sessionId.trim(), remotePath.trim(), content);
+    }
+  );
+
+  ipcMain.handle(
+    "ssh:delete-entry",
+    async (_event, sessionId: unknown, remotePath: unknown) => {
+      if (typeof sessionId !== "string" || !sessionId.trim()) {
+        throw new Error("SSH session ID is required");
+      }
+      if (typeof remotePath !== "string" || !remotePath.trim()) {
+        throw new Error("Remote path is required");
+      }
+
+      const trimmedSessionId = sessionId.trim();
+      const trimmedPath = remotePath.trim();
+
+      // Determine whether the entry is a file or directory so we can call the
+      // appropriate deletion routine (SFTP unlink for files, recursive rm -rf
+      // for directories via the exec channel).
+      const stats = await statSshEntry(trimmedSessionId, trimmedPath);
+      if (!stats) {
+        throw new Error("Remote path does not exist");
+      }
+      if (stats.isDirectory()) {
+        return deleteSshDirectory(trimmedSessionId, trimmedPath);
+      }
+      return deleteSshFile(trimmedSessionId, trimmedPath);
+    }
+  );
+
+  ipcMain.handle(
+    "ssh:rename-entry",
+    async (
+      _event,
+      sessionId: unknown,
+      remotePath: unknown,
+      newName: unknown
+    ) => {
+      if (typeof sessionId !== "string" || !sessionId.trim()) {
+        throw new Error("SSH session ID is required");
+      }
+      if (typeof remotePath !== "string" || !remotePath.trim()) {
+        throw new Error("Remote path is required");
+      }
+      if (typeof newName !== "string" || !newName.trim()) {
+        throw new Error("New entry name is required");
+      }
+
+      const trimmedPath = remotePath.trim();
+      const trimmedNewName = newName.trim();
+
+      // Build the destination path by replacing the last path segment with the
+      // new name, matching the behavior of the local rename implementation.
+      const separatorIndex = trimmedPath.lastIndexOf("/");
+      const parentDir =
+        separatorIndex > 0 ? trimmedPath.slice(0, separatorIndex) : "/";
+      const newPath =
+        parentDir === "/"
+          ? `/${trimmedNewName}`
+          : `${parentDir}/${trimmedNewName}`;
+
+      return renameSshFile(sessionId.trim(), trimmedPath, newPath);
     }
   );
 

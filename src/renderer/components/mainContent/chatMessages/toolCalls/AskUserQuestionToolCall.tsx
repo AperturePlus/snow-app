@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Check,
-  ChevronRight,
   Loader2,
   MessageCircleQuestion,
   Plus,
@@ -121,7 +120,6 @@ export const AskUserQuestionToolCall = ({
   const isSettled = isAnswered || isCancelled;
   const isInteractive = Boolean(questionState && !isSettled);
 
-  const [isOpen, setIsOpen] = useState(true);
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
   const [customAnswers, setCustomAnswers] = useState<string[]>([]);
   const [customInput, setCustomInput] = useState("");
@@ -212,17 +210,8 @@ export const AskUserQuestionToolCall = ({
     : t("toolCall.userQuestion.status.waiting");
 
   return (
-    <details
-      className="tool-call-item tool-call-user-question"
-      open={isOpen}
-      onToggle={(event) => setIsOpen(event.currentTarget.open)}
-    >
-      <summary className="tool-call-header">
-        <ChevronRight
-          className="tool-call-chevron"
-          size={14}
-          aria-hidden="true"
-        />
+    <div className="tool-call-item tool-call-user-question">
+      <div className="tool-call-header">
         <ToolNameBadge
           name={t("toolCall.userQuestion.name")}
           category="interaction"
@@ -258,7 +247,7 @@ export const AskUserQuestionToolCall = ({
         >
           {statusLabel}
         </span>
-      </summary>
+      </div>
 
       <div className="tool-call-body tool-call-user-question-body">
         {question ? (
@@ -407,6 +396,6 @@ export const AskUserQuestionToolCall = ({
           </div>
         </div>
       </div>
-    </details>
+    </div>
   );
 };

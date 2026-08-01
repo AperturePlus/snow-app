@@ -21,6 +21,13 @@ type UseCodebaseWatcherParams = {
    * the watcher is stopped and the status is `idle`.
    */
   enabled: boolean;
+  /**
+   * Called after an incremental sync finishes for the currently watched
+   * project (done / no_changes / error). Used as a fallback refresh signal
+   * in addition to the broadcast progress events, so the UI can re-read
+   * index stats even if a progress event was missed.
+   */
+  onSyncFinished?: () => void;
 };
 
 type UseCodebaseWatcherResult = {
@@ -58,6 +65,7 @@ export const useCodebaseWatcher = ({
   projectId,
   projectPath,
   enabled,
+  onSyncFinished,
 }: UseCodebaseWatcherParams): UseCodebaseWatcherResult => {
   const [syncStatus, setSyncStatus] = useState<CodebaseSyncStatus>("idle");
   const [watchedProjectId, setWatchedProjectId] = useState<string | undefined>(
@@ -76,6 +84,13 @@ export const useCodebaseWatcher = ({
   // Track the project id for which sync should run. This is read inside the
   // sync runner closure, so we use a ref to always get the latest value.
   const syncProjectIdRef = useRef<string | undefined>(undefined);
+
+  // Keep the latest callback in a ref so the sync runner (registered once)
+  // always calls the current one without re-subscribing.
+  const onSyncFinishedRef = useRef(onSyncFinished);
+  useEffect(() => {
+    onSyncFinishedRef.current = onSyncFinished;
+  }, [onSyncFinished]);
 
   /**
    * Run an incremental sync for the given project. If a sync is already
@@ -112,6 +127,9 @@ export const useCodebaseWatcher = ({
           syncProjectIdRef.current === targetProjectId
         ) {
           setSyncStatus("watching");
+          // Fallback refresh signal so the caller can re-read index stats
+          // after the sync completes, independent of the broadcast events.
+          onSyncFinishedRef.current?.();
         }
 
         // If another change arrived during sync, trigger another sync.

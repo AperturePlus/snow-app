@@ -3,6 +3,7 @@ import {
   EyeOff,
   Globe,
   FishingHook,
+  Keyboard,
   List,
   MessageSquareText,
   Palette,
@@ -114,6 +115,13 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
     labelKey: "settings.terminalSettings",
     defaultLabel: "Terminal settings",
     view: "terminal-settings",
+  },
+  {
+    id: "keyboard-shortcuts",
+    icon: Keyboard,
+    labelKey: "settings.keyboardShortcuts",
+    defaultLabel: "Keyboard shortcuts",
+    view: "keyboard-shortcuts-settings",
   },
   {
     id: "privacy",

@@ -4,6 +4,7 @@ import { AutoDismissNotice } from "../AutoDismissNotice";
 import { CustomSelect } from "../common/CustomSelect";
 import { Modal } from "../common/Modal";
 import { useI18n } from "../../i18n";
+import { useDebouncedAutoSave } from "../../hooks/useDebouncedAutoSave";
 import { getPresetById } from "./themeSettings/themePresets";
 import {
   applyFontFamilyToDocument,
@@ -43,6 +44,24 @@ type EditorTab = "light" | "dark";
 // 1000ms 在交互流畅度与"改完即存"体感之间取得平衡。
 const SAVE_DEBOUNCE_MS = 1000;
 
+/**
+ * 计算待保存的主题设置值。
+ * 返回 null 表示无需保存（加载中 / 与上次保存一致）。
+ */
+function computeThemeSaveValue(
+  form: ThemeSettings,
+  lastSaved: ThemeSettings,
+  isLoading: boolean
+): ThemeSettings | null {
+  if (isLoading) {
+    return null;
+  }
+  if (JSON.stringify(form) === JSON.stringify(lastSaved)) {
+    return null;
+  }
+  return form;
+}
+
 export function ThemeSettingsPanel({
   onClose,
 }: ThemeSettingsPanelProps): React.JSX.Element {
@@ -65,16 +84,11 @@ export function ThemeSettingsPanel({
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const isMountedRef = useRef(true);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
     };
   }, []);
 
@@ -461,18 +475,24 @@ export function ThemeSettingsPanel({
 
   const saveSettings = useCallback(
     async (settings: ThemeSettings) => {
-      setIsSaving(true);
-      setError("");
+      // isMountedRef 仅守卫 React state 更新；writeThemeCache 和 theme:changed
+      // 是纯副作用，即使组件已卸载也必须执行，确保 flush 保存后
+      // localStorage 缓存与后端一致、全局 useTheme 能同步。
+      const mounted = isMountedRef.current;
+      if (mounted) {
+        setIsSaving(true);
+        setError("");
+      }
       try {
         await window.snow.setThemeSettings(settings);
-        if (isMountedRef.current) {
+        // 即时更新 localStorage 主题缓存，确保下次启动时首屏即呈现新主题。
+        // 必须在 isMountedRef 守卫之外，使组件卸载 flush 时也能写入缓存。
+        writeThemeCache(settings);
+        // 通知全局 useTheme Hook 重新加载，使 App 级状态与持久化数据同步。
+        // 必须在 isMountedRef 守卫之外，使组件卸载 flush 时也能派发事件。
+        window.dispatchEvent(new CustomEvent("theme:changed"));
+        if (mounted) {
           setLastSaved(settings);
-          // 即时更新 localStorage 主题缓存，确保下次启动时首屏即呈现新主题。
-          // useTheme 的 theme:changed 监听也会写一次，但那需要一次 IPC 往返，
-          // 这里直接写入更及时，避免 debounce 保存后立即退出时的竞态。
-          writeThemeCache(settings);
-          // 通知全局 useTheme Hook 重新加载，使 App 级状态与持久化数据同步。
-          window.dispatchEvent(new CustomEvent("theme:changed"));
           setStatus(
             t("settings.themeSaveSuccess", {
               defaultValue: "Theme settings saved.",
@@ -480,7 +500,7 @@ export function ThemeSettingsPanel({
           );
         }
       } catch (e) {
-        if (isMountedRef.current) {
+        if (mounted) {
           setError(
             e instanceof Error
               ? e.message
@@ -490,7 +510,7 @@ export function ThemeSettingsPanel({
           );
         }
       } finally {
-        if (isMountedRef.current) {
+        if (mounted) {
           setIsSaving(false);
         }
       }
@@ -498,23 +518,12 @@ export function ThemeSettingsPanel({
     [t]
   );
 
-  // 修改即保存：表单变化后 debounce 保存。
-  useEffect(() => {
-    if (isLoading) {
-      return;
-    }
-    if (JSON.stringify(form) === JSON.stringify(lastSaved)) {
-      return;
-    }
-
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-    }
-    saveTimerRef.current = setTimeout(() => {
-      saveTimerRef.current = null;
-      void saveSettings(form);
-    }, SAVE_DEBOUNCE_MS);
-  }, [form, isLoading, lastSaved, saveSettings]);
+  // 修改即保存：表单变化后 debounce 保存，卸载时立即冲刷避免丢失。
+  const saveValue = useMemo(
+    () => computeThemeSaveValue(form, lastSaved, isLoading),
+    [form, lastSaved, isLoading]
+  );
+  useDebouncedAutoSave(saveValue, saveSettings, SAVE_DEBOUNCE_MS);
 
   const handleReset = (): void => {
     setForm(DEFAULT_THEME_SETTINGS);

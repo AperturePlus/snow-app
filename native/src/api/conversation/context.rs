@@ -1,11 +1,13 @@
 use napi::bindgen_prelude::*;
 
+use crate::prompt::goal_mode_system_prompt::build_goal_mode_system_prompt;
 use crate::prompt::plan_mode_system_prompt::build_plan_mode_system_prompt;
 use crate::prompt::system_prompt::build_system_prompt;
 use crate::storage::services::chat_conversations::{
     load_context_messages, resolve_conversation_id, ChatContextMessage,
 };
 use crate::storage::services::system_prompts::resolve_active_system_prompt_contents;
+use crate::storage::services::system_settings::get_system_setting_value;
 use crate::storage::services::workspace_directories::get_workspace_directory_path;
 
 use super::tool_messages::ensure_tool_pairing;
@@ -28,9 +30,14 @@ pub fn prepare_context_request(
     request: ConversationContextRequest<'_>,
 ) -> Result<PreparedConversationRequest> {
     let mut current_messages = if request.context_compaction {
+        let handoff_prompt = if request.goal_mode {
+            "Create a durable context handoff for the next assistant. You are in Goal Mode and the context window was exceeded, so this handoff MUST preserve the goal so work continues seamlessly.\n\nOutput ONLY the handoff document in Markdown. It MUST include ALL of the following sections:\n\n## Original Goal\nReproduce the user's original goal verbatim. This is the single most important piece of information — do not paraphrase or abbreviate it.\n\n## Success Criteria\nList every success criterion that defines goal completion. Mark each as [MET], [UNMET], or [UNCERTAIN] with brief evidence.\n\n## Completed Work\nBullet list of changes made so far, with exact file paths and function/symbol names.\n\n## Current State\nWhat the codebase looks like right now after your changes. What builds, what does not, what tests pass or fail.\n\n## Pending Tasks\nWhat remains to be done to achieve the goal, ordered by priority.\n\n## Key Decisions & Constraints\nArchitecture choices, constraints discovered, non-regression boundaries that must be respected.\n\n## Token Budget Status\nHow much of the token budget has been consumed (estimate), and how much remains.\n\n## Next Steps\nThe concrete next 1-3 actions the next assistant should take to continue toward the goal.\n\nRules:\n- Do NOT call tools.\n- Do NOT address the user conversationally.\n- Do NOT declare the goal complete — only the next assistant can do that after verifying.\n- Be concise but never omit information required to continue the work correctly."
+        } else {
+            "Create a durable context handoff for the next assistant. Output only the handoff document in Markdown. Preserve concrete objectives, user requirements, decisions, architecture constraints, relevant files and symbols, completed changes, current state, pending tasks, exact commands or errors, edge cases, and the next recommended steps. Be concise but do not omit information required to continue the work correctly. Do not call tools and do not address the user conversationally."
+        };
         vec![ChatContextMessage {
             role: "user".to_string(),
-            content: "Create a durable context handoff for the next assistant. Output only the handoff document in Markdown. Preserve concrete objectives, user requirements, decisions, architecture constraints, relevant files and symbols, completed changes, current state, pending tasks, exact commands or errors, edge cases, and the next recommended steps. Be concise but do not omit information required to continue the work correctly. Do not call tools and do not address the user conversationally.".to_string(),
+            content: handoff_prompt.to_string(),
             tool_calls_json: None,
             tool_results_json: None,
             thinking: None,
@@ -85,10 +92,14 @@ pub fn prepare_context_request(
     // Plan Mode: replace the built-in system prompt with the Plan Mode prompt
     // that instructs the AI to analyze, plan, and get user approval before
     // executing any changes.
+    let shell_type = resolve_default_shell(request.database_path);
     let system_prompt = if request.plan_mode {
-        build_plan_mode_system_prompt(&working_directory)
+        build_plan_mode_system_prompt(&working_directory, &shell_type)
+    } else if request.goal_mode {
+        let goal_token_budget = crate::storage::services::system_settings::get_goal_mode_token_budget(request.database_path).unwrap_or(2000000);
+        build_goal_mode_system_prompt(&working_directory, &shell_type, goal_token_budget)
     } else {
-        build_system_prompt(&working_directory)
+        build_system_prompt(&working_directory, &shell_type)
     };
     let has_existing_system = messages
         .iter()
@@ -141,4 +152,30 @@ fn normalize_messages(messages: &[ChatContextMessage]) -> Vec<ChatContextMessage
             })
         })
         .collect()
+}
+
+/// Read the user's configured default shell type from the terminal settings
+/// stored in the database. The shell type is derived from the configured
+/// `shellPath` (e.g. "powershell", "cmd", "gitbash", "wsl", "posix") or an
+/// empty string when unavailable.
+///
+/// The environment described in the system prompt must follow the terminal
+/// settings rather than the local OS: the working directory can be a remote
+/// SSH location, where commands actually execute in the configured (remote)
+/// shell instead of the machine running Snow App.
+fn resolve_default_shell(database_path: &std::path::Path) -> String {
+    let raw = match get_system_setting_value(database_path, "terminal_settings") {
+        Ok(Some(value)) => value,
+        _ => return String::new(),
+    };
+    let shell_path = serde_json::from_str::<serde_json::Value>(&raw)
+        .ok()
+        .and_then(|json| json.get("shellPath").and_then(|v| v.as_str().map(String::from)))
+        .unwrap_or_default();
+
+    if shell_path.trim().is_empty() {
+        return String::new();
+    }
+
+    crate::exports::terminal::detect_shell_family(&shell_path)
 }

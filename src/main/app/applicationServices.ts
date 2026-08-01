@@ -1,6 +1,4 @@
-import { app } from "electron";
 import type { AppStorageInfo, NativeBridge } from "../native/types";
-import { createWorkspaceDirectoryInput } from "../settings/workspaceDirectories";
 import { markStorageReady, markStorageFailed } from "./storageReady";
 import { snowLog } from "../../utils/snowLogger";
 
@@ -10,9 +8,6 @@ const ensureDefaultWorkspaceDirectory = async (
   const directories = await native.listWorkspaceDirectories();
 
   if (directories.length === 0) {
-    await native.upsertWorkspaceDirectory(
-      createWorkspaceDirectoryInput(app.getPath("home"), "local", 0)
-    );
     return;
   }
 
@@ -28,6 +23,9 @@ export const initializeApplicationServices = async (
     const storageInfo = await native.initializeAppStorage();
     const cancelledSubAgentCount = await native.cancelRunningSubAgentSessions();
     await ensureDefaultWorkspaceDirectory(native);
+    // 每次启动强制关闭请求日志，避免用户忘记手动关闭导致大量日志写入损伤硬盘。
+    await native.setRequestLogging(false);
+    await native.setRequestLoggingExpiry(0);
     if (cancelledSubAgentCount > 0) {
       console.info(
         `Cancelled ${cancelledSubAgentCount} interrupted sub-agent session(s)`

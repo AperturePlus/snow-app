@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FocusEvent,
+  type KeyboardEvent,
+} from "react";
 import { Check, ChevronDown, FolderOpen, Loader2 } from "lucide-react";
 import type { DetectedTerminalOption } from "./types";
 
@@ -10,7 +16,12 @@ type TerminalComboboxProps = {
   detectedTerminals: DetectedTerminalOption[];
   browseLabel: string;
   emptyText: string;
+  /** 用户在输入框中键入时触发（仅更新表单，不保存）。 */
   onChange: (value: string) => void;
+  /** 用户从下拉列表选中一项时触发（携带最终值，父组件应立即保存）。 */
+  onCommit: (value: string) => void;
+  /** 输入框真正失焦（焦点未移入本组件下拉区域）时触发。 */
+  onBlur: () => void;
   onBrowse: () => void;
 };
 
@@ -23,6 +34,8 @@ export function TerminalCombobox({
   browseLabel,
   emptyText,
   onChange,
+  onCommit,
+  onBlur,
   onBrowse,
 }: TerminalComboboxProps): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -70,7 +83,18 @@ export function TerminalCombobox({
 
   const handleSelect = (path: string) => {
     onChange(path);
+    onCommit(path);
     setIsOpen(false);
+  };
+
+  // 焦点移入本组件的下拉区域（选项 / 浏览按钮）不算真正失焦，不触发保存；
+  // 选中选项后由 onCommit 携带新值立即保存。
+  const handleBlur = (event: FocusEvent<HTMLInputElement>) => {
+    const next = event.relatedTarget as HTMLElement | null;
+    if (next && rootRef.current?.contains(next)) {
+      return;
+    }
+    onBlur();
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -113,6 +137,7 @@ export function TerminalCombobox({
             onFocus={openDropdown}
             onClick={openDropdown}
             onKeyDown={handleKeyDown}
+            onBlur={handleBlur}
             placeholder={placeholder}
             disabled={disabled}
             role="combobox"

@@ -50,7 +50,7 @@ export function ChatsSection({
   const {
     conversationVersion,
     upsertedConversation,
-    subAgentSessionEvent,
+    subAgentSessionEvents,
     refreshConversations,
     handleSelectConversation,
     handleNewChat,
@@ -351,62 +351,67 @@ export function ChatsSection({
   }, [conversations]);
 
   useEffect(() => {
-    if (!subAgentSessionEvent) {
+    const events = Object.values(subAgentSessionEvents);
+    if (events.length === 0) {
       return;
     }
 
-    const { parentConversationId, conversationId, agentName, status } =
-      subAgentSessionEvent;
-
     setSubAgentMap((prev) => {
-      const existing = prev[parentConversationId] ?? [];
-      const existingIndex = existing.findIndex(
-        (item) => item.conversationId === conversationId
-      );
+      let next = prev;
+      for (const event of events) {
+        const { parentConversationId, conversationId, agentName, status } =
+          event;
 
-      const subAgentRecord: ChatConversationRecord = {
-        conversationId,
-        title: agentName,
-        summary: "",
-        lastMessagePreview: "",
-        messageCount: 0,
-        model: "",
-        status: "active",
-        directoryId: "",
-        forkedFromConversationId: "",
-        forkMessageCount: 0,
-        conversationType: "sub_agent",
-        parentConversationId,
-        subAgentId: subAgentSessionEvent.agentId,
-        subAgentName: agentName,
-        subAgentStatus: status,
-        subAgentError: "",
-        createdAt: new Date(subAgentSessionEvent.timestamp).toISOString(),
-        updatedAt: new Date(subAgentSessionEvent.timestamp).toISOString(),
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheCreationInputTokens: 0,
-        cacheReadInputTokens: 0,
-        totalDurationMs: 0,
-        emoji: "",
-      };
+        const existing = next[parentConversationId] ?? [];
+        const existingIndex = existing.findIndex(
+          (item) => item.conversationId === conversationId
+        );
 
-      if (existingIndex >= 0) {
-        const updated = [...existing];
-        updated[existingIndex] = {
-          ...updated[existingIndex],
-          subAgentStatus: status,
+        const subAgentRecord: ChatConversationRecord = {
+          conversationId,
+          title: agentName,
+          summary: "",
+          lastMessagePreview: "",
+          messageCount: 0,
+          model: "",
+          status: "active",
+          directoryId: "",
+          forkedFromConversationId: "",
+          forkMessageCount: 0,
+          conversationType: "sub_agent",
+          parentConversationId,
+          subAgentId: event.agentId,
           subAgentName: agentName,
+          subAgentStatus: status,
+          subAgentError: "",
+          createdAt: new Date(event.timestamp).toISOString(),
+          updatedAt: new Date(event.timestamp).toISOString(),
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0,
+          totalDurationMs: 0,
+          emoji: "",
         };
-        return { ...prev, [parentConversationId]: updated };
-      }
 
-      return {
-        ...prev,
-        [parentConversationId]: [...existing, subAgentRecord],
-      };
+        if (existingIndex >= 0) {
+          const updated = [...existing];
+          updated[existingIndex] = {
+            ...updated[existingIndex],
+            subAgentStatus: status,
+            subAgentName: agentName,
+          };
+          next = { ...next, [parentConversationId]: updated };
+        } else {
+          next = {
+            ...next,
+            [parentConversationId]: [...existing, subAgentRecord],
+          };
+        }
+      }
+      return next;
     });
-  }, [subAgentSessionEvent]);
+  }, [subAgentSessionEvents]);
 
   const getGroupLabel = (key: TimeGroupKey): string => {
     switch (key) {

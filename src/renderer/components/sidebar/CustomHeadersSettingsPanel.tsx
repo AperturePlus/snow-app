@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { Modal } from "../common/Modal";
-import { CustomHeadersEditor } from "./customHeaders/CustomHeadersEditor";
+import { CustomHeadersEditor, CustomHeadersEditorActions } from "./customHeaders/CustomHeadersEditor";
 import { CustomHeadersSchemeList } from "./customHeaders/CustomHeadersSchemeList";
 import { CustomHeadersSummary } from "./customHeaders/CustomHeadersSummary";
 import {
@@ -386,6 +386,17 @@ export function CustomHeadersSettingsPanel({
         closeDisabled={isBusy}
         size="large"
         className="custom-headers-editor-modal"
+        footer={
+          draft && (
+            <CustomHeadersEditorActions
+              isBusy={isBusy}
+              isSaving={isSaving}
+              onAddHeaderPair={addHeaderPair}
+              onCancel={cancelDraft}
+              onSave={() => void saveDraft()}
+            />
+          )
+        }
       >
         {draft && (
           <CustomHeadersEditor

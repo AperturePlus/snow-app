@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { ChatInputSendOptions } from "../../chatInput/types";
 import type { ApiConfigRecord } from "../../../../../preload";
 
@@ -31,8 +31,20 @@ export const useChatConversation = (
   const [conversationVersion, setConversationVersion] = useState(0);
   const [upsertedConversation, setUpsertedConversation] =
     useState<ConversationContextValue["upsertedConversation"]>(null);
-  const [subAgentSessionEvent, setSubAgentSessionEvent] =
-    useState<ConversationContextValue["subAgentSessionEvent"]>(null);
+  const [subAgentSessionEvents, setSubAgentSessionEvents] = useState<
+    ConversationContextValue["subAgentSessionEvents"]
+  >({});
+  // Upsert a single sub-agent event keyed by its conversationId so multiple
+  // parallel sub-agents each keep their own live entry.
+  const setSubAgentSessionEvent = useCallback(
+    (event: ConversationContextValue["subAgentSessionEvents"][string]) => {
+      setSubAgentSessionEvents((prev) => ({
+        ...prev,
+        [event.conversationId]: event,
+      }));
+    },
+    []
+  );
   const [streamingConversationIds, setStreamingConversationIds] = useState<
     Set<string>
   >(new Set());
@@ -49,6 +61,9 @@ export const useChatConversation = (
   const [isUpdatingYoloMode, setIsUpdatingYoloMode] = useState(false);
   const [planMode, setPlanModeState] = useState(false);
   const [isUpdatingPlanMode, setIsUpdatingPlanMode] = useState(false);
+  const [goalMode, setGoalModeState] = useState(false);
+  const [isUpdatingGoalMode, setIsUpdatingGoalMode] = useState(false);
+  const [goalModeTokenBudget, setGoalModeTokenBudgetState] = useState(2000000);
   const [pendingToolAuthorizations, setPendingToolAuthorizations] = useState<
     ConversationContextValue["pendingToolAuthorizations"]
   >([]);
@@ -58,6 +73,9 @@ export const useChatConversation = (
   const [compactionPreview, setCompactionPreview] = useState("");
   const [compactionError, setCompactionError] = useState<string | null>(null);
   const [isCompacting, setIsCompacting] = useState(false);
+  const [compactingConversationId, setCompactingConversationId] = useState<
+    string | null
+  >(null);
 
   // --- Refs ---
   const sessionsRefData = useRef<
@@ -88,6 +106,7 @@ export const useChatConversation = (
   >(async () => null);
   const yoloModeRef = useRef(yoloMode);
   const planModeRef = useRef(planMode);
+  const goalModeRef = useRef(goalMode);
   const alwaysApprovedToolsRef = useRef(new Set<string>());
   const pendingToolAuthorizationRef = useRef(
     new Map<
@@ -111,6 +130,17 @@ export const useChatConversation = (
         : never
     >()
   );
+  const pendingHookDecisionRef = useRef(
+    new Map<
+      string,
+      ConversationContextValue["pendingHookDecisionRef"]["current"] extends Map<
+        string,
+        infer V
+      >
+        ? V
+        : never
+    >()
+  );
   const userQuestionTargetRef = useRef(
     new Map<
       string,
@@ -122,34 +152,40 @@ export const useChatConversation = (
         : never
     >()
   );
-  const activeApiConfigRef = useRef<ApiConfigRecord | null>(null);
   yoloModeRef.current = yoloMode;
   planModeRef.current = planMode;
+  goalModeRef.current = goalMode;
 
   // --- Pause controller ---
   // Per-session pause flags. When paused, the agent loop awaits the
   // `resolve` callback before proceeding to the next iteration.
   const pauseControllerRef = useRef<Map<string, PauseController>>(new Map());
 
-  // --- Load active API config once ---
-  useEffect(() => {
-    let disposed = false;
-    void window.snow
-      .listApiConfigs()
-      .then((configs) => {
-        if (disposed) {
-          return;
-        }
-        activeApiConfigRef.current =
+  // --- Active API config accessor ---
+  // Fetches the active config fresh from storage on every call so that user
+  // edits (e.g. the auto-compress threshold) take effect immediately at the
+  // next auto-compaction decision point, without requiring an app restart.
+  const getActiveApiConfig = useCallback(
+    async (profileName?: string): Promise<ApiConfigRecord | null> => {
+      try {
+        const configs = await window.snow.listApiConfigs();
+        const activeConfig =
           configs.find((c) => c.isActive) ?? configs[0] ?? null;
-      })
-      .catch(() => {
+        if (profileName) {
+          // Mirror Rust's get_api_request_context_for_profile: a named profile
+          // wins, falling back to the active config when it is unavailable.
+          return (
+            configs.find((c) => c.profileName === profileName) ?? activeConfig
+          );
+        }
+        return activeConfig;
+      } catch {
         // Best effort -- auto-compaction simply won't trigger if config is unavailable.
-      });
-    return () => {
-      disposed = true;
-    };
-  }, []);
+        return null;
+      }
+    },
+    []
+  );
 
   // --- Build context object ---
   const ctx: ConversationContextValue = {
@@ -159,7 +195,7 @@ export const useChatConversation = (
     activeConversationId,
     conversationVersion,
     upsertedConversation,
-    subAgentSessionEvent,
+    subAgentSessionEvents,
     streamingConversationIds,
     completedConversationIds,
     isLoadingInitialHistory,
@@ -170,11 +206,15 @@ export const useChatConversation = (
     isUpdatingYoloMode,
     planMode,
     isUpdatingPlanMode,
+    goalMode,
+    isUpdatingGoalMode,
+    goalModeTokenBudget,
     pendingToolAuthorizations,
     activePendingMessages,
     compactionPreview,
     compactionError,
     isCompacting,
+    compactingConversationId,
 
     sessionsRefData,
     activeConversationIdRef,
@@ -187,11 +227,13 @@ export const useChatConversation = (
     performCompactionRef,
     yoloModeRef,
     planModeRef,
+    goalModeRef,
     alwaysApprovedToolsRef,
     pendingToolAuthorizationRef,
     pendingUserQuestionRef,
+    pendingHookDecisionRef,
     userQuestionTargetRef,
-    activeApiConfigRef,
+    getActiveApiConfig,
     pauseControllerRef,
 
     setSessions,
@@ -209,11 +251,15 @@ export const useChatConversation = (
     setIsUpdatingYoloMode,
     setPlanModeState,
     setIsUpdatingPlanMode,
+    setGoalModeState,
+    setIsUpdatingGoalMode,
+    setGoalModeTokenBudgetState,
     setPendingToolAuthorizations,
     setActivePendingMessages,
     setCompactionPreview,
     setCompactionError,
     setIsCompacting,
+    setCompactingConversationId,
 
     // These will be filled in after sub-hooks are called
     setActiveId: () => {},
@@ -295,11 +341,13 @@ export const useChatConversation = (
   const rejectToolAuthorization = useCallback(
     (
       toolCall: ConversationContextValue["pendingToolAuthorizations"][number],
-      reason: string
+      reason: string,
+      userProvidedReason?: boolean
     ) =>
       toolAuthApi.settleToolAuthorization(toolCall, {
         status: "rejected",
         reason: reason.trim() || "User declined tool execution",
+        ...(userProvidedReason ? { userProvidedReason: true } : {}),
       }),
     [toolAuthApi]
   );
@@ -346,7 +394,7 @@ export const useChatConversation = (
     summary: activeSession?.summary ?? "",
     conversationVersion,
     upsertedConversation,
-    subAgentSessionEvent,
+    subAgentSessionEvents,
     sessions,
     activeConversationId,
     conversationDirectoryId: activeSession?.directoryId,
@@ -367,10 +415,12 @@ export const useChatConversation = (
     handleSendMessage: agentLoopApi.handleSendMessage,
     pendingMessages: activePendingMessages,
     withdrawPendingMessage: conversationManagementApi.withdrawPendingMessage,
+    sendPendingMessageNow: conversationManagementApi.sendPendingMessageNow,
     compactConversation: compactionApi.compactConversation,
     compactionPreview,
     compactionError,
     isCompacting,
+    compactingConversationId,
     handleSelectConversation:
       conversationManagementApi.handleSelectConversation,
     handleNewChat: conversationManagementApi.handleNewChat,
@@ -406,6 +456,13 @@ export const useChatConversation = (
     isUpdatingPlanMode,
     setPlanMode: toolAuthApi.setPlanMode,
     refreshPlanMode: toolAuthApi.refreshPlanMode,
+    goalMode,
+    isUpdatingGoalMode,
+    setGoalMode: toolAuthApi.setGoalMode,
+    refreshGoalMode: toolAuthApi.refreshGoalMode,
+    goalModeTokenBudget,
+    setGoalModeTokenBudget: toolAuthApi.setGoalModeTokenBudget,
+    refreshGoalModeTokenBudget: toolAuthApi.refreshGoalModeTokenBudget,
     pendingToolAuthorizations,
     approveToolAuthorization,
     approveToolAuthorizationAlways: toolAuthApi.approveToolAuthorizationAlways,

@@ -217,6 +217,21 @@ export type ThemeSettings = {
   background: ThemeBackground;
 };
 
+export type KeyboardShortcutConfig = {
+  key: string;
+  enabled: boolean;
+  foregroundOnly: boolean;
+};
+
+export type KeyboardShortcutsSettings = {
+  cancelSession: KeyboardShortcutConfig;
+  openSearch: KeyboardShortcutConfig;
+  openMemo: KeyboardShortcutConfig;
+  openTodo: KeyboardShortcutConfig;
+  cycleProject: KeyboardShortcutConfig;
+  openProjectExplorer: KeyboardShortcutConfig;
+};
+
 export type CodebaseEmbedProgress = {
   phase: string;
   totalFiles: number;
@@ -233,6 +248,52 @@ export type CodebaseIndexStats = {
   totalFiles: number;
   totalSizeBytes: number;
   isIndexed: boolean;
+};
+
+export type CodebaseIndexedFile = {
+  relativePath: string;
+  filePath: string;
+  chunkCount: number;
+  startLine: number;
+  endLine: number;
+  sizeBytes: number;
+  updatedAt: string;
+};
+
+export type CodebaseIndexedFilePage = {
+  items: CodebaseIndexedFile[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type CodebaseSphereRelatedFile = {
+  index: number;
+  similarity: number;
+};
+
+export type CodebaseSphereNode = {
+  index: number;
+  relativePath: string;
+  chunkCount: number;
+  startLine: number;
+  endLine: number;
+  sizeBytes: number;
+  x: number;
+  y: number;
+  z: number;
+  related: CodebaseSphereRelatedFile[];
+};
+
+export type CodebaseSphereEdge = {
+  a: number;
+  b: number;
+  similarity: number;
+};
+
+export type CodebaseSphereLayout = {
+  nodes: CodebaseSphereNode[];
+  edges: CodebaseSphereEdge[];
 };
 
 export type CodebaseScanPreview = {
@@ -587,6 +648,7 @@ export type ResponsesApiRequest = {
   subAgentConfigProfile?: string;
   skipContext?: boolean;
   planMode?: boolean;
+  goalMode?: boolean;
 };
 
 export type TokenUsage = {
@@ -642,6 +704,41 @@ export type ProjectSkillDefinition = Omit<SkillDefinition, "enabled"> & {
   enabled: boolean;
 };
 
+export type SkillInstallResult = {
+  success: boolean;
+  skillId: string;
+  path: string;
+  installedAt: string;
+  commitSha?: string;
+  error?: string;
+};
+
+export type SkillBatchInstallResult = {
+  success: boolean;
+  results: SkillInstallResult[];
+  installedCount: number;
+  totalCount: number;
+  commitSha?: string;
+  error?: string;
+};
+
+export type GithubSkillRecord = {
+  id: string;
+  name: string;
+  description: string;
+  location: string;
+  sourceUrl: string;
+  installedAt: string;
+  commitSha?: string;
+};
+
+export type SkillUninstallResult = {
+  success: boolean;
+  skillId: string;
+  message: string;
+  error?: string;
+};
+
 export type McpProjectToolStatus = McpToolDefinition & {
   enabled: boolean;
 };
@@ -661,7 +758,19 @@ export type BashStreamChunk = {
   data: string;
 };
 
+export type FileSearchAgentProgress = {
+  round: number;
+  tool: string;
+  argsJson: string;
+  resultPreview: string;
+};
+
 export type BrowserCommand = {
+  operation: string;
+  argsJson: string;
+};
+
+export type RemoteWorkspaceCommand = {
   operation: string;
   argsJson: string;
 };
@@ -690,6 +799,11 @@ export type UserQuestionResponse = {
   questionId: string;
   resultJson?: string;
   error?: string;
+};
+
+export type AppControlCommand = {
+  action: string;
+  payloadJson: string;
 };
 
 export type GitFileStatus = {
@@ -755,10 +869,15 @@ export type GitLogEntry = {
   refs: string;
   parents: string[];
 };
-
 export type GitCommitFile = {
   path: string;
   status: string;
+};
+
+export type GitRepoInfo = {
+  path: string;
+  name: string;
+  currentBranch: string;
 };
 
 export type DetectedTerminal = {
@@ -790,12 +909,22 @@ export type NativeBridge = {
   setYoloMode: (enabled: boolean) => Promise<void>;
   getPlanMode: () => Promise<boolean>;
   setPlanMode: (enabled: boolean) => Promise<void>;
+  getGoalMode: () => Promise<boolean>;
+  setGoalMode: (enabled: boolean) => Promise<void>;
+  getGoalModeTokenBudget: () => Promise<number>;
+  setGoalModeTokenBudget: (budget: number) => Promise<void>;
   getRequestLogging: () => Promise<boolean>;
   setRequestLogging: (enabled: boolean) => Promise<void>;
+  getRequestLoggingExpiry: () => Promise<number>;
+  setRequestLoggingExpiry: (expiresAtMs: number) => Promise<void>;
   getPrivacySettings: () => Promise<PrivacySettings>;
   setPrivacySettings: (settings: PrivacySettings) => Promise<void>;
   getThemeSettings: () => Promise<ThemeSettings>;
   setThemeSettings: (settings: ThemeSettings) => Promise<void>;
+  getKeyboardShortcutsSettings: () => Promise<KeyboardShortcutsSettings>;
+  setKeyboardShortcutsSettings: (
+    settings: KeyboardShortcutsSettings
+  ) => Promise<void>;
   saveThemeBackgroundImage: (sourcePath: string) => Promise<string>;
   deleteThemeBackgroundImage: (imagePath: string) => Promise<void>;
   saveThemeStreamCursorSvg: (sourcePath: string) => Promise<string>;
@@ -826,6 +955,15 @@ export type NativeBridge = {
   cancelCodebaseEmbedding: (sessionId: string) => Promise<boolean>;
   isCodebaseEmbeddingActive: (projectId: string) => Promise<boolean>;
   getCodebaseIndexStats: (projectId: string) => Promise<CodebaseIndexStats>;
+  listCodebaseIndexedFiles: (
+    projectId: string,
+    page: number,
+    pageSize: number
+  ) => Promise<CodebaseIndexedFilePage>;
+  getCodebaseSphereLayout: (
+    projectId: string,
+    limit: number
+  ) => Promise<CodebaseSphereLayout>;
   clearCodebaseIndex: (projectId: string) => Promise<void>;
   startCodebaseWatch: (
     projectId: string,
@@ -876,6 +1014,11 @@ export type NativeBridge = {
   readFileContent: (filePath: string) => Promise<FileContentResult>;
   writeFileContent: (filePath: string, content: string) => Promise<void>;
   searchFiles: (rootDir: string, query: string) => Promise<FileSearchResult[]>;
+  searchFilesByAgent: (
+    query: string,
+    workspacePath: string,
+    onProgress: ((chunk: FileSearchAgentProgress) => void) | undefined
+  ) => Promise<FileSearchResult[]>;
   listMcpServerConfigs: () => Promise<McpServerConfigRecord[]>;
   upsertMcpServerConfig: (item: McpServerConfigInput) => Promise<void>;
   deleteMcpServerConfig: (serverId: string) => Promise<void>;
@@ -997,6 +1140,7 @@ export type NativeBridge = {
     upToResponseId: string
   ) => Promise<ChatConversationRecord>;
   generateConversationSummary: (conversationId: string) => Promise<string>;
+  cancelConversationSummary: (conversationId: string) => boolean;
   fetchAvailableModels: () => Promise<Model[]>;
   fetchAvailableModelsForConfig: (config: ApiModelsConfig) => Promise<Model[]>;
   createResponseStream: (
@@ -1018,6 +1162,16 @@ export type NativeBridge = {
     skillId: string,
     enabled: boolean
   ) => Promise<void>;
+  installSkillFromGithub: (
+    url: string,
+    location: "global" | "project",
+    projectId?: string
+  ) => Promise<SkillBatchInstallResult>;
+  uninstallGithubSkill: (
+    skillId: string,
+    projectId?: string
+  ) => Promise<SkillUninstallResult>;
+  listGithubSkills: () => Promise<GithubSkillRecord[]>;
   listMcpServerTools: (configServerId: string) => Promise<McpToolDefinition[]>;
   listMcpProjectServers: (
     projectId: string
@@ -1037,6 +1191,7 @@ export type NativeBridge = {
     enabled: boolean
   ) => Promise<void>;
   authorizeSensitiveCommand: (command: string, token: string) => Promise<void>;
+  writeInteractiveStdin: (sessionId: string, input: string) => Promise<void>;
   callMcpTool: (
     toolFullName: string,
     argsJson: string,
@@ -1047,7 +1202,13 @@ export type NativeBridge = {
     onChunk: (chunk: BashStreamChunk) => void,
     onBrowserCommand: (command: BrowserCommand) => Promise<string>,
     onUserQuestion: (question: UserQuestionCommand) => Promise<string>,
-    subAgentAllowedTools: string[] | undefined
+    onAppControl: (command: AppControlCommand) => Promise<string>,
+    onRemoteWorkspaceCommand: (
+      command: RemoteWorkspaceCommand
+    ) => Promise<string>,
+    subAgentAllowedTools: string[] | undefined,
+    planMode: boolean | undefined,
+    planApproved: boolean | undefined
   ) => Promise<string>;
   engineInfo: () => string;
   sum: (a: number, b: number) => number;
@@ -1094,6 +1255,7 @@ export type NativeBridge = {
     repoPath: string,
     hash: string
   ) => Promise<GitCommitFile[]>;
+  discoverGitRepos: (rootPath: string) => Promise<GitRepoInfo[]>;
   startGitWatch: (
     repoPath: string,
     onChange: (repoPath: string) => void
@@ -1101,6 +1263,11 @@ export type NativeBridge = {
   stopGitWatch: (repoPath: string) => void;
   generateCommitMessage: (
     repoPath: string,
+    onChunk: (chunk: ResponsesApiStreamChunk) => void,
+    streamId: string
+  ) => Promise<ResponsesApiResult>;
+  generateCommitMessageFromDiff: (
+    diff: string,
     onChunk: (chunk: ResponsesApiStreamChunk) => void,
     streamId: string
   ) => Promise<ResponsesApiResult>;
@@ -1165,4 +1332,5 @@ export type NativeBridge = {
   updateMemoStatus: (memoId: string, status: string) => Promise<MemoRecord>;
   deleteMemo: (memoId: string) => Promise<void>;
   getMemoCountSummary: (directoryId: string) => Promise<MemoCountSummary>;
+  sha256File: (filePath: string) => Promise<string>;
 };

@@ -5,7 +5,7 @@ import { useI18n } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { Modal } from "../common/Modal";
-import { SensitiveCommandEditor } from "./sensitiveCommands/SensitiveCommandEditor";
+import { SensitiveCommandEditor, SensitiveCommandEditorActions } from "./sensitiveCommands/SensitiveCommandEditor";
 import {
   SensitiveCommandList,
   type SensitiveCommandListItem,
@@ -673,6 +673,16 @@ export function SensitiveCommandsPanel({
         closeDisabled={isBusy}
         size="large"
         className="sensitive-command-editor-modal"
+        footer={
+          draft && (
+            <SensitiveCommandEditorActions
+              isBusy={isBusy}
+              isSaving={isSaving}
+              onCancel={cancelDraft}
+              onSave={() => void saveDraft()}
+            />
+          )
+        }
       >
         {draft && (
           <SensitiveCommandEditor

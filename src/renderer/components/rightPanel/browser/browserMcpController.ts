@@ -118,3 +118,9 @@ export const executeBrowserMcpCommand = async (
 };
 
 export const parseBrowserMcpCommandArgs = parseCommandArgs;
+
+export const getFocusedBrowserInstanceId = (): string | null =>
+  getFallbackInstanceId();
+
+export const hasBrowserMcpInstance = (instanceId: string): boolean =>
+  instances.has(instanceId);

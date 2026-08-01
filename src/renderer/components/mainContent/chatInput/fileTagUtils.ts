@@ -8,6 +8,12 @@ export type FileTag = {
   path: string;
   name: string;
   isDirectory: boolean;
+  /**
+   * 可选的行号列表。当用户从搜索结果拖拽文件到输入框时，
+   * 携带命中的行号，便于 AI 定位到具体代码行。
+   * 仅对文件（非目录）有意义。
+   */
+  lines?: number[];
 };
 
 export type ImageTag = {
@@ -39,8 +45,75 @@ export type ContentSegment =
   | { type: "commit"; tag: CommitTag }
   | { type: "change"; tag: ChangeTag };
 
-export const encodeFileTag = (tag: FileTag): string =>
-  `@@${tag.isDirectory ? "dir" : "file"}:${tag.path}@@`;
+/**
+ * 将行号数组格式化为紧凑的字符串表示，连续区间合并为范围。
+ * 例：[7,8,9,47] -> "L7-L9,L47"，[42] -> "L42"，[] -> ""
+ */
+export const formatLinesStr = (lines: number[]): string => {
+  const sorted = [...new Set(lines)].filter((n) => n > 0).sort((a, b) => a - b);
+  if (sorted.length === 0) {
+    return "";
+  }
+  const parts: string[] = [];
+  let start = sorted[0];
+  let prev = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    const cur = sorted[i];
+    if (cur === prev + 1) {
+      prev = cur;
+      continue;
+    }
+    parts.push(start === prev ? `L${start}` : `L${start}-L${prev}`);
+    start = cur;
+    prev = cur;
+  }
+  parts.push(start === prev ? `L${start}` : `L${start}-L${prev}`);
+  return parts.join(",");
+};
+
+/**
+ * 解析行号字符串（支持区间格式 "L7-L9,L47" 与枚举格式 "L7,L8"）
+ * 回到行号数组 [7,8,9,47]。无效项被忽略。
+ */
+export const parseLinesStr = (str: string): number[] => {
+  const result: number[] = [];
+  for (const rawPart of str.split(",")) {
+    const part = rawPart.trim();
+    if (!part) {
+      continue;
+    }
+    const rangeMatch = part.match(/^L(\d+)-L(\d+)$/);
+    if (rangeMatch) {
+      const from = Number.parseInt(rangeMatch[1], 10);
+      const to = Number.parseInt(rangeMatch[2], 10);
+      if (Number.isFinite(from) && Number.isFinite(to) && from > 0 && to > 0) {
+        const lo = Math.min(from, to);
+        const hi = Math.max(from, to);
+        for (let n = lo; n <= hi; n++) {
+          result.push(n);
+        }
+      }
+      continue;
+    }
+    const singleMatch = part.match(/^L(\d+)$/);
+    if (singleMatch) {
+      const n = Number.parseInt(singleMatch[1], 10);
+      if (Number.isFinite(n) && n > 0) {
+        result.push(n);
+      }
+    }
+  }
+  return result;
+};
+
+export const encodeFileTag = (tag: FileTag): string => {
+  const kind = tag.isDirectory ? "dir" : "file";
+  const linesSuffix =
+    !tag.isDirectory && tag.lines && tag.lines.length > 0
+      ? `:${formatLinesStr(tag.lines)}`
+      : "";
+  return `@@${kind}:${tag.path}${linesSuffix}@@`;
+};
 
 export const encodeImageTag = (tag: ImageTag): string =>
   `@@image:${tag.dataUrl}@@`;
@@ -117,9 +190,10 @@ export const parseContentSegments = (content: string): ContentSegment[] => {
       // 图片统一显示为 image.<ext>，避免磁盘存储路径里冗长的文件名
       // （带 hash/时间戳）污染 chip 标签。扩展名从 data URL 或路径推断。
       const ext = (() => {
-        const mimeMatch = value.match(/^data:image\/([a-z]+);/);
+        const mimeMatch = value.match(/^data:image\/([a-z0-9+.-]+);/);
         if (mimeMatch) {
-          return mimeMatch[1];
+          // "svg+xml" -> "svg"
+          return mimeMatch[1].split("+")[0];
         }
         const pathExtMatch = value.match(/\.([a-zA-Z0-9]+)(?:[?#]|$)/);
         return pathExtMatch ? pathExtMatch[1].toLowerCase() : "png";
@@ -134,9 +208,23 @@ export const parseContentSegments = (content: string): ContentSegment[] => {
       });
     } else {
       const isDirectory = kind === "dir";
-      const path = value;
+      // 解析末尾的行号后缀，支持区间格式 ":L7-L9,L47" 与枚举格式
+      // ":L7,L8"。仅对文件有效；路径本身可能含冒号（如 Windows 盘符
+      // C:），因此只匹配以 ":L" 开头、由逗号分隔的行号段。
+      let path = value;
+      let lines: number[] | undefined;
+      if (!isDirectory) {
+        const linesMatch = value.match(/:L\d+(?:-L\d+)?(?:,L\d+(?:-L\d+)?)*$/);
+        if (linesMatch) {
+          lines = parseLinesStr(linesMatch[0].slice(1));
+          path = value.slice(0, linesMatch.index);
+        }
+      }
       const name = path.split(/[\\/]/).filter(Boolean).pop() || path;
-      segments.push({ type: "file", tag: { path, name, isDirectory } });
+      segments.push({
+        type: "file",
+        tag: { path, name, isDirectory, lines },
+      });
     }
     lastIndex = regex.lastIndex;
   }
@@ -160,14 +248,23 @@ const CLOSE_ICON_SVG =
 
 export const createChipHtml = (tag: FileTag): string => {
   const icon = getFileTypeIconHtml(tag.name, tag.isDirectory, false, 12);
+  const linesStr =
+    !tag.isDirectory && tag.lines && tag.lines.length > 0
+      ? formatLinesStr(tag.lines)
+      : "";
+  const linesAttr = linesStr
+    ? ` data-file-lines="${escapeHtml(linesStr)}"`
+    : "";
+  const displayName = linesStr ? `${tag.name}:${linesStr}` : tag.name;
+  const chipTitle = linesStr ? `${tag.path}:${linesStr}` : tag.path;
   return `<span class="file-chip" contenteditable="false" data-file-tag="true" data-file-path="${escapeHtml(
     tag.path
   )}" data-file-name="${escapeHtml(tag.name)}" data-file-is-dir="${
     tag.isDirectory
-  }" title="${escapeHtml(
-    tag.path
+  }"${linesAttr} title="${escapeHtml(
+    chipTitle
   )}"><span class="file-chip-icon">${icon}</span><span class="file-chip-name">${escapeHtml(
-    tag.name
+    displayName
   )}</span><span class="file-chip-remove" data-chip-remove="true">${CLOSE_ICON_SVG}</span></span>`;
 };
 
@@ -211,7 +308,9 @@ export const createChangeChipHtml = (tag: ChangeTag): string => {
     tag.path.lastIndexOf("\\")
   );
   const name = lastSep === -1 ? tag.path : tag.path.slice(lastSep + 1);
-  const chipTitle = `${tag.section === "staged" ? "Staged" : "Unstaged"} ${tag.status} ${tag.path}`;
+  const chipTitle = `${tag.section === "staged" ? "Staged" : "Unstaged"} ${
+    tag.status
+  } ${tag.path}`;
   const changeData = escapeHtml(
     JSON.stringify({
       repoPath: tag.repoPath,
@@ -235,10 +334,14 @@ export const readEditableContent = (el: HTMLElement): string => {
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const elem = node as HTMLElement;
       if (elem.dataset.fileTag === "true") {
+        const linesRaw = elem.dataset.fileLines;
+        const lines =
+          linesRaw && linesRaw.length > 0 ? parseLinesStr(linesRaw) : undefined;
         result += encodeFileTag({
           path: elem.dataset.filePath || "",
           name: elem.dataset.fileName || "",
           isDirectory: elem.dataset.fileIsDir === "true",
+          lines: elem.dataset.fileIsDir === "true" ? undefined : lines,
         });
       } else if (elem.dataset.imageTag === "true") {
         result += encodeImageTag({

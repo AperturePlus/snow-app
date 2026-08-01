@@ -6,6 +6,7 @@ import { isRecord, toBoolean, toText } from "../utils/value";
 
 export type ProxyBrowserSettings = {
   enabled: boolean;
+  host: string;
   port: number;
   browserPath: string;
   browserDebugPort: number;
@@ -14,12 +15,22 @@ export type ProxyBrowserSettings = {
 
 const PROXY_BROWSER_SETTING_NAME = "Proxy and browser settings";
 const PROXY_BROWSER_SETTING_CODE = "proxy_browser_settings";
+export const DEFAULT_PROXY_HOST = "127.0.0.1";
 const DEFAULT_PROXY_BROWSER_SETTINGS: ProxyBrowserSettings = {
   enabled: false,
+  host: DEFAULT_PROXY_HOST,
   port: 7890,
   browserPath: "",
   browserDebugPort: 9222,
   searchEngine: "duckduckgo",
+};
+
+export const sanitizeProxyHost = (host: string | undefined): string => {
+  if (!host) {
+    return DEFAULT_PROXY_HOST;
+  }
+  const stripped = host.trim().replace(/^https?:\/\//i, "");
+  return stripped || DEFAULT_PROXY_HOST;
 };
 
 const toPort = (value: unknown, defaultValue: number): number => {
@@ -37,6 +48,7 @@ const normalizeProxyBrowserSettings = (
 
   return {
     enabled: toBoolean(source.enabled, DEFAULT_PROXY_BROWSER_SETTINGS.enabled),
+    host: sanitizeProxyHost(toText(source.host)),
     port: toPort(source.port, DEFAULT_PROXY_BROWSER_SETTINGS.port),
     browserPath: toText(source.browserPath).trim(),
     browserDebugPort: toPort(

@@ -9,6 +9,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "../../i18n";
 import { ConfirmDialog } from "../common/ConfirmDialog";
+import { shortcutEvents } from "../shortcutEvents";
 import type { ChatConversationMessage } from "../mainContent/chatMessages/utils/conversationTypes";
 import { useTodoPanel } from "../mainContent/chatMessages/hooks/useTodoPanel";
 import type {
@@ -182,6 +183,14 @@ export const TodoPanelButton = ({
   useEffect(() => {
     onOpenChange?.(isOpen);
   }, [isOpen, onOpenChange]);
+
+  // 订阅快捷键事件：Ctrl/Cmd+T 切换待办面板。
+  // 仅当有待办项时（totalCount > 0）才响应，否则按钮本就不渲染。
+  useEffect(() => {
+    return shortcutEvents.on("toggle-todo", () => {
+      setIsOpen((prev) => !prev);
+    });
+  }, []);
 
   useEffect(() => {
     onPinnedChange?.(isPinned);

@@ -4,6 +4,7 @@ mod stdio;
 use std::collections::{HashMap, HashSet};
 
 use futures::{stream, StreamExt};
+
 use napi::{Error, Result};
 use serde_json::Value;
 
@@ -17,8 +18,8 @@ const DISCOVERY_CONCURRENCY: usize = 4;
 const SERVER_NAME_MAX_LEN: usize = 18;
 const TOOL_NAME_MAX_LEN: usize = 24;
 
-// 内置 MCP 服务器名称，用于排除与之重名的外部工具。与
-// `tools::BUILTIN_SERVER_IDS` 保持一致（含动态注册的 skills）。
+// Built-in MCP server names, used to exclude external tools with the same name.
+// Kept in sync with `tools::BUILTIN_SERVER_IDS`.
 const BUILTIN_SERVER_NAMES: &[&str] = super::tools::BUILTIN_SERVER_IDS;
 
 pub struct ExternalMcpProjectServer {
@@ -161,7 +162,7 @@ pub async fn resolve_project_scope_server(
         scope_server_id: project_scope_server_id(&config.server_id),
         project_owned: config.source == "project",
     };
-    let mut client = ExternalMcpClient::connect(&config).await?;
+    let client = ExternalMcpClient::connect(&config).await?;
     let tools_result = client.list_all_tools().await;
     client.close().await;
     let tools = tools_result?;
@@ -200,7 +201,7 @@ pub async fn call_tool(
         )));
     }
 
-    let mut client = ExternalMcpClient::connect(&config).await?;
+    let client = ExternalMcpClient::connect(&config).await?;
     let result = async {
         let tools = client.list_all_tools().await?;
         let tool_names = public_tool_names(&tools);
@@ -226,7 +227,7 @@ async fn discover_config_tools(
     config: McpServerConfigRecord,
     server_name: String,
 ) -> Result<Vec<McpTool>> {
-    let mut client = ExternalMcpClient::connect(&config).await?;
+    let client = ExternalMcpClient::connect(&config).await?;
     let result = client.list_all_tools().await;
     client.close().await;
 
@@ -265,9 +266,7 @@ fn to_public_tool(
     }
 }
 
-async fn load_configs(
-    project_id: Option<&str>,
-) -> Result<Vec<McpServerConfigRecord>> {
+async fn load_configs(project_id: Option<&str>) -> Result<Vec<McpServerConfigRecord>> {
     let project_id = project_id.map(str::to_string);
     tokio::task::spawn_blocking(move || {
         let storage_info = crate::storage::initialize_app_storage()?;
@@ -386,42 +385,110 @@ fn short_hash(value: &str) -> String {
     blake3::hash(value.as_bytes()).to_hex()[..6].to_string()
 }
 
-enum ExternalMcpClient {
-    Stdio(stdio::StdioMcpClient),
-    Http(http::HttpMcpClient),
+/// Trait abstracting the operations all transport-specific MCP clients must
+/// provide. Implemented by both `StdioMcpClient` and `HttpMcpClient`.
+pub(super) trait ClientHandle: Send + Sync {
+    fn list_all_tools(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<RemoteMcpTool>>> + Send + '_>>;
+    fn call_tool<'a>(
+        &'a self,
+        name: &'a str,
+        arguments: &'a Value,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value>> + Send + 'a>>;
+    fn close(self: Box<Self>);
+}
+
+/// Adapter so `StdioMcpClient` / `HttpMcpClient` (which own a
+/// `RunningService`) can be stored behind a single `Box<dyn ClientHandle>`.
+macro_rules! impl_client_handle {
+    ($ty:ty) => {
+        impl ClientHandle for $ty {
+            fn list_all_tools(
+                &self,
+            ) -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = Result<Vec<RemoteMcpTool>>> + Send + '_>,
+            > {
+                Box::pin(<$ty>::list_all_tools(self))
+            }
+
+            fn call_tool<'a>(
+                &'a self,
+                name: &'a str,
+                arguments: &'a Value,
+            ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value>> + Send + 'a>> {
+                Box::pin(<$ty>::call_tool(self, name, arguments))
+            }
+
+            fn close(self: Box<Self>) {
+                // We need to consume `self` inside an async context. Spawn a
+                // detached task so the child process / HTTP connection is
+                // gracefully shut down without blocking the caller.
+                tokio::spawn(async move {
+                    let inner = *self;
+                    inner.close().await;
+                });
+            }
+        }
+    };
+}
+
+impl_client_handle!(stdio::StdioMcpClient);
+impl_client_handle!(http::HttpMcpClient);
+
+/// Returns true when an `Auto`-mode negotiation failed with a JSON-RPC error
+/// that the rmcp SDK could not negotiate around on its own (anything other
+/// than -32601 Method Not Found / -32022 Unsupported Protocol Version, which
+/// the SDK already handles internally by falling back or retrying versions).
+/// Legacy servers such as deepwiki reply -32600 "Unsupported protocol version"
+/// here, so retrying with the legacy `initialize` handshake is worthwhile.
+pub(super) fn should_retry_with_legacy_handshake(
+    error: &rmcp::service::ClientInitializeError,
+) -> bool {
+    matches!(
+        error,
+        rmcp::service::ClientInitializeError::JsonRpcError(error_data)
+            if error_data.code != rmcp::model::ErrorCode::METHOD_NOT_FOUND
+                && error_data.code != rmcp::model::ErrorCode::UNSUPPORTED_PROTOCOL_VERSION
+    )
+}
+
+/// A transport-agnostic external MCP client. The underlying connection is
+/// managed by the rmcp SDK and automatically negotiated using the
+/// `ClientLifecycleMode::Auto` strategy, which prefers the 2026-07-28
+/// stateless protocol and falls back to the legacy initialize handshake when
+/// the remote server does not support `server/discover`.
+pub(super) struct ExternalMcpClient {
+    inner: Box<dyn ClientHandle>,
 }
 
 impl ExternalMcpClient {
-    async fn connect(config: &McpServerConfigRecord) -> Result<Self> {
-        match config.transport_type.as_str() {
-            "stdio" | "local" => stdio::StdioMcpClient::connect(config)
-                .await
-                .map(Self::Stdio),
-            "http" => http::HttpMcpClient::connect(config).await.map(Self::Http),
-            transport => Err(Error::from_reason(format!(
-                "Unsupported external MCP transport: {transport}"
-            ))),
-        }
+    pub(super) async fn connect(config: &McpServerConfigRecord) -> Result<Self> {
+        let inner: Box<dyn ClientHandle> = match config.transport_type.as_str() {
+            "stdio" | "local" => {
+                let client = stdio::StdioMcpClient::connect(config).await?;
+                Box::new(client)
+            }
+            "http" => {
+                let client = http::HttpMcpClient::connect(config).await?;
+                Box::new(client)
+            }
+            transport => {
+                return Err(Error::from_reason(format!(
+                    "Unsupported external MCP transport: {transport}"
+                )))
+            }
+        };
+        Ok(Self { inner })
     }
 
-    async fn list_all_tools(&mut self) -> Result<Vec<RemoteMcpTool>> {
-        match self {
-            Self::Stdio(client) => client.list_all_tools().await,
-            Self::Http(client) => client.list_all_tools().await,
-        }
+    pub(super) async fn list_all_tools(&self) -> Result<Vec<RemoteMcpTool>> {
+        self.inner.list_all_tools().await
     }
 
-    async fn call_tool(&mut self, name: &str, arguments: &Value) -> Result<Value> {
-        match self {
-            Self::Stdio(client) => client.call_tool(name, arguments).await,
-            Self::Http(client) => client.call_tool(name, arguments).await,
-        }
+    pub(super) async fn call_tool(&self, name: &str, arguments: &Value) -> Result<Value> {
+        self.inner.call_tool(name, arguments).await
     }
 
-    async fn close(self) {
-        match self {
-            Self::Stdio(client) => client.close().await,
-            Self::Http(client) => client.close().await,
-        }
+    pub(super) async fn close(self) {
+        self.inner.close();
     }
 }

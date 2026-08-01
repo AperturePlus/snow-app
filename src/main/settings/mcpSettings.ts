@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type {
   McpServerConfigInput,
   McpServerConfigRecord,
@@ -11,9 +12,10 @@ import { isRecord, toBoolean, toIntegerOrNull, toText } from "../utils/value";
 const MCP_SOURCE_SNOW_CLI = "snow-cli";
 const MCP_SOURCE_MANUAL = "manual";
 const DEFAULT_SCOPE = "global";
+const PROJECT_SCOPE = "snow-cli-project";
 const DEFAULT_TRANSPORT_TYPE = "stdio";
 
-type McpScope = "global";
+type McpScope = string;
 
 type SnowCliMcpServer = {
   name: string;
@@ -30,6 +32,7 @@ type SnowCliMcpServer = {
 type SnowCliMcpConfig = {
   scope: McpScope;
   servers: SnowCliMcpServer[];
+  projectId?: string;
 };
 
 const toServerId = (scope: string, name: string): string =>
@@ -104,10 +107,11 @@ const normalizeServer = (
 
 const readConfigByScope = (
   scope: McpScope,
-  filePath: string
+  filePath: string,
+  projectId?: string
 ): SnowCliMcpConfig => {
   if (!existsSync(filePath)) {
-    return { scope, servers: [] };
+    return { scope, servers: [], projectId };
   }
 
   const settings = readJsonFile(filePath);
@@ -121,7 +125,7 @@ const readConfigByScope = (
     }
   }
 
-  return { scope, servers };
+  return { scope, servers, projectId };
 };
 
 const toNativeInput = (
@@ -165,12 +169,72 @@ const persistMcpConfigs = async (
   }
 };
 
+const persistProjectMcpConfigs = async (
+  native: NativeBridge,
+  configs: SnowCliMcpConfig[]
+): Promise<void> => {
+  for (const config of configs) {
+    if (!config.projectId) {
+      continue;
+    }
+
+    const projectId = config.projectId;
+    const nextIds = new Set<string>();
+
+    for (const [index, server] of config.servers.entries()) {
+      const input: McpServerConfigInput = {
+        serverId: toServerId(`${PROJECT_SCOPE}:${projectId}`, server.name),
+        name: server.name,
+        transportType: server.type,
+        url: server.url,
+        command: server.command,
+        argsJson: JSON.stringify(server.args),
+        envJson: JSON.stringify(server.env),
+        headersJson: JSON.stringify(server.headers),
+        enabled: server.enabled,
+        ...(server.timeoutMs ? { timeoutMs: server.timeoutMs } : {}),
+        sortOrder: index,
+        source: MCP_SOURCE_SNOW_CLI,
+      };
+      nextIds.add(input.serverId);
+      await native.upsertProjectMcpServerConfig(projectId, input);
+    }
+
+    const existing = await native.listProjectMcpServerConfigs(projectId);
+    const scopePrefix = `${PROJECT_SCOPE}:${projectId}:`;
+    for (const item of existing) {
+      if (
+        item.serverId.startsWith(scopePrefix) &&
+        !nextIds.has(item.serverId)
+      ) {
+        await native.deleteProjectMcpServerConfig(projectId, item.serverId);
+      }
+    }
+  }
+};
+
 export const readSnowCliMcpConfig = async (
   native: NativeBridge
 ): Promise<McpServerConfigRecord[]> => {
   const configs = [readConfigByScope("global", SNOW_CLI_GLOBAL_SETTINGS_FILE)];
 
+  const directories = await native.listWorkspaceDirectories();
+  const projectConfigs: SnowCliMcpConfig[] = [];
+  for (const directory of directories) {
+    const projectFilePath = join(directory.path, ".snow", "settings.json");
+    const projectConfig = readConfigByScope(
+      PROJECT_SCOPE,
+      projectFilePath,
+      directory.directoryId
+    );
+    if (projectConfig.servers.length > 0) {
+      projectConfigs.push(projectConfig);
+    }
+  }
+
   await persistMcpConfigs(native, configs);
+  await persistProjectMcpConfigs(native, projectConfigs);
+
   return native.listMcpServerConfigs();
 };
 

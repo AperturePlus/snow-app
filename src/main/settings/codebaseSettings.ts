@@ -12,8 +12,8 @@ const CODEBASE_SETTING_CODE = "codebase_settings";
 const DEFAULT_CODEBASE_SETTINGS: CodebaseSettingsInput = {
   profileName: "default",
   embeddingType: "jina",
-  embeddingModelName: "",
-  embeddingBaseUrl: "",
+  embeddingModelName: "text-embedding-3-small",
+  embeddingBaseUrl: "https://api.openai.com/v1",
   embeddingApiKey: "",
   embeddingDimensions: 1536,
   batchMaxLines: 10,
@@ -58,9 +58,18 @@ export const normalizeCodebaseSettings = (
   return {
     profileName: profileName || DEFAULT_CODEBASE_SETTINGS.profileName,
     embeddingType: embeddingType || DEFAULT_CODEBASE_SETTINGS.embeddingType,
-    embeddingModelName: toText(source.embeddingModelName).trim(),
-    embeddingBaseUrl: toText(source.embeddingBaseUrl).trim(),
-    embeddingApiKey: toText(source.embeddingApiKey),
+    embeddingModelName: toText(
+      source.embeddingModelName,
+      DEFAULT_CODEBASE_SETTINGS.embeddingModelName
+    ).trim(),
+    embeddingBaseUrl: toText(
+      source.embeddingBaseUrl,
+      DEFAULT_CODEBASE_SETTINGS.embeddingBaseUrl
+    ).trim(),
+    embeddingApiKey: toText(
+      source.embeddingApiKey,
+      DEFAULT_CODEBASE_SETTINGS.embeddingApiKey
+    ),
     embeddingDimensions: toPositiveInteger(
       source.embeddingDimensions,
       DEFAULT_CODEBASE_SETTINGS.embeddingDimensions

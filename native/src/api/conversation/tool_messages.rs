@@ -4,59 +4,41 @@ use serde_json::Value;
 
 use crate::storage::services::chat_conversations::ChatContextMessage;
 
-/// Convert stored OpenAI-format tool_calls_json into Anthropic tool_use content blocks.
+/// Convert stored tool_calls_json (any provider format) into Anthropic
+/// tool_use content blocks.
+///
+/// The storage layer persists whichever native format the originating
+/// provider returned, so this function must accept all of them:
+/// - **OpenAI Chat**: `{"id":"...","type":"function","function":{"name":"...","arguments":"..."}}`
+/// - **OpenAI Responses**: `{"type":"function_call","call_id":"...","name":"...","arguments":"..."}`
+/// - **Anthropic**: `{"type":"tool_use","id":"...","name":"...","input":{...}}`
+/// - **Gemini**: `{"functionCall":{"name":"...","args":{...}}}`
 pub fn tool_calls_as_anthropic_blocks(tool_calls_json: &str) -> Vec<Value> {
-    let Ok(parsed) = serde_json::from_str::<Value>(tool_calls_json) else {
-        return Vec::new();
-    };
-    let Some(array) = parsed.as_array() else {
-        return Vec::new();
-    };
-
-    array
-        .iter()
-        .filter_map(|call| {
-            let id = call.get("id")?.as_str()?.to_string();
-            let function = call.get("function")?;
-            let name = function.get("name")?.as_str()?.to_string();
-            let arguments_str = function.get("arguments")?.as_str().unwrap_or("{}");
-            let input: Value =
-                serde_json::from_str(arguments_str).unwrap_or_else(|_| serde_json::json!({}));
-
-            Some(serde_json::json!({
+    normalize_tool_calls(tool_calls_json)
+        .into_iter()
+        .map(|entry| {
+            serde_json::json!({
                 "type": "tool_use",
-                "id": id,
-                "name": name,
-                "input": input,
-            }))
+                "id": entry.id,
+                "name": entry.name,
+                "input": entry.input,
+            })
         })
         .collect()
 }
 
-/// Convert stored OpenAI-format tool_calls_json into Gemini functionCall parts.
+/// Convert stored tool_calls_json (any provider format) into Gemini
+/// functionCall parts.
 pub fn tool_calls_as_gemini_parts(tool_calls_json: &str) -> Vec<Value> {
-    let Ok(parsed) = serde_json::from_str::<Value>(tool_calls_json) else {
-        return Vec::new();
-    };
-    let Some(array) = parsed.as_array() else {
-        return Vec::new();
-    };
-
-    array
-        .iter()
-        .filter_map(|call| {
-            let function = call.get("function")?;
-            let name = function.get("name")?.as_str()?.to_string();
-            let arguments_str = function.get("arguments")?.as_str().unwrap_or("{}");
-            let args: Value =
-                serde_json::from_str(arguments_str).unwrap_or_else(|_| serde_json::json!({}));
-
-            Some(serde_json::json!({
+    normalize_tool_calls(tool_calls_json)
+        .into_iter()
+        .map(|entry| {
+            serde_json::json!({
                 "functionCall": {
-                    "name": name,
-                    "args": args,
+                    "name": entry.name,
+                    "args": entry.input,
                 }
-            }))
+            })
         })
         .collect()
 }
@@ -75,11 +57,22 @@ pub fn parse_tool_results_json(raw: &str) -> Vec<(String, String, String)> {
         .collect()
 }
 
-/// Extract (id, name) entries from a serialized tool_calls JSON array.
-/// Supports both the OpenAI Chat nested format
-/// (`{"id":"...","function":{"name":"..."}}`) and the Responses flat format
-/// (`{"call_id":"...","name":"..."}`).
-fn extract_tool_call_entries(tool_calls_json: &str) -> Vec<(String, String)> {
+/// A provider-agnostic representation of a single tool call extracted from
+/// the stored `tool_calls_json`. All conversion functions go through this
+/// intermediate type so they automatically support every provider format.
+struct NormalizedToolCall {
+    id: String,
+    name: String,
+    input: Value,
+}
+
+/// Normalize a serialized tool_calls JSON array into [`NormalizedToolCall`]
+/// entries, accepting any provider's native format:
+/// - **OpenAI Chat**: `{"id":"...","type":"function","function":{"name":"...","arguments":"..."}}`
+/// - **OpenAI Responses**: `{"type":"function_call","call_id":"...","name":"...","arguments":"..."}`
+/// - **Anthropic**: `{"type":"tool_use","id":"...","name":"...","input":{...}}`
+/// - **Gemini**: `{"functionCall":{"name":"...","args":{...}}}`
+fn normalize_tool_calls(tool_calls_json: &str) -> Vec<NormalizedToolCall> {
     let Ok(parsed) = serde_json::from_str::<Value>(tool_calls_json) else {
         return Vec::new();
     };
@@ -90,14 +83,24 @@ fn extract_tool_call_entries(tool_calls_json: &str) -> Vec<(String, String)> {
     array
         .iter()
         .filter_map(|call| {
+            // --- id ---
+            // OpenAI Responses uses "call_id" as the real function call
+            // identifier; "id" is just the output item's ID (fc_ prefix).
+            // Chat Completions / Anthropic use "id" directly. Try call_id
+            // first so Responses items pair correctly with their results.
             let id = call
-                .get("id")
+                .get("call_id")
                 .and_then(Value::as_str)
-                .or_else(|| call.get("call_id").and_then(Value::as_str))?
+                .or_else(|| call.get("id").and_then(Value::as_str))?
                 .to_string();
             if id.is_empty() {
                 return None;
             }
+
+            // --- name ---
+            // OpenAI Chat nests under "function.name"; the other providers
+            // use a top-level "name". Gemini nests under
+            // "functionCall.name".
             let name = call
                 .get("name")
                 .and_then(Value::as_str)
@@ -106,11 +109,70 @@ fn extract_tool_call_entries(tool_calls_json: &str) -> Vec<(String, String)> {
                         .and_then(|f| f.get("name"))
                         .and_then(Value::as_str)
                 })
+                .or_else(|| {
+                    call.get("functionCall")
+                        .and_then(|f| f.get("name"))
+                        .and_then(Value::as_str)
+                })
                 .unwrap_or("unknown_tool")
                 .to_string();
-            Some((id, name))
+
+            // --- input ---
+            // Anthropic stores an object under "input". OpenAI Chat /
+            // Responses store a JSON string under "arguments". Gemini stores
+            // an object under "functionCall.args".
+            let input = if let Some(input_val) = call.get("input") {
+                if input_val.is_object() {
+                    input_val.clone()
+                } else if let Some(s) = input_val.as_str() {
+                    serde_json::from_str(s).unwrap_or_else(|_| serde_json::json!({}))
+                } else {
+                    serde_json::json!({})
+                }
+            } else if let Some(arguments) = call.get("arguments") {
+                // OpenAI Responses sometimes stores arguments as a parsed
+                // object; OpenAI Chat stores them as a JSON string.
+                if arguments.is_object() {
+                    arguments.clone()
+                } else if let Some(s) = arguments.as_str() {
+                    serde_json::from_str(s).unwrap_or_else(|_| serde_json::json!({}))
+                } else {
+                    serde_json::json!({})
+                }
+            } else if let Some(args) = call
+                .get("functionCall")
+                .and_then(|f| f.get("args"))
+            {
+                args.clone()
+            } else {
+                serde_json::json!({})
+            };
+
+            Some(NormalizedToolCall { id, name, input })
         })
         .collect()
+}
+
+/// Extract (id, name) entries from a serialized tool_calls JSON array.
+/// Supports all provider formats via [`normalize_tool_calls`].
+fn extract_tool_call_entries(tool_calls_json: &str) -> Vec<(String, String)> {
+    normalize_tool_calls(tool_calls_json)
+        .into_iter()
+        .map(|entry| (entry.id, entry.name))
+        .collect()
+}
+
+/// Extract the call ID from a single tool call JSON value.
+///
+/// Prioritizes `call_id` (Responses API format) over `id` (Chat Completions
+/// / Anthropic format) so that pairing logic uses the real function call
+/// identifier, not the output item's internal ID.
+fn extract_call_id_from_json(call: &Value) -> String {
+    call.get("call_id")
+        .and_then(Value::as_str)
+        .or_else(|| call.get("id").and_then(Value::as_str))
+        .unwrap_or("")
+        .to_string()
 }
 
 /// Ensure every tool call has a matching tool result and vice-versa.
@@ -122,12 +184,14 @@ fn extract_tool_call_entries(tool_calls_json: &str) -> Vec<(String, String)> {
 /// generation after the model emits tool calls but before results arrive) or
 /// when history is truncated by context-window management.
 ///
-/// This function scans the message list and patches both directions:
-/// - **Orphan calls** (call without result): a synthetic `tool` message with
-///   placeholder results is inserted immediately after the assistant message.
-/// - **Orphan results** (result without call): a synthetic `assistant` message
-///   carrying the missing tool calls is inserted immediately before the tool
-///   message.
+/// Instead of synthesizing fake messages (which can confuse the model with
+/// fabricated data), this function **removes** orphan entries:
+/// - **Orphan calls** (call without result): the call is stripped from the
+///   assistant message's `tool_calls_json`. If the message becomes empty
+///   (no content, no thinking, no remaining calls), it is removed entirely.
+/// - **Orphan results** (result without call): the result is stripped from
+///   the tool message's `tool_results_json`. If the message becomes empty,
+///   it is removed entirely.
 pub fn ensure_tool_pairing(messages: &mut Vec<ChatContextMessage>) {
     // --- Pass 1: collect all known call ids and result call-ids ---
     let mut all_call_ids: HashSet<String> = HashSet::new();
@@ -181,108 +245,83 @@ pub fn ensure_tool_pairing(messages: &mut Vec<ChatContextMessage>) {
         return;
     }
 
-    // --- Pass 2: patch orphans (iterate backwards so insertions don't shift
-    //     indices of entries we haven't visited yet) ---
+    // --- Pass 2: remove orphan entries (iterate backwards so removals
+    //     don't shift indices of entries we haven't visited yet) ---
     let mut i = messages.len();
     while i > 0 {
         i -= 1;
         let role = messages[i].role.trim().to_string();
 
         if role == "assistant" {
-            let orphan_entries: Vec<(String, String)> = messages[i]
-                .tool_calls_json
-                .as_deref()
-                .map(|raw| {
-                    extract_tool_call_entries(raw)
+            // Filter out orphan tool calls (calls without matching results).
+            if let Some(ref raw) = messages[i].tool_calls_json {
+                if let Ok(Value::Array(calls)) = serde_json::from_str::<Value>(raw) {
+                    let filtered: Vec<Value> = calls
                         .into_iter()
-                        .filter(|(id, _)| !all_result_ids.contains(id))
-                        .collect()
-                })
-                .unwrap_or_default();
+                        .filter(|call| {
+                            let id = extract_call_id_from_json(call);
+                            !id.is_empty() && all_result_ids.contains(&id)
+                        })
+                        .collect();
 
-            if orphan_entries.is_empty() {
-                continue;
-            }
-
-            // Build a synthetic tool-result message covering every orphan call.
-            let results_json: Vec<Value> = orphan_entries
-                .iter()
-                .map(|(id, name)| {
-                    serde_json::json!({
-                        "name": name,
-                        "callId": id,
-                        "result": "[Tool call was interrupted before completion — no result available]",
-                    })
-                })
-                .collect();
-            let summary = orphan_entries
-                .iter()
-                .map(|(id, name)| format!("{name} ({id})"))
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            let synthetic_tool_msg = ChatContextMessage {
-                role: "tool".to_string(),
-                content: format!("[Interrupted tool results: {summary}]"),
-                tool_calls_json: None,
-                tool_results_json: serde_json::to_string(&results_json).ok(),
-                thinking: None,
-                thinking_blocks_json: None,
-            };
-
-            messages.insert(i + 1, synthetic_tool_msg);
-            for (id, _) in &orphan_entries {
-                all_result_ids.insert(id.clone());
+                    if filtered.is_empty() {
+                        messages[i].tool_calls_json = None;
+                        // Remove the message entirely if it has no other content.
+                        let has_content = !messages[i].content.trim().is_empty();
+                        let has_thinking = messages[i]
+                            .thinking
+                            .as_deref()
+                            .map(|t| !t.is_empty())
+                            .unwrap_or(false);
+                        let has_reasoning = messages[i]
+                            .thinking_blocks_json
+                            .as_deref()
+                            .map(|raw| {
+                                serde_json::from_str::<Value>(raw)
+                                    .ok()
+                                    .and_then(|v| v.as_array().map(|a| !a.is_empty()))
+                                    .unwrap_or(false)
+                            })
+                            .unwrap_or(false);
+                        if !has_content && !has_thinking && !has_reasoning {
+                            messages.remove(i);
+                        }
+                    } else {
+                        messages[i].tool_calls_json = serde_json::to_string(&filtered).ok();
+                    }
+                }
             }
         } else if role == "tool" {
-            let orphan_results: Vec<(String, String)> = messages[i]
-                .tool_results_json
-                .as_deref()
-                .map(|raw| {
-                    parse_tool_results_json(raw)
-                        .into_iter()
-                        .filter(|(_name, call_id, _result)| {
-                            !call_id.is_empty() && !all_call_ids.contains(call_id)
-                        })
-                        .map(|(name, call_id, _result)| (name, call_id))
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            if orphan_results.is_empty() {
-                continue;
-            }
-
-            // Build a synthetic assistant message carrying the missing calls.
-            let calls_json: Vec<Value> = orphan_results
-                .iter()
-                .map(|(name, call_id)| {
-                    let tool_name = if name.is_empty() { "unknown_tool" } else { name.as_str() };
-                    serde_json::json!({
-                        "id": call_id,
-                        "type": "function",
-                        "function": {
-                            "name": tool_name,
-                            "arguments": "{}",
-                        },
+            // Filter out orphan tool results (results without matching calls).
+            if let Some(ref raw) = messages[i].tool_results_json {
+                let results = parse_tool_results_json(raw);
+                let filtered: Vec<(String, String, String)> = results
+                    .into_iter()
+                    .filter(|(_name, call_id, _result)| {
+                        call_id.is_empty() || all_call_ids.contains(call_id)
                     })
-                })
-                .collect();
+                    .collect();
 
-            let synthetic_assistant_msg = ChatContextMessage {
-                role: "assistant".to_string(),
-                content: String::new(),
-                tool_calls_json: serde_json::to_string(&calls_json).ok(),
-                tool_results_json: None,
-                thinking: None,
-                thinking_blocks_json: None,
-            };
-
-            // Insert before the tool message; the tool message shifts to i+1
-            // but we've already processed it, so the backwards walk is safe.
-            messages.insert(i, synthetic_assistant_msg);
-            for (_name, call_id) in &orphan_results {
-                all_call_ids.insert(call_id.clone());
+                if filtered.is_empty() {
+                    messages[i].tool_results_json = None;
+                    // Remove the message entirely if it has no other content.
+                    if messages[i].content.trim().is_empty() {
+                        messages.remove(i);
+                    }
+                } else {
+                    let filtered_json: Vec<Value> = filtered
+                        .iter()
+                        .map(|(name, call_id, result)| {
+                            serde_json::json!({
+                                "name": name,
+                                "callId": call_id,
+                                "result": result,
+                            })
+                        })
+                        .collect();
+                    messages[i].tool_results_json =
+                        serde_json::to_string(&filtered_json).ok();
+                }
             }
         }
     }

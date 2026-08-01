@@ -66,6 +66,7 @@ export function HookRuleEditor({
 
   return (
     <form
+      id="hooks-settings-editor-form"
       className="api-settings-form-section hooks-settings-editor-form"
       onSubmit={(event) => {
         event.preventDefault();
@@ -202,31 +203,47 @@ export function HookRuleEditor({
       >
         {t("settings.hooksAddRule", { defaultValue: "Add rule" })}
       </button>
-
-      <div className="api-settings-form-actions hooks-settings-editor-actions">
-        <button
-          className="api-settings-form-btn secondary"
-          onClick={onCancel}
-          type="button"
-          disabled={isBusy}
-        >
-          <X size={15} strokeWidth={1.9} />
-          <span>{t("settings.cancel", { defaultValue: "Cancel" })}</span>
-        </button>
-        <button
-          className="api-settings-form-btn primary"
-          type="submit"
-          disabled={isBusy}
-        >
-          {isSaving ? (
-            <Loader2 size={15} className="spin" />
-          ) : (
-            <Save size={15} strokeWidth={1.9} />
-          )}
-          <span>{t("settings.saveHooks", { defaultValue: "Save hooks" })}</span>
-        </button>
-      </div>
     </form>
+  );
+}
+
+type HookRuleEditorActionsProps = {
+  isBusy: boolean;
+  isSaving: boolean;
+  onCancel: () => void;
+};
+
+export function HookRuleEditorActions({
+  isBusy,
+  isSaving,
+  onCancel,
+}: HookRuleEditorActionsProps): React.JSX.Element {
+  const { t } = useI18n();
+  return (
+    <>
+      <button
+        className="api-settings-form-btn secondary"
+        onClick={onCancel}
+        type="button"
+        disabled={isBusy}
+      >
+        <X size={15} strokeWidth={1.9} />
+        <span>{t("settings.cancel", { defaultValue: "Cancel" })}</span>
+      </button>
+      <button
+        className="api-settings-form-btn primary"
+        type="submit"
+        form="hooks-settings-editor-form"
+        disabled={isBusy}
+      >
+        {isSaving ? (
+          <Loader2 size={15} className="spin" />
+        ) : (
+          <Save size={15} strokeWidth={1.9} />
+        )}
+        <span>{t("settings.saveHooks", { defaultValue: "Save hooks" })}</span>
+      </button>
+    </>
   );
 }
 

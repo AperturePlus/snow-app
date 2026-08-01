@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { Modal } from "../common/Modal";
 import { useI18n } from "../../i18n";
-import { SystemPromptEditor } from "./systemPrompt/SystemPromptEditor";
+import { SystemPromptEditor, SystemPromptEditorActions } from "./systemPrompt/SystemPromptEditor";
 import { SystemPromptList } from "./systemPrompt/SystemPromptList";
 import { SystemPromptSummary } from "./systemPrompt/SystemPromptSummary";
 import { EMPTY_SYSTEM_PROMPT_DRAFT } from "./systemPrompt/systemPromptConstants";
@@ -326,6 +326,16 @@ export function SystemPromptSettingsPanel({
         closeDisabled={isBusy}
         size="large"
         className="system-prompt-editor-modal"
+        footer={
+          draft && (
+            <SystemPromptEditorActions
+              isBusy={isBusy}
+              isSaving={isSaving}
+              onCancel={cancelDraft}
+              onSave={() => void saveDraft()}
+            />
+          )
+        }
       >
         {draft && (
           <SystemPromptEditor

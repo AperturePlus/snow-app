@@ -17,7 +17,8 @@ use crate::storage::services::codebase_embed_sessions::{
 };
 use crate::storage::services::codebase_index::{
     self, delete_vectors_for_file, ensure_vector_table, get_index_stats,
-    get_indexed_file_hashes, get_indexed_file_paths, insert_vectors, VectorInsert,
+    get_indexed_file_hashes, get_indexed_file_paths, insert_vectors, list_indexed_files,
+    VectorInsert,
 };
 use crate::storage::services::codebase_watcher::{
     self, CodebaseChangeCallback,
@@ -58,6 +59,27 @@ pub struct CodebaseIndexStats {
     pub total_files: i32,
     pub total_size_bytes: i64,
     pub is_indexed: bool,
+}
+
+/// A per-file summary row of the codebase index, shown in the table view.
+#[napi(object)]
+pub struct CodebaseIndexedFile {
+    pub relative_path: String,
+    pub file_path: String,
+    pub chunk_count: i32,
+    pub start_line: i32,
+    pub end_line: i32,
+    pub size_bytes: i64,
+    pub updated_at: String,
+}
+
+/// A paginated page of indexed file rows.
+#[napi(object)]
+pub struct CodebaseIndexedFilePage {
+    pub items: Vec<CodebaseIndexedFile>,
+    pub total: i32,
+    pub page: i32,
+    pub page_size: i32,
 }
 
 // ============================================================================
@@ -1105,6 +1127,48 @@ pub async fn get_codebase_index_stats(project_id: String) -> Result<CodebaseInde
         total_files: stats.total_files as i32,
         total_size_bytes: stats.total_size_bytes,
         is_indexed: stats.total_chunks > 0,
+    })
+}
+
+/// List indexed files for a project (paginated, sorted by relative path).
+#[napi]
+pub async fn list_codebase_indexed_files(
+    project_id: String,
+    page: i32,
+    page_size: i32,
+) -> Result<CodebaseIndexedFilePage> {
+    let storage_info = crate::storage::initialize_app_storage()?;
+    let database_path = PathBuf::from(&storage_info.database_path);
+    let pid = project_id.clone();
+    let page = page.max(1) as i64;
+    let page_size = page_size.clamp(1, 100) as i64;
+
+    let (records, total) = tokio::task::spawn_blocking(move || {
+        // If the table doesn't exist yet, return an empty page.
+        match list_indexed_files(&database_path, &pid, page, page_size) {
+            Ok(result) => result,
+            Err(_) => (Vec::new(), 0i64),
+        }
+    })
+    .await
+    .map_err(|e| Error::from_reason(format!("Failed to list indexed files: {e}")))?;
+
+    Ok(CodebaseIndexedFilePage {
+        items: records
+            .into_iter()
+            .map(|record| CodebaseIndexedFile {
+                relative_path: record.relative_path,
+                file_path: record.file_path,
+                chunk_count: record.chunk_count as i32,
+                start_line: record.start_line as i32,
+                end_line: record.end_line as i32,
+                size_bytes: record.size_bytes,
+                updated_at: record.updated_at,
+            })
+            .collect(),
+        total: total as i32,
+        page: page as i32,
+        page_size: page_size as i32,
     })
 }
 

@@ -1,4 +1,4 @@
-import { Folder, Globe2, Link, Loader2, X } from "lucide-react";
+import { Folder, Globe2, HelpCircle, Link, Loader2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   HookConfigRecord,
@@ -9,7 +9,10 @@ import { useI18n } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { Modal } from "../common/Modal";
-import { HookRuleEditor } from "./hooksSettings/HookRuleEditor";
+import {
+  HookRuleEditor,
+  HookRuleEditorActions,
+} from "./hooksSettings/HookRuleEditor";
 import { HooksSettingsList } from "./hooksSettings/HooksSettingsList";
 import { HooksSettingsSummary } from "./hooksSettings/HooksSettingsSummary";
 import {
@@ -29,6 +32,11 @@ import type {
   HookType,
 } from "./hooksSettings/types";
 import { SUPPORTED_HOOK_TYPES } from "./hooksSettings/types";
+import {
+  getAllHookDocs,
+  getHookDecisionConfirmationDoc,
+} from "./hooksSettings/hookDocsContent";
+import type { HookDocContent } from "./hooksSettings/hookDocsContent";
 
 type HooksSettingsPanelProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
@@ -39,12 +47,13 @@ export function HooksSettingsPanel({
   activeDirectory,
   onClose,
 }: HooksSettingsPanelProps): React.JSX.Element {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [activeScope, setActiveScope] = useState<HookScope>("global");
   const [globalConfigs, setGlobalConfigs] = useState<HookConfigRecord[]>([]);
   const [projectConfigs, setProjectConfigs] = useState<HookConfigRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(false);
   const [draft, setDraft] = useState<HookConfigDraft | null>(null);
   const [hookPendingDeletion, setHookPendingDeletion] =
     useState<HookListItem | null>(null);
@@ -438,11 +447,26 @@ export function HooksSettingsPanel({
     <div className="api-settings-page" role="region">
       <div className="api-settings-page-header">
         <div className="api-settings-title-group">
-          <strong>
-            {t("settings.hooksTitle", {
-              defaultValue: "Hooks settings",
-            })}
-          </strong>
+          <div className="docs-title-row">
+            <strong>
+              {t("settings.hooksTitle", {
+                defaultValue: "Hooks settings",
+              })}
+            </strong>
+            <button
+              className="icon-btn ghost"
+              type="button"
+              onClick={() => setDocsOpen(true)}
+              aria-label={t("settings.hooksDocsTitle", {
+                defaultValue: "Hooks documentation",
+              })}
+              title={t("settings.hooksDocsTitle", {
+                defaultValue: "Hooks documentation",
+              })}
+            >
+              <HelpCircle size={15} strokeWidth={1.8} />
+            </button>
+          </div>
           <span className="settings-item-description">
             {t("settings.hooksSettingsInfo", {
               defaultValue: "Configure lifecycle hooks and automation.",
@@ -590,6 +614,15 @@ export function HooksSettingsPanel({
         closeDisabled={isBusy}
         size="large"
         className="hooks-settings-editor-modal"
+        footer={
+          draft && (
+            <HookRuleEditorActions
+              isBusy={isBusy}
+              isSaving={isSaving}
+              onCancel={cancelDraft}
+            />
+          )
+        }
       >
         {draft && (
           <HookRuleEditor
@@ -631,6 +664,115 @@ export function HooksSettingsPanel({
         onCancel={() => setHookPendingDeletion(null)}
         variant="danger"
       />
+
+      <Modal
+        open={docsOpen}
+        title={t("settings.hooksDocsTitle", {
+          defaultValue: "Hooks documentation",
+        })}
+        closeLabel={t("settings.close", { defaultValue: "Close" })}
+        onClose={() => setDocsOpen(false)}
+        size="large"
+        className="docs-modal"
+      >
+        <HooksDocsContent locale={locale} />
+      </Modal>
+    </div>
+  );
+}
+
+function HooksDocsContent({ locale }: { locale: string }): React.JSX.Element {
+  const docsLocale = locale as Parameters<typeof getAllHookDocs>[0];
+  const docs = getAllHookDocs(docsLocale);
+  const decisionConfirmationDoc = getHookDecisionConfirmationDoc(docsLocale);
+  const { t } = useI18n();
+
+  const entries = Object.entries(docs) as [string, HookDocContent][];
+
+  return (
+    <div className="docs-container">
+      <div className="docs-section">
+        <h3 className="docs-section-title">{decisionConfirmationDoc.title}</h3>
+        <p className="docs-section-description">
+          {decisionConfirmationDoc.description}
+        </p>
+        <div className="docs-example">
+          <pre className="docs-example-code">
+            {decisionConfirmationDoc.body}
+          </pre>
+          <p className="docs-example-explanation">
+            {decisionConfirmationDoc.explanation}
+          </p>
+        </div>
+      </div>
+      {entries.map(([key, doc]) => (
+        <div key={key} className="docs-section">
+          <h3 className="docs-section-title">{doc.title}</h3>
+          <p className="docs-section-description">{doc.description}</p>
+          <div className="docs-subsection">
+            <strong>
+              {t("settings.hooksDocsContextFields", {
+                defaultValue: "Context fields",
+              })}
+            </strong>
+            <table className="docs-table">
+              <tbody>
+                {doc.contextFields.map((field) => (
+                  <tr key={field.name}>
+                    <td className="docs-field-name">{field.name}</td>
+                    <td className="docs-field-desc">{field.description}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="docs-subsection">
+            <strong>
+              {t("settings.hooksDocsExitCodes", {
+                defaultValue: "Exit codes",
+              })}
+            </strong>
+            <table className="docs-table">
+              <tbody>
+                {doc.exitCodes.map((code) => (
+                  <tr key={code.code}>
+                    <td className="docs-code-value">{code.code}</td>
+                    <td className="docs-code-meaning">{code.meaning}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {doc.examples.length > 0 && (
+            <div className="docs-subsection">
+              <strong>
+                {t("settings.hooksDocsExamples", {
+                  defaultValue: "Examples",
+                })}
+              </strong>
+              {doc.examples.map((example, idx) => (
+                <div key={idx} className="docs-example">
+                  <div className="docs-example-header">
+                    <span className="docs-example-title">{example.title}</span>
+                    <span className="docs-example-badge">
+                      {example.actionType}
+                    </span>
+                    {example.matcher && (
+                      <span className="docs-example-badge">
+                        matcher: {example.matcher}
+                      </span>
+                    )}
+                  </div>
+                  <pre className="docs-example-code">{example.body}</pre>
+                  <p className="docs-example-explanation">
+                    {example.explanation}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

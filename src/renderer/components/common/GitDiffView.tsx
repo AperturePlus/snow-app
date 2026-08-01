@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DiffModeEnum, DiffView, getLang } from "@git-diff-view/react";
 import { DiffFile, generateDiffFile } from "@git-diff-view/file";
-import { structuredPatch } from "diff";
 
 import "@git-diff-view/react/styles/diff-view.css";
+
+// 从独立模块导入（仅依赖 "diff" 库），并重新导出保持现有导入路径兼容。
+import { generateComparePatch } from "../../utils/generateComparePatch";
+export { generateComparePatch, getCompareDiffStats } from "../../utils/generateComparePatch";
 
 type DiffTheme = "light" | "dark";
 
@@ -54,73 +57,6 @@ const useAutoDiffMode = (): {
   }, []);
 
   return { containerRef, mode };
-};
-
-/**
- * 计算两段文本对比的增删行数(仅解析 diff,不做语法高亮,开销较小)。
- */
-export const getCompareDiffStats = (
-  oldContent: string,
-  newContent: string
-): { additions: number; deletions: number } => {
-  if (oldContent.length === 0 && newContent.length === 0) {
-    return { additions: 0, deletions: 0 };
-  }
-  const diffFile = generateDiffFile("a", oldContent, "b", newContent, "", "");
-  diffFile.initRaw();
-  const stats = {
-    additions: diffFile.additionLength,
-    deletions: diffFile.deletionLength,
-  };
-  diffFile.clear();
-  return stats;
-};
-
-/**
- * 基于两段文本生成 unified diff patch 文本(含 `---` / `+++` header)。
- *
- * - 用于工具调用将差异片段以 patch 形式传递给右侧面板的 diff 预览。
- * - 当提供 oldStartLine / newStartLine 时,hunk header 中的行号会偏移到真实源文件位置。
- * - 返回 null 表示两段文本无差异或生成失败。
- */
-export const generateComparePatch = (
-  fileName: string,
-  oldContent: string,
-  newContent: string,
-  oldStartLine?: number,
-  newStartLine?: number
-): string | null => {
-  try {
-    const result = structuredPatch(
-      fileName,
-      fileName,
-      oldContent,
-      newContent,
-      undefined,
-      undefined,
-      { context: 3 }
-    );
-
-    if (!result.hunks || result.hunks.length === 0) {
-      return null;
-    }
-
-    const oldOffset = Math.max(0, (oldStartLine ?? 1) - 1);
-    const newOffset = Math.max(0, (newStartLine ?? 1) - 1);
-
-    const patchLines: string[] = [`--- ${fileName}`, `+++ ${fileName}`];
-    for (const hunk of result.hunks) {
-      const oldStart = hunk.oldStart + oldOffset;
-      const newStart = hunk.newStart + newOffset;
-      patchLines.push(
-        `@@ -${oldStart},${hunk.oldLines} +${newStart},${hunk.newLines} @@`
-      );
-      patchLines.push(...hunk.lines);
-    }
-    return patchLines.join("\n");
-  } catch {
-    return null;
-  }
 };
 
 type GitDiffViewProps = {

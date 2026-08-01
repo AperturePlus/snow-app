@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ClipboardList,
   Command,
+  Target,
   Keyboard,
   Loader2,
   Paperclip,
@@ -81,6 +82,7 @@ export const ChatInputView = ({
   tokenUsage,
   pendingMessages,
   onWithdrawPendingMessage,
+  onSendPendingMessageNow,
   onCompactConversation,
   yoloMode,
   isUpdatingYoloMode,
@@ -90,6 +92,12 @@ export const ChatInputView = ({
   isUpdatingPlanMode,
   onPlanModeChange,
   onRefreshPlanMode,
+  goalMode,
+  isUpdatingGoalMode,
+  onGoalModeChange,
+  onRefreshGoalMode,
+  goalModeTokenBudget,
+  onGoalModeTokenBudgetChange,
   autoScrollEnabled,
   onAutoScrollChange,
   isCompacting,
@@ -413,6 +421,39 @@ export const ChatInputView = ({
       try {
         const parsed = JSON.parse(jsonData) as Record<string, unknown>;
 
+        // 搜索结果组合拖拽：{ type: "file-tags", tags: FileTag[] }
+        if (parsed.type === "file-tags" && Array.isArray(parsed.tags)) {
+          const tags: FileTag[] = parsed.tags
+            .filter(
+              (item) =>
+                item &&
+                typeof item === "object" &&
+                typeof (item as Record<string, unknown>).path === "string" &&
+                typeof (item as Record<string, unknown>).name === "string"
+            )
+            .map((item) => {
+              const t = item as Record<string, unknown>;
+              const rawLines = t.lines;
+              const lines = Array.isArray(rawLines)
+                ? rawLines
+                    .map((n) =>
+                      typeof n === "number" ? n : Number.parseInt(String(n), 10)
+                    )
+                    .filter((n) => Number.isFinite(n) && n > 0)
+                : undefined;
+              return {
+                path: t.path as string,
+                name: t.name as string,
+                isDirectory: t.isDirectory === true,
+                lines: t.isDirectory === true ? undefined : lines,
+              };
+            });
+          if (tags.length > 0) {
+            insertFileTags(tags);
+          }
+          return;
+        }
+
         // Commit tag: has "hash" and "repoPath" fields
         if (
           typeof parsed.hash === "string" &&
@@ -466,10 +507,19 @@ export const ChatInputView = ({
           typeof parsed.path === "string" &&
           typeof parsed.name === "string"
         ) {
+          const rawLines = parsed.lines;
+          const lines = Array.isArray(rawLines)
+            ? rawLines
+                .map((n) =>
+                  typeof n === "number" ? n : Number.parseInt(String(n), 10)
+                )
+                .filter((n) => Number.isFinite(n) && n > 0)
+            : undefined;
           const tag: FileTag = {
             path: parsed.path,
             name: parsed.name,
             isDirectory: parsed.isDirectory === true,
+            lines: parsed.isDirectory === true ? undefined : lines,
           };
 
           if (textareaRef.current) {
@@ -483,7 +533,7 @@ export const ChatInputView = ({
         // Ignore invalid drag data
       }
     },
-    [syncContent, textareaRef]
+    [insertFileTags, syncContent, textareaRef]
   );
 
   const handleDragOver = useCallback(
@@ -782,6 +832,13 @@ export const ChatInputView = ({
     [onWithdrawPendingMessage, restoreContent]
   );
 
+  const handleSendPendingNow = useCallback(
+    (index: number): void => {
+      onSendPendingMessageNow?.(index);
+    },
+    [onSendPendingMessageNow]
+  );
+
   const handleOpenCustomThinking = useCallback(() => {
     setCustomThinkingValue(isCustomThinkingValue ? thinkingValue : "");
     setIsCustomThinkingMode(true);
@@ -867,6 +924,7 @@ export const ChatInputView = ({
         <PendingMessages
           messages={pendingMessages}
           onWithdraw={handleWithdrawPending}
+          onSendNow={handleSendPendingNow}
         />
         {isStreaming ? (
           <div className="stream-metrics-bar">
@@ -943,6 +1001,12 @@ export const ChatInputView = ({
                 isUpdatingPlanMode={isUpdatingPlanMode}
                 onPlanModeChange={onPlanModeChange}
                 onRefreshPlanMode={onRefreshPlanMode}
+                goalMode={goalMode}
+                isUpdatingGoalMode={isUpdatingGoalMode}
+                onGoalModeChange={onGoalModeChange}
+                onRefreshGoalMode={onRefreshGoalMode}
+                goalModeTokenBudget={goalModeTokenBudget}
+                onGoalModeTokenBudgetChange={onGoalModeTokenBudgetChange}
                 autoScrollEnabled={autoScrollEnabled}
                 onAutoScrollChange={onAutoScrollChange}
               />
@@ -969,6 +1033,17 @@ export const ChatInputView = ({
                     title={t("plusMenu.planModeActive")}
                   >
                     <ClipboardList size={14} />
+                  </span>
+                </>
+              )}
+              {goalMode && (
+                <>
+                  <span className="toolbar-divider" aria-hidden="true" />
+                  <span
+                    className="plan-mode-badge"
+                    title={t("plusMenu.goalModeActive")}
+                  >
+                    <Target size={14} />
                   </span>
                 </>
               )}
