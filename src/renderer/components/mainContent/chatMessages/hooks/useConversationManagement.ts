@@ -118,71 +118,100 @@ export const useConversationManagement = (
 
       const nextTitle = title?.trim() ?? "";
 
-      try {
-        const [page, conversationRecord] = await Promise.all([
-          window.snow.listChatMessagesPaginated(
-            trimmedId,
-            "",
-            CHAT_MESSAGE_PAGE_SIZE
-          ),
-          window.snow.getChatConversation(trimmedId),
-        ]);
+      // Load the initial history. Selections of the same conversation share
+      // a single in-flight load: switching away mid-load no longer discards
+      // the fetched page (it is still cached so a later switch back hits the
+      // cache instantly), and switching back while the load is still pending
+      // reuses the same request instead of issuing a duplicate full re-fetch.
+      let loadPromise = ctx.historyLoadPromisesRef.current.get(trimmedId);
+      if (!loadPromise) {
+        loadPromise = (async () => {
+          try {
+            const [page, conversationRecord] = await Promise.all([
+              window.snow.listChatMessagesPaginated(
+                trimmedId,
+                "",
+                CHAT_MESSAGE_PAGE_SIZE
+              ),
+              window.snow.getChatConversation(trimmedId),
+            ]);
 
-        if (selectionRequestId !== ctx.selectionRequestIdRef.current) {
-          return;
-        }
+            const checkpointIds = Array.from(
+              new Set(
+                page.items
+                  .filter((record) => record.role === "user" && record.checkpointId)
+                  .map((record) => record.checkpointId)
+              )
+            );
 
-        const checkpointIds = Array.from(
-          new Set(
-            page.items
-              .filter((record) => record.role === "user" && record.checkpointId)
-              .map((record) => record.checkpointId)
-          )
-        );
-
-        ctx.sessionsRefData.current.set(trimmedId, {
-          streamId: null,
-          streamPromise: null,
-          summaryPromise: null,
-          isSending: false,
-          isAbortRequested: false,
-          runId: 0,
-          directoryId: conversationDirId,
-          checkpointIds,
-          childSubAgentIds: new Set(),
-          planMode: false,
-          goalMode: false,
+            // Cache the fetched page even when this request was superseded
+            // while in flight (the user switched to another conversation).
+            // Guard with the current session so a newer load's snapshot is
+            // never clobbered by an older one. Later selections of the same
+            // conversation then render instantly from the cache.
+            if (!ctx.sessionsRef.current[trimmedId]) {
+              ctx.sessionsRefData.current.set(trimmedId, {
+                streamId: null,
+                streamPromise: null,
+                summaryPromise: null,
+                isSending: false,
+                isAbortRequested: false,
+                runId: 0,
+                directoryId: conversationDirId,
+                checkpointIds,
+                childSubAgentIds: new Set(),
+                planMode: false,
+                goalMode: false,
+              });
+              ctx.setSessions((prev) => {
+                if (prev[trimmedId]) return prev;
+                return {
+                  ...prev,
+                  [trimmedId]: {
+                    messages: buildConversationMessages(page.items),
+                    messageRecords: page.items,
+                    summary: nextTitle,
+                    isStreaming: false,
+                    isAborting: false,
+                    isPaused: false,
+                    isLoadingOlderMessages: false,
+                    hasMoreMessages: page.hasMore,
+                    isInitialHistoryLoaded: true,
+                    tokenUsage: conversationTokenUsage ?? null,
+                    directoryId: conversationDirId,
+                    hasNewContent: false,
+                    forkedFromConversationId:
+                      conversationRecord?.forkedFromConversationId || undefined,
+                    forkMessageCount:
+                      conversationRecord?.forkMessageCount || undefined,
+                    streamTokenCount: 0,
+                    streamElapsedMs: 0,
+                    streamTtftMs: 0,
+                    streamStartedAt: 0,
+                  },
+                };
+              });
+            }
+          } catch {
+            // 加载历史消息失败时静默处理，不阻断交互
+          }
+        })();
+        ctx.historyLoadPromisesRef.current.set(trimmedId, loadPromise);
+        void loadPromise.finally(() => {
+          if (
+            ctx.historyLoadPromisesRef.current.get(trimmedId) === loadPromise
+          ) {
+            ctx.historyLoadPromisesRef.current.delete(trimmedId);
+          }
         });
-        ctx.setSessions((prev) => ({
-          ...prev,
-          [trimmedId]: {
-            messages: buildConversationMessages(page.items),
-            messageRecords: page.items,
-            summary: nextTitle,
-            isStreaming: false,
-            isAborting: false,
-            isPaused: false,
-            isLoadingOlderMessages: false,
-            hasMoreMessages: page.hasMore,
-            isInitialHistoryLoaded: true,
-            tokenUsage: conversationTokenUsage ?? null,
-            directoryId: conversationDirId,
-            hasNewContent: false,
-            forkedFromConversationId:
-              conversationRecord?.forkedFromConversationId || undefined,
-            forkMessageCount: conversationRecord?.forkMessageCount || undefined,
-            streamTokenCount: 0,
-            streamElapsedMs: 0,
-            streamTtftMs: 0,
-            streamStartedAt: 0,
-          },
-        }));
-      } catch {
-        // 加载历史消息失败时静默处理，不阻断交互
-      } finally {
-        if (selectionRequestId === ctx.selectionRequestIdRef.current) {
-          ctx.setIsLoadingInitialHistory(false);
-        }
+      }
+
+      await loadPromise;
+
+      // Only the latest selection owns the loading flag; superseded
+      // selections must not clear it while a newer one is still loading.
+      if (selectionRequestId === ctx.selectionRequestIdRef.current) {
+        ctx.setIsLoadingInitialHistory(false);
       }
 
       // Execute onSessionStart hooks (fire-and-forget) when the user opens

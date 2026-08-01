@@ -328,6 +328,10 @@ export type ConversationContextValue = {
   sessionsRefData: RefValue<Map<string, ConversationSessionRef>>;
   activeConversationIdRef: RefValue<string | undefined>;
   selectionRequestIdRef: RefValue<number>;
+  /** In-flight initial history loads keyed by conversationId. Selections of
+   *  the same conversation share a single load so switching away and back
+   *  while a load is pending does not trigger a duplicate full re-fetch. */
+  historyLoadPromisesRef: RefValue<Map<string, Promise<void>>>;
   loadingOlderConversationIdsRef: RefValue<Set<string>>;
   sessionsRef: RefValue<Record<string, ConversationSessionState>>;
   /** Ref mirror of newChatRequested for use inside async agent-loop closures

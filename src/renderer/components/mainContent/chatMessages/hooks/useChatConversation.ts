@@ -83,6 +83,7 @@ export const useChatConversation = (
   >(new Map());
   const activeConversationIdRef = useRef<string | undefined>(undefined);
   const selectionRequestIdRef = useRef(0);
+  const historyLoadPromisesRef = useRef(new Map<string, Promise<void>>());
   const loadingOlderConversationIdsRef = useRef(new Set<string>());
   const sessionsRef = useRef<
     ConversationContextValue["sessionsRef"]["current"]
@@ -219,6 +220,7 @@ export const useChatConversation = (
     sessionsRefData,
     activeConversationIdRef,
     selectionRequestIdRef,
+    historyLoadPromisesRef,
     loadingOlderConversationIdsRef,
     sessionsRef,
     newChatRequestedRef,
