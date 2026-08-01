@@ -13,6 +13,7 @@ import {
 
 import { useI18n } from "../i18n";
 import { GitPanelContent } from "./rightPanel/GitPanelContent";
+import { DiffViewer } from "./rightPanel/DiffViewer";
 import { FileDiffPreview } from "./common/FileDiffPreview";
 import {
   useBrowserMcpCommandBridge,
@@ -39,11 +40,7 @@ import type {
   TerminalTabData,
 } from "./rightPanel/types";
 
-// 非默认 tab 的重组件按需加载，避免 xterm / highlight.js / @git-diff-view
-// 等重型依赖打入首屏 chunk。
-const DiffViewer = lazy(() =>
-  import("./rightPanel/DiffViewer").then((m) => ({ default: m.DiffViewer }))
-);
+// 非默认 tab 的重组件按需加载，避免 xterm / highlight.js 等重型依赖打入首屏 chunk。
 const FileViewerContent = lazy(() =>
   import("./rightPanel/FileViewerContent").then((m) => ({
     default: m.FileViewerContent,
