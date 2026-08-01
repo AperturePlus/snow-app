@@ -16,7 +16,7 @@ import type {
 
 /**
  * 所有快捷键的默认配置。当后端尚未 seed 或读取失败时使用。
- * 6 个快捷键全部默认 enabled=true, foregroundOnly=true。
+ * 7 个快捷键全部默认 enabled=true, foregroundOnly=true。
  */
 const DEFAULT_SETTINGS: KeyboardShortcutsSettings = {
   cancelSession: { key: "escape", enabled: true, foregroundOnly: true },
@@ -25,6 +25,7 @@ const DEFAULT_SETTINGS: KeyboardShortcutsSettings = {
   openTodo: { key: "mod+t", enabled: true, foregroundOnly: true },
   cycleProject: { key: "mod+backtick", enabled: true, foregroundOnly: true },
   openProjectExplorer: { key: "mod+d", enabled: true, foregroundOnly: true },
+  cycleApiProfile: { key: "alt+p", enabled: true, foregroundOnly: true },
 };
 
 /**
