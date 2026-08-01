@@ -10,6 +10,61 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+use crate::exports::terminal::{detect_shell_family, load_terminal_shell_path_sync};
+
+/// Git 可执行文件缺失时给用户的明确提示，避免与误导性的
+/// "not a git repository" 混淆。
+const GIT_NOT_FOUND_MESSAGE: &str = "git executable not found in PATH — install Git for Windows, or configure a WSL shell in the terminal settings";
+
+/// 按 POSIX 单引号规则转义 shell 参数。WSL 模式下 git 命令通过
+/// `bash -lc` 执行，参数中的空格/引号/通配符必须正确转义。
+fn shell_quote(arg: &str) -> String {
+    format!("'{}'", arg.replace('\'', "'\\''"))
+}
+
+/// 将 `\\wsl$\<distro>\home\user\proj` 形式的 UNC 路径转换为 WSL 内的
+/// Linux 路径（`/home/user/proj`），供 `wsl.exe --cd` 使用。普通 Windows
+/// 路径（`C:\...`）原样返回 —— wsl.exe 会自动转换为 `/mnt/c/...`。
+fn wsl_cd_path(repo_path: &str) -> String {
+    if let Some(rest) = repo_path.strip_prefix(r"\\wsl$\") {
+        if let Some(slash) = rest.find('\\') {
+            let linux_part = &rest[slash + 1..];
+            return format!("/{}", linux_part.replace('\\', "/"));
+        }
+    }
+    repo_path.to_string()
+}
+
+/// 构造 git 命令执行器。
+///
+/// 当系统设置的终端 shell 为 WSL 时，通过 `wsl.exe --cd <dir> -e bash
+/// -lc "git ..."` 在 WSL 内执行 git（复用 bash.rs 的终端设置解析），
+/// 使未安装 Git for Windows 的机器也能使用 Git 面板；否则直接执行
+/// `git`。
+fn build_git_command(repo_path: &str, args: &[&str]) -> Command {
+    let shell_path = load_terminal_shell_path_sync().unwrap_or_default();
+    if detect_shell_family(&shell_path) == "wsl" {
+        // 所有参数统一 shell_quote：`safe.directory=*` 中的 `*` 若不
+        // 加引号会被 bash 通配符展开，导致 git 收到错误的配置值。
+        let git_cmd = ["git", "-c", "core.quotepath=false", "-c", "safe.directory=*"]
+            .iter()
+            .chain(args.iter())
+            .map(|a| shell_quote(a))
+            .collect::<Vec<String>>()
+            .join(" ");
+        let mut cmd = Command::new(&shell_path);
+        cmd.arg("--cd").arg(wsl_cd_path(repo_path));
+        cmd.args(["-e", "bash", "-lc", &git_cmd]);
+        cmd
+    } else {
+        let mut cmd = Command::new("git");
+        cmd.args(["-c", "core.quotepath=false", "-c", "safe.directory=*"])
+            .args(args)
+            .current_dir(repo_path);
+        cmd
+    }
+}
+
 // ===== NAPI Types =====
 
 #[napi(object)]
@@ -101,21 +156,24 @@ pub struct GitRepoInfo {
 // ===== Internal helpers =====
 
 fn run_git(repo_path: &str, args: &[&str]) -> Result<String> {
-    let mut cmd = Command::new("git");
+    let mut cmd = build_git_command(repo_path, args);
     // `safe.directory=*` bypasses Git's dubious-ownership check
     // (CVE-2022-24765). Without it, Windows Git refuses to run inside
     // WSL (`\\wsl$\...`) or other network/UNC paths because the repo files
     // are owned by the Linux user, not the current Windows user.
-    cmd.args(["-c", "core.quotepath=false", "-c", "safe.directory=*"])
-        .args(args)
-        .current_dir(repo_path);
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let output = cmd
-        .output()
-        .map_err(|e| Error::from_reason(format!("Failed to execute git: {e}")))?;
+    let output = cmd.output().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            // git (or the configured WSL shell) is not installed — surface
+            // a clear message instead of a generic spawn error.
+            Error::from_reason(GIT_NOT_FOUND_MESSAGE)
+        } else {
+            Error::from_reason(format!("Failed to execute git: {e}"))
+        }
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -137,18 +195,19 @@ fn run_git(repo_path: &str, args: &[&str]) -> Result<String> {
 /// which is the normal (expected) case for new/untracked files.
 /// Using `run_git` would treat that as an error and discard the stdout.
 fn run_git_raw(repo_path: &str, args: &[&str]) -> Result<String> {
-    let mut cmd = Command::new("git");
+    let mut cmd = build_git_command(repo_path, args);
     // Same `safe.directory=*` bypass as `run_git` — see its comment.
-    cmd.args(["-c", "core.quotepath=false", "-c", "safe.directory=*"])
-        .args(args)
-        .current_dir(repo_path);
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let output = cmd
-        .output()
-        .map_err(|e| Error::from_reason(format!("Failed to execute git: {e}")))?;
+    let output = cmd.output().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            Error::from_reason(GIT_NOT_FOUND_MESSAGE)
+        } else {
+            Error::from_reason(format!("Failed to execute git: {e}"))
+        }
+    })?;
 
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
@@ -227,26 +286,34 @@ pub fn get_git_status(repo_path: &str) -> Result<GitStatusResult> {
         });
     }
 
-    // If is_git_repo returned true but git still fails (corrupted repo,
-    // broken worktree, etc.), treat it as a non-repo rather than surfacing
-    // a raw git error to the user.
+    // If is_git_repo returned true but git still fails, distinguish two
+    // cases:
+    // - git reports "not a git repository" (corrupted repo, broken
+    //   worktree, .git file pointing to a missing gitdir, ...): treat as
+    //   a non-repo rather than surfacing a raw git error to the user.
+    // - any other error (git executable missing from PATH, permission
+    //   denied, ...): propagate it so the UI shows a clear message
+    //   instead of a misleading "Not a git repository".
     let status_out = match run_git(
         repo_path,
         &["status", "--porcelain=v1", "-b", "--find-renames", "-uall"],
     ) {
         Ok(out) => out,
-        Err(_) => {
-            return Ok(GitStatusResult {
-                is_repo: false,
-                current_branch: String::new(),
-                upstream: None,
-                ahead: 0,
-                behind: 0,
-                files: Vec::new(),
-                staged_count: 0,
-                unstaged_count: 0,
-                untracked_count: 0,
-            });
+        Err(e) => {
+            if e.to_string().contains("not a git repository") {
+                return Ok(GitStatusResult {
+                    is_repo: false,
+                    current_branch: String::new(),
+                    upstream: None,
+                    ahead: 0,
+                    behind: 0,
+                    files: Vec::new(),
+                    staged_count: 0,
+                    unstaged_count: 0,
+                    untracked_count: 0,
+                });
+            }
+            return Err(e);
         }
     };
     let lines: Vec<&str> = status_out.lines().filter(|l| !l.is_empty()).collect();

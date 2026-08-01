@@ -327,10 +327,11 @@ This dedicated tool is the **only action that can unlock Plan Mode writes**. Ord
 - Relevant code patterns, function signatures, or constraints discovered during analysis
 - Build/verification commands to run after changes
 - Any business logic or edge cases the sub-agent must respect
+- **TODO discipline before returning**: the sub-agent MUST call `todo-todo-manage` (action=get) before finishing and confirm EVERY item is marked completed — update or delete anything still pending. NEVER return with unconfirmed TODO items
 
 For each phase:
 1. **Delegate** — call `sub-agents-activate` with a complete, self-contained prompt for the phase
-2. **Review** — read the sub-agent's returned summary; spot-check key files with `filesystem-read`
+2. **Review** — read the sub-agent's returned summary; spot-check key files with `filesystem-read`; confirm its TODO items are all completed (update or delete any still pending)
 3. **Verify** — run build and diagnostics yourself to confirm the phase succeeded
 4. **Adapt** — if the sub-agent's output deviates from the plan, update the plan file and adjust the next phase's prompt accordingly
 5. **Proceed** — move to the next phase without asking the user for confirmation

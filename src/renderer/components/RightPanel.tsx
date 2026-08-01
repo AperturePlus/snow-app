@@ -26,6 +26,7 @@ import {
   type OpenFileDiffPreviewPayload,
 } from "./rightPanel/rightPanelEvents";
 import { generateComparePatch } from "../utils/generateComparePatch";
+import { getFileTypeIcon } from "../utils/fileIcons";
 import type {
   BrowserTabData,
   CodebaseTabData,
@@ -66,6 +67,38 @@ const CodebasePanelContent = lazy(() =>
 
 const GIT_TAB_ID = "git";
 const CODEBASE_TAB_ID = "codebase";
+
+// 文件类 tab(diff / file / file-diff-preview)在标题前显示对应的文件类型图标。
+const getTabFileIcon = (tab: RightPanelTab): React.ReactNode => {
+  if (tab.type === "diff") {
+    const filePath = (tab.data as DiffTabData)?.selectedFile?.path;
+    return filePath
+      ? getFileTypeIcon(filePath.split("/").pop() ?? filePath, false, false, {
+          size: 13,
+          className: "right-panel-tab-icon",
+        })
+      : null;
+  }
+  if (tab.type === "file") {
+    const fileName = (tab.data as FileViewerTabData)?.fileName;
+    return fileName
+      ? getFileTypeIcon(fileName, false, false, {
+          size: 13,
+          className: "right-panel-tab-icon",
+        })
+      : null;
+  }
+  if (tab.type === "file-diff-preview") {
+    const fileName = (tab.data as FileDiffPreviewTabData)?.fileName;
+    return fileName
+      ? getFileTypeIcon(fileName, false, false, {
+          size: 13,
+          className: "right-panel-tab-icon",
+        })
+      : null;
+  }
+  return null;
+};
 
 export type RightPanelRef = {
   openTerminal: (cwd: string) => void;
@@ -701,6 +734,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                   }`}
                   onClick={() => setActiveTabId(tab.id)}
                 >
+                  {getTabFileIcon(tab)}
                   <span className="right-panel-tab-title" title={tab.title}>
                     {dirtyTabs.has(tab.id) && (
                       <span

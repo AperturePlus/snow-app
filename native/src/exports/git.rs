@@ -10,37 +10,79 @@ use crate::storage::services::git_watcher::{GitChangeCallback};
 
 #[napi]
 pub async fn get_git_status(repo_path: String) -> napi::Result<GitStatusResult> {
-    crate::storage::services::git::get_git_status(&repo_path)
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::get_git_status(&repo_path)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to get git status: {join_error}"))
+    })?
 }
 
 #[napi]
 pub async fn get_git_branches(repo_path: String) -> napi::Result<Vec<GitBranch>> {
-    crate::storage::services::git::get_git_branches(&repo_path)
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::get_git_branches(&repo_path)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to get git branches: {join_error}"))
+    })?
 }
 
 #[napi]
 pub async fn git_stage_files(repo_path: String, file_paths: Vec<String>) -> napi::Result<GitStageResult> {
-    crate::storage::services::git::stage_files(&repo_path, &file_paths)
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::stage_files(&repo_path, &file_paths)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to stage files: {join_error}"))
+    })?
 }
 
 #[napi]
 pub async fn git_unstage_files(repo_path: String, file_paths: Vec<String>) -> napi::Result<GitStageResult> {
-    crate::storage::services::git::unstage_files(&repo_path, &file_paths)
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::unstage_files(&repo_path, &file_paths)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to unstage files: {join_error}"))
+    })?
 }
 
 #[napi]
 pub async fn git_stage_all(repo_path: String) -> napi::Result<GitStageResult> {
-    crate::storage::services::git::stage_all(&repo_path)
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::stage_all(&repo_path)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to stage all files: {join_error}"))
+    })?
 }
 
 #[napi]
 pub async fn git_unstage_all(repo_path: String) -> napi::Result<GitStageResult> {
-    crate::storage::services::git::unstage_all(&repo_path)
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::unstage_all(&repo_path)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to unstage all files: {join_error}"))
+    })?
 }
 
 #[napi]
 pub async fn git_commit(repo_path: String, message: String) -> napi::Result<GitCommitResult> {
-    crate::storage::services::git::commit_changes(&repo_path, &message)
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::commit_changes(&repo_path, &message)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to commit: {join_error}"))
+    })?
 }
 
 /// Push local commits to the remote. Runs on the blocking thread pool
@@ -87,7 +129,13 @@ pub async fn git_fetch(repo_path: String) -> napi::Result<GitPushPullResult> {
 
 #[napi]
 pub async fn git_checkout(repo_path: String, branch_name: String) -> napi::Result<GitCheckoutResult> {
-    crate::storage::services::git::checkout_branch(&repo_path, &branch_name)
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::checkout_branch(&repo_path, &branch_name)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to checkout branch: {join_error}"))
+    })?
 }
 
 #[napi]
@@ -95,7 +143,13 @@ pub async fn git_create_branch(
     repo_path: String,
     branch_name: String,
 ) -> napi::Result<GitCheckoutResult> {
-    crate::storage::services::git::create_branch(&repo_path, &branch_name)
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::create_branch(&repo_path, &branch_name)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to create branch: {join_error}"))
+    })?
 }
 
 #[napi]
@@ -104,7 +158,13 @@ pub async fn git_file_diff(
     file_path: String,
     staged: bool,
 ) -> napi::Result<GitDiffResult> {
-    crate::storage::services::git::get_file_diff(&repo_path, &file_path, staged)
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::get_file_diff(&repo_path, &file_path, staged)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to get file diff: {join_error}"))
+    })?
 }
 
 #[napi]
@@ -112,7 +172,13 @@ pub async fn git_discard_changes(
     repo_path: String,
     file_paths: Vec<String>,
 ) -> napi::Result<GitStageResult> {
-    crate::storage::services::git::discard_changes(&repo_path, &file_paths)
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::discard_changes(&repo_path, &file_paths)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to discard changes: {join_error}"))
+    })?
 }
 
 #[napi]
@@ -121,7 +187,13 @@ pub async fn get_git_log(
     skip: i32,
     limit: i32,
 ) -> napi::Result<Vec<GitLogEntry>> {
-    crate::storage::services::git::get_git_log(&repo_path, skip, limit)
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::get_git_log(&repo_path, skip, limit)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to get git log: {join_error}"))
+    })?
 }
 
 #[napi]
@@ -129,7 +201,13 @@ pub async fn get_git_commit_files(
     repo_path: String,
     hash: String,
 ) -> napi::Result<Vec<GitCommitFile>> {
-    crate::storage::services::git::get_commit_files(&repo_path, &hash)
+    tokio::task::spawn_blocking(move || {
+        crate::storage::services::git::get_commit_files(&repo_path, &hash)
+    })
+    .await
+    .map_err(|join_error| {
+        napi::Error::from_reason(format!("Failed to get commit files: {join_error}"))
+    })?
 }
 
 /// Discover all git repositories within a directory tree.

@@ -17850,6 +17850,11 @@ input {
   white-space: nowrap;
 }
 
+.diff-viewer-file-icon {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
 .diff-viewer-loading,
 .diff-viewer-binary,
 .diff-viewer-empty {
@@ -17940,6 +17945,11 @@ input {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 120px;
+}
+
+.right-panel-tab-icon {
+  flex-shrink: 0;
+  opacity: 0.7;
 }
 
 .right-panel-tab-close {

@@ -231,23 +231,17 @@ pub(crate) struct TerminalSettingsJson {
 
 /// 从 system_settings.terminal_settings 读取 shellPath。
 /// shellPath 为空时返回空字符串，由调用方决定回退策略。
-pub(crate) async fn load_terminal_shell_path() -> napi::Result<String> {
-    let setting_json = tokio::task::spawn_blocking(|| {
-        crate::storage::get_system_setting_value(TERMINAL_SETTINGS_CODE.to_string())
-    })
-    .await
-    .map_err(|error| {
-        Error::new(
-            Status::GenericFailure,
-            format!("Failed to read terminal settings: {error}"),
-        )
-    })?
-    .map_err(|error| {
-        Error::new(
-            Status::GenericFailure,
-            format!("Failed to read terminal settings: {error}"),
-        )
-    })?;
+/// 同步版本供 spawn_blocking 线程上的同步调用方（如 git 执行器）使用。
+pub(crate) fn load_terminal_shell_path_sync() -> napi::Result<String> {
+    let setting_json =
+        crate::storage::get_system_setting_value(TERMINAL_SETTINGS_CODE.to_string()).map_err(
+            |error| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to read terminal settings: {error}"),
+                )
+            },
+        )?;
 
     match setting_json {
         Some(json) => {
@@ -262,6 +256,19 @@ pub(crate) async fn load_terminal_shell_path() -> napi::Result<String> {
         }
         None => Ok(String::new()),
     }
+}
+
+/// 从 system_settings.terminal_settings 读取 shellPath（异步版本，
+/// 在阻塞线程池上执行，供 async 上下文调用）。
+pub(crate) async fn load_terminal_shell_path() -> napi::Result<String> {
+    tokio::task::spawn_blocking(load_terminal_shell_path_sync)
+        .await
+        .map_err(|error| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to read terminal settings: {error}"),
+            )
+        })?
 }
 
 /// 根据 shellPath 解析实际要启动的 shell 可执行文件及参数。

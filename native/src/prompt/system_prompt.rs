@@ -372,8 +372,9 @@ Sub-agents are independent AI execution loops that run with their own tool set a
 - Dependencies between files or changes
 - Build/verification commands to run after changes
 - Any business logic or edge cases to respect
+- **TODO discipline before returning**: the sub-agent MUST call `todo-todo-manage` (action=get) before finishing and confirm EVERY item is marked completed — update or delete anything still pending. NEVER return with unconfirmed TODO items
 
-After a sub-agent completes, review its returned summary and spot-check key files to verify correctness.
+After a sub-agent completes, review its returned summary, spot-check key files to verify correctness, and confirm its TODO items are all marked completed — update or delete any still pending before continuing.
 
 ## Git Safety
 
