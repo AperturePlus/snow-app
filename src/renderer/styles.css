@@ -4822,6 +4822,66 @@ input {
   position: relative;
   flex-shrink: 0;
 }
+.sub-agent-monitor {
+  display: flex;
+  width: calc(100% - 24px);
+  max-width: 1120px;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 8px auto 12px;
+  padding: 0 2px;
+  flex-wrap: wrap;
+}
+
+.sub-agent-monitor-status,
+.sub-agent-monitor-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sub-agent-monitor-status {
+  min-height: 24px;
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-island);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.sub-agent-monitor-status svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.sub-agent-monitor-controls {
+  min-width: 0;
+}
+
+.sub-agent-monitor-controls .stream-metrics {
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .sub-agent-monitor {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sub-agent-monitor-status,
+  .sub-agent-monitor-controls {
+    justify-content: center;
+  }
+
+  .sub-agent-monitor-controls {
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+}
 
 .chat-scroll-to-bottom {
   position: absolute;

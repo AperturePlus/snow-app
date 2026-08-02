@@ -152,10 +152,13 @@ export type SubAgentSessionEvent = {
   toolCallInteractionId?: string;
 };
 
+export type ConversationType = "main" | "sub_agent";
+
 export type ConversationSessionState = {
   messages: ChatConversationMessage[];
   messageRecords: ChatMessageRecord[];
   summary: string;
+  conversationType: ConversationType;
   isStreaming: boolean;
   isAborting: boolean;
   /** True when the user paused the agent loop. The loop checks this at the
@@ -469,6 +472,7 @@ export type UseChatConversationResult = {
    *  sessions such as streaming sub-agent conversations. */
   sessions: Record<string, ConversationSessionState>;
   activeConversationId: string | undefined;
+  activeConversationType: ConversationType;
   conversationDirectoryId: string | undefined;
   tokenUsage: TokenUsage | null;
   /** Real-time token probe for the current agent-loop iteration.

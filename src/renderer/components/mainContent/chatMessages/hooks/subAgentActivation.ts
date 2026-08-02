@@ -157,6 +157,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
 
       const subConvId = subConversationId!;
       ctx.ensureSession(subConvId, dirId);
+      ctx.updateSessionField(subConvId, "conversationType", "sub_agent");
       const subSessionRef = ctx.sessionsRefData.current.get(subConvId);
       if (subSessionRef) {
         subSessionRef.isSending = true;
