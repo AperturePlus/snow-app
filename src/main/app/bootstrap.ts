@@ -9,6 +9,7 @@ import {
 import { APP_ICON_PATH, APP_USER_MODEL_ID, isMacOS } from "./constants";
 import { initializeApplicationServices } from "./applicationServices";
 import { createWindow } from "./mainWindow";
+import { initTray } from "./tray";
 import { registerIpcHandlers } from "../ipc/registerIpcHandlers";
 import { native, getRawNative } from "../native/nativeBridge";
 import { installGuestViewErrorFilter } from "../utils/guestViewErrorFilter";
@@ -100,6 +101,9 @@ export const bootstrapApplication = (): void => {
     // 窗口使用 show:false + ready-to-show，确保用户看到的第一帧就是
     // 完整的 loading 动画，而非空白/黑屏过渡。
     const mainWindow = createWindow();
+
+    // 初始化系统托盘（黑白脱色图标 + 悬停快速信息 + 右键菜单）。
+    initTray(native);
 
     snowLog.info({
       module: "app/bootstrap",

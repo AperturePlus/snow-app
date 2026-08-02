@@ -5,6 +5,7 @@ import type {
   ResponsesApiRequest,
   ResponsesApiStreamChunk,
 } from "../../native/types";
+import { readRemoteRoleContent } from "../../ssh/remoteWorkspaceCommand";
 import { snowLog } from "../../../utils/snowLogger";
 
 const CHAT_CREATE_RESPONSE_CHUNK_CHANNEL = "chat:create-response:chunk";
@@ -101,6 +102,36 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
   };
 };
 
+/**
+ * Resolve the project ROLE.md content for an SSH workspace so the Rust prompt
+ * builder can inject the project role even when the working directory is a
+ * remote `ssh://` path. Local workspaces are handled entirely inside Rust
+ * (it reads `<workspace>/ROLE.md` and `.snow/settings.json` directly).
+ *
+ * Any failure (no directory, SSH unavailable, missing file) silently falls
+ * back to `null` — the global ROLE.md remains the fallback.
+ */
+const resolveRemoteRoleContent = async (
+  directoryId: string | undefined,
+  native: NativeBridge
+): Promise<string | null> => {
+  if (!directoryId) {
+    return null;
+  }
+  try {
+    const directories = await native.listWorkspaceDirectories();
+    const matched = directories.find(
+      (directory) => directory.directoryId === directoryId
+    );
+    if (!matched || !matched.path.startsWith("ssh://")) {
+      return null;
+    }
+    return readRemoteRoleContent(matched.path);
+  } catch {
+    return null;
+  }
+};
+
 export const registerChatHandlers = (native: NativeBridge): void => {
   ipcMain.handle(
     "chat:create-response-stream",
@@ -109,8 +140,15 @@ export const registerChatHandlers = (native: NativeBridge): void => {
       const normalizedStreamId = normalizeCreateResponseStreamId(streamId);
 
       try {
+        const remoteRoleContent = await resolveRemoteRoleContent(
+          normalizedRequest.directoryId,
+          native
+        );
         return await native.createResponseStream(
-          normalizedRequest,
+          {
+            ...normalizedRequest,
+            ...(remoteRoleContent ? { remoteRoleContent } : {}),
+          },
           (chunk: ResponsesApiStreamChunk) => {
             if (event.sender.isDestroyed()) {
               return;

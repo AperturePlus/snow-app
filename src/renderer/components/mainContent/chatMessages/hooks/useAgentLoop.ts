@@ -1024,20 +1024,25 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               // onStop hook failures must not block cleanup
             });
 
-          // Only clear isSending when this run is still the current one.
-          // If a newer send or abort has incremented runId, the newer run
-          // owns isSending and we must not clobber it.
-          if (ref && ref.runId === currentRunId) {
+          // Only the run that still owns the session may reset its runtime
+          // state. If a newer send or abort has incremented runId (e.g. a
+          // pending message forced via "send now" starts a fresh agent loop
+          // right after handleAbort), the newer run owns isSending,
+          // isStreaming and the streaming id — cleaning them up here would
+          // strip the running state from the UI (the stop button disappears)
+          // even though the agent loop is still active.
+          const ownsSession = !!ref && ref.runId === currentRunId;
+          if (ownsSession) {
             ref.isSending = false;
+            ctx.updateSessionField(finalSessionKey, "isStreaming", false);
+            ctx.updateSessionField(finalSessionKey, "streamStartedAt", 0);
+            ctx.updateSessionField(finalSessionKey, "isAborting", false);
+            ctx.updateSessionField(finalSessionKey, "isPaused", false);
+            // Clear the pause controller so a stale resolve callback from a
+            // previous run cannot accidentally unblock a future iteration.
+            ctx.pauseControllerRef.current.delete(finalSessionKey);
+            ctx.removeStreamingId(finalSessionKey);
           }
-          ctx.updateSessionField(finalSessionKey, "isStreaming", false);
-          ctx.updateSessionField(finalSessionKey, "streamStartedAt", 0);
-          ctx.updateSessionField(finalSessionKey, "isAborting", false);
-          ctx.updateSessionField(finalSessionKey, "isPaused", false);
-          // Clear the pause controller so a stale resolve callback from a
-          // previous run cannot accidentally unblock a future iteration.
-          ctx.pauseControllerRef.current.delete(finalSessionKey);
-          ctx.removeStreamingId(finalSessionKey);
 
           // Flush pending messages queued while this session was busy.
           const pendingQueue =

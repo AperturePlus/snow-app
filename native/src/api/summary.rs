@@ -143,6 +143,7 @@ async fn generate_summary_via_chat(
         "messages": chat_messages,
         "stream": false,
         "max_tokens": 4096,
+        "reasoning_effort": "none",
     });
 
     let client = crate::api::http_client::build_proxied_client().await?;
@@ -190,6 +191,7 @@ async fn generate_summary_via_responses(
         "model": model,
         "input": input,
         "stream": false,
+        "reasoning": {"effort": "none"},
     });
 
     let client = crate::api::http_client::build_proxied_client().await?;
@@ -230,6 +232,7 @@ async fn generate_summary_via_anthropic(
         "stream": false,
         "system": SUMMARY_SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": conversation_text}],
+        "thinking": {"type": "disabled"},
     });
 
     let client = crate::api::http_client::build_proxied_client().await?;
@@ -273,7 +276,8 @@ async fn generate_summary_via_gemini(
             "parts": [{"text": conversation_text}]
         }],
         "generationConfig": {
-            "maxOutputTokens": 4096
+            "maxOutputTokens": 4096,
+            "thinkingConfig": {"thinkingBudget": 0}
         }
     });
 

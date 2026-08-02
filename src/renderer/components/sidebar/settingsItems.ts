@@ -1,5 +1,6 @@
 import {
   ChartColumn,
+  Database,
   EyeOff,
   Globe,
   FishingHook,
@@ -10,7 +11,6 @@ import {
   Plug,
   Puzzle,
   ScrollText,
-  Search,
   Sparkles,
   ShieldAlert,
   Terminal,
@@ -48,7 +48,7 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
   },
   {
     id: "codebase",
-    icon: Search,
+    icon: Database,
     labelKey: "settings.codebaseSettings",
     defaultLabel: "Codebase settings",
     view: "codebase-settings",

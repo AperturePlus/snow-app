@@ -651,6 +651,12 @@ export type ResponsesApiRequest = {
   skipContext?: boolean;
   planMode?: boolean;
   goalMode?: boolean;
+  /**
+   * Project ROLE.md content of an SSH (`ssh://`) workspace, resolved by the
+   * main process via SSH (mirrors RoleEditorPanel's access path). Absent for
+   * local workspaces — Rust reads the file itself.
+   */
+  remoteRoleContent?: string;
 };
 
 export type TokenUsage = {
@@ -1006,6 +1012,10 @@ export type NativeBridge = {
     items: WorkspaceDirectoryInput[]
   ) => Promise<void>;
   deleteWorkspaceDirectory: (directoryId: string) => Promise<void>;
+  createProjectDirectory: (
+    parentPath: string,
+    projectName: string
+  ) => Promise<string>;
   readDirectoryEntries: (dirPath: string) => Promise<DirectoryEntry[]>;
   renameWorkspaceEntry: (
     rootPath: string,
