@@ -768,6 +768,9 @@ export const zhCN = {
   "settings.systemPromptNameRequired": "请填写提示词名称。",
   "settings.systemPromptDeleteSuccess": "已删除系统提示词。",
   "settings.systemPromptDeleteError": "删除系统提示词失败",
+  "settings.personalizationSettings": "个性化与规则",
+  "settings.personalizationTitle": "个性化与规则",
+  "settings.personalizationSettingsInfo": "管理全局与项目级的 AI 助手行为规则。",
   "settings.customHeadersSettings": "自定义请求头",
   "settings.customHeadersSettingsInfo": "为 API 请求添加请求头。",
   "settings.customHeadersTitle": "自定义请求头",
@@ -1483,6 +1486,46 @@ export const zhCN = {
   "roleEditor.hint": "保存后，新的角色定义将在下一次对话中生效。",
   "roleEditor.sshCredentialMissing":
     "无法获取 SSH 凭证，请先在 SSH 连接向导中保存凭证。",
+  "personalization.close": "关闭个性化与规则设置",
+  "personalization.save": "保存",
+  "personalization.globalTitle": "全局规则",
+  "personalization.globalInfo": "适用于所有项目与对话的规则与角色定义。",
+  "personalization.globalScopeNote":
+    "全局规则保存在 ~/.snow/ROLE.md，对所有项目与对话生效。",
+  "personalization.globalPlaceholder":
+    "在此输入全局规则内容，例如角色定义、输出风格、编码规范...",
+  "personalization.globalSaved": "已保存全局规则。",
+  "personalization.globalHint": "保存后，新的规则将在下一次对话中生效。",
+  "personalization.projectTitle": "项目规则",
+  "personalization.projectInfo":
+    "仅对所选项目生效，并覆盖同名的全局规则。",
+  "personalization.projectSelect": "项目",
+  "personalization.projectSelectPlaceholder": "请选择项目...",
+  "personalization.projectNotFound": "未找到项目目录，请先在侧边栏添加项目。",
+  "personalization.projectEmpty":
+    "请先选择项目以编辑其 ROLE.md；可在侧边栏添加项目。",
+  "personalization.projectScopeNote":
+    "项目规则保存在项目根目录的 ROLE.md，优先级高于全局规则。",
+  "personalization.projectSaved": "已保存项目规则。",
+  "personalization.projectPlaceholder":
+    "在此输入该项目的规则内容，例如代码风格、架构约定、技术栈说明...",
+  "personalization.projectKindLocal": "本地",
+  "personalization.priorityTitle": "规则优先级",
+  "personalization.priorityInfo":
+    "规则按以下顺序生效，后面的层级覆盖前面的层级：",
+  "personalization.prioritySession": "会话指令",
+  "personalization.prioritySessionDesc": "当前对话中临时给出的指令。",
+  "personalization.priorityProject": "项目规则",
+  "personalization.priorityProjectDesc":
+    "所选项目根目录的 ROLE.md，在项目激活时生效。",
+  "personalization.priorityGlobal": "全局规则",
+  "personalization.priorityGlobalDesc":
+    "~/.snow/ROLE.md，对所有项目与对话生效。",
+  "personalization.priorityDefault": "内置默认提示词",
+  "personalization.priorityDefaultDesc":
+    "未配置任何项目或全局规则时使用的默认角色。",
+  "personalization.priorityNote":
+    "项目规则存在时覆盖全局规则；项目没有 ROLE.md 时自动回退到全局规则。",
   "projectSkills.location.global": "全局",
   "projectSkills.location.project": "项目",
   "projectSkills.source.snow": "Snow",

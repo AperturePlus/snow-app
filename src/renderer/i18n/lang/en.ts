@@ -789,6 +789,10 @@ export const en = {
   "settings.systemPromptNameRequired": "Prompt name is required.",
   "settings.systemPromptDeleteSuccess": "Deleted system prompt.",
   "settings.systemPromptDeleteError": "Failed to delete system prompt",
+  "settings.personalizationSettings": "Personalization & rules",
+  "settings.personalizationTitle": "Personalization & rules",
+  "settings.personalizationSettingsInfo":
+    "Manage global and project-level behavior rules for the AI assistant.",
   "settings.customHeadersSettings": "Custom headers",
   "settings.customHeadersSettingsInfo": "Add headers for API requests.",
   "settings.customHeadersTitle": "Custom headers",
@@ -1564,6 +1568,50 @@ export const en = {
     "After saving, the new role definition takes effect on the next conversation.",
   "roleEditor.sshCredentialMissing":
     "Unable to retrieve SSH credentials. Please save them in the SSH connection wizard first.",
+  "personalization.close": "Close personalization settings",
+  "personalization.save": "Save",
+  "personalization.globalTitle": "Global rules",
+  "personalization.globalInfo":
+    "Rules and role definitions that apply to all projects and conversations.",
+  "personalization.globalScopeNote":
+    "Global rules are saved to ~/.snow/ROLE.md and apply to every project and conversation.",
+  "personalization.globalPlaceholder":
+    "Enter global rules here, e.g. role definition, output style, coding conventions...",
+  "personalization.globalSaved": "Global rules saved.",
+  "personalization.globalHint":
+    "Changes take effect in the next conversation.",
+  "personalization.projectTitle": "Project rules",
+  "personalization.projectInfo":
+    "Apply only to the selected project and override the matching global rules.",
+  "personalization.projectSelect": "Project",
+  "personalization.projectSelectPlaceholder": "Select a project...",
+  "personalization.projectNotFound":
+    "Project directory not found. Add projects from the sidebar first.",
+  "personalization.projectEmpty":
+    "Select a project to edit its ROLE.md. Add projects from the sidebar first.",
+  "personalization.projectScopeNote":
+    "Project rules live in ROLE.md at the project root and take priority over global rules.",
+  "personalization.projectSaved": "Project rules saved.",
+  "personalization.projectPlaceholder":
+    "Enter rules for this project here, e.g. code style, architecture conventions, tech stack notes...",
+  "personalization.projectKindLocal": "Local",
+  "personalization.priorityTitle": "Rule priority",
+  "personalization.priorityInfo":
+    "Rules take effect in the following order, later ones override earlier ones:",
+  "personalization.prioritySession": "Conversation instructions",
+  "personalization.prioritySessionDesc":
+    "Temporary instructions given in the current conversation.",
+  "personalization.priorityProject": "Project rules",
+  "personalization.priorityProjectDesc":
+    "ROLE.md at the selected project root, applied when a project is active.",
+  "personalization.priorityGlobal": "Global rules",
+  "personalization.priorityGlobalDesc":
+    "~/.snow/ROLE.md, applied to every project and conversation.",
+  "personalization.priorityDefault": "Built-in default prompt",
+  "personalization.priorityDefaultDesc":
+    "Used when no project or global rules are defined.",
+  "personalization.priorityNote":
+    "Project rules override global rules; if a project has no ROLE.md, the global rules are used automatically.",
   "projectSkills.location.global": "Global",
   "projectSkills.location.project": "Project",
   "projectSkills.source.snow": "Snow",

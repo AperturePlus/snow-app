@@ -22204,3 +22204,407 @@ input {
     opacity: 1;
   }
 }
+
+/* ===== Personalization (global & project rules) ===== */
+.personalization-page {
+  gap: 16px;
+  padding-bottom: 32px;
+}
+
+.personalization-section {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px 18px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--accent-blue) 3%, transparent),
+      transparent 90px
+    ),
+    var(--bg-secondary);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.05),
+    0 10px 28px -14px rgb(0 0 0 / 0.35);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.personalization-section:hover {
+  border-color: var(--border-color);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.05),
+    0 12px 32px -14px rgb(0 0 0 / 0.45);
+}
+
+.personalization-section-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.personalization-section-title {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.personalization-section-icon {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+  color: var(--accent-blue);
+}
+
+.personalization-section-icon svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2;
+}
+
+.personalization-section-title strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.personalization-section-title > span:last-child {
+  flex-basis: 100%;
+  margin-left: 40px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.personalization-project-select-row {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: var(--bg-tertiary);
+}
+
+.personalization-project-select-label {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+}
+
+.personalization-project-select-label > span {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.personalization-project-select {
+  min-width: 0;
+  max-width: 340px;
+  min-height: 32px;
+  flex: 1;
+  padding: 5px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  outline: none;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.personalization-project-select:hover:not(:disabled) {
+  border-color: var(--text-muted);
+}
+
+.personalization-project-select:focus {
+  border-color: color-mix(in srgb, var(--accent-blue) 60%, var(--border-color));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 14%, transparent);
+}
+
+.personalization-project-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.personalization-project-kind {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+  color: var(--accent-blue);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.personalization-priority-list {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 10px;
+  list-style: none;
+  counter-reset: personalization-priority;
+}
+
+.personalization-priority-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px 11px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.personalization-priority-list li:hover {
+  border-color: color-mix(in srgb, var(--accent-blue) 30%, var(--border-color));
+  background: color-mix(in srgb, var(--bg-primary) 90%, var(--accent-blue) 4%);
+}
+
+.personalization-priority-list li::before {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  content: counter(personalization-priority);
+  counter-increment: personalization-priority;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.personalization-priority-list li:first-child {
+  border-color: color-mix(in srgb, var(--accent-blue) 40%, var(--border-color));
+  background: color-mix(in srgb, var(--bg-primary) 92%, var(--accent-blue) 6%);
+}
+
+.personalization-priority-list li:first-child::before {
+  border-color: transparent;
+  background: var(--accent-blue);
+  color: #fff;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 16%, transparent);
+}
+
+.personalization-priority-list strong {
+  flex-shrink: 0;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.personalization-priority-list li span {
+  min-width: 0;
+  flex: 1;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.personalization-priority-note {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent-blue) 30%, var(--border-color));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent-blue) 7%, transparent);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.personalization-priority-note svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--accent-blue);
+}
+
+/* --- Personalization: 作用域提示条 --- */
+.personalization-toolbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+}
+
+.personalization-toolbar-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 9px;
+}
+
+.personalization-toolbar-main > svg {
+  flex-shrink: 0;
+  color: var(--accent-blue);
+}
+
+.personalization-toolbar-info {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.personalization-toolbar-info > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personalization-toolbar .project-skills-path {
+  font-size: 10.5px;
+}
+
+/* --- Personalization: 保存按钮 --- */
+.personalization-save-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 5px 16px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent-blue) 88%, #fff 12%),
+    var(--accent-blue)
+  );
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.2),
+    0 0 0 1px color-mix(in srgb, var(--accent-blue) 30%, transparent);
+  transition: filter 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+}
+
+.personalization-save-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow:
+    0 2px 8px color-mix(in srgb, var(--accent-blue) 35%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent-blue) 40%, transparent);
+}
+
+.personalization-save-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.personalization-save-btn:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.personalization-save-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+/* --- Personalization: 规则编辑器 --- */
+.personalization-textarea {
+  flex: 1;
+  min-height: 260px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  outline: none;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  resize: vertical;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.personalization-textarea:hover {
+  border-color: var(--border-color);
+}
+
+.personalization-textarea:focus {
+  border-color: color-mix(in srgb, var(--accent-blue) 60%, var(--border-color));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 14%, transparent);
+}
+
+/* --- Personalization: 空状态 --- */
+.personalization-empty {
+  display: flex;
+  min-height: 200px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px 24px;
+  border: 1px dashed var(--border-color);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-primary) 55%, transparent);
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+  line-height: 1.55;
+}
+
+.personalization-empty > svg {
+  width: 42px;
+  height: 42px;
+  padding: 11px;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+  .personalization-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .personalization-save-btn {
+    align-self: flex-end;
+  }
+
+  .personalization-section-title > span:last-child {
+    margin-left: 0;
+  }
+}

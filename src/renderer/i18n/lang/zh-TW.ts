@@ -764,6 +764,9 @@ export const zhTW = {
   "settings.systemPromptNameRequired": "請填寫提示詞名稱。",
   "settings.systemPromptDeleteSuccess": "已刪除系統提示詞。",
   "settings.systemPromptDeleteError": "刪除系統提示詞失敗",
+  "settings.personalizationSettings": "個人化與規則",
+  "settings.personalizationTitle": "個人化與規則",
+  "settings.personalizationSettingsInfo": "管理全域與專案層級的 AI 助手行為規則。",
   "settings.customHeadersSettings": "自訂請求標頭",
   "settings.customHeadersSettingsInfo": "為 API 請求加入標頭。",
   "settings.customHeadersTitle": "自訂請求標頭",
@@ -1457,6 +1460,46 @@ export const zhTW = {
   "roleEditor.hint": "儲存後，新的角色定義將在下一次對話中生效。",
   "roleEditor.sshCredentialMissing":
     "無法取得 SSH 憑證，請先在 SSH 連線精靈中儲存憑證。",
+  "personalization.close": "關閉個人化與規則設定",
+  "personalization.save": "儲存",
+  "personalization.globalTitle": "全域規則",
+  "personalization.globalInfo": "適用於所有專案與對話的規則與角色定義。",
+  "personalization.globalScopeNote":
+    "全域規則儲存在 ~/.snow/ROLE.md，對所有專案與對話生效。",
+  "personalization.globalPlaceholder":
+    "在此輸入全域規則內容，例如角色定義、輸出風格、編碼規範...",
+  "personalization.globalSaved": "已儲存全域規則。",
+  "personalization.globalHint": "儲存後，新的規則將在下一次對話中生效。",
+  "personalization.projectTitle": "專案規則",
+  "personalization.projectInfo":
+    "僅對所選專案生效，並覆蓋同名的全域規則。",
+  "personalization.projectSelect": "專案",
+  "personalization.projectSelectPlaceholder": "請選擇專案...",
+  "personalization.projectNotFound": "找不到專案目錄，請先在側邊欄新增專案。",
+  "personalization.projectEmpty":
+    "請先選擇專案以編輯其 ROLE.md；可在側邊欄新增專案。",
+  "personalization.projectScopeNote":
+    "專案規則儲存在專案根目錄的 ROLE.md，優先級高於全域規則。",
+  "personalization.projectSaved": "已儲存專案規則。",
+  "personalization.projectPlaceholder":
+    "在此輸入該專案的規則內容，例如程式碼風格、架構約定、技術棧說明...",
+  "personalization.projectKindLocal": "本機",
+  "personalization.priorityTitle": "規則優先級",
+  "personalization.priorityInfo":
+    "規則依以下順序生效，後面的層級覆蓋前面的層級：",
+  "personalization.prioritySession": "對話指令",
+  "personalization.prioritySessionDesc": "目前對話中臨時給出的指令。",
+  "personalization.priorityProject": "專案規則",
+  "personalization.priorityProjectDesc":
+    "所選專案根目錄的 ROLE.md，在專案啟用時生效。",
+  "personalization.priorityGlobal": "全域規則",
+  "personalization.priorityGlobalDesc":
+    "~/.snow/ROLE.md，對所有專案與對話生效。",
+  "personalization.priorityDefault": "內建預設提示詞",
+  "personalization.priorityDefaultDesc":
+    "未設定任何專案或全域規則時使用的預設角色。",
+  "personalization.priorityNote":
+    "專案規則存在時覆蓋全域規則；專案沒有 ROLE.md 時自動回退到全域規則。",
   "projectSkills.location.global": "全域",
   "projectSkills.location.project": "專案",
   "projectSkills.source.snow": "Snow",

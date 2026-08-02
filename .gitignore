@@ -38,6 +38,7 @@ Thumbs.db
 
 # Snow local state
 .snow/
+ROLE.md
 
 # Local scratch / investigation files
 .issue-body-cn-v2.md
