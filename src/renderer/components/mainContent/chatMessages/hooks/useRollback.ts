@@ -6,7 +6,11 @@ import type {
   RollbackTodoItem,
 } from "../utils/conversationTypes";
 import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
-import { deleteCheckpoints } from "../utils/conversationHelpers";
+import {
+  deleteCheckpoints,
+  directoryIdToPath,
+  killRunningBashExecutions,
+} from "../utils/conversationHelpers";
 
 /**
  * 回滚逻辑：中止流、预览文件变更、确认/取消回滚。
@@ -32,6 +36,10 @@ export const useRollback = (ctx: ConversationContextValue) => {
         ref.isSending = false;
         ref.runId += 1;
       }
+      // 回滚作用于会话自己的目录(而非运行时全局目录),确保 checkpoint
+      // manifest.work_dir 与恢复目录一致,切换项目后仍可回滚旧会话。
+      const sessionWorkDir =
+        directoryIdToPath(ref?.directoryId) ?? ctx.directoryPath;
       ctx.updateSessionField(key, "isStreaming", false);
       ctx.updateSessionField(key, "streamStartedAt", 0);
       ctx.updateSessionField(key, "isAborting", false);
@@ -49,6 +57,10 @@ export const useRollback = (ctx: ConversationContextValue) => {
       if (!session) {
         return;
       }
+
+      // Kill every in-flight bash subprocess before truncating the
+      // conversation, so no orphaned OS process keeps running afterwards.
+      killRunningBashExecutions(session.messages);
 
       const messages = session.messages;
       const targetIndex = messages.findIndex((m) => m.id === messageId);
@@ -93,13 +105,13 @@ export const useRollback = (ctx: ConversationContextValue) => {
         let changes: CheckpointFileChange[] = [];
         if (
           checkpointId &&
-          ctx.directoryPath &&
-          !ctx.directoryPath.startsWith("ssh://")
+          sessionWorkDir &&
+          !sessionWorkDir.startsWith("ssh://")
         ) {
           try {
             changes = await window.snow.listCheckpointChanges(
               checkpointId,
-              ctx.directoryPath
+              sessionWorkDir
             );
           } catch {
             // Best effort — show dialog without changes on error
@@ -139,7 +151,7 @@ export const useRollback = (ctx: ConversationContextValue) => {
           messageContent,
           changes,
           checkpointId,
-          workDir: ctx.directoryPath,
+          workDir: sessionWorkDir,
           convId,
           responseId,
           isFirstMessage,
@@ -226,11 +238,11 @@ export const useRollback = (ctx: ConversationContextValue) => {
 
         const shouldRestoreFiles =
           mode === "conversation-and-files" &&
-          Boolean(ctx.directoryPath) &&
-          !ctx.directoryPath?.startsWith("ssh://");
-        if (shouldRestoreFiles && ctx.directoryPath) {
+          Boolean(preview.workDir) &&
+          !preview.workDir?.startsWith("ssh://");
+        if (shouldRestoreFiles && preview.workDir) {
           void window.snow
-            .restoreCheckpoint(checkpointId, ctx.directoryPath)
+            .restoreCheckpoint(checkpointId, preview.workDir)
             .catch(() => {
               // Best effort — file restore failure must not block rollback cleanup.
             })

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Send, Timer } from "lucide-react";
+import { AlertCircle, Info, Send, Square, Timer } from "lucide-react";
 import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
@@ -10,6 +10,7 @@ type BashToolCallProps = {
 
 type ParsedBashArgs = {
   command: string;
+  description?: string;
   workingDirectory: string;
   timeout?: number;
   isInteractive?: boolean;
@@ -51,6 +52,10 @@ const parseArgs = (args: string): ParsedBashArgs | null => {
         : undefined;
     return {
       command: parsed.command,
+      description:
+        typeof parsed.description === "string" && parsed.description.trim()
+          ? parsed.description
+          : undefined,
       workingDirectory: parsed.workingDirectory,
       timeout,
       isInteractive,
@@ -146,6 +151,7 @@ export const BashToolCall = ({
   const startedAt = toolCall.startedAt;
   const isInteractive = parsedArgs?.isInteractive === true;
   const interactiveSessionId = toolCall.interactiveSessionId;
+  const toolExecutionId = toolCall.toolExecutionId;
   const canSendInput =
     isInteractive && isRunning && Boolean(interactiveSessionId);
 
@@ -217,6 +223,35 @@ export const BashToolCall = ({
     },
     [handleSendInput]
   );
+
+  // Manual termination: lets the user stop a long-running command (e.g.
+  // `npm run dev`, which never exits on its own) without waiting for the
+  // timeout. The Rust backend races this cancellation against the child
+  // process wait and kills the whole process tree.
+  //
+  // `isKilling` stays true until the tool call actually leaves the
+  // "running" status (the agent loop flips it once the backend confirms
+  // the kill), so the user always sees a persistent "Stopping…" state
+  // instead of the button silently reverting while the process is still
+  // being torn down.
+  const [isKilling, setIsKilling] = useState(false);
+  useEffect(() => {
+    if (!isRunning && isKilling) {
+      setIsKilling(false);
+    }
+  }, [isRunning, isKilling]);
+  const handleKill = useCallback(() => {
+    if (!toolExecutionId || isKilling) {
+      return;
+    }
+    setIsKilling(true);
+    void window.snow.abortToolExecution(toolExecutionId).catch(() => {
+      // IPC failure (the command may have finished right between render
+      // and click): reset so the user can retry; otherwise the agent
+      // loop will surface the actual outcome.
+      setIsKilling(false);
+    });
+  }, [toolExecutionId, isKilling]);
 
   const output = useMemo(() => {
     if (parsedResult.type === "success") {
@@ -293,6 +328,20 @@ export const BashToolCall = ({
               })}
             </span>
           ) : null}
+          {isRunning && toolExecutionId ? (
+            <button
+              className="tool-call-bash-kill"
+              disabled={isKilling}
+              onClick={() => void handleKill()}
+              title={t("toolCall.bash.killTitle")}
+              type="button"
+            >
+              <Square size={11} aria-hidden="true" />
+              {isKilling
+                ? t("toolCall.bash.killing")
+                : t("toolCall.bash.kill")}
+            </button>
+          ) : null}
         </>
       }
       className="tool-call-bash"
@@ -319,6 +368,13 @@ export const BashToolCall = ({
           {parsedArgs?.workingDirectory ? (
             <div className="tool-call-bash-workdir">
               {parsedArgs.workingDirectory}
+            </div>
+          ) : null}
+
+          {parsedArgs?.description ? (
+            <div className="tool-call-bash-description">
+              <Info size={12} aria-hidden="true" />
+              <span>{parsedArgs.description}</span>
             </div>
           ) : null}
 

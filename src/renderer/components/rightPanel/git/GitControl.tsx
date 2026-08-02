@@ -10,16 +10,23 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../../common/ConfirmDialog";
-import type { GitFileStatus, GitStatusResult } from "../../../../preload";
+import type {
+  GitFileStatus,
+  GitRepoInfo,
+  GitStatusResult,
+} from "../../../../preload";
 import { useI18n } from "../../../i18n";
 import { useGitStatus } from "./useGitStatus";
 import { useRemotePolling } from "./useRemotePolling";
 import { BranchSelector } from "./BranchSelector";
 import { GitFileList } from "./GitFileList";
 import { GitGraph } from "./GitGraph";
+import { RepoSelector } from "./RepoSelector";
 
 type GitControlProps = {
   repoPath: string | undefined | null;
+  repos?: GitRepoInfo[];
+  onRepoSelect?: (path: string) => void;
   onFileSelect: (file: GitFileStatus | null) => void;
   onStatusChange?: (status: GitStatusResult | null) => void;
   onOpenFile?: (filePath: string, fileName: string) => void;
@@ -30,6 +37,8 @@ const isSelectedKey = (section: "staged" | "unstaged", path: string) =>
 
 export const GitControl = ({
   repoPath,
+  repos,
+  onRepoSelect,
   onFileSelect,
   onStatusChange,
   onOpenFile,
@@ -495,6 +504,15 @@ export const GitControl = ({
 
   return (
     <div className="git-control" ref={scrollRef}>
+      {repos && repos.length > 1 && onRepoSelect && (
+        <div className="git-repo-selector-bar">
+          <RepoSelector
+            repos={repos}
+            selectedRepoPath={repoPath ?? null}
+            onSelect={onRepoSelect}
+          />
+        </div>
+      )}
       <div className="git-control-header">
         <BranchSelector
           repoPath={repoPath}

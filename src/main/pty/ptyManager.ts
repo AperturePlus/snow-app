@@ -1,7 +1,7 @@
 import { type WebContents } from "electron";
 import { createRequire } from "node:module";
 import { chmodSync, existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, isAbsolute, join } from "node:path";
 import type { IPty } from "node-pty";
 
 import { isSshPath, parseSshUrl } from "../ssh/sshManager";
@@ -54,6 +54,44 @@ const getShellArgs = (): string[] => {
     return [];
   }
   return ["-l"];
+};
+
+/**
+ * Resolve a bare command name (e.g. "ssh") to a full absolute path on
+ * Windows. node-pty's ConPTY native module (startProcess) does NOT search
+ * PATH like POSIX execvp — it requires an absolute or at least resolvable
+ * path. On non-Windows platforms the name is returned unchanged.
+ */
+const resolveWindowsExecutable = (name: string): string => {
+  if (process.platform !== "win32") {
+    return name;
+  }
+  // Already an absolute path — nothing to resolve.
+  if (isAbsolute(name)) {
+    return name;
+  }
+
+  const withExt = name.toLowerCase().endsWith(".exe") ? name : `${name}.exe`;
+
+  // Check well-known OpenSSH location first (fastest path).
+  const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
+  const openSshPath = join(systemRoot, "System32", "OpenSSH", withExt);
+  if (existsSync(openSshPath)) {
+    return openSshPath;
+  }
+
+  // Search PATH directories.
+  const pathDirs = (process.env.PATH ?? "").split(delimiter);
+  for (const dir of pathDirs) {
+    if (!dir) continue;
+    const candidate = join(dir, withExt);
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  // Fallback: return original name and let node-pty surface the error.
+  return name;
 };
 
 /**
@@ -161,7 +199,7 @@ const buildSshSpawnConfig = (cwd: string): SshSpawnConfig | null => {
   // Look up stored credentials
   const credential = getSshCredential(host, port, username);
   const config: SshSpawnConfig = {
-    shell: "ssh",
+    shell: resolveWindowsExecutable("ssh"),
     args: [...sshArgs, `${username}@${host}`],
   };
 

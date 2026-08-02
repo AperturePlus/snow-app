@@ -56,6 +56,12 @@ pub struct ResponsesApiMessage {
 pub struct ResponsesApiRequest {
     pub messages: Vec<ResponsesApiMessage>,
     pub model: Option<String>,
+    /// API config profile that should serve this request. When present it
+    /// wins over the conversation's bound profile; when absent the backend
+    /// falls back to the conversation's `api_profile_name` and finally to
+    /// the global active profile. Used to bind a brand-new conversation to a
+    /// provider on its first message.
+    pub api_profile: Option<String>,
     pub conversation_id: Option<String>,
     pub previous_response_id: Option<String>,
     pub directory_id: Option<String>,
@@ -70,6 +76,9 @@ pub struct ResponsesApiRequest {
     /// When true, replace the built-in system prompt with the Plan Mode prompt
     /// that instructs the AI to plan and get user approval before executing.
     pub plan_mode: Option<bool>,
+    /// When true, replace the built-in system prompt with the Goal Mode prompt
+    /// that instructs the AI to work autonomously toward a defined objective.
+    pub goal_mode: Option<bool>,
 }
 
 #[napi(object)]
@@ -204,6 +213,7 @@ async fn create_response_async(
         context_compaction: request.context_compaction.unwrap_or(false),
         skip_context: request.skip_context.unwrap_or(false),
         plan_mode: request.plan_mode.unwrap_or(false),
+        goal_mode: request.goal_mode.unwrap_or(false),
         system_prompt_ids_json: &api_config.system_prompt_ids_json,
     })?;
 
@@ -308,6 +318,7 @@ async fn create_response_async(
                 response_id: &streamed_response.id,
                 checkpoint_id: request.checkpoint_id.as_deref().unwrap_or(""),
                 model: &streamed_response.model,
+                api_profile_name: &api_config.profile_name,
                 status: &streamed_response.status,
                 raw_response_json: &raw_response_json,
                 token_usage: streamed_response.token_usage,

@@ -66,6 +66,8 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
   return {
     messages,
     model: typeof source.model === "string" ? source.model : undefined,
+    apiProfile:
+      typeof source.apiProfile === "string" ? source.apiProfile : undefined,
     conversationId:
       typeof source.conversationId === "string"
         ? source.conversationId
@@ -94,6 +96,8 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
       typeof source.skipContext === "boolean" ? source.skipContext : undefined,
     planMode:
       typeof source.planMode === "boolean" ? source.planMode : undefined,
+    goalMode:
+      typeof source.goalMode === "boolean" ? source.goalMode : undefined,
   };
 };
 

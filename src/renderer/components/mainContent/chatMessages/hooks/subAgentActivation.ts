@@ -6,6 +6,7 @@ import type {
 } from "../utils/conversationTypes";
 import {
   createMessageId,
+  directoryIdToPath,
   formatMessageTime,
   formatMcpToolResultForModel,
   formatToolResultsContent,
@@ -14,6 +15,7 @@ import {
   updateFirstMatchingToolCall,
 } from "../utils/conversationHelpers";
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
+import { extractFileChangeFromTool } from "./fileChangeTracking";
 import {
   PARENT_PLAN_APPROVAL_REQUIRED,
   createStreamChunkHandler,
@@ -57,7 +59,9 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
       ctx.sessionsRefData.current.get(parentConversationId)?.checkpointIds ??
       [];
     const subCheckpointWorkDir =
-      parentCheckpointIds.length > 0 ? ctx.directoryPath : undefined;
+      parentCheckpointIds.length > 0
+        ? directoryIdToPath(dirId) ?? ctx.directoryPath
+        : undefined;
 
     const parsedArgs = JSON.parse(argsJson) as Record<string, unknown>;
     const agentId =
@@ -98,7 +102,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
           agentName: config.name,
           prompt,
           parentConversationId,
-          cwd: ctx.directoryPath ?? "",
+          cwd: directoryIdToPath(dirId) ?? ctx.directoryPath ?? "",
         });
         const subHookResult = await runHook(
           "beforeSubAgentStart",
@@ -411,6 +415,14 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         const subAllToolsRejected = subAuthorizationDecisions.every(
           (decision) => decision.status === "rejected"
         );
+        // 用户填写了拒绝理由时，拒绝理由作为工具结果回传子代理 AI，
+        // 子代理 Loop 继续；仅当全部拒绝且没有用户理由时才终止。
+        const subHasUserProvidedRejectionReason =
+          subAuthorizationDecisions.some(
+            (decision) =>
+              decision.status === "rejected" &&
+              decision.userProvidedReason === true
+          );
 
         const subToolResults: string[] = [];
         const subStructuredResults: {
@@ -528,7 +540,10 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
                 if (!chunk.data) {
                   return;
                 }
-                if (chunk.stream === "interactive_session") {
+                if (
+                  chunk.stream === "interactive_session" ||
+                  chunk.stream === "tool_execution"
+                ) {
                   ctx.updateSessionMessages(subConvId, (currentMessages) =>
                     currentMessages.map((currentMessage) => {
                       if (currentMessage.id !== subAssistantMessageId) {
@@ -542,7 +557,14 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
                           ["pending", "running"],
                           (currentToolCall) => ({
                             ...currentToolCall,
-                            interactiveSessionId: chunk.data,
+                            interactiveSessionId:
+                              chunk.stream === "interactive_session"
+                                ? chunk.data
+                                : currentToolCall.interactiveSessionId,
+                            toolExecutionId:
+                              chunk.stream === "tool_execution"
+                                ? chunk.data
+                                : currentToolCall.toolExecutionId,
                           })
                         ),
                       };
@@ -649,6 +671,29 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
             })
           );
 
+          // Record successful file modifications made by this sub-agent under
+          // its own conversationId AND the parent conversationId. Storing
+          // under the parent key lets the file-change stats panel show the
+          // full picture (main agent + sub-agents) without extra lookups;
+          // the sub-agent's own key keeps its per-session view accurate.
+          if (!subToolErrored && subResult !== undefined) {
+            const subFileChange = extractFileChangeFromTool(
+              subToolCall.name,
+              subToolCall.arguments,
+              subResult
+            );
+            if (subFileChange) {
+              const subChangeRecord = {
+                ...subFileChange,
+                agent: "sub" as const,
+                subAgentName: subAgentName ?? config?.name ?? agentId,
+                timestamp: Date.now(),
+              };
+              ctx.recordFileChange(subConvId, subChangeRecord);
+              ctx.recordFileChange(parentConversationId, subChangeRecord);
+            }
+          }
+
           const subModelResult = formatMcpToolResultForModel(subResult);
           subToolResults.push(subModelResult);
           subStructuredResults.push({
@@ -685,7 +730,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
           return "Sub-agent stopped because the main conversation must approve the Plan Mode plan before delegated writes can run.";
         }
 
-        if (subAllToolsRejected) {
+        if (subAllToolsRejected && !subHasUserProvidedRejectionReason) {
           ctx.pendingQueueRef.current.delete(subConvId);
           ctx.setActivePendingMessages([]);
           return subToolResults.join("\n\n");
@@ -763,7 +808,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
           prompt,
           summary,
           parentConversationId,
-          cwd: ctx.directoryPath ?? "",
+          cwd: directoryIdToPath(dirId) ?? ctx.directoryPath ?? "",
         });
         const onCompleteResult = await runHook(
           "onSubAgentComplete",

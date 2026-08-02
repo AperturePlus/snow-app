@@ -1,9 +1,11 @@
+use std::path::PathBuf;
+
 use napi::bindgen_prelude::*;
 
 use crate::api::anthropic::create_anthropic_response_stream;
 use crate::api::chat::create_chat_completion_response_stream;
 use crate::api::config::{
-    get_active_api_request_context, get_api_request_context_for_profile,
+    get_api_request_context_for_profile, get_api_request_context_with_fallback,
 };
 use crate::api::gemini::create_gemini_response_stream;
 use crate::api::responses::{
@@ -11,7 +13,9 @@ use crate::api::responses::{
     ResponsesApiStreamCallback,
 };
 use crate::storage::services::app_logs::{insert_app_log, AppLogInput};
-use crate::storage::services::chat_conversations::{store_failed_chat_exchange, ChatContextMessage};
+use crate::storage::services::chat_conversations::{
+    get_conversation_api_profile, store_failed_chat_exchange, ChatContextMessage,
+};
 use crate::storage::services::usage_records::{record_usage, UsageRecordInput};
 
 pub async fn create_response_stream(
@@ -26,13 +30,27 @@ pub async fn create_response_stream(
         .filter(|value| !value.is_empty())
         .is_some();
     if is_sub_agent {
-        // Plan Mode belongs exclusively to the main conversation. Keep the
-        // provider prompt and request-scoped tool injection in normal mode for
-        // every sub-agent, even if a caller accidentally forwards plan_mode.
+        // Plan Mode and Goal Mode belong exclusively to the main conversation.
+        // Keep the provider prompt and request-scoped tool injection in normal
+        // mode for every sub-agent, even if a caller accidentally forwards
+        // plan_mode or goal_mode.
         request.plan_mode = Some(false);
+        request.goal_mode = Some(false);
     }
     let sub_agent_config_profile = request
         .sub_agent_config_profile
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    let explicit_api_profile = request
+        .api_profile
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    let request_conversation_id = request
+        .conversation_id
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -47,7 +65,24 @@ pub async fn create_response_stream(
         if is_sub_agent || sub_agent_config_profile.is_some() {
             get_api_request_context_for_profile(sub_agent_config_profile.as_deref())
         } else {
-            get_active_api_request_context()
+            // Conversation-scoped profile resolution with graceful fallback:
+            //   1. explicit apiProfile on the request (first message of a
+            //      brand-new conversation binds its provider this way)
+            //   2. the conversation's persisted api_profile_name binding
+            //   3. the global active profile (legacy behaviour)
+            let database_path = crate::storage::initialize_app_storage()
+                .map(|storage_info| PathBuf::from(storage_info.database_path))
+                .ok();
+            let resolved_profile = explicit_api_profile.or_else(|| {
+                request_conversation_id.as_deref().and_then(|conversation_id| {
+                    database_path.as_ref().and_then(|database_path| {
+                        get_conversation_api_profile(database_path, conversation_id)
+                            .ok()
+                            .flatten()
+                    })
+                })
+            });
+            get_api_request_context_with_fallback(resolved_profile.as_deref())
         }
     })
     .await
@@ -89,6 +124,10 @@ pub async fn create_response_stream(
     let failure_directory_id = request.directory_id.clone().unwrap_or_default();
     let failure_context_compaction = request.context_compaction.unwrap_or(false);
     let failure_database_path = context.database_path.clone();
+    // The profile that actually served this request. Persisted on failed
+    // exchanges too so a conversation created by a failed first message is
+    // still bound to the provider the user picked.
+    let failure_api_profile = context.api_config.profile_name.clone();
 
     // Capture API config metadata for usage accounting. These are cloned
     // before `context` is moved into the provider call so they remain
@@ -239,6 +278,7 @@ pub async fn create_response_stream(
             let persisted_error_message = error_message.clone();
             let persisted_failure_model = failure_model.clone();
             let failure_dir_id = failure_directory_id.clone();
+            let persisted_failure_api_profile = failure_api_profile.clone();
             let conversation_id = tokio::task::spawn_blocking(move || {
                 store_failed_chat_exchange(
                     &failure_database_path,
@@ -247,6 +287,7 @@ pub async fn create_response_stream(
                     &failure_messages,
                     &failure_checkpoint_id,
                     &persisted_failure_model,
+                    &persisted_failure_api_profile,
                     &failure_directory_id,
                     &persisted_error_message,
                 )

@@ -8,10 +8,12 @@ import {
   ChevronRight,
   ClipboardList,
   Command,
+  Target,
   Keyboard,
   Loader2,
   Paperclip,
   RefreshCw,
+  Server,
   Square,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -57,6 +59,10 @@ export const ChatInputView = ({
   projectName,
   value,
   textareaRef,
+  apiConfigs,
+  selectedApiProfile,
+  isApiProfileMenuOpen,
+  isSubAgentConversation,
   models,
   selectedModel,
   displayModel,
@@ -81,6 +87,7 @@ export const ChatInputView = ({
   tokenUsage,
   pendingMessages,
   onWithdrawPendingMessage,
+  onSendPendingMessageNow,
   onCompactConversation,
   yoloMode,
   isUpdatingYoloMode,
@@ -90,6 +97,12 @@ export const ChatInputView = ({
   isUpdatingPlanMode,
   onPlanModeChange,
   onRefreshPlanMode,
+  goalMode,
+  isUpdatingGoalMode,
+  onGoalModeChange,
+  onRefreshGoalMode,
+  goalModeTokenBudget,
+  onGoalModeTokenBudgetChange,
   autoScrollEnabled,
   onAutoScrollChange,
   isCompacting,
@@ -105,6 +118,8 @@ export const ChatInputView = ({
   handleManualKeyDown,
   handleRetryFetchModels,
   handleToggleModelMenu,
+  handleToggleApiProfileMenu,
+  handleSelectApiProfile,
   handleSelectThinking,
   restoreContent,
 }: ChatInputViewProps): React.JSX.Element => {
@@ -148,6 +163,31 @@ export const ChatInputView = ({
       setIsCustomThinkingMode(false);
     }
   }, [isModelMenuOpen]);
+
+  const profileDropdownRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isApiProfileMenuOpen) {
+      return;
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        profileDropdownRef.current &&
+        !profileDropdownRef.current.contains(event.target as Node)
+      ) {
+        // The menu has no imperative close handle; clicking outside just
+        // closes the local dropdown state via a re-render toggle. Use a
+        // custom event-free approach: hide by unmounting through state is
+        // owned by the controller, so dispatch through the toggle handler.
+        handleToggleApiProfileMenu();
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isApiProfileMenuOpen, handleToggleApiProfileMenu]);
 
   const commands = useMemo(
     () =>
@@ -414,10 +454,7 @@ export const ChatInputView = ({
         const parsed = JSON.parse(jsonData) as Record<string, unknown>;
 
         // 搜索结果组合拖拽：{ type: "file-tags", tags: FileTag[] }
-        if (
-          parsed.type === "file-tags" &&
-          Array.isArray(parsed.tags)
-        ) {
+        if (parsed.type === "file-tags" && Array.isArray(parsed.tags)) {
           const tags: FileTag[] = parsed.tags
             .filter(
               (item) =>
@@ -429,16 +466,13 @@ export const ChatInputView = ({
             .map((item) => {
               const t = item as Record<string, unknown>;
               const rawLines = t.lines;
-              const lines =
-                Array.isArray(rawLines)
-                  ? rawLines
-                      .map((n) =>
-                        typeof n === "number"
-                          ? n
-                          : Number.parseInt(String(n), 10)
-                      )
-                      .filter((n) => Number.isFinite(n) && n > 0)
-                  : undefined;
+              const lines = Array.isArray(rawLines)
+                ? rawLines
+                    .map((n) =>
+                      typeof n === "number" ? n : Number.parseInt(String(n), 10)
+                    )
+                    .filter((n) => Number.isFinite(n) && n > 0)
+                : undefined;
               return {
                 path: t.path as string,
                 name: t.name as string,
@@ -506,14 +540,13 @@ export const ChatInputView = ({
           typeof parsed.name === "string"
         ) {
           const rawLines = parsed.lines;
-          const lines =
-            Array.isArray(rawLines)
-              ? rawLines
-                  .map((n) =>
-                    typeof n === "number" ? n : Number.parseInt(String(n), 10)
-                  )
-                  .filter((n) => Number.isFinite(n) && n > 0)
-              : undefined;
+          const lines = Array.isArray(rawLines)
+            ? rawLines
+                .map((n) =>
+                  typeof n === "number" ? n : Number.parseInt(String(n), 10)
+                )
+                .filter((n) => Number.isFinite(n) && n > 0)
+            : undefined;
           const tag: FileTag = {
             path: parsed.path,
             name: parsed.name,
@@ -831,6 +864,13 @@ export const ChatInputView = ({
     [onWithdrawPendingMessage, restoreContent]
   );
 
+  const handleSendPendingNow = useCallback(
+    (index: number): void => {
+      onSendPendingMessageNow?.(index);
+    },
+    [onSendPendingMessageNow]
+  );
+
   const handleOpenCustomThinking = useCallback(() => {
     setCustomThinkingValue(isCustomThinkingValue ? thinkingValue : "");
     setIsCustomThinkingMode(true);
@@ -916,6 +956,7 @@ export const ChatInputView = ({
         <PendingMessages
           messages={pendingMessages}
           onWithdraw={handleWithdrawPending}
+          onSendNow={handleSendPendingNow}
         />
         {isStreaming ? (
           <div className="stream-metrics-bar">
@@ -992,6 +1033,12 @@ export const ChatInputView = ({
                 isUpdatingPlanMode={isUpdatingPlanMode}
                 onPlanModeChange={onPlanModeChange}
                 onRefreshPlanMode={onRefreshPlanMode}
+                goalMode={goalMode}
+                isUpdatingGoalMode={isUpdatingGoalMode}
+                onGoalModeChange={onGoalModeChange}
+                onRefreshGoalMode={onRefreshGoalMode}
+                goalModeTokenBudget={goalModeTokenBudget}
+                onGoalModeTokenBudgetChange={onGoalModeTokenBudgetChange}
                 autoScrollEnabled={autoScrollEnabled}
                 onAutoScrollChange={onAutoScrollChange}
               />
@@ -1021,8 +1068,72 @@ export const ChatInputView = ({
                   </span>
                 </>
               )}
+              {goalMode && (
+                <>
+                  <span className="toolbar-divider" aria-hidden="true" />
+                  <span
+                    className="plan-mode-badge"
+                    title={t("plusMenu.goalModeActive")}
+                  >
+                    <Target size={14} />
+                  </span>
+                </>
+              )}
             </div>
             <div className="toolbar-right">
+              {!isSubAgentConversation && apiConfigs.length > 0 && (
+                <div
+                  className="api-profile-selector"
+                  ref={profileDropdownRef}
+                >
+                  <button
+                    className={`toolbar-btn api-profile ${
+                      isStreaming ? " is-disabled" : ""
+                    }`}
+                    aria-label={labels.selectApiProfile}
+                    aria-expanded={isApiProfileMenuOpen}
+                    onClick={handleToggleApiProfileMenu}
+                    disabled={isStreaming}
+                    type="button"
+                    title={labels.selectApiProfile}
+                  >
+                    <Server size={14} className="api-profile-icon" />
+                    <span className="api-profile-name">
+                      {runtimeApiConfig?.displayName ||
+                        labels.selectApiProfile}
+                    </span>
+                    <ChevronDown size={12} />
+                  </button>
+                  {isApiProfileMenuOpen && (
+                    <div className="api-profile-dropdown">
+                      {apiConfigs.map((config) => (
+                        <button
+                          key={config.profileName}
+                          className={`api-profile-dropdown-item${
+                            config.profileName === selectedApiProfile
+                              ? " is-active"
+                              : ""
+                          }`}
+                          onClick={() => {
+                            void handleSelectApiProfile(config.profileName);
+                          }}
+                          type="button"
+                        >
+                          <span className="api-profile-dropdown-item-name">
+                            {config.displayName}
+                          </span>
+                          <span className="api-profile-dropdown-item-model">
+                            {config.advancedModel || config.basicModel || "-"}
+                          </span>
+                          {config.profileName === selectedApiProfile ? (
+                            <Check size={13} />
+                          ) : null}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="model-selector" ref={dropdownRef}>
                 <button
                   className={`toolbar-btn model ${

@@ -69,6 +69,7 @@ fn build_request(image_data_url: &str) -> ResponsesApiRequest {
         ],
         // Force the advanced model (expected to support vision) for this task.
         model: None, // will be set after resolving context
+        api_profile: None,
         conversation_id: None,
         previous_response_id: None,
         directory_id: None,
@@ -81,6 +82,7 @@ fn build_request(image_data_url: &str) -> ResponsesApiRequest {
         // ensures no chat history is loaded.
         skip_context: None,
         plan_mode: None,
+        goal_mode: None,
     }
 }
 

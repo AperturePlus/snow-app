@@ -7,6 +7,7 @@ import type {
   GitDiffResult,
   GitLogEntry,
   GitPushPullResult,
+  GitRepoInfo,
   GitStageResult,
   GitStatusResult,
   ResponsesApiResult,
@@ -114,6 +115,8 @@ export const gitApi = {
     ipcRenderer.invoke("git:log", repoPath, skip, limit),
   gitCommitFiles: (repoPath: string, hash: string): Promise<GitCommitFile[]> =>
     ipcRenderer.invoke("git:commit-files", repoPath, hash),
+  discoverGitRepos: (rootPath: string): Promise<GitRepoInfo[]> =>
+    ipcRenderer.invoke("git:discover-repos", rootPath),
   generateCommitMessage: (
     repoPath: string,
     onChunk?: (chunk: ResponsesApiStreamChunk) => void,

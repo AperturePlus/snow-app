@@ -97,6 +97,13 @@ const buildRemoteWorkspaceSearchCommand = (
   rootPath: string,
   query: string
 ): string => {
+  // Path-aware search: a query containing "/" (e.g. "prompt/" or
+  // "prompt/utils") resolves the part before the last "/" as a directory
+  // path and lists the directory itself plus its children.
+  if (query.includes("/")) {
+    return buildRemoteWorkspacePathSearchCommand(rootPath, query);
+  }
+
   const script = [
     `root=${shellQuote(rootPath)}`,
     `query=${shellQuote(query)}`,
@@ -115,6 +122,97 @@ const buildRemoteWorkspaceSearchCommand = (
     "    count=$((count + 1))",
     "  fi",
     "done",
+  ].join("\n");
+
+  return `sh -lc ${shellQuote(script)}`;
+};
+
+// Path-aware search for remote workspaces: resolves the directory path from
+// the query segments, then lists the directory itself (when it is not the
+// workspace root) and its direct children filtered by the trailing name
+// query (empty means list all). Falls back to the regular name search when
+// the directory does not exist.
+const buildRemoteWorkspacePathSearchCommand = (
+  rootPath: string,
+  query: string
+): string => {
+  const parts = query.split("/");
+  const nameQuery = parts[parts.length - 1] ?? "";
+  const dirParts = parts.slice(0, -1).filter(Boolean);
+  const dirPath =
+    dirParts.length === 0
+      ? rootPath
+      : `${rootPath}/${dirParts.join("/")}`.replace(/\/+/g, "/");
+  // Directory segment used for workspace-wide matching when the exact
+  // directory does not exist (e.g. "prompt" for "prompt/utils/").
+  const matchSegment = dirParts[0] ?? nameQuery;
+
+  // Workspace-wide fallback: collect directories at any depth whose name
+  // starts with the first query segment, then list each directory itself
+  // plus its direct children filtered by the trailing name query.
+  const fallbackScript = [
+    `root=${shellQuote(rootPath)}`,
+    `seg=${shellQuote(matchSegment)}`,
+    `name_query=${shellQuote(nameQuery)}`,
+    `max_depth=${REMOTE_SEARCH_MAX_DEPTH}`,
+    `max_results=${REMOTE_SEARCH_MAX_RESULTS}`,
+    "count=0",
+    'find "$root" -maxdepth "$max_depth" \\( -type d \\( -name .git -o -name node_modules -o -name target -o -name dist -o -name build -o -name .next -o -name .snow \\) -prune \\) -o -type d -print | while IFS= read -r cand; do',
+    '  [ "$count" -ge "$max_results" ] && break',
+    '  [ "$cand" = "$root" ] && continue',
+    "  base=${cand##*/}",
+    '  case "$base" in .* ) continue ;; esac',
+    "  lower_base=$(printf '%s' \\\"$base\\\" | tr '[:upper:]' '[:lower:]')",
+    "  lower_seg=$(printf '%s' \\\"$seg\\\" | tr '[:upper:]' '[:lower:]')",
+    '  case "$lower_base" in "$lower_seg"* )',
+    "    printf 'd\\t%s\\n' \"$cand\"",
+    "    count=$((count + 1))",
+    '    find "$cand" -maxdepth 1 -mindepth 1 -print | while IFS= read -r path; do',
+    '      [ "$count" -ge "$max_results" ] && break',
+    "      name=${path##*/}",
+    '      case "$name" in .* ) continue ;; esac',
+    "      lower_name=$(printf '%s' \\\"$name\\\" | tr '[:upper:]' '[:lower:]')",
+    "      lower_query=$(printf '%s' \\\"$name_query\\\" | tr '[:upper:]' '[:lower:]')",
+    '      if [ -z "$name_query" ] || printf \'%s\' "$lower_name" | grep -Fq -- "$lower_query"; then',
+    '        if [ -d "$path" ]; then kind=d; else kind=f; fi',
+    '        printf \'%s\\t%s\\n\' "$kind" "$path"',
+    "        count=$((count + 1))",
+    "      fi",
+    "    done",
+    "    ;;",
+    "  esac",
+    "done",
+  ].join("\n");
+
+  const script = [
+    `root=${shellQuote(rootPath)}`,
+    `dir=${shellQuote(dirPath)}`,
+    `name_query=${shellQuote(nameQuery)}`,
+    `max_results=${REMOTE_SEARCH_MAX_RESULTS}`,
+    "count=0",
+    // Include the directory itself when it is not the workspace root.
+    'if [ -d "$dir" ] && [ "$dir" != "$root" ]; then',
+    "  printf 'd\\t%s\\n' \"$dir\"",
+    "  count=$((count + 1))",
+    "fi",
+    // List the direct children of the directory.
+    'if [ -d "$dir" ]; then',
+    '  find "$dir" -maxdepth 1 -mindepth 1 -print | while IFS= read -r path; do',
+    '    [ "$count" -ge "$max_results" ] && break',
+    "    name=${path##*/}",
+    '    case "$name" in .* ) continue ;; esac',
+    "    lower_name=$(printf '%s' \\\"$name\\\" | tr '[:upper:]' '[:lower:]')",
+    "    lower_query=$(printf '%s' \\\"$name_query\\\" | tr '[:upper:]' '[:lower:]')",
+    '    if [ -z "$name_query" ] || printf \'%s\' "$lower_name" | grep -Fq -- "$lower_query"; then',
+    '      if [ -d "$path" ]; then kind=d; else kind=f; fi',
+    '      printf \'%s\\t%s\\n\' "$kind" "$path"',
+    "      count=$((count + 1))",
+    "    fi",
+    "  done",
+    // Directory not found: fall back to the regular name search.
+    "else",
+    fallbackScript,
+    "fi",
   ].join("\n");
 
   return `sh -lc ${shellQuote(script)}`;

@@ -1,12 +1,13 @@
+pub mod app_control;
 pub mod bash;
 pub mod browser;
 pub mod codebase;
 pub mod codelens;
 pub mod filesystem;
 pub mod grep;
-pub mod plan_mode;
 pub mod remote_workspace;
 pub mod skills;
+pub mod skills_installer;
 pub mod sub_agents;
 pub mod todo;
 pub mod user_interaction;

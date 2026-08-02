@@ -20,13 +20,13 @@ enum ToolCheckpointCapture {
 use super::builtin::{
     execute_builtin_tool, get_builtin_servers_with_tools, get_builtin_tools,
 };
+use super::servers::app_control::{AppControlCallback, AppControlService};
 use super::servers::bash::{BashService, BashStreamCallback};
 use super::servers::browser::{BrowserCommandCallback, BrowserService};
 use super::servers::codebase::CodebaseService;
 use super::servers::codelens::CodeLensService;
 use super::servers::filesystem::FilesystemService;
 use super::servers::grep::GrepService;
-use super::servers::plan_mode::{PlanModeService, SERVER_ID as PLAN_MODE_SERVER_ID};
 use super::servers::remote_workspace::{
     is_ssh_path, resolve_remote_project_workspace, resolve_remote_workspace_path,
     RemoteWorkspaceCallback,
@@ -79,13 +79,16 @@ impl McpTool {
     }
 }
 
+/// requestApproval 工具全名（隶属于 app-control 服务器，仅 Plan Mode 下暴露）。
+const REQUEST_APPROVAL_FULL_NAME: &str = "app-control-requestApproval";
+
 /// 所有内置 MCP 服务器 ID（含动态注册的 skills），按长度降序排列，
 /// 用于工具名最长前缀匹配。新格式 `{server_id}-{tool_name}` 中，server_id
 /// 可能含 `-`（如 `user-interaction`），需通过此列表消除歧义；外部工具的
 /// server_name 经 `sanitize_name` 后不含 `-`，可安全用第一个 `-` 分割。
 pub const BUILTIN_SERVER_IDS: &[&str] = &[
     "user-interaction",
-    "plan-mode",
+    "app-control",
     "filesystem",
     "sub-agents",
     "websearch",
@@ -371,7 +374,7 @@ pub async fn collect_all_mcp_tools(
         .filter(|tool| {
             // The dedicated approval tool is request-scoped: it must only be
             // exposed to the model while the current request is in Plan Mode.
-            if tool.server_id == PLAN_MODE_SERVER_ID {
+            if tool.full_name() == REQUEST_APPROVAL_FULL_NAME {
                 return include_plan_mode_tool;
             }
             // Exclude codebase search tool unless the project has codebase
@@ -508,7 +511,7 @@ fn builtin_server_name(server_id: &str) -> &str {
         "websearch" => "Web search",
         "browser" => "Browser",
         "user-interaction" => "User interaction",
-        "plan-mode" => "Plan Mode",
+        "app-control" => "App Control",
         "sub-agents" => "Sub-agents",
         "codebase" => "Codebase",
         "codelens" => "CodeLens",
@@ -696,6 +699,7 @@ pub async fn call_mcp_tool(
     on_chunk: BashStreamCallback,
     on_browser_command: BrowserCommandCallback,
     on_user_question: UserQuestionCallback,
+    on_app_control: AppControlCallback,
     on_remote_workspace_command: RemoteWorkspaceCallback,
     sub_agent_allowed_tools: Option<Vec<String>>,
     plan_mode: bool,
@@ -707,18 +711,18 @@ pub async fn call_mcp_tool(
     let tool_full_name = super::builtin::sanitize_tool_full_name(&tool_full_name);
     let is_sub_agent_call = sub_agent_allowed_tools.is_some();
 
-    if tool_full_name == "plan-mode-requestApproval" {
+    if tool_full_name == REQUEST_APPROVAL_FULL_NAME {
         if is_sub_agent_call {
             return Err(Error::new(
                 Status::GenericFailure,
-                "plan-mode-requestApproval is reserved for the main conversation; sub-agents cannot request or grant Plan Mode approval"
+                "app-control-requestApproval is reserved for the main conversation; sub-agents cannot request or grant Plan Mode approval"
                     .to_string(),
             ));
         }
         if !plan_mode {
             return Err(Error::new(
                 Status::GenericFailure,
-                "plan-mode-requestApproval is only available while Plan Mode is active"
+                "app-control-requestApproval is only available while Plan Mode is active"
                     .to_string(),
             ));
         }
@@ -740,7 +744,7 @@ pub async fn call_mcp_tool(
             )
         } else {
             format!(
-                "Plan Mode write blocked: {tool_full_name} cannot run before explicit user approval. Only plan documents inside .snow/plan or .trellis/tasks may be written during planning. Call plan-mode-requestApproval first, and retry project-file writes only when that tool returns approved=true."
+                "Plan Mode write blocked: {tool_full_name} cannot run before explicit user approval. Only plan documents inside .snow/plan or .trellis/tasks may be written during planning. Call app-control-requestApproval first, and retry project-file writes only when that tool returns approved=true."
             )
         };
         return Err(Error::new(Status::GenericFailure, message));
@@ -764,6 +768,14 @@ pub async fn call_mcp_tool(
 
     let (args, uses_remote_workspace) =
         prepare_remote_workspace_args(&tool_full_name, args, project_id.as_deref()).await?;
+
+    // 本地（非 SSH）filesystem 工具：将 filePath 的相对路径（如 "."）解析到
+    // 当前项目根目录，避免其被解析为 Electron 进程的工作目录。
+    let args = if uses_remote_workspace {
+        args
+    } else {
+        resolve_local_filesystem_args(&tool_full_name, args, project_id.as_deref()).await?
+    };
 
     let checkpoint_capture = if uses_remote_workspace {
         ToolCheckpointCapture::None
@@ -840,9 +852,9 @@ pub async fn call_mcp_tool(
         UserInteractionService::new()
             .execute_async(&args, &on_user_question)
             .await?
-    } else if tool_full_name == "plan-mode-requestApproval" {
-        PlanModeService::new()
-            .execute_async(&args, &on_user_question)
+    } else if let Some(app_control_tool) = tool_full_name.strip_prefix("app-control-") {
+        AppControlService::new()
+            .execute_async(app_control_tool, &args, &on_app_control, &on_user_question)
             .await?
     } else if tool_full_name == "skills-skill-execute" {
         SkillsService::new()
@@ -1131,6 +1143,70 @@ fn remote_workspace_path_field(tool_full_name: &str) -> Option<&'static str> {
         "bash-terminal-execute" => Some("workingDirectory"),
         _ => None,
     }
+}
+
+/// 解析 project_id 对应的本地（非 SSH）工作区根目录。
+/// 通过应用数据库中的 workspace_directories 表查询该项目的本地根路径。
+/// 数据库访问放在 Tokio 阻塞池中执行，避免阻塞 N-API 异步运行时。
+/// SSH 工作区不在此处理，由 prepare_remote_workspace_args 统一路由到远端。
+async fn resolve_local_project_root(project_id: Option<&str>) -> napi::Result<Option<String>> {
+    let Some(project_id) = project_id.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let project_id = project_id.to_string();
+
+    let workspace_path = tokio::task::spawn_blocking(move || {
+        let storage_info = crate::storage::initialize_app_storage()?;
+        let database_path = std::path::PathBuf::from(storage_info.database_path);
+        crate::storage::services::workspace_directories::get_workspace_directory_path(
+            &database_path,
+            &project_id,
+        )
+    })
+    .await
+    .map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to resolve local project workspace: {error}"),
+        )
+    })??;
+
+    Ok(workspace_path.filter(|path| !is_ssh_path(path)))
+}
+
+/// 将本地 filesystem 工具的 filePath 相对路径解析到当前项目根目录。
+/// 当 AI 以 "."、"./src"、"src/main.ts" 等相对路径调用 filesystem 工具时，
+/// 避免它们被 Rust 解析为 Electron 进程的工作目录（通常并非项目根目录）。
+/// 绝对路径、空路径、SSH 路径或无法解析出项目根目录时保持原样。
+async fn resolve_local_filesystem_args(
+    tool_full_name: &str,
+    mut args: Value,
+    project_id: Option<&str>,
+) -> napi::Result<Value> {
+    if !tool_full_name.starts_with("filesystem-") {
+        return Ok(args);
+    }
+    let Some(file_path) = args.get("filePath").and_then(Value::as_str) else {
+        return Ok(args);
+    };
+    let trimmed = file_path.trim();
+    if trimmed.is_empty() || is_ssh_path(trimmed) {
+        return Ok(args);
+    }
+    let path = Path::new(trimmed);
+    if path.is_absolute() {
+        return Ok(args);
+    }
+    let Some(project_root) = resolve_local_project_root(project_id).await? else {
+        return Ok(args);
+    };
+
+    let resolved = Path::new(&project_root)
+        .join(path)
+        .to_string_lossy()
+        .to_string();
+    args["filePath"] = Value::String(resolved);
+    Ok(args)
 }
 
 fn parse_tool_args(tool_full_name: &str, args_json: &str) -> napi::Result<Value> {

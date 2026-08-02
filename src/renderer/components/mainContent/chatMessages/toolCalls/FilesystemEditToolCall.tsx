@@ -3,7 +3,7 @@ import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
 import { getFileName, getToolDisplayName } from "./shared/formatters";
 import { MiniDiffViewer } from "./shared/MiniDiffViewer";
-import { getCompareDiffStats } from "../../../common/GitDiffView";
+import { getCompareDiffStats } from "../../../../utils/generateComparePatch";
 import { getFileTypeIcon } from "../../../../utils/fileIcons";
 import {
   rightPanelEvents,

@@ -141,6 +141,55 @@ pub(crate) fn push_trimmed_string(value: Option<&Value>, chunks: &mut Vec<String
     }
 }
 
+/// Push reasoning/thinking text from a Chat Completions delta or message object
+/// into a chunk vector, normalising the three field shapes providers emit:
+///
+/// - `reasoning_content` (DeepSeek official, plain string)
+/// - `reasoning` (OpenRouter normalised, plain string)
+/// - `reasoning_details` (OpenRouter structured array; each item may be a
+///   `reasoning.text` / `reasoning.summary` block carrying a text-like field)
+///
+/// All three are checked so a single call works across DeepSeek-direct,
+/// OpenRouter, and any provider that mimics either convention.
+pub(crate) fn push_reasoning_text(value: Option<&Value>, chunks: &mut Vec<String>) {
+    let Some(object) = value.and_then(Value::as_object) else {
+        // Fallback: a bare string value (rare, but some relays do this).
+        push_trimmed_string(value, chunks);
+        return;
+    };
+
+    // 1. DeepSeek official field (also used as an alias by some relays).
+    push_trimmed_string(object.get("reasoning_content"), chunks);
+
+    // 2. OpenRouter normalised field. Checked after reasoning_content so that,
+    //    if a provider emits both, the canonical DeepSeek value wins ordering
+    //    (the two are semantically identical anyway).
+    push_trimmed_string(object.get("reasoning"), chunks);
+
+    // 3. OpenRouter structured reasoning_details array. Each item is one of:
+    //    { "type": "reasoning.text",    "text": "..." }
+    //    { "type": "reasoning.summary", "summary": "..." }
+    //    { "type": "reasoning.encrypted", "data": "..." }  (ignored — opaque)
+    if let Some(details) = object.get("reasoning_details").and_then(Value::as_array) {
+        for detail in details {
+            let detail_obj = match detail.as_object() {
+                Some(obj) => obj,
+                None => continue,
+            };
+            let item_type = detail_obj
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            // Only harvest human-readable text; skip encrypted/redacted blobs.
+            if item_type == "reasoning.encrypted" {
+                continue;
+            }
+            push_trimmed_string(detail_obj.get("text"), chunks);
+            push_trimmed_string(detail_obj.get("summary"), chunks);
+        }
+    }
+}
+
 /// Read a string field from a JSON object.
 pub(crate) fn read_string(value: &Value, key: &str) -> Option<String> {
     value

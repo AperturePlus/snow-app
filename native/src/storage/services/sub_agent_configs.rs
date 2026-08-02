@@ -118,7 +118,7 @@ You are a versatile task execution agent with full tool access, capable of handl
 - filesystem-create: Create a new file with content. Automatically creates parent directories if needed. Set overwrite=true to replace existing files.
 
 ### Terminal Tools (Build and Test)
-- bash-terminal-execute: Execute terminal commands like npm, git, build scripts, etc. Requires command and workingDirectory parameters. Supports timeout and interactive mode.
+- bash-terminal-execute: Execute terminal commands like npm, git, build scripts, etc. Requires command (the command to run), description (a brief user-friendly explanation of the command, written in the user's language) and workingDirectory parameters. Supports timeout and interactive mode.
 - Verify changes after modifications
 
 ### Web Search (Reference)

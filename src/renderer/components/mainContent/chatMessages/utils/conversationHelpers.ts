@@ -12,6 +12,50 @@ export const deleteCheckpoints = (checkpointIds: string[]): void => {
   }
 };
 
+/**
+ * 从 directoryId(local:<path> 或 ssh://... )提取工作目录路径。
+ * 会话绑定创建时的 directoryId,而 checkpoint / 工具 cwd 需要真实路径。
+ * 工具的 cwd 必须跟随会话自己的目录,而非运行时全局 activeDirectory,
+ * 否则切换项目后 checkpoint 目录不匹配,所有工具都会被后端拦截。
+ */
+export const directoryIdToPath = (
+  directoryId: string | undefined
+): string | undefined => {
+  if (!directoryId) return undefined;
+  return directoryId.startsWith("local:")
+    ? directoryId.slice("local:".length)
+    : directoryId;
+};
+
+/**
+ * Kill every in-flight bash subprocess of a session.  Iterates the running
+ * tool calls and calls the Rust abort API for each known execution id, so
+ * stopping a session also terminates the underlying OS process (and its
+ * process tree) instead of leaving it running until its timeout.
+ * Fire-and-forget: a process that just finished naturally is a no-op.
+ */
+export const killRunningBashExecutions = (
+  messages: ChatConversationMessage[]
+): void => {
+  const executionIds = new Set<string>();
+  for (const message of messages) {
+    for (const toolCall of message.toolCalls ?? []) {
+      if (
+        toolCall.name === "bash-terminal-execute" &&
+        (toolCall.status === "running" || toolCall.status === "pending") &&
+        toolCall.toolExecutionId
+      ) {
+        executionIds.add(toolCall.toolExecutionId);
+      }
+    }
+  }
+  for (const executionId of executionIds) {
+    void window.snow.abortToolExecution(executionId).catch(() => {
+      // The process may have just finished; nothing to do.
+    });
+  }
+};
+
 export const formatMessageTime = (): string =>
   new Date().toLocaleTimeString("zh-CN", {
     hour: "2-digit",

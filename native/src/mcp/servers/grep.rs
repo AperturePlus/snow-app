@@ -160,6 +160,12 @@ impl GrepService {
             .await;
         }
 
+        self.execute_search_local(args).await
+    }
+
+    /// 本地路径的 grep 搜索执行体（不含 SSH 远程派发逻辑）。
+    /// 文件搜索 agent 等内部调用方复用此入口执行本地搜索。
+    pub async fn execute_search_local(&self, args: &Value) -> napi::Result<Value> {
         let pattern = args
             .get("pattern")
             .and_then(Value::as_str)

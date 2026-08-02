@@ -1,214 +1,198 @@
 use std::collections::HashMap;
 use std::process::Stdio;
-use std::time::Duration;
 
 use napi::{Error, Result};
-use serde_json::{json, Value};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
-use tokio::process::{Child, ChildStdin, ChildStdout, Command};
-use tokio::task::JoinHandle;
-use tokio::time::timeout;
+use rmcp::model::ClientInfo;
+use rmcp::service::{ClientLifecycleMode, ClientServiceExt, RunningService};
+use tokio::process::Command;
 
+use crate::exports::terminal::{detect_shell_family, resolve_login_path};
 use crate::storage::McpServerConfigRecord;
 
-use super::super::protocol::{
-    initialize_params, method_not_found_response, notification, parse_tools_page, request,
-    response_id_matches, response_result, RemoteMcpTool,
-};
+use super::super::protocol::RemoteMcpTool;
 
-const DEFAULT_TIMEOUT_MS: u64 = 300_000;
+pub(super) type StdioRunningClient = RunningService<rmcp::RoleClient, ClientInfo>;
 
 pub(super) struct StdioMcpClient {
-    child: Child,
-    stdin: ChildStdin,
-    stdout: Lines<BufReader<ChildStdout>>,
-    stderr_task: JoinHandle<()>,
-    next_id: i64,
-    request_timeout: Duration,
+    client: StdioRunningClient,
 }
 
 impl StdioMcpClient {
     pub(super) async fn connect(config: &McpServerConfigRecord) -> Result<Self> {
-        let command_name = config.command.trim();
-        if command_name.is_empty() {
+        if config.command.trim().is_empty() {
             return Err(Error::from_reason(format!(
                 "External MCP server {} has no command",
                 config.name
             )));
         }
 
-        let args = parse_string_array(&config.args_json, "args")?;
-        let environment = parse_string_map(&config.env_json, "environment")?;
-        let mut command = Command::new(command_name);
-        command
-            .args(args)
-            .envs(environment)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
+        // 优先尝试 2026-07-28 无状态协议。SDK 的 Auto 模式只对规范协商错误
+        // （-32601 Method Not Found / -32022 Unsupported Protocol Version）
+        // 自动降级或换版本重试；旧服务器若返回其他 JSON-RPC 错误（如 deepwiki
+        // 的 -32600 "Unsupported protocol version"），需在下面用 legacy
+        // initialize 握手手动重试一次。
+        let auto_lifecycle = ClientLifecycleMode::Auto {
+            preferred_versions: vec![rmcp::model::ProtocolVersion::V_2026_07_28],
+            legacy_version: Some(rmcp::model::ProtocolVersion::V_2025_11_25),
+        };
 
-        #[cfg(target_os = "windows")]
+        let client_info = ClientInfo::default();
+        let running = match client_info
+            .clone()
+            .serve_with_lifecycle(spawn_transport(config).await?, auto_lifecycle)
+            .await
         {
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-            command.creation_flags(CREATE_NO_WINDOW);
-        }
+            Ok(running) => running,
+            Err(error) if super::should_retry_with_legacy_handshake(&error) => {
+                // 旧子进程的管道已随 transport 关闭，重新 spawn 一个，
+                // 改用 legacy 握手重连一次。
+                match client_info
+                    .serve_with_lifecycle(
+                        spawn_transport(config).await?,
+                        ClientLifecycleMode::Initialize,
+                    )
+                    .await
+                {
+                    Ok(running) => running,
+                    // 重试失败时保留原始 Auto 错误（含版本协商诊断信息）
+                    Err(_) => {
+                        return Err(Error::from_reason(format!(
+                            "Failed to initialize external MCP stdio server {}: {error}",
+                            config.name
+                        )))
+                    }
+                }
+            }
+            Err(error) => {
+                return Err(Error::from_reason(format!(
+                    "Failed to initialize external MCP stdio server {}: {error}",
+                    config.name
+                )))
+            }
+        };
 
-        let mut child = command.spawn().map_err(|error| {
+        Ok(Self { client: running })
+    }
+
+    pub(super) async fn list_all_tools(&self) -> Result<Vec<RemoteMcpTool>> {
+        let tools = self.client.list_all_tools().await.map_err(|error| {
+            Error::from_reason(format!("External MCP tools/list failed: {error}"))
+        })?;
+        Ok(tools.into_iter().map(rmcp_tool_to_remote).collect())
+    }
+
+    pub(super) async fn call_tool(
+        &self,
+        name: &str,
+        arguments: &serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        let params = rmcp::model::CallToolRequestParams::new(name.to_string());
+        let params = if let Some(obj) = arguments.as_object() {
+            params.with_arguments(obj.clone())
+        } else {
+            params
+        };
+
+        let result = self.client.call_tool(params).await.map_err(|error| {
+            Error::from_reason(format!("External MCP tools/call failed: {error}"))
+        })?;
+
+        Ok(call_tool_result_to_value(result))
+    }
+
+    pub(super) async fn close(mut self) {
+        let _ = self.client.close().await;
+    }
+}
+
+/// Spawns the stdio subprocess for an external MCP server. Extracted so a
+/// failed protocol negotiation can re-spawn a fresh child for the legacy
+/// `initialize` handshake retry.
+async fn spawn_transport(
+    config: &McpServerConfigRecord,
+) -> Result<rmcp::transport::TokioChildProcess> {
+    let command_name = config.command.trim();
+    let args = parse_string_array(&config.args_json, "args")?;
+    let environment = parse_string_map(&config.env_json, "environment")?;
+
+    // GUI 启动的 Electron（macOS Finder / Windows 资源管理器）进程 PATH 不完整，
+    // 不含 Homebrew/nvm 等路径，导致 npx 等命令无法解析。注入 login shell
+    // （Unix 上冒号分隔）或注册表（Windows 上分号分隔）的 PATH。
+    // WSL 命令跳过：resolve_login_path 在 Windows 上返回的是 Windows 注册表
+    // PATH（分号分隔），注入会覆盖 WSL 内有效的 Linux PATH（冒号分隔）；
+    // WSL 通过 bash -l 自行从 .profile 加载正确的 Linux PATH。
+    let login_path = if detect_shell_family(command_name) != "wsl" {
+        resolve_login_path().await
+    } else {
+        None
+    };
+
+    // Windows 上 Rust 的 Command（CreateProcess）不会按 PATHEXT 搜索
+    // .cmd/.bat 文件。npx、uvx 等命令实际是 npx.cmd、uvx.bat，直接
+    // Command::new("npx") 会报 "program not found"。这里先用 login PATH
+    // 做 PATHEXT 解析，若命中 .cmd/.bat 则自动套 cmd /c 包装。
+    #[cfg(target_os = "windows")]
+    let (actual_command, prefix_args) = {
+        let fallback_path = std::env::var("PATH").unwrap_or_default();
+        let path_env = login_path.as_deref().unwrap_or(&fallback_path);
+        resolve_windows_command(command_name, path_env)
+    };
+    #[cfg(not(target_os = "windows"))]
+    let (actual_command, prefix_args) = (command_name.to_string(), Vec::<String>::new());
+
+    let mut command = Command::new(&actual_command);
+    command.args(&prefix_args);
+    command.args(args);
+
+    if let Some(path) = login_path {
+        command.env("PATH", path);
+    }
+
+    // 配置里显式声明的 env 最后注入，覆盖 login PATH（如用户自定义 PATH）。
+    command.envs(environment);
+
+    #[cfg(target_os = "windows")]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    // Use the builder so we can pipe stderr for diagnostics while keeping
+    // stdin/stdout piped (the defaults).
+    let (transport, _stderr_opt) = rmcp::transport::TokioChildProcess::builder(command)
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| {
             Error::from_reason(format!(
                 "Failed to start external MCP server {}: {error}",
                 config.name
             ))
         })?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| Error::from_reason("External MCP child stdin is unavailable"))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| Error::from_reason("External MCP child stdout is unavailable"))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| Error::from_reason("External MCP child stderr is unavailable"))?;
-        let stderr_task = tokio::spawn(async move {
-            let mut lines = BufReader::new(stderr).lines();
-            while matches!(lines.next_line().await, Ok(Some(_))) {}
-        });
 
-        let mut client = Self {
-            child,
-            stdin,
-            stdout: BufReader::new(stdout).lines(),
-            stderr_task,
-            next_id: 1,
-            request_timeout: config_timeout(config),
-        };
-        let initialize_result = client
-            .send_request("initialize", initialize_params())
-            .await?;
-        if initialize_result.get("protocolVersion").is_none() {
-            client.close().await;
-            return Err(Error::from_reason(format!(
-                "External MCP server {} returned an invalid initialize result",
-                config.name
-            )));
-        }
-        client
-            .send_notification("notifications/initialized", json!({}))
-            .await?;
+    Ok(transport)
+}
 
-        Ok(client)
+fn rmcp_tool_to_remote(tool: rmcp::model::Tool) -> RemoteMcpTool {
+    let name = tool.name.to_string();
+    let description = tool
+        .description
+        .as_deref()
+        .unwrap_or_default()
+        .to_string();
+    let input_schema = serde_json::to_value(tool.input_schema.as_ref()).unwrap_or_else(|_| {
+        serde_json::json!({ "type": "object", "properties": {} })
+    });
+    RemoteMcpTool {
+        name,
+        description,
+        input_schema,
     }
+}
 
-    pub(super) async fn list_all_tools(&mut self) -> Result<Vec<RemoteMcpTool>> {
-        let mut tools = Vec::new();
-        let mut cursor: Option<String> = None;
-
-        loop {
-            let params = cursor
-                .as_ref()
-                .map(|cursor| json!({ "cursor": cursor }))
-                .unwrap_or_else(|| json!({}));
-            let result = self.send_request("tools/list", params).await?;
-            let (page, next_cursor) = parse_tools_page(&result)?;
-            tools.extend(page);
-            cursor = next_cursor;
-            if cursor.is_none() {
-                break;
-            }
-        }
-
-        Ok(tools)
-    }
-
-    pub(super) async fn call_tool(&mut self, name: &str, arguments: &Value) -> Result<Value> {
-        self.send_request(
-            "tools/call",
-            json!({
-                "name": name,
-                "arguments": arguments,
-            }),
-        )
-        .await
-    }
-
-    pub(super) async fn close(mut self) {
-        let _ = self.child.kill().await;
-        let _ = self.child.wait().await;
-        self.stderr_task.abort();
-    }
-
-    async fn send_request(&mut self, method: &str, params: Value) -> Result<Value> {
-        let duration = self.request_timeout;
-        timeout(duration, self.send_request_inner(method, params))
-            .await
-            .map_err(|_| {
-                Error::from_reason(format!(
-                    "External MCP stdio request {method} timed out after {} ms",
-                    duration.as_millis()
-                ))
-            })?
-    }
-
-    async fn send_request_inner(&mut self, method: &str, params: Value) -> Result<Value> {
-        let id = self.next_id;
-        self.next_id += 1;
-        self.write_message(&request(id, method, params)).await?;
-
-        loop {
-            let line = self.stdout.next_line().await.map_err(|error| {
-                Error::from_reason(format!("Failed to read external MCP stdout: {error}"))
-            })?;
-            let Some(line) = line else {
-                return Err(Error::from_reason(format!(
-                    "External MCP server exited while handling {method}"
-                )));
-            };
-            let Ok(message) = serde_json::from_str::<Value>(&line) else {
-                continue;
-            };
-
-            if response_id_matches(&message, id) {
-                return response_result(message, method);
-            }
-
-            if let (Some(server_request_id), Some(server_method)) =
-                (message.get("id").cloned(), message.get("method").and_then(Value::as_str))
-            {
-                let response = method_not_found_response(server_request_id, server_method);
-                self.write_message(&response).await?;
-            }
-        }
-    }
-
-    async fn send_notification(&mut self, method: &str, params: Value) -> Result<()> {
-        let duration = self.request_timeout;
-        timeout(duration, self.write_message(&notification(method, params)))
-            .await
-            .map_err(|_| {
-                Error::from_reason(format!(
-                    "External MCP stdio notification {method} timed out after {} ms",
-                    duration.as_millis()
-                ))
-            })?
-    }
-
-    async fn write_message(&mut self, message: &Value) -> Result<()> {
-        let serialized = serde_json::to_vec(message).map_err(|error| {
-            Error::from_reason(format!("Failed to serialize external MCP message: {error}"))
-        })?;
-        self.stdin.write_all(&serialized).await.map_err(|error| {
-            Error::from_reason(format!("Failed to write external MCP stdin: {error}"))
-        })?;
-        self.stdin.write_all(b"\n").await.map_err(|error| {
-            Error::from_reason(format!("Failed to write external MCP delimiter: {error}"))
-        })?;
-        self.stdin.flush().await.map_err(|error| {
-            Error::from_reason(format!("Failed to flush external MCP stdin: {error}"))
-        })
-    }
+fn call_tool_result_to_value(result: rmcp::model::CallToolResult) -> serde_json::Value {
+    serde_json::to_value(&result).unwrap_or_else(|_| {
+        serde_json::json!({ "content": [], "isError": false })
+    })
 }
 
 fn parse_string_array(value: &str, field: &str) -> Result<Vec<String>> {
@@ -223,11 +207,60 @@ fn parse_string_map(value: &str, field: &str) -> Result<HashMap<String, String>>
     })
 }
 
-fn config_timeout(config: &McpServerConfigRecord) -> Duration {
-    let timeout_ms = config
-        .timeout_ms
-        .filter(|timeout| *timeout > 0)
-        .map(|timeout| timeout as u64)
-        .unwrap_or(DEFAULT_TIMEOUT_MS);
-    Duration::from_millis(timeout_ms)
+/// On Windows, resolves a bare command name against PATH + PATHEXT.
+/// Rust's `std::process::Command` (CreateProcess) only finds `.exe`
+/// files — it does NOT search PATHEXT for `.cmd`/`.bat`. So commands
+/// like `npx` (npx.cmd) or `uvx` (uvx.bat) fail with "program not
+/// found" unless wrapped in `cmd /c`.
+///
+/// Returns `(executable, prefix_args)`:
+/// - `.cmd`/`.bat` → `("cmd", ["/c", resolved_path])`
+/// - `.exe` or other → `(resolved_path, [])`
+/// - not found → `(command_name, [])` (let CreateProcess fail with a clear error)
+#[cfg(target_os = "windows")]
+fn resolve_windows_command(command_name: &str, path_env: &str) -> (String, Vec<String>) {
+    use std::path::PathBuf;
+
+    let lower = command_name.to_lowercase();
+    let has_path_sep = command_name.contains('\\') || command_name.contains('/');
+
+    // Already a .cmd/.bat file — must wrap with cmd /c
+    if lower.ends_with(".cmd") || lower.ends_with(".bat") {
+        return (
+            "cmd".to_string(),
+            vec!["/c".to_string(), command_name.to_string()],
+        );
+    }
+
+    // Already has a path separator or .exe extension — use as-is
+    if has_path_sep || lower.ends_with(".exe") {
+        return (command_name.to_string(), Vec::new());
+    }
+
+    // Bare command name — search PATH with PATHEXT extensions
+    let pathext: Vec<String> = std::env::var("PATHEXT")
+        .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC".to_string())
+        .split(';')
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    for dir in path_env.split(';') {
+        if dir.is_empty() {
+            continue;
+        }
+        for ext in &pathext {
+            let candidate = PathBuf::from(dir).join(format!("{}{}", command_name, ext));
+            if candidate.exists() {
+                let resolved = candidate.to_string_lossy().to_string();
+                if ext == ".cmd" || ext == ".bat" {
+                    return ("cmd".to_string(), vec!["/c".to_string(), resolved]);
+                }
+                return (resolved, Vec::new());
+            }
+        }
+    }
+
+    // Not found in PATH — return as-is and let CreateProcess produce the error
+    (command_name.to_string(), Vec::new())
 }

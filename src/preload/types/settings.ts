@@ -215,6 +215,52 @@ export type CodebaseIndexStats = {
   isIndexed: boolean;
 };
 
+export type CodebaseIndexedFile = {
+  relativePath: string;
+  filePath: string;
+  chunkCount: number;
+  startLine: number;
+  endLine: number;
+  sizeBytes: number;
+  updatedAt: string;
+};
+
+export type CodebaseIndexedFilePage = {
+  items: CodebaseIndexedFile[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type CodebaseSphereRelatedFile = {
+  index: number;
+  similarity: number;
+};
+
+export type CodebaseSphereNode = {
+  index: number;
+  relativePath: string;
+  chunkCount: number;
+  startLine: number;
+  endLine: number;
+  sizeBytes: number;
+  x: number;
+  y: number;
+  z: number;
+  related: CodebaseSphereRelatedFile[];
+};
+
+export type CodebaseSphereEdge = {
+  a: number;
+  b: number;
+  similarity: number;
+};
+
+export type CodebaseSphereLayout = {
+  nodes: CodebaseSphereNode[];
+  edges: CodebaseSphereEdge[];
+};
+
 export type CodebaseScanPreview = {
   fileCount: number;
   estimatedChunks: number;
@@ -334,7 +380,8 @@ export type KeyboardShortcutAction =
   | "openMemo"
   | "openTodo"
   | "cycleProject"
-  | "openProjectExplorer";
+  | "openProjectExplorer"
+  | "cycleApiProfile";
 
 export type KeyboardShortcutConfig = {
   /**
@@ -354,4 +401,5 @@ export type KeyboardShortcutsSettings = {
   openTodo: KeyboardShortcutConfig;
   cycleProject: KeyboardShortcutConfig;
   openProjectExplorer: KeyboardShortcutConfig;
+  cycleApiProfile: KeyboardShortcutConfig;
 };

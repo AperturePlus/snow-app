@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { MoveVertical } from "lucide-react";
 
 import { useI18n } from "../../i18n";
+import { DiffViewer } from "./DiffViewer";
 import type { GitDiffResult, GitFileStatus, GitStatusResult } from "./git";
-import { GitControl } from "./git";
+import { GitControl, RepoSelector, useGitRepos } from "./git";
 import type { OpenDiffTabCallback } from "./types";
 import type { RightPanelContentProps } from "./types";
-import { DiffViewer } from "./DiffViewer";
 
 const SPLIT_MIN = 0.15;
 const SPLIT_MAX = 0.85;
@@ -31,10 +31,12 @@ export function GitPanelContent({
   const [splitRatio, setSplitRatio] = useState(SPLIT_DEFAULT);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const repoPath =
-    activeDirectory?.path && !activeDirectory.path.startsWith("ssh://")
-      ? activeDirectory.path
-      : null;
+  const workspacePath = activeDirectory?.path ? activeDirectory.path : null;
+
+  const { repos, selectedRepoPath, setSelectedRepoPath } =
+    useGitRepos(workspacePath);
+
+  const repoPath = selectedRepoPath;
 
   // Fetch diff when a file is selected
   useEffect(() => {
@@ -101,6 +103,8 @@ export function GitPanelContent({
       >
         <GitControl
           repoPath={repoPath}
+          repos={repos}
+          onRepoSelect={setSelectedRepoPath}
           onFileSelect={setSelectedFile}
           onStatusChange={setGitStatus}
           onOpenFile={onOpenFile}

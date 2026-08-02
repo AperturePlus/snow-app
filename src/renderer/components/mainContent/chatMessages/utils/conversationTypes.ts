@@ -85,6 +85,11 @@ export type ToolCallInfo = {
    *  interactive mode (isInteractive=true).  The frontend uses this ID
    *  to send user input to the process stdin via `writeInteractiveStdin`. */
   interactiveSessionId?: string;
+  /** UUID assigned by the Rust backend for every bash execution.  The
+   *  frontend uses it to kill the subprocess on demand via
+   *  `abortToolExecution` (the UI stop button and session aborts), instead
+   *  of waiting for the timeout. */
+  toolExecutionId?: string;
 };
 
 export type ChatConversationMessage = {
@@ -114,6 +119,23 @@ export type ChatConversationMessage = {
 
 export type UpsertedConversation = {
   record: ChatConversationRecord;
+  timestamp: number;
+};
+
+/** A file that was modified (created or edited) by the main agent or a
+ *  sub-agent during a conversation session. Recorded at tool-execution time
+ *  and surfaced by the file-change stats panel. */
+export type FileChangeRecord = {
+  /** The filePath argument passed to the filesystem tool (as the model
+   *  supplied it, e.g. relative to the workspace root). */
+  filePath: string;
+  kind: "create" | "edit";
+  /** Whether the change was made by the main agent loop or by a sub-agent
+   *  running inside this conversation. */
+  agent: "main" | "sub";
+  /** Sub-agent display name, present when agent === "sub". */
+  subAgentName?: string;
+  /** Epoch milliseconds when the tool call completed successfully. */
   timestamp: number;
 };
 
@@ -198,6 +220,10 @@ export type ConversationSessionRef = {
    *  Used to propagate an abort from the main flow down to every running
    *  sub-agent (and, recursively, their own sub-agents). */
   childSubAgentIds: Set<string>;
+  /** Whether Plan Mode was active when this session was last used. */
+  planMode: boolean;
+  /** Whether Goal Mode was active when this session was last used. */
+  goalMode: boolean;
 };
 
 /** Per-session pause controller stored in pauseControllerRef. When `paused`
@@ -235,7 +261,14 @@ export type RollbackPreview = {
 
 export type ToolAuthorizationDecision =
   | { status: "approved"; sensitiveCommandConfirmed?: boolean }
-  | { status: "rejected"; reason: string };
+  | {
+      status: "rejected";
+      reason: string;
+      /** 用户是否主动填写了拒绝理由。为 true 时拒绝理由作为工具结果
+       *  回传 AI 并继续 Loop；为 false 或缺失时（如直接拒绝、中断、
+       *  hook abort）全部拒绝则终止 AI 流程。 */
+      userProvidedReason?: boolean;
+    };
 
 export type PendingToolAuthorization = {
   toolCall: ToolCallInfo;
@@ -281,6 +314,11 @@ export type ConversationContextValue = {
    *  parallel sub-agents each keep their own entry so the UI can match every
    *  SubAgentToolCall to the correct live session. */
   subAgentSessionEvents: Record<string, SubAgentSessionEvent>;
+  /** File changes recorded during this renderer session, keyed by
+   *  conversationId. The main conversation collects both its own changes
+   *  (agent: "main") and — via childSubAgentIds — every sub-agent's changes
+   *  (agent: "sub"). */
+  fileChangeStats: Record<string, FileChangeRecord[]>;
   streamingConversationIds: Set<string>;
   completedConversationIds: Set<string>;
   isLoadingInitialHistory: boolean;
@@ -295,6 +333,9 @@ export type ConversationContextValue = {
   isUpdatingYoloMode: boolean;
   planMode: boolean;
   isUpdatingPlanMode: boolean;
+  goalMode: boolean;
+  isUpdatingGoalMode: boolean;
+  goalModeTokenBudget: number;
   pendingToolAuthorizations: ToolCallInfo[];
   activePendingMessages: string[];
   compactionPreview: string;
@@ -309,6 +350,10 @@ export type ConversationContextValue = {
   sessionsRefData: RefValue<Map<string, ConversationSessionRef>>;
   activeConversationIdRef: RefValue<string | undefined>;
   selectionRequestIdRef: RefValue<number>;
+  /** In-flight initial history loads keyed by conversationId. Selections of
+   *  the same conversation share a single load so switching away and back
+   *  while a load is pending does not trigger a duplicate full re-fetch. */
+  historyLoadPromisesRef: RefValue<Map<string, Promise<void>>>;
   loadingOlderConversationIdsRef: RefValue<Set<string>>;
   sessionsRef: RefValue<Record<string, ConversationSessionState>>;
   /** Ref mirror of newChatRequested for use inside async agent-loop closures
@@ -328,6 +373,7 @@ export type ConversationContextValue = {
   >;
   yoloModeRef: RefValue<boolean>;
   planModeRef: RefValue<boolean>;
+  goalModeRef: RefValue<boolean>;
   alwaysApprovedToolsRef: RefValue<Set<string>>;
   pendingToolAuthorizationRef: RefValue<Map<string, PendingToolAuthorization>>;
   pendingUserQuestionRef: RefValue<Map<string, PendingUserQuestion>>;
@@ -354,6 +400,11 @@ export type ConversationContextValue = {
     SetStateAction<UpsertedConversation | null>
   >;
   setSubAgentSessionEvent: (event: SubAgentSessionEvent) => void;
+  /** Record a successful file modification (filesystem-create /
+   *  filesystem-replace_edit) against a conversation's stats. The main agent
+   *  records with agent: "main"; sub-agents record with agent: "sub" under
+   *  their own conversationId so the parent can merge them. */
+  recordFileChange: (conversationId: string, record: FileChangeRecord) => void;
   setStreamingConversationIds: Dispatch<SetStateAction<Set<string>>>;
   setCompletedConversationIds: Dispatch<SetStateAction<Set<string>>>;
   setIsLoadingInitialHistory: Dispatch<SetStateAction<boolean>>;
@@ -364,6 +415,9 @@ export type ConversationContextValue = {
   setIsUpdatingYoloMode: Dispatch<SetStateAction<boolean>>;
   setPlanModeState: Dispatch<SetStateAction<boolean>>;
   setIsUpdatingPlanMode: Dispatch<SetStateAction<boolean>>;
+  setGoalModeState: Dispatch<SetStateAction<boolean>>;
+  setIsUpdatingGoalMode: Dispatch<SetStateAction<boolean>>;
+  setGoalModeTokenBudgetState: Dispatch<SetStateAction<number>>;
   setPendingToolAuthorizations: Dispatch<SetStateAction<ToolCallInfo[]>>;
   setActivePendingMessages: Dispatch<SetStateAction<string[]>>;
   setCompactionPreview: Dispatch<SetStateAction<string>>;
@@ -400,6 +454,11 @@ export type UseChatConversationResult = {
   upsertedConversation: UpsertedConversation | null;
   /** All sub-agent session events keyed by sub-agent conversationId. */
   subAgentSessionEvents: Record<string, SubAgentSessionEvent>;
+  /** File changes recorded during this renderer session, keyed by
+   *  conversationId. See FileChangeRecord for the shape. */
+  fileChangeStats: Record<string, FileChangeRecord[]>;
+  /** Records a successful file modification for a conversation. */
+  recordFileChange: (conversationId: string, record: FileChangeRecord) => void;
   /** All conversation sessions, keyed by conversation id. Used by tool-call
    *  UIs (e.g. sub-agent activation) to inspect the live state of other
    *  sessions such as streaming sub-agent conversations. */
@@ -431,6 +490,7 @@ export type UseChatConversationResult = {
   handleSendMessage: (message: string, options: ChatInputSendOptions) => void;
   pendingMessages: string[];
   withdrawPendingMessage: (index: number) => string | null;
+  sendPendingMessageNow: (index: number) => void;
   compactConversation: (model?: string) => Promise<void>;
   compactionPreview: string;
   compactionError: string | null;
@@ -471,6 +531,13 @@ export type UseChatConversationResult = {
   isUpdatingPlanMode: boolean;
   setPlanMode: (enabled: boolean) => Promise<void>;
   refreshPlanMode: () => Promise<boolean>;
+  goalMode: boolean;
+  isUpdatingGoalMode: boolean;
+  setGoalMode: (enabled: boolean) => Promise<void>;
+  refreshGoalMode: () => Promise<boolean>;
+  goalModeTokenBudget: number;
+  setGoalModeTokenBudget: (budget: number) => Promise<void>;
+  refreshGoalModeTokenBudget: () => Promise<void>;
   pendingToolAuthorizations: ToolCallInfo[];
   approveToolAuthorization: (toolCall: ToolCallInfo) => void;
   approveToolAuthorizationAlways: (toolCall: ToolCallInfo) => void;

@@ -1,4 +1,5 @@
 import {
+  Database,
   GitBranch,
   Globe,
   Maximize2,
@@ -9,8 +10,9 @@ import {
   SquarePen,
   Terminal,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkspaceDirectoryRecord } from "../../preload";
+import { useI18n } from "../i18n";
 import { useChatConversationContext } from "./mainContent/chatMessages";
 import { CodebaseSyncIndicator } from "./TopBar/CodebaseSyncIndicator";
 import { TodoPanelButton } from "./TopBar/TodoPanelButton";
@@ -26,6 +28,7 @@ type TopBarProps = {
   onToggleRightPanelFullscreen: () => void;
   onOpenTerminal?: () => void;
   onOpenBrowser?: () => void;
+  onOpenCodebase?: (projectId: string, projectName: string) => void;
 };
 
 export const TopBar = ({
@@ -38,7 +41,9 @@ export const TopBar = ({
   onToggleRightPanelFullscreen,
   onOpenTerminal,
   onOpenBrowser,
+  onOpenCodebase,
 }: TopBarProps): React.JSX.Element => {
+  const { t } = useI18n();
   const {
     handleNewChat,
     summary,
@@ -63,12 +68,20 @@ export const TopBar = ({
   // enabled=false until the new project's scope is confirmed.
   const enabledProjectIdRef = useRef<string | undefined>(undefined);
   const plusMenuRef = useRef<HTMLDivElement>(null);
+  // Guards against stale index-stats responses: every project switch (or
+  // effect re-run) bumps the generation, so in-flight responses from the
+  // previous project are discarded.
+  const statsGenerationRef = useRef(0);
 
-  // Resolve the active project id / path for the codebase watcher. Prefer the
-  // conversation's directory (so the watcher follows the active chat), falling
-  // back to the active workspace directory.
+  // Resolve the active project id / path for the codebase watcher. Follow the
+  // active workspace directory (the "current project" the user sees in the
+  // sidebar) so that switching projects immediately re-evaluates the codebase
+  // state: projects without a codebase must not keep showing the indicator,
+  // and a stale conversation-bound project must not keep the watcher pinned
+  // to the previous project. Fall back to the conversation's directory only
+  // when no workspace directory is active.
   const activeProjectId =
-    conversationDirectoryId ?? activeDirectory?.directoryId;
+    activeDirectory?.directoryId ?? conversationDirectoryId;
   const activeProjectPath = activeDirectory?.path;
 
   // Load the codebase scope settings for the active project to determine
@@ -135,40 +148,54 @@ export const TopBar = ({
   const effectiveEnabled =
     codebaseEnabled && enabledProjectIdRef.current === activeProjectId;
 
+  // Load the index stats for the active project and update `codebaseIndexed`.
+  // Generation-guarded so a slow response for a previously active project
+  // never overwrites the current project's state.
+  const loadCodebaseIndexed = useCallback((): void => {
+    if (!activeProjectId) {
+      setCodebaseIndexed(false);
+      return;
+    }
+    const generation = statsGenerationRef.current;
+    void window.snow
+      .getCodebaseIndexStats(activeProjectId)
+      .then((stats) => {
+        if (statsGenerationRef.current === generation) {
+          setCodebaseIndexed(stats.isIndexed);
+        }
+      })
+      .catch(() => {
+        if (statsGenerationRef.current === generation) {
+          setCodebaseIndexed(false);
+        }
+      });
+  }, [activeProjectId]);
+
   const { syncStatus, watchedProjectId } = useCodebaseWatcher({
     projectId: activeProjectId,
     projectPath: activeProjectPath,
     enabled: effectiveEnabled,
+    // Fallback refresh: whenever an incremental sync finishes for the watched
+    // project, re-read the index stats. This guarantees the indicator moves
+    // off the "syncing" state even if a broadcast progress event was missed.
+    onSyncFinished: loadCodebaseIndexed,
   });
 
   // Load index stats to determine whether the codebase has been indexed.
   // The indicator uses this to distinguish "watching with an existing index"
   // (green dot) from "enabled but never embedded" (amber pulsing dot).
-  // Reload when the project changes or when a sync completes.
+  // Reload when the project changes or when a sync/embed completes.
   useEffect(() => {
     if (!activeProjectId) {
       setCodebaseIndexed(false);
       return;
     }
 
-    let cancelled = false;
+    // Bump the generation so any in-flight stats response from a previous
+    // project/effect run is discarded.
+    statsGenerationRef.current += 1;
 
-    const loadStats = (): void => {
-      void window.snow
-        .getCodebaseIndexStats(activeProjectId)
-        .then((stats) => {
-          if (!cancelled) {
-            setCodebaseIndexed(stats.isIndexed);
-          }
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setCodebaseIndexed(false);
-          }
-        });
-    };
-
-    loadStats();
+    loadCodebaseIndexed();
 
     // Refresh stats after a sync completes (done / no_changes) so the
     // indicator updates from "pending" to "watching" once the first embed
@@ -179,16 +206,34 @@ export const TopBar = ({
           changedProjectId === activeProjectId &&
           (progress.phase === "done" || progress.phase === "no_changes")
         ) {
-          loadStats();
+          loadCodebaseIndexed();
+        }
+      }
+    );
+
+    // Refresh stats when the initial (full) embedding finishes. The embed
+    // progress broadcast ("done" phase) is the only signal the TopBar
+    // receives for a first-time embedding — the incremental sync channel
+    // (`codebase:sync:progress`) is not emitted for it. Without this, the
+    // indicator stays amber ("enabled but never embedded") until the user
+    // switches projects and back, which re-runs the stats load.
+    const disposeEmbed = window.snow.onCodebaseEmbedProgress(
+      (progress, changedProjectId) => {
+        if (
+          changedProjectId === activeProjectId &&
+          progress.phase === "done"
+        ) {
+          loadCodebaseIndexed();
         }
       }
     );
 
     return () => {
-      cancelled = true;
+      statsGenerationRef.current += 1;
       disposeSync();
+      disposeEmbed();
     };
-  }, [activeProjectId]);
+  }, [activeProjectId, loadCodebaseIndexed]);
 
   useEffect(() => {
     if (!conversationDirectoryId) {
@@ -265,9 +310,15 @@ export const TopBar = ({
     };
   }, [isPlusMenuOpen]);
 
+  // 代码库功能已开启且当前项目嵌入完毕后，才在 Plus 菜单中提供“代码库”项。
+  const canOpenCodebase = effectiveEnabled && codebaseIndexed && activeProjectId;
+
   const plusMenuItems = [
     { id: "terminal", label: "终端", icon: Terminal },
     { id: "browser", label: "浏览器", icon: Globe },
+    ...(canOpenCodebase
+      ? [{ id: "codebase", label: t("topBar.plusMenu.codebase"), icon: Database }]
+      : []),
   ];
 
   const handlePlusMenuAction = (actionId: string): void => {
@@ -275,6 +326,11 @@ export const TopBar = ({
       onOpenTerminal?.();
     } else if (actionId === "browser") {
       onOpenBrowser?.();
+    } else if (actionId === "codebase" && activeProjectId) {
+      onOpenCodebase?.(
+        activeProjectId,
+        activeDirectory?.name ?? activeProjectId
+      );
     }
     setIsPlusMenuOpen(false);
   };

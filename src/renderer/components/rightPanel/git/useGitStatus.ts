@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GitStatusResult } from "../../../../preload";
 
+// Remote (ssh://) repos have no local file watcher, so the status is
+// refreshed by polling instead.
+const REMOTE_POLL_INTERVAL_MS = 10_000;
+
 type UseGitStatusResult = {
   status: GitStatusResult | null;
   isLoading: boolean;
@@ -28,7 +32,7 @@ export const useGitStatus = (
 
   const fetchStatus = useCallback(async () => {
     const path = repoPathRef.current;
-    if (!path || isSshPath(path)) {
+    if (!path) {
       setStatus(null);
       setError(null);
       return;
@@ -62,7 +66,18 @@ export const useGitStatus = (
 
     void fetchStatus();
 
-    if (repoPath && !isSshPath(repoPath)) {
+    const isRemote = !!repoPath && isSshPath(repoPath);
+
+    // Remote repos have no local file watcher — poll instead.
+    const pollTimer = isRemote
+      ? setInterval(() => {
+          if (!document.hidden) {
+            void fetchStatus();
+          }
+        }, REMOTE_POLL_INTERVAL_MS)
+      : null;
+
+    if (repoPath && !isRemote) {
       void window.snow.startGitWatch(repoPath);
     }
 
@@ -97,11 +112,14 @@ export const useGitStatus = (
       cancelledRef.current = true;
       unsubscribe();
 
+      if (pollTimer) {
+        clearInterval(pollTimer);
+      }
       if (watcherDebounceRef.current) {
         clearTimeout(watcherDebounceRef.current);
         watcherDebounceRef.current = null;
       }
-      if (repoPath && !isSshPath(repoPath)) {
+      if (repoPath && !isRemote) {
         void window.snow.stopGitWatch(repoPath);
       }
     };

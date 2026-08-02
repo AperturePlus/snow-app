@@ -1,6 +1,7 @@
 import { ipcMain, nativeTheme } from "electron";
 import { randomUUID } from "node:crypto";
 import type {
+  AppControlCommand,
   BashStreamChunk,
   BrowserCommand,
   BrowserCommandResponse,
@@ -22,6 +23,11 @@ import {
   resolveUserQuestion,
   USER_QUESTION_RESPONSE_CHANNEL,
 } from "../userQuestionBroker";
+import {
+  dispatchAppControl,
+  resolveAppControl,
+  APP_CONTROL_RESPONSE_CHANNEL,
+} from "../appControlBroker";
 import { dispatchRemoteWorkspaceCommand } from "../../ssh/remoteWorkspaceCommand";
 
 const MCP_TOOL_CHUNK_CHANNEL = "mcp:call-tool:chunk";
@@ -49,6 +55,17 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   ipcMain.handle("settings:get-plan-mode", () => native.getPlanMode());
   ipcMain.handle("settings:set-plan-mode", (_event, enabled: boolean) =>
     native.setPlanMode(enabled)
+  );
+  ipcMain.handle("settings:get-goal-mode", () => native.getGoalMode());
+  ipcMain.handle("settings:set-goal-mode", (_event, enabled: boolean) =>
+    native.setGoalMode(enabled)
+  );
+  ipcMain.handle("settings:get-goal-mode-token-budget", () =>
+    native.getGoalModeTokenBudget()
+  );
+  ipcMain.handle(
+    "settings:set-goal-mode-token-budget",
+    (_event, budget: number) => native.setGoalModeTokenBudget(budget)
   );
   ipcMain.handle("settings:get-request-logging", () =>
     native.getRequestLogging()
@@ -261,6 +278,43 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     }
     return native.getCodebaseIndexStats(projectId.trim());
   });
+  ipcMain.handle(
+    "codebase:list-indexed-files",
+    (_event, projectId: unknown, page: unknown, pageSize: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      if (typeof page !== "number" || !Number.isInteger(page) || page < 1) {
+        throw new Error("Page must be a positive integer");
+      }
+      if (
+        typeof pageSize !== "number" ||
+        !Number.isInteger(pageSize) ||
+        pageSize < 1 ||
+        pageSize > 100
+      ) {
+        throw new Error("Page size must be an integer between 1 and 100");
+      }
+      return native.listCodebaseIndexedFiles(projectId.trim(), page, pageSize);
+    }
+  );
+  ipcMain.handle(
+    "codebase:get-sphere-layout",
+    (_event, projectId: unknown, limit: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      if (
+        typeof limit !== "number" ||
+        !Number.isInteger(limit) ||
+        limit < 1 ||
+        limit > 2000
+      ) {
+        throw new Error("Limit must be an integer between 1 and 2000");
+      }
+      return native.getCodebaseSphereLayout(projectId.trim(), limit);
+    }
+  );
   ipcMain.handle("codebase:clear-index", (_event, projectId: unknown) => {
     if (typeof projectId !== "string" || !projectId.trim()) {
       throw new Error("Project id is required");
@@ -456,6 +510,47 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       );
     }
   );
+  ipcMain.handle(
+    "skills:install-github",
+    (_event, url: unknown, location: unknown, projectId: unknown) => {
+      if (typeof url !== "string" || !url.trim()) {
+        throw new Error("GitHub URL is required");
+      }
+      if (location !== "global" && location !== "project") {
+        throw new Error('Location must be "global" or "project"');
+      }
+      if (
+        projectId !== undefined &&
+        (typeof projectId !== "string" || !projectId.trim())
+      ) {
+        throw new Error("Project id must be a non-empty string");
+      }
+      return native.installSkillFromGithub(
+        url.trim(),
+        location,
+        typeof projectId === "string" ? projectId.trim() : undefined
+      );
+    }
+  );
+  ipcMain.handle(
+    "skills:uninstall-github",
+    (_event, skillId: unknown, projectId: unknown) => {
+      if (typeof skillId !== "string" || !skillId.trim()) {
+        throw new Error("Skill id is required");
+      }
+      if (
+        projectId !== undefined &&
+        (typeof projectId !== "string" || !projectId.trim())
+      ) {
+        throw new Error("Project id must be a non-empty string");
+      }
+      return native.uninstallGithubSkill(
+        skillId.trim(),
+        typeof projectId === "string" ? projectId.trim() : undefined
+      );
+    }
+  );
+  ipcMain.handle("skills:list-github", () => native.listGithubSkills());
   ipcMain.handle("mcp:list-server-tools", (_event, configServerId: unknown) => {
     if (typeof configServerId !== "string" || !configServerId.trim()) {
       throw new Error("MCP server id is required");
@@ -550,6 +645,18 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       resolveUserQuestion(event.sender, response);
     }
   );
+  ipcMain.on(
+    APP_CONTROL_RESPONSE_CHANNEL,
+    (
+      event,
+      response: { requestId: string; resultJson?: string; error?: string }
+    ) => {
+      if (!response || typeof response.requestId !== "string") {
+        return;
+      }
+      resolveAppControl(event.sender, response);
+    }
+  );
   ipcMain.handle(
     "mcp:authorize-sensitive-command",
     async (_event, command: unknown) => {
@@ -573,6 +680,15 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       }
 
       await native.writeInteractiveStdin(sessionId.trim(), input);
+    }
+  );
+  ipcMain.handle(
+    "mcp:abort-tool-execution",
+    (_event, toolExecutionId: unknown) => {
+      if (typeof toolExecutionId !== "string" || !toolExecutionId.trim()) {
+        throw new Error("Tool execution ID is required");
+      }
+      return native.abortToolExecution(toolExecutionId.trim());
     }
   );
   ipcMain.handle(
@@ -668,6 +784,8 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
           dispatchBrowserCommand(event.sender, command),
         (question: UserQuestionCommand) =>
           dispatchUserQuestion(event.sender, question, normalizedInteractionId),
+        (command: AppControlCommand) =>
+          dispatchAppControl(event.sender, command),
         (command) => dispatchRemoteWorkspaceCommand(command),
         normalizedSubAgentAllowedTools,
         planMode as boolean | undefined,

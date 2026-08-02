@@ -46,10 +46,10 @@ type RemoteWorkspaceSearchMatch = {
   content: string;
 };
 
-const shellQuote = (value: string): string =>
+export const shellQuote = (value: string): string =>
   `'${value.replace(/'/g, `'"'"'`)}'`;
 
-const normalizeRemotePath = (path: string): string => {
+export const normalizeRemotePath = (path: string): string => {
   const normalized = path.replace(/\/+$/, "");
   return normalized || "/";
 };
@@ -84,7 +84,7 @@ const getRemoteRelativePath = (path: string, rootPath: string): string => {
   return normalizedPath.replace(/^\/+/, "");
 };
 
-const buildRemoteWorkspaceUri = (
+export const buildRemoteWorkspaceUri = (
   workspacePath: string,
   remotePath: string,
   remoteRootPath: string
@@ -129,7 +129,7 @@ const buildSshConnectParams = (workspacePath: string): SshConnectParams => {
   return connectParams;
 };
 
-const withSshSession = async <T>(
+export const withSshSession = async <T>(
   workspacePath: string,
   action: (
     sessionId: string,

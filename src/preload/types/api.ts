@@ -60,6 +60,7 @@ export type ResponsesApiMessage = {
 export type ResponsesApiRequest = {
   messages: ResponsesApiMessage[];
   model?: string | null;
+  apiProfile?: string | null;
   conversationId?: string | null;
   previousResponseId?: string | null;
   directoryId?: string | null;
@@ -69,6 +70,7 @@ export type ResponsesApiRequest = {
   subAgentConfigProfile?: string | null;
   skipContext?: boolean | null;
   planMode?: boolean | null;
+  goalMode?: boolean | null;
 };
 
 export type TokenUsage = {

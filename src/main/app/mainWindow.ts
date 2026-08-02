@@ -58,13 +58,14 @@ const registerThemeBackgroundSync = (): void => {
 // 在模块加载时注册一次主题背景色同步 IPC。
 registerThemeBackgroundSync();
 
-export const createWindow = async (): Promise<void> => {
+export const createWindow = (): BrowserWindow => {
   // macOS 关闭窗口后进程不退出，用户点击 dock 图标会重新 createWindow。
   // 此时需重置 closeConfirmed，使新窗口关闭时仍弹出二次确认。
   closeConfirmed = false;
 
-  // 启动时读取上次保存的窗口尺寸/位置；读取失败时回退到默认尺寸。
-  const savedState = await loadWindowState();
+  // 启动时同步读取上次保存的窗口尺寸/位置（~100B JSON，无阻塞风险）；
+  // 读取失败时回退到默认尺寸。
+  const savedState = loadWindowState();
   const restoredPosition =
     savedState && isStatePositionVisible(savedState)
       ? { x: savedState.x, y: savedState.y }
@@ -173,4 +174,6 @@ export const createWindow = async (): Promise<void> => {
 
   // 初始化自动更新模块（注册 IPC + 启动后自动检查更新）
   initAutoUpdater(mainWindow);
+
+  return mainWindow;
 };

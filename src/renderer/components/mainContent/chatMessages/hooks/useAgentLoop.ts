@@ -9,6 +9,7 @@ import type {
 import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
 import {
   createMessageId,
+  directoryIdToPath,
   formatMessageTime,
   formatToolResultsContent,
   getErrorMessage,
@@ -156,6 +157,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             lastMessagePreview: preview,
             messageCount: 1,
             model: options.model ?? "",
+            apiProfileName: options.apiProfile ?? "",
             status: "active",
             directoryId: sessionDirId ?? "",
             forkedFromConversationId: "",
@@ -257,10 +259,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           {
             messages: requestMessages,
             model: options.model,
+            apiProfile: options.apiProfile,
             conversationId: currentConversationId,
             directoryId: sessionDirId,
             checkpointId,
             planMode: ctx.planModeRef.current,
+            goalMode: ctx.goalModeRef.current,
           },
           createStreamChunkHandler(
             ctx,
@@ -298,8 +302,15 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
             // this session was streaming, do NOT auto-switch back — let the
             // conversation persist in the background and stay on the empty
             // greeting.
+            // When activeConversationIdRef is PENDING_SESSION_KEY the user
+            // navigated back to the pending conversation (via sidebar) before
+            // migration completed. After migrateSession deletes the pending
+            // key, the active id must follow to the real conversation id —
+            // otherwise the UI resolves an empty session and falls back to
+            // the Empty greeting screen.
             if (
-              ctx.activeConversationIdRef.current === undefined &&
+              (ctx.activeConversationIdRef.current === undefined ||
+                ctx.activeConversationIdRef.current === PENDING_SESSION_KEY) &&
               !ctx.newChatRequestedRef.current
             ) {
               ctx.setActiveId(response.conversationId);
@@ -595,11 +606,20 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           sessionDirId
         );
 
-        // 非 YOLO 模式授权判定：单工具被拒绝，或多工具全部被拒绝时，
-        // AI 流程直接结束；部分拒绝时，已拒绝的工具返回拒绝结果给 AI，
-        // 已批准的工具正常执行，Loop 继续。
+        // 非 YOLO 模式授权判定：
+        // - 全部工具被拒绝且用户未填写任何拒绝理由（直接拒绝/中断/
+        //   hook abort）：AI 流程直接结束，不再向模型追加工具结果。
+        // - 任一拒绝携带了用户填写的理由：拒绝理由作为工具结果回传
+        //   AI，Loop 继续，让 AI 根据理由调整后续行动。
+        // - 部分拒绝：已拒绝的工具返回拒绝结果给 AI，已批准的工具
+        //   正常执行，Loop 继续。
         const allToolsRejected = authorizationDecisions.every(
           (decision) => decision.status === "rejected"
+        );
+        const hasUserProvidedRejectionReason = authorizationDecisions.some(
+          (decision) =>
+            decision.status === "rejected" &&
+            decision.userProvidedReason === true
         );
 
         const toolExecutor = createToolExecutor({
@@ -694,10 +714,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           return;
         }
 
-        // 非 YOLO 模式：当本批次所有工具均被用户拒绝时，AI 流程直接结束，
-        // 不再向模型追加工具结果或发起新一轮请求。部分拒绝时本分支不触发，
-        // Loop 照常继续，已拒绝工具的拒绝结果已在上方写入 toolResults。
-        if (allToolsRejected) {
+        // 全部工具被拒绝且没有任何用户填写的拒绝理由时，AI 流程直接
+        // 结束，不再发起新一轮请求。若用户填写了拒绝理由，则拒绝结果
+        // 已在上方写入 toolResults，走正常续跑分支让 AI 继续处理。
+        if (allToolsRejected && !hasUserProvidedRejectionReason) {
           ctx.pendingQueueRef.current.delete(effectiveKey);
           ctx.setActivePendingMessages([]);
           if (response.conversationId) {
@@ -812,10 +832,13 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         }
 
         let checkpointId: string | undefined;
-        if (ctx.directoryPath && !ctx.directoryPath.startsWith("ssh://")) {
+        // checkpoint 绑定会话自己的目录(而非运行时全局目录),保证
+        // manifest.work_dir 与工具执行的 cwd 始终一致。
+        const sessionDirPath = directoryIdToPath(sessionDirId) ?? ctx.directoryPath;
+        if (sessionDirPath && !sessionDirPath.startsWith("ssh://")) {
           try {
             checkpointId = await window.snow.createCheckpoint(
-              ctx.directoryPath
+              sessionDirPath
             );
             const ref = ctx.sessionsRefData.current.get(sessionKey);
             if (ref) {
@@ -839,7 +862,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         try {
           const hookContext = JSON.stringify({
             message: trimmed,
-            cwd: ctx.directoryPath ?? "",
+            cwd: sessionDirPath ?? "",
             sessionId:
               sessionKey === PENDING_SESSION_KEY ? undefined : sessionKey,
           });
@@ -982,7 +1005,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
               finalSessionKey === PENDING_SESSION_KEY
                 ? undefined
                 : finalSessionKey,
-            cwd: ctx.directoryPath ?? "",
+            cwd: directoryIdToPath(stopDirId) ?? ctx.directoryPath ?? "",
             reason: isRunCancelled(finalSessionKey) ? "aborted" : "completed",
           });
           void runHook("onStop", stopDirId ?? undefined, onStopContext)

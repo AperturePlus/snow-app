@@ -3,6 +3,7 @@ import { MainSidebarContent } from "./sidebar/MainSidebarContent";
 import { ProjectExplorerContent } from "./sidebar/ProjectExplorerContent";
 import { SettingsSidebarContent } from "./sidebar/SettingsSidebarContent";
 import { shortcutEvents } from "./shortcutEvents";
+import { APP_CONTROL_OPEN_SETTINGS_EVENT } from "../hooks/useAppControl";
 import type { SidebarContentKey, SidebarContentProps } from "./sidebar/types";
 
 type SidebarProps = {
@@ -61,6 +62,16 @@ export const Sidebar = ({
       }
     });
   }, [activeDirectory, handleSwitchToExplorer]);
+
+  useEffect(() => {
+    const handler = () => {
+      setActiveContent("settings");
+    };
+    window.addEventListener(APP_CONTROL_OPEN_SETTINGS_EVENT, handler);
+    return () => {
+      window.removeEventListener(APP_CONTROL_OPEN_SETTINGS_EVENT, handler);
+    };
+  }, []);
 
   const sidebarProps: SidebarContentProps = {
     activeMainView,

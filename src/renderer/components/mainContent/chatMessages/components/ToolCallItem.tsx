@@ -61,7 +61,7 @@ export const ToolCallItem = memo(
       return <AskUserQuestionToolCall toolCall={toolCall} />;
     }
 
-    if (toolCall.name === "plan-mode-requestApproval") {
+    if (toolCall.name === "app-control-requestApproval") {
       return <PlanModeApprovalToolCall toolCall={toolCall} />;
     }
 

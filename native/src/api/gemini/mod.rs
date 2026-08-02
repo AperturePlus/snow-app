@@ -109,6 +109,7 @@ async fn create_gemini_response_async(
         context_compaction: request.context_compaction.unwrap_or(false),
         skip_context: request.skip_context.unwrap_or(false),
         plan_mode: request.plan_mode.unwrap_or(false),
+        goal_mode: request.goal_mode.unwrap_or(false),
         system_prompt_ids_json: &api_config.system_prompt_ids_json,
     })?;
 
@@ -203,6 +204,7 @@ async fn create_gemini_response_async(
                 response_id: &streamed_response.id,
                 checkpoint_id: request.checkpoint_id.as_deref().unwrap_or(""),
                 model: &streamed_response.model,
+                api_profile_name: &api_config.profile_name,
                 status: &streamed_response.status,
                 raw_response_json: &raw_response_json,
                 token_usage: streamed_response.token_usage,

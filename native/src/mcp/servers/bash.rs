@@ -168,6 +168,10 @@ impl McpService for BashService {
                         "type": "string",
                         "description": "Terminal command to execute directly."
                     },
+                    "description": {
+                        "type": "string",
+                        "description": "REQUIRED: A short, user-friendly explanation of what this command will do, so the user can understand it at a glance. MUST be written in the SAME language as the user's latest query."
+                    },
                     "workingDirectory": {
                         "type": "string",
                         "description": "REQUIRED: Working directory where the command should be executed. Can be a local path (e.g., \"D:/projects/myapp\")."
@@ -181,9 +185,13 @@ impl McpService for BashService {
                         "type": "boolean",
                         "description": "Set to true if the command requires user input (e.g., password prompts, y/n confirmations, interactive installers). Default: false.",
                         "default": false
+                    },
+                    "sessionId": {
+                        "type": "string",
+                        "description": "System-injected session identifier (do not supply). Exposed to the child process as SNOW_SESSION_ID so Trellis scripts can track the active task."
                     }
                 },
-                "required": ["command", "workingDirectory", "timeout"]
+                "required": ["command", "description", "workingDirectory", "timeout"]
             }),
         }]
     }
@@ -221,6 +229,22 @@ impl BashService {
             .ok_or_else(|| Error::new(Status::InvalidArg, "command is required".to_string()))?
             .to_string();
 
+        // A short user-facing explanation of the command, written by the
+        // model in the user's language.  Required so the UI can always show
+        // why a command is being executed.
+        let description = args
+            .get("description")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                Error::new(
+                    Status::InvalidArg,
+                    "description is required: provide a brief user-friendly explanation of the command in the user's language"
+                        .to_string(),
+                )
+            })?
+            .to_string();
+
         let working_directory = args
             .get("workingDirectory")
             .and_then(Value::as_str)
@@ -238,6 +262,16 @@ impl BashService {
             .unwrap_or(DEFAULT_TIMEOUT_MS);
         let executed_at = chrono::Local::now().to_rfc3339();
 
+        // Optional session identity injected by the renderer (never supplied by
+        // the model). Exposed to child processes as SNOW_SESSION_ID /
+        // TRELLIS_CONTEXT_ID so Trellis scripts (active_task.py) can resolve
+        // the current session — matching the Snow CLI contract.
+        let session_id = args
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .map(|value| value.trim().to_string());
+
         // When isInteractive is true the command expects to receive user
         // input at runtime (password prompts, y/n confirmations, etc.).
         // Interactive commands bypass the sensitive-command gate because the
@@ -246,16 +280,6 @@ impl BashService {
             .get("isInteractive")
             .and_then(Value::as_bool)
             .unwrap_or(false);
-
-        if is_dangerous_command(&command) {
-            return Err(Error::new(
-                Status::GenericFailure,
-                format!(
-                    "Dangerous command detected and blocked: {}",
-                    command.chars().take(50).collect::<String>()
-                ),
-            ));
-        }
 
         let self_destruct = is_self_destructive_command(&command);
         if self_destruct.is_self_destructive {
@@ -293,6 +317,7 @@ impl BashService {
                 "error": "SENSITIVE_COMMAND_DETECTED",
                 "message": "Command matched a sensitive command rule and requires confirmation",
                 "command": command,
+                "description": description,
                 "matches": sensitive_matches,
             });
             return Err(Error::new(
@@ -346,6 +371,16 @@ impl BashService {
             .env("LANG", "en_US.UTF-8")
             .env("LC_ALL", "en_US.UTF-8");
 
+        // Snow platform contract: expose the current session identity and
+        // workspace to child processes so Trellis scripts can track the active
+        // task per session (see .trellis/scripts/common/active_task.py).
+        if let Some(ref session_id) = session_id {
+            process.env("SNOW_SESSION_ID", session_id);
+            process.env("TRELLIS_CONTEXT_ID", format!("snow-{session_id}"));
+        }
+        process.env("SNOW_PLATFORM", "snow");
+        process.env("SNOW_CWD", &working_directory);
+
         if let Some(ref path) = login_path {
             process.env("PATH", path);
         }
@@ -372,6 +407,17 @@ impl BashService {
         })?;
 
         let callback = Arc::new(on_chunk);
+
+        // Register a cancellation token for this execution so the process can
+        // be killed on demand instead of waiting for the timeout: the UI
+        // shows a stop button and session aborts kill every in-flight bash
+        // process.  The id is streamed to the frontend as a
+        // `tool_execution` chunk (mirroring how `interactive_session` ids
+        // are delivered) so the tool call can be targeted for cancellation.
+        let tool_execution_id = Uuid::new_v4().to_string();
+        let cancel_token =
+            crate::api::cancel::register_tool_execution(&tool_execution_id);
+        emit_stream_chunk(&callback, "tool_execution", tool_execution_id.clone());
 
         // For interactive sessions, take the stdin pipe and register the
         // session so the frontend can write user input via
@@ -416,22 +462,27 @@ impl BashService {
             Duration::from_millis(timeout)
         };
 
-        let wait_result = match tokio::time::timeout(
-            effective_timeout,
-            child.wait(),
-        )
-        .await
-        {
-            Ok(Ok(status)) => ProcessWaitResult::Completed(status.code().unwrap_or(1)),
-            Ok(Err(error)) => {
-                kill_process_tree(&mut child).await;
-                ProcessWaitResult::Failed(error.to_string())
-            }
-            Err(_) => {
+        let wait_result = tokio::select! {
+            status = child.wait() => match status {
+                Ok(status) => ProcessWaitResult::Completed(status.code().unwrap_or(1)),
+                Err(error) => {
+                    kill_process_tree(&mut child).await;
+                    ProcessWaitResult::Failed(error.to_string())
+                }
+            },
+            _ = tokio::time::sleep(effective_timeout) => {
                 kill_process_tree(&mut child).await;
                 ProcessWaitResult::TimedOut
             }
+            _ = cancel_token.cancelled() => {
+                kill_process_tree(&mut child).await;
+                ProcessWaitResult::Cancelled
+            }
         };
+
+        // No further cancellation can target this execution once the
+        // process has settled (completed, timed out or killed).
+        crate::api::cancel::unregister_tool_execution(&tool_execution_id);
 
         // Clean up the interactive session after the process exits.
         if let Some(ref session_id) = interactive_session_id {
@@ -440,14 +491,35 @@ impl BashService {
 
         // After a kill the pipes may linger briefly; bound the wait
         // so we never block indefinitely.
-        let was_killed = !matches!(wait_result, ProcessWaitResult::Completed(_));
-        let stream_timeout = if was_killed {
-            Some(Duration::from_secs(3))
-        } else {
-            None
-        };
-        let stdout = await_stream_task(stdout_task, stream_timeout).await;
-        let stderr = await_stream_task(stderr_task, stream_timeout).await;
+        //
+        // A user-initiated cancellation returns **immediately** instead of
+        // draining the pipes: the frontend has already streamed the partial
+        // output live, so waiting for the remaining bytes (up to 3s when a
+        // grandchild survives and holds a pipe open) would only delay the
+        // confirmation the UI shows.  The reader tasks are aborted so they
+        // cannot linger in the background either.
+        let (stdout, stderr) =
+            if matches!(wait_result, ProcessWaitResult::Cancelled) {
+                if let Some(task) = stdout_task {
+                    task.abort();
+                }
+                if let Some(task) = stderr_task {
+                    task.abort();
+                }
+                (String::new(), String::new())
+            } else {
+                let was_killed =
+                    !matches!(wait_result, ProcessWaitResult::Completed(_));
+                let stream_timeout = if was_killed {
+                    Some(Duration::from_secs(3))
+                } else {
+                    None
+                };
+                (
+                    await_stream_task(stdout_task, stream_timeout).await,
+                    await_stream_task(stderr_task, stream_timeout).await,
+                )
+            };
 
         match wait_result {
             ProcessWaitResult::Completed(exit_code) => Ok(json!({
@@ -462,6 +534,10 @@ impl BashService {
                 Status::GenericFailure,
                 format!("Command timed out after {timeout}ms: {command}"),
             )),
+            ProcessWaitResult::Cancelled => Err(Error::new(
+                Status::GenericFailure,
+                format!("Command was stopped by the user: {command}"),
+            )),
             ProcessWaitResult::Failed(error) => Err(Error::new(
                 Status::GenericFailure,
                 format!("Failed to wait for process: {error}"),
@@ -473,6 +549,7 @@ impl BashService {
 enum ProcessWaitResult {
     Completed(i32),
     TimedOut,
+    Cancelled,
     Failed(String),
 }
 
@@ -673,20 +750,6 @@ async fn check_sensitive_commands(command: &str, project_id: Option<&str>) -> Ve
             .collect(),
         Ok(Err(_)) | Err(_) => Vec::new(),
     }
-}
-
-/// Dangerous command patterns that should be blocked
-fn is_dangerous_command(command: &str) -> bool {
-    let patterns: [&str; 4] = [
-        r"(?i)rm\s+-rf\s+/[^/\s]*", // rm -rf / or /path
-        r"(?i)>\s*/dev/sda",         // writing to disk devices
-        r"(?i)mkfs",                 // format filesystem
-        r"(?i)dd\s+if=",             // disk operations
-    ];
-
-    patterns
-        .iter()
-        .any(|p| Regex::new(p).map(|r| r.is_match(command)).unwrap_or(false))
 }
 
 /// Self-protection: detect commands that would kill the app's own process.

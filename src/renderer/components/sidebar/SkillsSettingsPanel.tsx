@@ -2,20 +2,25 @@ import {
   BookOpen,
   CircleCheck,
   CirclePause,
+  Download,
   Folder,
+  GitFork,
   Globe2,
   Loader2,
   RefreshCw,
+  Trash2,
   Wrench,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
+  GithubSkillRecord,
   SkillDefinition,
   WorkspaceDirectoryRecord,
 } from "../../../preload";
 import { useI18n } from "../../i18n";
 import { AutoDismissNotice } from "../AutoDismissNotice";
+import { ConfirmDialog } from "../common/ConfirmDialog";
 
 type SkillsSettingsPanelProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
@@ -29,6 +34,28 @@ const EMPTY_SKILLS_BY_SCOPE: SkillsByScope = {
   global: [],
   project: [],
 };
+
+/**
+ * Validate a GitHub URL / shorthand. Mirrors the Rust `parse_github_url`
+ * logic so we can give instant feedback in the UI before invoking the backend.
+ */
+function isValidGitHubUrl(input: string): boolean {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return false;
+  }
+  let working = trimmed.replace(/\.git$/, "").replace(/\/$/, "");
+  const urlMatch = working.match(
+    /^https?:\/\/github\.com\/([^/]+)\/([^/]+)(?:\/tree\/([^/]+)(\/.*)?)?$/i
+  );
+  if (urlMatch) {
+    return Boolean(urlMatch[1] && urlMatch[2]);
+  }
+  const shorthandMatch = working.match(
+    /^([^/\s@]+)\/([^/\s@]+)(?:@([^:]+))?(?::(.+))?$/
+  );
+  return Boolean(shorthandMatch && shorthandMatch[1] && shorthandMatch[2]);
+}
 
 export function SkillsSettingsPanel({
   activeDirectory,
@@ -44,16 +71,24 @@ export function SkillsSettingsPanel({
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
 
+  const [githubSkills, setGithubSkills] = useState<GithubSkillRecord[]>([]);
+  const [installUrl, setInstallUrl] = useState("");
+  const [isInstalling, setIsInstalling] = useState(false);
+  const [uninstallingSkillId, setUninstallingSkillId] = useState("");
+  const [pendingUninstallSkill, setPendingUninstallSkill] =
+    useState<SkillDefinition | null>(null);
+
   const loadSkills = useCallback(async (): Promise<void> => {
     setIsLoading(true);
     setError("");
 
     try {
-      const [globalSkills, effectiveSkills] = await Promise.all([
+      const [globalSkills, effectiveSkills, githubRecords] = await Promise.all([
         window.snow.listAvailableSkills(),
         activeDirectory
           ? window.snow.listAvailableSkills(activeDirectory.directoryId)
           : Promise.resolve([]),
+        window.snow.listGithubSkills(),
       ]);
       const globalSkillIds = new Set(globalSkills.map((skill) => skill.id));
       const projectSkills = effectiveSkills.filter(
@@ -64,6 +99,7 @@ export function SkillsSettingsPanel({
         global: globalSkills,
         project: projectSkills,
       });
+      setGithubSkills(githubRecords);
     } catch (loadError) {
       setSkillsByScope(EMPTY_SKILLS_BY_SCOPE);
       setError(
@@ -121,6 +157,127 @@ export function SkillsSettingsPanel({
     [activeDirectory?.directoryId, loadSkills, t]
   );
 
+  const handleInstall = useCallback(async (): Promise<void> => {
+    const url = installUrl.trim();
+    if (!url || !isValidGitHubUrl(url)) {
+      setError(
+        t("settings.skillsInstallInvalidUrl", {
+          defaultValue: "Please enter a valid GitHub URL.",
+        })
+      );
+      return;
+    }
+    if (activeScope === "project" && !activeDirectory) {
+      setError(
+        t("settings.skillsInstallError", {
+          defaultValue: "Install failed: {{error}}",
+          values: { error: "No active project" },
+        })
+      );
+      return;
+    }
+
+    setIsInstalling(true);
+    setError("");
+    setStatus("");
+
+    try {
+      const result = await window.snow.installSkillFromGithub(
+        url,
+        activeScope,
+        activeScope === "project" ? activeDirectory?.directoryId : undefined
+      );
+      if (result.success) {
+        const names = result.results
+          .filter((r) => r.success)
+          .map((r) => r.skillId)
+          .join(", ");
+        setStatus(
+          `${t("settings.skillsInstallSuccess", {
+            defaultValue: "{{count}} skill(s) installed successfully.",
+            values: { count: result.installedCount },
+          })}${names ? ` (${names})` : ""}`
+        );
+        setInstallUrl("");
+        await loadSkills();
+      } else {
+        setError(
+          t("settings.skillsInstallError", {
+            defaultValue: "Install failed: {{error}}",
+            values: { error: result.error ?? "Unknown error" },
+          })
+        );
+      }
+    } catch (installError) {
+      setError(
+        t("settings.skillsInstallError", {
+          defaultValue: "Install failed: {{error}}",
+          values: {
+            error:
+              installError instanceof Error
+                ? installError.message
+                : "Unknown error",
+          },
+        })
+      );
+    } finally {
+      setIsInstalling(false);
+    }
+  }, [installUrl, activeScope, activeDirectory, loadSkills, t]);
+
+  const requestUninstall = useCallback((skill: SkillDefinition): void => {
+    setPendingUninstallSkill(skill);
+  }, []);
+
+  const confirmUninstall = useCallback(async (): Promise<void> => {
+    const skill = pendingUninstallSkill;
+    if (!skill) {
+      return;
+    }
+    setPendingUninstallSkill(null);
+    setUninstallingSkillId(skill.id);
+    setError("");
+    setStatus("");
+
+    try {
+      const result = await window.snow.uninstallGithubSkill(
+        skill.id,
+        skill.location === "project"
+          ? activeDirectory?.directoryId
+          : undefined
+      );
+      if (result.success) {
+        setStatus(
+          t("settings.skillsUninstallSuccess", {
+            defaultValue: "Skill uninstalled.",
+          })
+        );
+        await loadSkills();
+      } else {
+        setError(
+          t("settings.skillsUninstallError", {
+            defaultValue: "Failed to uninstall: {{error}}",
+            values: { error: result.error ?? result.message },
+          })
+        );
+      }
+    } catch (uninstallError) {
+      setError(
+        t("settings.skillsUninstallError", {
+          defaultValue: "Failed to uninstall: {{error}}",
+          values: {
+            error:
+              uninstallError instanceof Error
+                ? uninstallError.message
+                : "Unknown error",
+          },
+        })
+      );
+    } finally {
+      setUninstallingSkillId("");
+    }
+  }, [pendingUninstallSkill, activeDirectory?.directoryId, loadSkills, t]);
+
   useEffect(() => {
     void loadSkills();
   }, [loadSkills]);
@@ -130,6 +287,11 @@ export function SkillsSettingsPanel({
       setActiveScope("global");
     }
   }, [activeDirectory, activeScope]);
+
+  const githubSkillIds = useMemo(
+    () => new Set(githubSkills.map((r) => r.id)),
+    [githubSkills]
+  );
 
   const allSkills = [...skillsByScope.global, ...skillsByScope.project];
   const enabledCount = allSkills.filter((skill) => skill.enabled).length;
@@ -149,6 +311,10 @@ export function SkillsSettingsPanel({
           "Project-only Skills for {{name}}. IDs already present globally are excluded.",
         values: { name: activeDirectory?.name ?? "" },
       });
+
+  const urlValid = isValidGitHubUrl(installUrl);
+  const canInstall =
+    !isInstalling && !isLoading && installUrl.trim().length > 0 && urlValid;
 
   return (
     <div className="api-settings-page skills-settings-page" role="region">
@@ -209,7 +375,7 @@ export function SkillsSettingsPanel({
           className="api-settings-action-btn secondary"
           onClick={() => void loadSkills()}
           type="button"
-          disabled={isLoading || Boolean(updatingSkillId)}
+          disabled={isLoading || Boolean(updatingSkillId) || isInstalling}
           aria-label={t("settings.skillsRefresh", {
             defaultValue: "Refresh Skills",
           })}
@@ -274,6 +440,83 @@ export function SkillsSettingsPanel({
         </button>
       </div>
 
+      <section className="api-settings-form-section skills-settings-section skills-settings-install-section">
+        <div className="skills-settings-section-header">
+          <div>
+            <strong className="api-settings-form-section-title">
+              {t("settings.skillsInstallTitle", {
+                defaultValue: "Install from GitHub",
+              })}
+            </strong>
+            <span>
+              {t("settings.skillsInstallUrlHint", {
+                defaultValue:
+                  "Supports full URLs, shorthand owner/repo, with optional branch and sub-directory.",
+              })}
+            </span>
+          </div>
+          <GitFork size={16} strokeWidth={1.8} />
+        </div>
+
+        <div className="skills-settings-install-form">
+          <div className="skills-settings-install-row">
+            <input
+              className="skills-settings-install-input"
+              type="text"
+              value={installUrl}
+              onChange={(event) => setInstallUrl(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && canInstall) {
+                  void handleInstall();
+                }
+              }}
+              placeholder={t("settings.skillsInstallUrlPlaceholder", {
+                defaultValue: "https://github.com/owner/repo or owner/repo@branch",
+              })}
+              disabled={isInstalling}
+              aria-label={t("settings.skillsInstallUrlLabel", {
+                defaultValue: "GitHub URL",
+              })}
+            />
+            <button
+              className="api-settings-action-btn primary skills-settings-install-btn"
+              onClick={() => void handleInstall()}
+              type="button"
+              disabled={!canInstall}
+            >
+              {isInstalling ? (
+                <Loader2 size={15} className="spin" />
+              ) : (
+                <Download size={15} strokeWidth={1.8} />
+              )}
+              <span>
+                {isInstalling
+                  ? t("settings.skillsInstallInstalling", {
+                      defaultValue: "Installing...",
+                    })
+                  : t("settings.skillsInstallButton", {
+                      defaultValue: "Install",
+                    })}
+              </span>
+            </button>
+          </div>
+          <span className="skills-settings-install-target">
+            {t("settings.skillsInstallTarget", {
+              defaultValue: "Installs to: {{scope}}",
+              values: {
+                scope: isGlobalScope
+                  ? t("settings.skillsInstallLocationGlobal", {
+                      defaultValue: "Global",
+                    })
+                  : t("settings.skillsInstallLocationProject", {
+                      defaultValue: "Project",
+                    }),
+              },
+            })}
+          </span>
+        </div>
+      </section>
+
       <section className="api-settings-form-section skills-settings-section">
         <div className="skills-settings-section-header">
           <div>
@@ -320,12 +563,17 @@ export function SkillsSettingsPanel({
           ) : (
             activeSkills.map((skill) => {
               const isUpdating = updatingSkillId === skill.id;
+              const isUninstalling = uninstallingSkillId === skill.id;
+              const isGithubInstalled = githubSkillIds.has(skill.id);
               const toggleLabel = skill.enabled
                 ? t("settings.skillsDisable", { defaultValue: "Disable Skill" })
                 : t("settings.skillsEnable", { defaultValue: "Enable Skill" });
               const stateLabel = skill.enabled
                 ? t("settings.enabled", { defaultValue: "Enabled" })
                 : t("settings.inactive", { defaultValue: "Disabled" });
+              const uninstallLabel = t("settings.skillsUninstall", {
+                defaultValue: "Uninstall",
+              });
 
               return (
                 <div
@@ -344,7 +592,7 @@ export function SkillsSettingsPanel({
                         type="checkbox"
                         checked={skill.enabled}
                         onChange={() => void toggleSkillEnabled(skill)}
-                        disabled={isLoading || Boolean(updatingSkillId)}
+                        disabled={isLoading || Boolean(updatingSkillId) || isInstalling}
                         hidden
                       />
                       <span className="toggle-slider" />
@@ -354,6 +602,16 @@ export function SkillsSettingsPanel({
                       <div className="skills-settings-item-title">
                         <strong>{skill.name}</strong>
                         <code>{skill.id}</code>
+                        {isGithubInstalled && (
+                          <span
+                            className="skills-settings-github-badge"
+                            title={t("settings.skillsInstallTitle", {
+                              defaultValue: "Install from GitHub",
+                            })}
+                          >
+                            <GitFork size={11} strokeWidth={1.8} />
+                          </span>
+                        )}
                       </div>
                       <span className="skills-settings-item-description">
                         {skill.description ||
@@ -383,6 +641,26 @@ export function SkillsSettingsPanel({
                     <span className="skills-settings-badge">
                       .{skill.source}
                     </span>
+                    {isGithubInstalled && (
+                      <button
+                        className="icon-btn ghost skills-settings-uninstall-btn"
+                        onClick={() => requestUninstall(skill)}
+                        type="button"
+                        disabled={
+                          Boolean(updatingSkillId) ||
+                          isInstalling ||
+                          isUninstalling
+                        }
+                        aria-label={uninstallLabel}
+                        title={uninstallLabel}
+                      >
+                        {isUninstalling ? (
+                          <Loader2 size={13} className="spin" />
+                        ) : (
+                          <Trash2 size={13} strokeWidth={1.8} />
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -390,6 +668,22 @@ export function SkillsSettingsPanel({
           )}
         </div>
       </section>
+
+      <ConfirmDialog
+        open={Boolean(pendingUninstallSkill)}
+        title={t("settings.skillsUninstall", { defaultValue: "Uninstall" })}
+        message={t("settings.skillsUninstallConfirm", {
+          defaultValue: "Uninstall this skill?",
+          values: { name: pendingUninstallSkill?.name ?? "" },
+        })}
+        confirmLabel={t("settings.skillsUninstall", {
+          defaultValue: "Uninstall",
+        })}
+        cancelLabel={t("common.cancel", { defaultValue: "Cancel" })}
+        variant="danger"
+        onConfirm={() => void confirmUninstall()}
+        onCancel={() => setPendingUninstallSkill(null)}
+      />
     </div>
   );
 }

@@ -1,7 +1,32 @@
 import { ipcMain } from "electron";
 import type { NativeBridge, ResponsesApiStreamChunk } from "../../native/types";
+import {
+  remoteCheckoutBranch,
+  remoteCommitChanges,
+  remoteCreateBranch,
+  remoteDiscardChanges,
+  remoteDiscoverGitRepos,
+  remoteFetchRemote,
+  remoteGetCommitFiles,
+  remoteGetFileDiff,
+  remoteGetGitBranches,
+  remoteGetGitLog,
+  remoteGetGitStatus,
+  remoteGetStagedDiff,
+  remotePullChanges,
+  remotePushChanges,
+  remoteStageAll,
+  remoteStageFiles,
+  remoteUnstageAll,
+  remoteUnstageFiles,
+} from "../../ssh/remoteGit";
 
 const GIT_COMMIT_MSG_CHUNK_CHANNEL = "git:commit-msg:chunk";
+
+// `ssh://` workspace paths cannot be handled by the local Rust backend;
+// they are dispatched to the SSH-backed implementation instead, which
+// runs git on the remote host.
+const isSshPath = (path: string): boolean => path.startsWith("ssh://");
 
 export const registerGitHandlers = (native: NativeBridge): void => {
   // ===== Git file watcher handlers =====
@@ -10,6 +35,11 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       throw new Error("Repository path is required");
     }
     const trimmed = repoPath.trim();
+    if (isSshPath(trimmed)) {
+      // Remote repos have no local file watcher; the renderer polls
+      // `git:status` instead (see useGitStatus).
+      return;
+    }
     native.startGitWatch(trimmed, (changedRepoPath: string) => {
       if (!event.sender.isDestroyed()) {
         event.sender.send("git:status-changed", changedRepoPath);
@@ -21,7 +51,11 @@ export const registerGitHandlers = (native: NativeBridge): void => {
     if (typeof repoPath !== "string" || !repoPath.trim()) {
       throw new Error("Repository path is required");
     }
-    native.stopGitWatch(repoPath.trim());
+    const trimmed = repoPath.trim();
+    if (isSshPath(trimmed)) {
+      return;
+    }
+    native.stopGitWatch(trimmed);
   });
 
   // ===== Git handlers =====
@@ -29,14 +63,20 @@ export const registerGitHandlers = (native: NativeBridge): void => {
     if (typeof repoPath !== "string" || !repoPath.trim()) {
       throw new Error("Repository path is required");
     }
-    return native.getGitStatus(repoPath.trim());
+    const trimmed = repoPath.trim();
+    return isSshPath(trimmed)
+      ? remoteGetGitStatus(trimmed)
+      : native.getGitStatus(trimmed);
   });
 
   ipcMain.handle("git:branches", async (_event, repoPath: unknown) => {
     if (typeof repoPath !== "string" || !repoPath.trim()) {
       throw new Error("Repository path is required");
     }
-    return native.getGitBranches(repoPath.trim());
+    const trimmed = repoPath.trim();
+    return isSshPath(trimmed)
+      ? remoteGetGitBranches(trimmed)
+      : native.getGitBranches(trimmed);
   });
 
   ipcMain.handle(
@@ -48,7 +88,10 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       const paths = Array.isArray(filePaths)
         ? filePaths.filter((f): f is string => typeof f === "string")
         : [];
-      return native.gitStageFiles(repoPath.trim(), paths);
+      const trimmed = repoPath.trim();
+      return isSshPath(trimmed)
+        ? remoteStageFiles(trimmed, paths)
+        : native.gitStageFiles(trimmed, paths);
     }
   );
 
@@ -61,7 +104,10 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       const paths = Array.isArray(filePaths)
         ? filePaths.filter((f): f is string => typeof f === "string")
         : [];
-      return native.gitUnstageFiles(repoPath.trim(), paths);
+      const trimmed = repoPath.trim();
+      return isSshPath(trimmed)
+        ? remoteUnstageFiles(trimmed, paths)
+        : native.gitUnstageFiles(trimmed, paths);
     }
   );
 
@@ -69,14 +115,20 @@ export const registerGitHandlers = (native: NativeBridge): void => {
     if (typeof repoPath !== "string" || !repoPath.trim()) {
       throw new Error("Repository path is required");
     }
-    return native.gitStageAll(repoPath.trim());
+    const trimmed = repoPath.trim();
+    return isSshPath(trimmed)
+      ? remoteStageAll(trimmed)
+      : native.gitStageAll(trimmed);
   });
 
   ipcMain.handle("git:unstage-all", async (_event, repoPath: unknown) => {
     if (typeof repoPath !== "string" || !repoPath.trim()) {
       throw new Error("Repository path is required");
     }
-    return native.gitUnstageAll(repoPath.trim());
+    const trimmed = repoPath.trim();
+    return isSshPath(trimmed)
+      ? remoteUnstageAll(trimmed)
+      : native.gitUnstageAll(trimmed);
   });
 
   ipcMain.handle(
@@ -88,7 +140,10 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       if (typeof message !== "string" || !message.trim()) {
         throw new Error("Commit message is required");
       }
-      return native.gitCommit(repoPath.trim(), message);
+      const trimmed = repoPath.trim();
+      return isSshPath(trimmed)
+        ? remoteCommitChanges(trimmed, message)
+        : native.gitCommit(trimmed, message);
     }
   );
 
@@ -96,21 +151,30 @@ export const registerGitHandlers = (native: NativeBridge): void => {
     if (typeof repoPath !== "string" || !repoPath.trim()) {
       throw new Error("Repository path is required");
     }
-    return native.gitPush(repoPath.trim());
+    const trimmed = repoPath.trim();
+    return isSshPath(trimmed)
+      ? remotePushChanges(trimmed)
+      : native.gitPush(trimmed);
   });
 
   ipcMain.handle("git:pull", async (_event, repoPath: unknown) => {
     if (typeof repoPath !== "string" || !repoPath.trim()) {
       throw new Error("Repository path is required");
     }
-    return native.gitPull(repoPath.trim());
+    const trimmed = repoPath.trim();
+    return isSshPath(trimmed)
+      ? remotePullChanges(trimmed)
+      : native.gitPull(trimmed);
   });
 
   ipcMain.handle("git:fetch", async (_event, repoPath: unknown) => {
     if (typeof repoPath !== "string" || !repoPath.trim()) {
       throw new Error("Repository path is required");
     }
-    return native.gitFetch(repoPath.trim());
+    const trimmed = repoPath.trim();
+    return isSshPath(trimmed)
+      ? remoteFetchRemote(trimmed)
+      : native.gitFetch(trimmed);
   });
 
   ipcMain.handle(
@@ -122,7 +186,10 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       if (typeof branchName !== "string" || !branchName.trim()) {
         throw new Error("Branch name is required");
       }
-      return native.gitCheckout(repoPath.trim(), branchName.trim());
+      const trimmed = repoPath.trim();
+      return isSshPath(trimmed)
+        ? remoteCheckoutBranch(trimmed, branchName.trim())
+        : native.gitCheckout(trimmed, branchName.trim());
     }
   );
 
@@ -135,7 +202,10 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       if (typeof branchName !== "string" || !branchName.trim()) {
         throw new Error("Branch name is required");
       }
-      return native.gitCreateBranch(repoPath.trim(), branchName.trim());
+      const trimmed = repoPath.trim();
+      return isSshPath(trimmed)
+        ? remoteCreateBranch(trimmed, branchName.trim())
+        : native.gitCreateBranch(trimmed, branchName.trim());
     }
   );
 
@@ -148,11 +218,10 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       if (typeof filePath !== "string" || !filePath.trim()) {
         throw new Error("File path is required");
       }
-      return native.gitFileDiff(
-        repoPath.trim(),
-        filePath.trim(),
-        staged === true
-      );
+      const trimmed = repoPath.trim();
+      return isSshPath(trimmed)
+        ? remoteGetFileDiff(trimmed, filePath.trim(), staged === true)
+        : native.gitFileDiff(trimmed, filePath.trim(), staged === true);
     }
   );
 
@@ -165,7 +234,10 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       const paths = Array.isArray(filePaths)
         ? filePaths.filter((f): f is string => typeof f === "string")
         : [];
-      return native.gitDiscardChanges(repoPath.trim(), paths);
+      const trimmed = repoPath.trim();
+      return isSshPath(trimmed)
+        ? remoteDiscardChanges(trimmed, paths)
+        : native.gitDiscardChanges(trimmed, paths);
     }
   );
 
@@ -178,7 +250,10 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       const skipCount =
         typeof skip === "number" && skip > 0 ? Math.floor(skip) : 0;
       const maxCount = typeof limit === "number" && limit > 0 ? limit : 50;
-      return native.getGitLog(repoPath.trim(), skipCount, maxCount);
+      const trimmed = repoPath.trim();
+      return isSshPath(trimmed)
+        ? remoteGetGitLog(trimmed, skipCount, maxCount)
+        : native.getGitLog(trimmed, skipCount, maxCount);
     }
   );
 
@@ -191,9 +266,23 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       if (typeof hash !== "string" || !hash.trim()) {
         throw new Error("Commit hash is required");
       }
-      return native.getGitCommitFiles(repoPath.trim(), hash.trim());
+      const trimmed = repoPath.trim();
+      return isSshPath(trimmed)
+        ? remoteGetCommitFiles(trimmed, hash.trim())
+        : native.getGitCommitFiles(trimmed, hash.trim());
     }
   );
+  // ===== Git repo discovery =====
+  ipcMain.handle("git:discover-repos", async (_event, rootPath: unknown) => {
+    if (typeof rootPath !== "string" || !rootPath.trim()) {
+      throw new Error("Root path is required");
+    }
+    const trimmed = rootPath.trim();
+    return isSshPath(trimmed)
+      ? remoteDiscoverGitRepos(trimmed)
+      : native.discoverGitRepos(trimmed);
+  });
+
   // ===== AI commit message generation =====
   ipcMain.handle(
     "git:generate-commit-message",
@@ -206,17 +295,31 @@ export const registerGitHandlers = (native: NativeBridge): void => {
       }
 
       const normalizedStreamId = streamId.trim();
+      const trimmed = repoPath.trim();
+
+      const onChunk = (chunk: ResponsesApiStreamChunk): void => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send(GIT_COMMIT_MSG_CHUNK_CHANNEL, {
+            streamId: normalizedStreamId,
+            chunk,
+          });
+        }
+      };
+
+      if (isSshPath(trimmed)) {
+        // The diff must be produced on the remote host; the AI generation
+        // itself still runs through the Rust backend.
+        const stagedDiff = await remoteGetStagedDiff(trimmed);
+        return await native.generateCommitMessageFromDiff(
+          stagedDiff,
+          onChunk,
+          normalizedStreamId
+        );
+      }
 
       return await native.generateCommitMessage(
-        repoPath.trim(),
-        (chunk: ResponsesApiStreamChunk) => {
-          if (!event.sender.isDestroyed()) {
-            event.sender.send(GIT_COMMIT_MSG_CHUNK_CHANNEL, {
-              streamId: normalizedStreamId,
-              chunk,
-            });
-          }
-        },
+        trimmed,
+        onChunk,
         normalizedStreamId
       );
     }

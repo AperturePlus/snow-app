@@ -333,6 +333,179 @@ pub fn search_vectors(
     Ok(results)
 }
 
+/// A per-file summary row for the codebase index table view.
+#[derive(Debug, Clone, Default)]
+pub struct IndexedFileRecord {
+    pub relative_path: String,
+    pub file_path: String,
+    pub chunk_count: i64,
+    pub start_line: i64,
+    pub end_line: i64,
+    pub size_bytes: i64,
+    pub updated_at: String,
+}
+
+/// A file with its aggregated (mean) embedding vector, used by the 3D
+/// similarity sphere view.
+#[derive(Debug, Clone, Default)]
+pub struct FileEmbeddingRecord {
+    pub relative_path: String,
+    pub chunk_count: i64,
+    pub start_line: i64,
+    pub end_line: i64,
+    pub size_bytes: i64,
+    pub embedding: Vec<f64>,
+}
+
+/// Compute the mean embedding for up to `limit` files (sorted by relative
+/// path). Used by the 3D similarity visualization to place files in space
+/// according to their real semantic distance.
+///
+/// Returns an empty Vec if the vector table doesn't exist yet.
+pub fn get_file_embeddings(
+    database_path: &Path,
+    project_id: &str,
+    limit: i64,
+) -> Result<Vec<FileEmbeddingRecord>> {
+    let table_name = vector_table_name(project_id);
+    let limit = limit.clamp(1, 2000);
+
+    let records = database::open_connection(database_path)
+        .and_then(|connection| {
+            let mut statement = connection.prepare(&format!(
+                "SELECT relative_path, file_path, chunk_index, start_line, end_line,
+                        LENGTH(content), embedding_json
+                 FROM {table_name}
+                 WHERE file_path IN (
+                   SELECT file_path FROM {table_name}
+                   GROUP BY file_path
+                   ORDER BY relative_path ASC
+                   LIMIT ?1
+                 )
+                 ORDER BY file_path ASC, chunk_index ASC"
+            ))?;
+            let rows = statement.query_map(params![limit], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i32>(2)?,
+                    row.get::<_, i32>(3)?,
+                    row.get::<_, i32>(4)?,
+                    row.get::<_, i64>(5)?,
+                    row.get::<_, String>(6)?,
+                ))
+            })?;
+
+            // Aggregate chunks per file, accumulating the mean embedding.
+            let mut by_file: std::collections::HashMap<
+                String,
+                (FileEmbeddingRecord, usize),
+            > = std::collections::HashMap::new();
+
+            for row in rows {
+                let (relative_path, file_path, _chunk_index, start_line, end_line, content_len, embedding_json) = row?;
+                let embedding: Vec<f64> = match serde_json::from_str(&embedding_json) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                let entry = by_file.entry(file_path.clone()).or_insert_with(|| {
+                    (
+                        FileEmbeddingRecord {
+                            relative_path: relative_path.clone(),
+                            chunk_count: 0,
+                            start_line: i64::MAX,
+                            end_line: 0,
+                            size_bytes: 0,
+                            embedding: vec![0.0; embedding.len()],
+                        },
+                        0,
+                    )
+                });
+                entry.0.chunk_count += 1;
+                entry.0.start_line = entry.0.start_line.min(start_line as i64);
+                entry.0.end_line = entry.0.end_line.max(end_line as i64);
+                entry.0.size_bytes += content_len;
+                for (acc, value) in entry.0.embedding.iter_mut().zip(embedding.iter()) {
+                    *acc += value;
+                }
+            }
+
+            let mut result: Vec<FileEmbeddingRecord> = by_file
+                .into_values()
+                .map(|(mut record, _)| {
+                    if record.chunk_count > 0 {
+                        for value in record.embedding.iter_mut() {
+                            *value /= record.chunk_count as f64;
+                        }
+                    }
+                    record
+                })
+                .collect();
+            result.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+            Ok(result)
+        })
+        .unwrap_or_default();
+
+    Ok(records)
+}
+
+/// List indexed files for a project, aggregated per file, sorted by relative
+/// path, with simple pagination (1-based `page`, clamped `page_size`).
+///
+/// Returns `(records, total_file_count)`. Returns empty values if the vector
+/// table doesn't exist yet.
+pub fn list_indexed_files(
+    database_path: &Path,
+    project_id: &str,
+    page: i64,
+    page_size: i64,
+) -> Result<(Vec<IndexedFileRecord>, i64)> {
+    let table_name = vector_table_name(project_id);
+    let page_size = page_size.clamp(1, 100);
+    let offset = (page.max(1) - 1) * page_size;
+
+    let (records, total) = database::open_connection(database_path)
+        .and_then(|connection| {
+            let total: i64 = connection.query_row(
+                &format!("SELECT COUNT(DISTINCT file_path) FROM {table_name}"),
+                [],
+                |row| row.get(0),
+            )?;
+
+            let mut statement = connection.prepare(&format!(
+                "SELECT relative_path, file_path,
+                        COUNT(*) AS chunk_count,
+                        MIN(start_line) AS start_line,
+                        MAX(end_line) AS end_line,
+                        SUM(LENGTH(content)) AS size_bytes,
+                        MAX(created_at) AS updated_at
+                 FROM {table_name}
+                 GROUP BY file_path
+                 ORDER BY relative_path ASC
+                 LIMIT ?1 OFFSET ?2"
+            ))?;
+            let rows = statement.query_map(params![page_size, offset], |row| {
+                Ok(IndexedFileRecord {
+                    relative_path: row.get(0)?,
+                    file_path: row.get(1)?,
+                    chunk_count: row.get(2)?,
+                    start_line: row.get(3)?,
+                    end_line: row.get(4)?,
+                    size_bytes: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            })?;
+            let mut collected = Vec::new();
+            for row in rows {
+                collected.push(row?);
+            }
+            Ok((collected, total))
+        })
+        .unwrap_or_default();
+
+    Ok((records, total))
+}
+
 fn vector_norm(v: &[f64]) -> f64 {
     v.iter().map(|x| x * x).sum::<f64>().sqrt()
 }

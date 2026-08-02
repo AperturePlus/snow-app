@@ -61,8 +61,13 @@ export type GitLogEntry = {
   refs: string;
   parents: string[];
 };
-
 export type GitCommitFile = {
   path: string;
   status: string;
+};
+
+export type GitRepoInfo = {
+  path: string;
+  name: string;
+  currentBranch: string;
 };

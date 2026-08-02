@@ -10,6 +10,7 @@ import {
   type RefObject,
 } from "react";
 import type {
+  FileSearchAgentProgress,
   FileSearchResult,
   WorkspaceDirectoryRecord,
 } from "../../../../preload";
@@ -32,6 +33,9 @@ export type FileMentionPopupProps = {
 };
 
 const isSshPath = (path: string): boolean => path.startsWith("ssh://");
+
+/** 与 Rust 端 file_search_agent 的 MAX_AGENT_ROUNDS 保持一致。 */
+const MAX_AGENT_ROUNDS = 10;
 
 const getRelativePath = (path: string, rootPath: string): string => {
   const normalizedRoot = rootPath.replace(/\/+$/, "");
@@ -102,6 +106,11 @@ export const FileMentionPopup = forwardRef<
   const [isLoadingInitial, setIsLoadingInitial] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [checkedPaths, setCheckedPaths] = useState<Set<string>>(new Set());
+  // 自然语言搜索的 agent 执行过程（每次工具调用一条）。
+  const [agentProgress, setAgentProgress] = useState<FileSearchAgentProgress[]>(
+    []
+  );
+  const [agentError, setAgentError] = useState(false);
 
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchSeqRef = useRef(0);
@@ -207,9 +216,80 @@ export const FileMentionPopup = forwardRef<
     }
 
     const trimmed = query.trim();
+    // `@?自然语言搜索词`：问号前缀表示自然语言搜索模式，交由 AI agent 查找。
+    const isNaturalLanguage = trimmed.startsWith("?");
 
     if (searchTimerRef.current) {
       clearTimeout(searchTimerRef.current);
+    }
+
+    if (isNaturalLanguage) {
+      // 取消进行中的根目录预加载，避免预加载结果覆盖 AI 搜索结果。
+      ++loadSeqRef.current;
+      setIsLoadingInitial(false);
+      const nlQuery = trimmed.slice(1).trim();
+
+      if (!activeDirectory || isSshPath(activeDirectory.path) || !nlQuery) {
+        ++searchSeqRef.current;
+        setIsSearching(false);
+        setEntries([]);
+        setSelectedIndex(0);
+        setAgentProgress([]);
+        setAgentError(false);
+        lastQueryRef.current = trimmed;
+        return;
+      }
+
+      if (trimmed === lastQueryRef.current) {
+        return;
+      }
+      lastQueryRef.current = trimmed;
+
+      setIsSearching(true);
+      setAgentProgress([]);
+      setAgentError(false);
+      const seq = ++searchSeqRef.current;
+
+      // AI 搜索耗时较长，防抖时间放宽。
+      searchTimerRef.current = setTimeout(async () => {
+        if (seq !== searchSeqRef.current) {
+          return;
+        }
+
+        try {
+          const results = await window.snow.searchFilesByAgent(
+            nlQuery,
+            activeDirectory.path,
+            (chunk) => {
+              if (seq !== searchSeqRef.current) {
+                return;
+              }
+              // 只保留最近若干条，避免进度区溢出。
+              setAgentProgress((prev) => [...prev.slice(-7), chunk]);
+            }
+          );
+
+          if (seq !== searchSeqRef.current) {
+            return;
+          }
+
+          setEntries(results);
+          setIsSearching(false);
+          setSelectedIndex(0);
+        } catch {
+          if (seq === searchSeqRef.current) {
+            setEntries([]);
+            setIsSearching(false);
+            setAgentError(true);
+          }
+        }
+      }, 400);
+
+      return () => {
+        if (searchTimerRef.current) {
+          clearTimeout(searchTimerRef.current);
+        }
+      };
     }
 
     if (!trimmed || !activeDirectory) {
@@ -413,15 +493,40 @@ export const FileMentionPopup = forwardRef<
     [onDragStart]
   );
 
+  const isNaturalLanguage = query.trim().startsWith("?");
+  const naturalLanguageQuery = isNaturalLanguage
+    ? query.trim().slice(1).trim()
+    : "";
+
   const emptyText = useMemo(() => {
     if (isSearching) {
-      return t("fileMention.searching");
+      return isNaturalLanguage
+        ? t("fileMention.aiSearching")
+        : t("fileMention.searching");
     }
-    if (query && entries.length === 0) {
-      return t("fileMention.noResults");
+    if (entries.length === 0) {
+      if (isNaturalLanguage && agentError) {
+        return t("fileMention.aiError");
+      }
+      if (!query || (isNaturalLanguage && !naturalLanguageQuery)) {
+        return isNaturalLanguage
+          ? t("fileMention.aiHint")
+          : t("fileMention.typeToSearch");
+      }
+      return isNaturalLanguage
+        ? t("fileMention.aiNoResults")
+        : t("fileMention.noResults");
     }
     return t("fileMention.typeToSearch");
-  }, [isSearching, query, entries.length, t]);
+  }, [
+    isSearching,
+    entries.length,
+    query,
+    isNaturalLanguage,
+    naturalLanguageQuery,
+    agentError,
+    t,
+  ]);
 
   if (!visible) {
     return null;
@@ -444,10 +549,39 @@ export const FileMentionPopup = forwardRef<
             </div>
           </div>
         ) : isSearching && entries.length === 0 ? (
-          <div className="file-mention-empty">
-            <Loader2 className="spin" size={14} />
-            <span>{emptyText}</span>
-          </div>
+          isNaturalLanguage ? (
+            <div className="file-mention-agent">
+              <div className="file-mention-agent-header">
+                <Loader2 className="spin" size={12} />
+                <span>{t("fileMention.aiSearching")}</span>
+              </div>
+              {agentProgress.length > 0 && (
+                <div className="file-mention-agent-steps">
+                  {agentProgress.map((step, index) => (
+                    <div className="agent-step" key={index}>
+                      <span className="agent-step-round">
+                        {step.round}/{MAX_AGENT_ROUNDS}
+                      </span>
+                      <span className="agent-step-tool">
+                        {step.tool.replace("grep-search", "grep").replace(
+                          "filesystem-read",
+                          "read"
+                        )}
+                      </span>
+                      <span className="agent-step-detail">
+                        {step.resultPreview}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="file-mention-empty">
+              <Loader2 className="spin" size={14} />
+              <span>{emptyText}</span>
+            </div>
+          )
         ) : entries.length === 0 ? (
           <div className="file-mention-empty">
             <span>{emptyText}</span>

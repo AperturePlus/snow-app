@@ -45,6 +45,24 @@ export const useChatConversation = (
     },
     []
   );
+  // File-change stats collected at tool-execution time, keyed by
+  // conversationId. Sub-agent changes are stored under the sub-agent's own
+  // conversationId; the parent merges them via childSubAgentIds for display.
+  const [fileChangeStats, setFileChangeStats] = useState<
+    ConversationContextValue["fileChangeStats"]
+  >({});
+  const recordFileChange = useCallback(
+    (
+      conversationId: string,
+      record: ConversationContextValue["fileChangeStats"][string][number]
+    ) => {
+      setFileChangeStats((prev) => ({
+        ...prev,
+        [conversationId]: [...(prev[conversationId] ?? []), record],
+      }));
+    },
+    []
+  );
   const [streamingConversationIds, setStreamingConversationIds] = useState<
     Set<string>
   >(new Set());
@@ -61,6 +79,9 @@ export const useChatConversation = (
   const [isUpdatingYoloMode, setIsUpdatingYoloMode] = useState(false);
   const [planMode, setPlanModeState] = useState(false);
   const [isUpdatingPlanMode, setIsUpdatingPlanMode] = useState(false);
+  const [goalMode, setGoalModeState] = useState(false);
+  const [isUpdatingGoalMode, setIsUpdatingGoalMode] = useState(false);
+  const [goalModeTokenBudget, setGoalModeTokenBudgetState] = useState(2000000);
   const [pendingToolAuthorizations, setPendingToolAuthorizations] = useState<
     ConversationContextValue["pendingToolAuthorizations"]
   >([]);
@@ -80,6 +101,7 @@ export const useChatConversation = (
   >(new Map());
   const activeConversationIdRef = useRef<string | undefined>(undefined);
   const selectionRequestIdRef = useRef(0);
+  const historyLoadPromisesRef = useRef(new Map<string, Promise<void>>());
   const loadingOlderConversationIdsRef = useRef(new Set<string>());
   const sessionsRef = useRef<
     ConversationContextValue["sessionsRef"]["current"]
@@ -103,6 +125,7 @@ export const useChatConversation = (
   >(async () => null);
   const yoloModeRef = useRef(yoloMode);
   const planModeRef = useRef(planMode);
+  const goalModeRef = useRef(goalMode);
   const alwaysApprovedToolsRef = useRef(new Set<string>());
   const pendingToolAuthorizationRef = useRef(
     new Map<
@@ -150,6 +173,7 @@ export const useChatConversation = (
   );
   yoloModeRef.current = yoloMode;
   planModeRef.current = planMode;
+  goalModeRef.current = goalMode;
 
   // --- Pause controller ---
   // Per-session pause flags. When paused, the agent loop awaits the
@@ -191,6 +215,8 @@ export const useChatConversation = (
     conversationVersion,
     upsertedConversation,
     subAgentSessionEvents,
+    fileChangeStats,
+    recordFileChange,
     streamingConversationIds,
     completedConversationIds,
     isLoadingInitialHistory,
@@ -201,6 +227,9 @@ export const useChatConversation = (
     isUpdatingYoloMode,
     planMode,
     isUpdatingPlanMode,
+    goalMode,
+    isUpdatingGoalMode,
+    goalModeTokenBudget,
     pendingToolAuthorizations,
     activePendingMessages,
     compactionPreview,
@@ -211,6 +240,7 @@ export const useChatConversation = (
     sessionsRefData,
     activeConversationIdRef,
     selectionRequestIdRef,
+    historyLoadPromisesRef,
     loadingOlderConversationIdsRef,
     sessionsRef,
     newChatRequestedRef,
@@ -219,6 +249,7 @@ export const useChatConversation = (
     performCompactionRef,
     yoloModeRef,
     planModeRef,
+    goalModeRef,
     alwaysApprovedToolsRef,
     pendingToolAuthorizationRef,
     pendingUserQuestionRef,
@@ -242,6 +273,9 @@ export const useChatConversation = (
     setIsUpdatingYoloMode,
     setPlanModeState,
     setIsUpdatingPlanMode,
+    setGoalModeState,
+    setIsUpdatingGoalMode,
+    setGoalModeTokenBudgetState,
     setPendingToolAuthorizations,
     setActivePendingMessages,
     setCompactionPreview,
@@ -329,11 +363,13 @@ export const useChatConversation = (
   const rejectToolAuthorization = useCallback(
     (
       toolCall: ConversationContextValue["pendingToolAuthorizations"][number],
-      reason: string
+      reason: string,
+      userProvidedReason?: boolean
     ) =>
       toolAuthApi.settleToolAuthorization(toolCall, {
         status: "rejected",
         reason: reason.trim() || "User declined tool execution",
+        ...(userProvidedReason ? { userProvidedReason: true } : {}),
       }),
     [toolAuthApi]
   );
@@ -381,6 +417,8 @@ export const useChatConversation = (
     conversationVersion,
     upsertedConversation,
     subAgentSessionEvents,
+    fileChangeStats,
+    recordFileChange,
     sessions,
     activeConversationId,
     conversationDirectoryId: activeSession?.directoryId,
@@ -401,6 +439,7 @@ export const useChatConversation = (
     handleSendMessage: agentLoopApi.handleSendMessage,
     pendingMessages: activePendingMessages,
     withdrawPendingMessage: conversationManagementApi.withdrawPendingMessage,
+    sendPendingMessageNow: conversationManagementApi.sendPendingMessageNow,
     compactConversation: compactionApi.compactConversation,
     compactionPreview,
     compactionError,
@@ -441,6 +480,13 @@ export const useChatConversation = (
     isUpdatingPlanMode,
     setPlanMode: toolAuthApi.setPlanMode,
     refreshPlanMode: toolAuthApi.refreshPlanMode,
+    goalMode,
+    isUpdatingGoalMode,
+    setGoalMode: toolAuthApi.setGoalMode,
+    refreshGoalMode: toolAuthApi.refreshGoalMode,
+    goalModeTokenBudget,
+    setGoalModeTokenBudget: toolAuthApi.setGoalModeTokenBudget,
+    refreshGoalModeTokenBudget: toolAuthApi.refreshGoalModeTokenBudget,
     pendingToolAuthorizations,
     approveToolAuthorization,
     approveToolAuthorizationAlways: toolAuthApi.approveToolAuthorizationAlways,

@@ -8,4 +8,5 @@ export type {
   GitPushPullResult,
   GitCheckoutResult,
   GitLogEntry,
+  GitRepoInfo,
 } from "../../../../preload";

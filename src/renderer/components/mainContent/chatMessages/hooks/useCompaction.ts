@@ -6,6 +6,7 @@ import type {
 import {
   createMessageId,
   deleteCheckpoints,
+  directoryIdToPath,
   formatMessageTime,
 } from "../utils/conversationHelpers";
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
@@ -48,9 +49,13 @@ export const useCompaction = (ctx: ConversationContextValue) => {
       // handoff was generated. Skip checkpoint creation for SSH directories
       // where local snapshots are not available.
       let checkpointId: string | undefined;
-      if (ctx.directoryPath && !ctx.directoryPath.startsWith("ssh://")) {
+      // checkpoint 绑定会话自己的目录,与工具执行的 cwd 保持一致。
+      const sessionDirPath =
+        directoryIdToPath(sessionRef?.directoryId ?? ctx.directoryId) ??
+        ctx.directoryPath;
+      if (sessionDirPath && !sessionDirPath.startsWith("ssh://")) {
         try {
-          checkpointId = await window.snow.createCheckpoint(ctx.directoryPath);
+          checkpointId = await window.snow.createCheckpoint(sessionDirPath);
           if (sessionRef) {
             sessionRef.checkpointIds = [
               ...sessionRef.checkpointIds,
@@ -71,6 +76,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
         directoryId: sessionRef?.directoryId ?? ctx.directoryId,
         contextCompaction: true,
         checkpointId,
+        goalMode: ctx.goalModeRef.current,
         // For sub-agent conversations, carry the configured profile so Rust
         // resolves the same API config the sub-agent uses for the handoff.
         subAgentConfigProfile,
@@ -84,7 +90,7 @@ export const useCompaction = (ctx: ConversationContextValue) => {
           const beforeCompressContext = JSON.stringify({
             conversationId,
             isAuto,
-            cwd: ctx.directoryPath ?? "",
+            cwd: directoryIdToPath(compressDirId) ?? ctx.directoryPath ?? "",
           });
           const compressHookResult = await runHook(
             "beforeCompress",

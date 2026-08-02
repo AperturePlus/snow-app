@@ -354,7 +354,13 @@ fn write_manifest(checkpoint_id: &str, manifest: &CheckpointManifest) -> Result<
 
 fn run_git(work_dir: &Path, args: &[&str]) -> Result<Output> {
     let mut command = Command::new("git");
-    command.args(args).current_dir(work_dir);
+    // `safe.directory=*` bypasses Git's dubious-ownership check
+    // (CVE-2022-24765), so git works inside WSL (`\\wsl$\...`) and other
+    // UNC/network paths where the repo is owned by a different user.
+    command
+        .args(["-c", "core.quotepath=false", "-c", "safe.directory=*"])
+        .args(args)
+        .current_dir(work_dir);
 
     #[cfg(target_os = "windows")]
     {
@@ -613,6 +619,22 @@ fn validate_manifest_work_dir(manifest: &CheckpointManifest, work_dir: &str) -> 
     Ok(requested)
 }
 
+/// 捕获阶段的目录校验(工具执行前/后):checkpoint 属于其他目录时返回
+/// None,调用方跳过该 checkpoint 并继续,绝不因目录不匹配拦截工具执行。
+/// 回滚阶段仍由 validate_manifest_work_dir 严格校验。
+fn validate_capture_work_dir(
+    manifest: &CheckpointManifest,
+    work_dir: &str,
+) -> Option<PathBuf> {
+    match validate_manifest_work_dir(manifest, work_dir) {
+        Ok(root) => Some(root),
+        Err(error) => {
+            eprintln!("[checkpoint] {error}; skipping checkpoint capture");
+            None
+        }
+    }
+}
+
 /// Create an incremental checkpoint without copying the working directory.
 /// File content is captured lazily, immediately before a tool first changes it.
 pub fn create_checkpoint(work_dir: String) -> Result<String> {
@@ -656,7 +678,9 @@ pub fn record_checkpoint_file(
 
     for checkpoint_id in checkpoint_ids {
         let mut manifest = read_manifest(&checkpoint_id)?;
-        validate_manifest_work_dir(&manifest, &work_dir)?;
+        let Some(_root) = validate_capture_work_dir(&manifest, &work_dir) else {
+            continue;
+        };
         if manifest.entries.iter().any(|entry| entry.path == path) {
             continue;
         }
@@ -690,7 +714,9 @@ pub fn record_checkpoint_file_after(
 
     for checkpoint_id in checkpoint_ids {
         let mut manifest = read_manifest(&checkpoint_id)?;
-        validate_manifest_work_dir(&manifest, &work_dir)?;
+        let Some(_root) = validate_capture_work_dir(&manifest, &work_dir) else {
+            continue;
+        };
         if update_expected_state(&mut manifest, &absolute, &path)? {
             write_manifest(&checkpoint_id, &manifest)?;
         }
@@ -746,8 +772,16 @@ pub fn capture_checkpoint_worktree_before(
 
     for checkpoint_id in &checkpoint_ids {
         let manifest = read_manifest(checkpoint_id)?;
-        validate_manifest_work_dir(&manifest, &work_dir)?;
+        let Some(_root) = validate_capture_work_dir(&manifest, &work_dir) else {
+            continue;
+        };
         before_paths.insert(checkpoint_id.clone(), all_paths.clone());
+    }
+
+    // 所有 checkpoint 都与当前目录不匹配:没有任何可捕获目标,
+    // 不做无意义的全目录快照。
+    if before_paths.is_empty() {
+        return Ok(None);
     }
 
     let mut before_states = HashMap::new();
@@ -777,7 +811,9 @@ pub fn record_checkpoint_worktree_after(capture: CheckpointWorktreeCapture) -> R
             continue;
         }
         let mut manifest = read_manifest(checkpoint_id)?;
-        let root = validate_manifest_work_dir(&manifest, &capture.work_dir)?;
+        let Some(root) = validate_capture_work_dir(&manifest, &capture.work_dir) else {
+            continue;
+        };
         let after_paths = collect_worktree_file_paths(&root)?;
         let mut candidates = capture
             .before_paths

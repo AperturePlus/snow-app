@@ -10,6 +10,8 @@ import {
 import {
   buildConversationMessages,
   deleteCheckpoints,
+  directoryIdToPath,
+  killRunningBashExecutions,
 } from "../utils/conversationHelpers";
 import {
   appendHookExecutionToMessage,
@@ -79,11 +81,19 @@ export const useConversationManagement = (
       // intent so the UI follows the active conversation normally.
       ctx.setNewChatRequested(false);
 
-      // Reset Plan Mode when switching to a different conversation.
-      if (ctx.planModeRef.current) {
-        ctx.planModeRef.current = false;
-        ctx.setPlanModeState(false);
-        void window.snow.setPlanMode(false);
+      // Restore Plan/Goal Mode from the target session's stored state.
+      const targetRef = ctx.sessionsRefData.current.get(trimmedId);
+      const targetPlanMode = targetRef?.planMode ?? false;
+      const targetGoalMode = targetRef?.goalMode ?? false;
+      if (ctx.planModeRef.current !== targetPlanMode) {
+        ctx.planModeRef.current = targetPlanMode;
+        ctx.setPlanModeState(targetPlanMode);
+        void window.snow.setPlanMode(targetPlanMode);
+      }
+      if (ctx.goalModeRef.current !== targetGoalMode) {
+        ctx.goalModeRef.current = targetGoalMode;
+        ctx.setGoalModeState(targetGoalMode);
+        void window.snow.setGoalMode(targetGoalMode);
       }
 
       if (hasLoadedCachedHistory) {
@@ -108,69 +118,100 @@ export const useConversationManagement = (
 
       const nextTitle = title?.trim() ?? "";
 
-      try {
-        const [page, conversationRecord] = await Promise.all([
-          window.snow.listChatMessagesPaginated(
-            trimmedId,
-            "",
-            CHAT_MESSAGE_PAGE_SIZE
-          ),
-          window.snow.getChatConversation(trimmedId),
-        ]);
+      // Load the initial history. Selections of the same conversation share
+      // a single in-flight load: switching away mid-load no longer discards
+      // the fetched page (it is still cached so a later switch back hits the
+      // cache instantly), and switching back while the load is still pending
+      // reuses the same request instead of issuing a duplicate full re-fetch.
+      let loadPromise = ctx.historyLoadPromisesRef.current.get(trimmedId);
+      if (!loadPromise) {
+        loadPromise = (async () => {
+          try {
+            const [page, conversationRecord] = await Promise.all([
+              window.snow.listChatMessagesPaginated(
+                trimmedId,
+                "",
+                CHAT_MESSAGE_PAGE_SIZE
+              ),
+              window.snow.getChatConversation(trimmedId),
+            ]);
 
-        if (selectionRequestId !== ctx.selectionRequestIdRef.current) {
-          return;
-        }
+            const checkpointIds = Array.from(
+              new Set(
+                page.items
+                  .filter((record) => record.role === "user" && record.checkpointId)
+                  .map((record) => record.checkpointId)
+              )
+            );
 
-        const checkpointIds = Array.from(
-          new Set(
-            page.items
-              .filter((record) => record.role === "user" && record.checkpointId)
-              .map((record) => record.checkpointId)
-          )
-        );
-
-        ctx.sessionsRefData.current.set(trimmedId, {
-          streamId: null,
-          streamPromise: null,
-          summaryPromise: null,
-          isSending: false,
-          isAbortRequested: false,
-          runId: 0,
-          directoryId: conversationDirId,
-          checkpointIds,
-          childSubAgentIds: new Set(),
+            // Cache the fetched page even when this request was superseded
+            // while in flight (the user switched to another conversation).
+            // Guard with the current session so a newer load's snapshot is
+            // never clobbered by an older one. Later selections of the same
+            // conversation then render instantly from the cache.
+            if (!ctx.sessionsRef.current[trimmedId]) {
+              ctx.sessionsRefData.current.set(trimmedId, {
+                streamId: null,
+                streamPromise: null,
+                summaryPromise: null,
+                isSending: false,
+                isAbortRequested: false,
+                runId: 0,
+                directoryId: conversationDirId,
+                checkpointIds,
+                childSubAgentIds: new Set(),
+                planMode: false,
+                goalMode: false,
+              });
+              ctx.setSessions((prev) => {
+                if (prev[trimmedId]) return prev;
+                return {
+                  ...prev,
+                  [trimmedId]: {
+                    messages: buildConversationMessages(page.items),
+                    messageRecords: page.items,
+                    summary: nextTitle,
+                    isStreaming: false,
+                    isAborting: false,
+                    isPaused: false,
+                    isLoadingOlderMessages: false,
+                    hasMoreMessages: page.hasMore,
+                    isInitialHistoryLoaded: true,
+                    tokenUsage: conversationTokenUsage ?? null,
+                    directoryId: conversationDirId,
+                    hasNewContent: false,
+                    forkedFromConversationId:
+                      conversationRecord?.forkedFromConversationId || undefined,
+                    forkMessageCount:
+                      conversationRecord?.forkMessageCount || undefined,
+                    streamTokenCount: 0,
+                    streamElapsedMs: 0,
+                    streamTtftMs: 0,
+                    streamStartedAt: 0,
+                  },
+                };
+              });
+            }
+          } catch {
+            // 加载历史消息失败时静默处理，不阻断交互
+          }
+        })();
+        ctx.historyLoadPromisesRef.current.set(trimmedId, loadPromise);
+        void loadPromise.finally(() => {
+          if (
+            ctx.historyLoadPromisesRef.current.get(trimmedId) === loadPromise
+          ) {
+            ctx.historyLoadPromisesRef.current.delete(trimmedId);
+          }
         });
-        ctx.setSessions((prev) => ({
-          ...prev,
-          [trimmedId]: {
-            messages: buildConversationMessages(page.items),
-            messageRecords: page.items,
-            summary: nextTitle,
-            isStreaming: false,
-            isAborting: false,
-            isPaused: false,
-            isLoadingOlderMessages: false,
-            hasMoreMessages: page.hasMore,
-            isInitialHistoryLoaded: true,
-            tokenUsage: conversationTokenUsage ?? null,
-            directoryId: conversationDirId,
-            hasNewContent: false,
-            forkedFromConversationId:
-              conversationRecord?.forkedFromConversationId || undefined,
-            forkMessageCount: conversationRecord?.forkMessageCount || undefined,
-            streamTokenCount: 0,
-            streamElapsedMs: 0,
-            streamTtftMs: 0,
-            streamStartedAt: 0,
-          },
-        }));
-      } catch {
-        // 加载历史消息失败时静默处理，不阻断交互
-      } finally {
-        if (selectionRequestId === ctx.selectionRequestIdRef.current) {
-          ctx.setIsLoadingInitialHistory(false);
-        }
+      }
+
+      await loadPromise;
+
+      // Only the latest selection owns the loading flag; superseded
+      // selections must not clear it while a newer one is still loading.
+      if (selectionRequestId === ctx.selectionRequestIdRef.current) {
+        ctx.setIsLoadingInitialHistory(false);
       }
 
       // Execute onSessionStart hooks (fire-and-forget) when the user opens
@@ -181,7 +222,8 @@ export const useConversationManagement = (
       ]?.messages.findLast((message) => message.role !== "tool")?.id;
       const onSessionStartContext = JSON.stringify({
         conversationId: trimmedId,
-        cwd: ctx.directoryPath ?? "",
+        cwd:
+          directoryIdToPath(conversationDirId) ?? ctx.directoryPath ?? "",
         directoryId: conversationDirId ?? "",
       });
       void runHook(
@@ -208,8 +250,11 @@ export const useConversationManagement = (
       ctx.setActiveId,
       ctx.updateSessionField,
       ctx.setNewChatRequested,
+      ctx.sessionsRefData,
       ctx.planModeRef,
       ctx.setPlanModeState,
+      ctx.goalModeRef,
+      ctx.setGoalModeState,
     ]
   );
 
@@ -316,6 +361,13 @@ export const useConversationManagement = (
       void window.snow.setPlanMode(false);
     }
 
+    // Reset Goal Mode so a new chat always starts with it disabled.
+    if (ctx.goalModeRef.current) {
+      ctx.goalModeRef.current = false;
+      ctx.setGoalModeState(false);
+      void window.snow.setGoalMode(false);
+    }
+
     // Clear stale pending session only if it is NOT actively streaming.
     // When the pending session is streaming, we keep it alive so the AI
     // loop continues in the background and eventually persists the
@@ -337,6 +389,8 @@ export const useConversationManagement = (
     ctx.setNewChatRequested,
     ctx.planModeRef,
     ctx.setPlanModeState,
+    ctx.goalModeRef,
+    ctx.setGoalModeState,
   ]);
 
   const handleAbort = useCallback((): void => {
@@ -390,6 +444,11 @@ export const useConversationManagement = (
         };
       })
     );
+    // Kill every in-flight bash subprocess of this session so the OS
+    // process does not keep running until its timeout.
+    killRunningBashExecutions(
+      ctx.sessionsRef.current?.[key]?.messages ?? []
+    );
     ctx.updateSessionField(key, "isStreaming", false);
     ctx.updateSessionField(key, "streamStartedAt", 0);
     ctx.updateSessionField(key, "isAborting", false);
@@ -420,6 +479,9 @@ export const useConversationManagement = (
       }
       subRef.isAbortRequested = true;
       subRef.isSending = false;
+      killRunningBashExecutions(
+        ctx.sessionsRef.current?.[subKey]?.messages ?? []
+      );
 
       ctx.updateSessionMessages(subKey, (currentMessages) =>
         currentMessages.map((message) => ({
@@ -471,6 +533,9 @@ export const useConversationManagement = (
 
       rejectAllToolAuthorizations();
       rejectPendingUserQuestions(conversationId);
+      killRunningBashExecutions(
+        ctx.sessionsRef.current?.[conversationId]?.messages ?? []
+      );
       if (ref?.streamId) {
         void window.snow.abortResponseStream(ref.streamId);
         ref.streamId = null;
@@ -499,6 +564,49 @@ export const useConversationManagement = (
       rejectPendingUserQuestions,
       ctx.updateSessionField,
     ]
+  );
+
+  /**
+   * Immediately send a pending message: abort the current in-flight session,
+   * remove the message from the pending queue, and dispatch it via
+   * handleSendMessage so a fresh agent loop starts right away.
+   *
+   * This is used when the user does not want to wait for the current AI
+   * response to finish — the ongoing stream is cancelled and the selected
+   * pending message is sent immediately.
+   */
+  const sendPendingMessageNow = useCallback(
+    (index: number): void => {
+      const sessionKey =
+        ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+      const queue = ctx.pendingQueueRef.current.get(sessionKey);
+      if (!queue || index < 0 || index >= queue.length) {
+        return;
+      }
+
+      // Abort the current streaming session so isSending flips to false
+      // and handleSendMessage will start a new agent loop instead of
+      // re-queuing the message.
+      handleAbort();
+
+      // Remove the target message (and its original send options) from
+      // the pending queue.
+      const [removed] = queue.splice(index, 1);
+      if (queue.length === 0) {
+        ctx.pendingQueueRef.current.delete(sessionKey);
+      }
+      ctx.setActivePendingMessages(queue.map((item) => item.text));
+
+      if (!removed) {
+        return;
+      }
+
+      // Dispatch the pending message as a fresh send. handleSendMessage
+      // will create a new agent loop because handleAbort already reset
+      // isSending on the session ref.
+      ctx.handleSendMessageRef.current(removed.text, removed.options ?? {});
+    },
+    [handleAbort, ctx]
   );
 
   const refreshConversations = useCallback((): void => {
@@ -543,6 +651,7 @@ export const useConversationManagement = (
 
   return {
     withdrawPendingMessage,
+    sendPendingMessageNow,
     handleSelectConversation,
     loadOlderMessages,
     handleNewChat,

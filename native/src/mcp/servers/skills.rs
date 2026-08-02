@@ -10,7 +10,7 @@ use super::super::tools::McpTool;
 
 const SERVER_ID: &str = "skills";
 const TOOL_NAME: &str = "skill-execute";
-const SKILL_FILE_NAME: &str = "SKILL.md";
+pub const SKILL_FILE_NAME: &str = "SKILL.md";
 
 #[derive(Clone)]
 struct Skill {
@@ -625,6 +625,15 @@ fn strip_nested_frontmatter(content: &str) -> &str {
     }
 }
 
+/// Parse a SKILL.md document and return `(name, description)` for install
+/// bookkeeping. Exposed as a public helper for the skills installer.
+pub fn parse_skill_metadata_for_install(file_content: &str) -> Option<(String, String)> {
+    match parse_skill_document(file_content) {
+        Ok((metadata, _)) => Some((metadata.name, metadata.description)),
+        Err(_) => None,
+    }
+}
+
 fn parse_skill_metadata(value: &serde_yaml::Value) -> SkillMetadata {
     let Some(mapping) = value.as_mapping() else {
         return SkillMetadata::default();
@@ -683,7 +692,7 @@ fn parse_allowed_tools(value: &serde_yaml::Value) -> Option<Vec<String>> {
     })
 }
 
-fn normalize_skill_id(skill_id: &str) -> String {
+pub fn normalize_skill_id(skill_id: &str) -> String {
     let mut normalized = skill_id.trim().replace('\\', "/");
     while let Some(stripped) = normalized.strip_prefix("./") {
         normalized = stripped.to_string();

@@ -18,6 +18,7 @@ export const ChatInput = ({
   onDraftRestored,
   pendingMessages = [],
   onWithdrawPendingMessage,
+  onSendPendingMessageNow,
   onCompactConversation,
   yoloMode = false,
   isUpdatingYoloMode = false,
@@ -27,6 +28,12 @@ export const ChatInput = ({
   isUpdatingPlanMode = false,
   onPlanModeChange,
   onRefreshPlanMode,
+  goalMode = false,
+  isUpdatingGoalMode = false,
+  onGoalModeChange,
+  onRefreshGoalMode,
+  goalModeTokenBudget = 2000000,
+  onGoalModeTokenBudgetChange,
   autoScrollEnabled = false,
   onAutoScrollChange,
   isCompacting = false,
@@ -52,6 +59,7 @@ export const ChatInput = ({
       tokenUsage={tokenUsage}
       pendingMessages={pendingMessages}
       onWithdrawPendingMessage={onWithdrawPendingMessage}
+      onSendPendingMessageNow={onSendPendingMessageNow}
       onCompactConversation={onCompactConversation}
       yoloMode={yoloMode}
       isUpdatingYoloMode={isUpdatingYoloMode}
@@ -61,6 +69,12 @@ export const ChatInput = ({
       isUpdatingPlanMode={isUpdatingPlanMode}
       onPlanModeChange={onPlanModeChange}
       onRefreshPlanMode={onRefreshPlanMode}
+      goalMode={goalMode}
+      isUpdatingGoalMode={isUpdatingGoalMode}
+      onGoalModeChange={onGoalModeChange}
+      onRefreshGoalMode={onRefreshGoalMode}
+      goalModeTokenBudget={goalModeTokenBudget}
+      onGoalModeTokenBudgetChange={onGoalModeTokenBudgetChange}
       autoScrollEnabled={autoScrollEnabled}
       onAutoScrollChange={onAutoScrollChange}
       isCompacting={isCompacting}

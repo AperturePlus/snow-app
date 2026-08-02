@@ -10,6 +10,61 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+use crate::exports::terminal::{detect_shell_family, load_terminal_shell_path_sync};
+
+/// Git 可执行文件缺失时给用户的明确提示，避免与误导性的
+/// "not a git repository" 混淆。
+const GIT_NOT_FOUND_MESSAGE: &str = "git executable not found in PATH — install Git for Windows, or configure a WSL shell in the terminal settings";
+
+/// 按 POSIX 单引号规则转义 shell 参数。WSL 模式下 git 命令通过
+/// `bash -lc` 执行，参数中的空格/引号/通配符必须正确转义。
+fn shell_quote(arg: &str) -> String {
+    format!("'{}'", arg.replace('\'', "'\\''"))
+}
+
+/// 将 `\\wsl$\<distro>\home\user\proj` 形式的 UNC 路径转换为 WSL 内的
+/// Linux 路径（`/home/user/proj`），供 `wsl.exe --cd` 使用。普通 Windows
+/// 路径（`C:\...`）原样返回 —— wsl.exe 会自动转换为 `/mnt/c/...`。
+fn wsl_cd_path(repo_path: &str) -> String {
+    if let Some(rest) = repo_path.strip_prefix(r"\\wsl$\") {
+        if let Some(slash) = rest.find('\\') {
+            let linux_part = &rest[slash + 1..];
+            return format!("/{}", linux_part.replace('\\', "/"));
+        }
+    }
+    repo_path.to_string()
+}
+
+/// 构造 git 命令执行器。
+///
+/// 当系统设置的终端 shell 为 WSL 时，通过 `wsl.exe --cd <dir> -e bash
+/// -lc "git ..."` 在 WSL 内执行 git（复用 bash.rs 的终端设置解析），
+/// 使未安装 Git for Windows 的机器也能使用 Git 面板；否则直接执行
+/// `git`。
+fn build_git_command(repo_path: &str, args: &[&str]) -> Command {
+    let shell_path = load_terminal_shell_path_sync().unwrap_or_default();
+    if detect_shell_family(&shell_path) == "wsl" {
+        // 所有参数统一 shell_quote：`safe.directory=*` 中的 `*` 若不
+        // 加引号会被 bash 通配符展开，导致 git 收到错误的配置值。
+        let git_cmd = ["git", "-c", "core.quotepath=false", "-c", "safe.directory=*"]
+            .iter()
+            .chain(args.iter())
+            .map(|a| shell_quote(a))
+            .collect::<Vec<String>>()
+            .join(" ");
+        let mut cmd = Command::new(&shell_path);
+        cmd.arg("--cd").arg(wsl_cd_path(repo_path));
+        cmd.args(["-e", "bash", "-lc", &git_cmd]);
+        cmd
+    } else {
+        let mut cmd = Command::new("git");
+        cmd.args(["-c", "core.quotepath=false", "-c", "safe.directory=*"])
+            .args(args)
+            .current_dir(repo_path);
+        cmd
+    }
+}
+
 // ===== NAPI Types =====
 
 #[napi(object)]
@@ -91,18 +146,34 @@ pub struct GitCommitFile {
     pub status: String,
 }
 
+#[napi(object)]
+pub struct GitRepoInfo {
+    pub path: String,
+    pub name: String,
+    pub current_branch: String,
+}
+
 // ===== Internal helpers =====
 
 fn run_git(repo_path: &str, args: &[&str]) -> Result<String> {
-    let mut cmd = Command::new("git");
-    cmd.args(args).current_dir(repo_path);
+    let mut cmd = build_git_command(repo_path, args);
+    // `safe.directory=*` bypasses Git's dubious-ownership check
+    // (CVE-2022-24765). Without it, Windows Git refuses to run inside
+    // WSL (`\\wsl$\...`) or other network/UNC paths because the repo files
+    // are owned by the Linux user, not the current Windows user.
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let output = cmd
-        .output()
-        .map_err(|e| Error::from_reason(format!("Failed to execute git: {e}")))?;
+    let output = cmd.output().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            // git (or the configured WSL shell) is not installed — surface
+            // a clear message instead of a generic spawn error.
+            Error::from_reason(GIT_NOT_FOUND_MESSAGE)
+        } else {
+            Error::from_reason(format!("Failed to execute git: {e}"))
+        }
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -124,15 +195,19 @@ fn run_git(repo_path: &str, args: &[&str]) -> Result<String> {
 /// which is the normal (expected) case for new/untracked files.
 /// Using `run_git` would treat that as an error and discard the stdout.
 fn run_git_raw(repo_path: &str, args: &[&str]) -> Result<String> {
-    let mut cmd = Command::new("git");
-    cmd.args(args).current_dir(repo_path);
+    let mut cmd = build_git_command(repo_path, args);
+    // Same `safe.directory=*` bypass as `run_git` — see its comment.
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let output = cmd
-        .output()
-        .map_err(|e| Error::from_reason(format!("Failed to execute git: {e}")))?;
+    let output = cmd.output().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            Error::from_reason(GIT_NOT_FOUND_MESSAGE)
+        } else {
+            Error::from_reason(format!("Failed to execute git: {e}"))
+        }
+    })?;
 
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
@@ -191,6 +266,12 @@ fn derive_display_status(index_status: &str, workdir_status: &str) -> String {
 // ===== Public API =====
 
 pub fn get_git_status(repo_path: &str) -> Result<GitStatusResult> {
+    // Gracefully handle non-repo paths: return is_repo=false instead of
+    // propagating git's "fatal: not a git repository" error to the UI.
+    // This covers both the case where .git doesn't exist and the edge case
+    // where .git exists but git itself rejects the path (e.g. corrupted
+    // .git, broken worktree pointer, or .git file pointing to a missing
+    // gitdir).
     if !is_git_repo(repo_path) {
         return Ok(GitStatusResult {
             is_repo: false,
@@ -205,7 +286,36 @@ pub fn get_git_status(repo_path: &str) -> Result<GitStatusResult> {
         });
     }
 
-    let status_out = run_git(repo_path, &["status", "--porcelain=v1", "-b", "--find-renames", "-uall"])?;
+    // If is_git_repo returned true but git still fails, distinguish two
+    // cases:
+    // - git reports "not a git repository" (corrupted repo, broken
+    //   worktree, .git file pointing to a missing gitdir, ...): treat as
+    //   a non-repo rather than surfacing a raw git error to the user.
+    // - any other error (git executable missing from PATH, permission
+    //   denied, ...): propagate it so the UI shows a clear message
+    //   instead of a misleading "Not a git repository".
+    let status_out = match run_git(
+        repo_path,
+        &["status", "--porcelain=v1", "-b", "--find-renames", "-uall"],
+    ) {
+        Ok(out) => out,
+        Err(e) => {
+            if e.to_string().contains("not a git repository") {
+                return Ok(GitStatusResult {
+                    is_repo: false,
+                    current_branch: String::new(),
+                    upstream: None,
+                    ahead: 0,
+                    behind: 0,
+                    files: Vec::new(),
+                    staged_count: 0,
+                    unstaged_count: 0,
+                    untracked_count: 0,
+                });
+            }
+            return Err(e);
+        }
+    };
     let lines: Vec<&str> = status_out.lines().filter(|l| !l.is_empty()).collect();
 
     let mut current_branch = String::new();
@@ -868,4 +978,130 @@ pub fn get_commit_files(repo_path: &str, hash: &str) -> Result<Vec<GitCommitFile
     }
 
     Ok(files)
+}
+
+/// Scan a directory for git repositories.
+///
+/// Recursively walks `root_path` looking for subdirectories containing a
+/// `.git` entry (either a directory or a `.git` file for worktrees/submodules).
+/// When a git repo is found, its subdirectories are NOT recursed into —
+/// nested repos inside an already-discovered repo are skipped (matching
+/// VSCode's behaviour where each workspace folder is treated independently).
+///
+/// Common directories that should never be traversed (node_modules, .git,
+/// dist, build, target, etc.) are skipped to keep the scan fast.
+///
+/// Returns a list of `GitRepoInfo` with the repo path, display name (the
+/// folder name), and current branch name.
+pub fn discover_git_repos(root_path: &str) -> Result<Vec<GitRepoInfo>> {
+    let root = Path::new(root_path);
+    if !root.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let mut repos: Vec<GitRepoInfo> = Vec::new();
+
+    // If the root directory itself is a git repo, add it and don't recurse
+    // into it. This handles the common case where the workspace directory
+    // IS the git repository (e.g. a single-project workspace), which
+    // scan_dir_for_repos would miss because it only checks children.
+    if root.join(".git").exists() {
+        let path_str = root.to_string_lossy().to_string();
+        let name = root
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| path_str.clone());
+        let current_branch = get_current_branch_name(&path_str).unwrap_or_default();
+        repos.push(GitRepoInfo {
+            path: path_str,
+            name,
+            current_branch,
+        });
+    } else {
+        scan_dir_for_repos(root, &mut repos);
+    }
+
+    // Sort by path for deterministic ordering
+    repos.sort_by(|a, b| a.path.cmp(&b.path));
+
+    Ok(repos)
+}
+
+/// Directories that should never be traversed during repo discovery.
+fn is_skip_dir(name: &str) -> bool {
+    matches!(
+        name,
+        ".git"
+            | "node_modules"
+            | "dist"
+            | "build"
+            | "out"
+            | "target"
+            | ".next"
+            | ".nuxt"
+            | ".cache"
+            | ".gradle"
+            | "__pycache__"
+            | ".venv"
+            | "venv"
+            | ".idea"
+            | ".vscode"
+            | "Pods"
+            | ".swiftpm"
+            | ".build"
+    )
+}
+
+fn scan_dir_for_repos(dir: &Path, repos: &mut Vec<GitRepoInfo>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+
+        // If this directory itself is a git repo, add it and don't recurse.
+        if path.join(".git").exists() {
+            let path_str = path.to_string_lossy().to_string();
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| path_str.clone());
+
+            // Attempt to get the current branch; if it fails (corrupted
+            // repo, detached HEAD, etc.) default to an empty string.
+            let current_branch = get_current_branch_name(&path_str).unwrap_or_default();
+
+            repos.push(GitRepoInfo {
+                path: path_str,
+                name,
+                current_branch,
+            });
+            continue;
+        }
+
+        // Otherwise, if it's a directory, recurse into it (unless it's
+        // a known heavy/skip directory).
+        if path.is_dir() {
+            if let Some(dir_name) = path.file_name() {
+                if is_skip_dir(&dir_name.to_string_lossy()) {
+                    continue;
+                }
+            }
+            scan_dir_for_repos(&path, repos);
+        }
+    }
+}
+
+/// Get the current branch name via `git rev-parse --abbrev-ref HEAD`.
+/// Returns an empty string for detached HEAD or on error.
+fn get_current_branch_name(repo_path: &str) -> Result<String> {
+    let output = run_git_raw(repo_path, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    let branch = output.trim();
+    if branch.is_empty() || branch == "HEAD" {
+        Ok(String::new())
+    } else {
+        Ok(branch.to_string())
+    }
 }

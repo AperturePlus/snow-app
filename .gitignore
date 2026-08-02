@@ -38,3 +38,12 @@ Thumbs.db
 
 # Snow local state
 .snow/
+
+# Local scratch / investigation files
+.issue-body-cn-v2.md
+scripts/investigate_abort.py
+
+# Local AI workflow tooling (excluded per user request)
+.trellis/
+AGENTS.md
+.gitattributes

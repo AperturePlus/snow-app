@@ -67,6 +67,57 @@ const flattenTree = (
   return result;
 };
 
+const removeNodeByPath = (
+  nodes: TreeNode[],
+  targetPath: string
+): TreeNode[] =>
+  nodes
+    .filter((node) => node.path !== targetPath)
+    .map((node) =>
+      node.children
+        ? { ...node, children: removeNodeByPath(node.children, targetPath) }
+        : node
+    );
+
+const replacePathPrefix = (
+  nodes: TreeNode[],
+  oldPrefix: string,
+  newPrefix: string
+): TreeNode[] =>
+  nodes.map((node) => {
+    const updated: TreeNode = {
+      ...node,
+      path: newPrefix + node.path.substring(oldPrefix.length),
+    };
+    if (node.children) {
+      updated.children = replacePathPrefix(node.children, oldPrefix, newPrefix);
+    }
+    return updated;
+  });
+
+const renameNodeByPath = (
+  nodes: TreeNode[],
+  oldPath: string,
+  newPath: string,
+  newName: string
+): TreeNode[] =>
+  nodes.map((node) => {
+    if (node.path === oldPath) {
+      const updated: TreeNode = { ...node, name: newName, path: newPath };
+      if (node.children) {
+        updated.children = replacePathPrefix(node.children, oldPath, newPath);
+      }
+      return updated;
+    }
+    if (node.children) {
+      return {
+        ...node,
+        children: renameNodeByPath(node.children, oldPath, newPath, newName),
+      };
+    }
+    return node;
+  });
+
 const getFileIcon = (
   node: TreeNode,
   isExpanded: boolean
@@ -422,8 +473,36 @@ export function ProjectExplorerContent({
         } else {
           await window.snow.renameWorkspaceEntry(rootPath, entryPath, newName);
         }
-        setSelectedPath(null);
-        handleRefresh();
+
+        const lastSep = Math.max(
+          entryPath.lastIndexOf("/"),
+          entryPath.lastIndexOf("\\")
+        );
+        const newPath =
+          lastSep >= 0 ? entryPath.substring(0, lastSep + 1) + newName : newName;
+
+        setTree((prev) =>
+          renameNodeByPath(prev, entryPath, newPath, newName)
+        );
+
+        setExpandedPaths((prev) => {
+          const next = new Set<string>();
+          for (const p of prev) {
+            if (p === entryPath) {
+              next.add(newPath);
+            } else if (
+              p.startsWith(entryPath + "/") ||
+              p.startsWith(entryPath + "\\")
+            ) {
+              next.add(newPath + p.substring(entryPath.length));
+            } else {
+              next.add(p);
+            }
+          }
+          return next;
+        });
+
+        setSelectedPath(newPath);
       } catch (operationError) {
         setError(
           operationError instanceof Error
@@ -435,7 +514,7 @@ export function ProjectExplorerContent({
         throw operationError;
       }
     },
-    [handleRefresh, isSsh, rootPath, t]
+    [isSsh, rootPath, t]
   );
 
   const handleDeleteEntry = useCallback(
@@ -451,8 +530,25 @@ export function ProjectExplorerContent({
         } else {
           await window.snow.deleteWorkspaceEntry(rootPath, entryPath);
         }
+
+        setTree((prev) => removeNodeByPath(prev, entryPath));
+
+        setExpandedPaths((prev) => {
+          const next = new Set<string>();
+          for (const p of prev) {
+            if (
+              p === entryPath ||
+              p.startsWith(entryPath + "/") ||
+              p.startsWith(entryPath + "\\")
+            ) {
+              continue;
+            }
+            next.add(p);
+          }
+          return next;
+        });
+
         setSelectedPath(null);
-        handleRefresh();
       } catch (operationError) {
         setError(
           operationError instanceof Error
@@ -464,7 +560,7 @@ export function ProjectExplorerContent({
         throw operationError;
       }
     },
-    [handleRefresh, isSsh, rootPath, t]
+    [isSsh, rootPath, t]
   );
 
   const handleSearchChange = useCallback((value: string): void => {

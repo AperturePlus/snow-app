@@ -2,6 +2,7 @@ import { ExternalLink, X } from "lucide-react";
 
 import { useI18n } from "../../i18n";
 import { GitDiffView } from "../common/GitDiffView";
+import { getFileTypeIcon } from "../../utils/fileIcons";
 import type { GitDiffResult, GitFileStatus } from "./git";
 import type { OpenDiffTabCallback } from "./types";
 
@@ -25,6 +26,12 @@ export function DiffViewer({
   return (
     <div className="diff-viewer">
       <div className="diff-viewer-header">
+        {getFileTypeIcon(
+          selectedFile.path.split("/").pop() ?? selectedFile.path,
+          false,
+          false,
+          { size: 14, className: "diff-viewer-file-icon" }
+        )}
         <span className="diff-viewer-file-name" title={selectedFile.path}>
           {selectedFile.path}
         </span>

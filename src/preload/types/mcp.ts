@@ -20,6 +20,41 @@ export type ProjectSkillDefinition = Omit<SkillDefinition, "enabled"> & {
   enabled: boolean;
 };
 
+export type SkillInstallResult = {
+  success: boolean;
+  skillId: string;
+  path: string;
+  installedAt: string;
+  commitSha?: string;
+  error?: string;
+};
+
+export type SkillBatchInstallResult = {
+  success: boolean;
+  results: SkillInstallResult[];
+  installedCount: number;
+  totalCount: number;
+  commitSha?: string;
+  error?: string;
+};
+
+export type GithubSkillRecord = {
+  id: string;
+  name: string;
+  description: string;
+  location: string;
+  sourceUrl: string;
+  installedAt: string;
+  commitSha?: string;
+};
+
+export type SkillUninstallResult = {
+  success: boolean;
+  skillId: string;
+  message: string;
+  error?: string;
+};
+
 export type McpProjectToolStatus = McpToolDefinition & {
   enabled: boolean;
 };
@@ -34,7 +69,7 @@ export type McpProjectServerStatus = {
   error?: string;
 };
 export type BashStreamChunk = {
-  stream: "stdout" | "stderr" | "interactive_session";
+  stream: "stdout" | "stderr" | "interactive_session" | "tool_execution";
   data: string;
 };
 

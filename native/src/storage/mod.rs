@@ -311,6 +311,7 @@ pub struct ChatConversationRecord {
     pub last_message_preview: String,
     pub message_count: i32,
     pub model: String,
+    pub api_profile_name: String,
     pub status: String,
     pub directory_id: String,
     pub forked_from_conversation_id: String,
@@ -468,6 +469,26 @@ pub fn get_plan_mode() -> Result<bool> {
 pub fn set_plan_mode(enabled: bool) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::plan_settings::set_plan_mode(&database_path, enabled)
+}
+
+pub fn get_goal_mode() -> Result<bool> {
+    let database_path = ensure_database_file()?;
+    services::goal_settings::get_goal_mode(&database_path)
+}
+
+pub fn set_goal_mode(enabled: bool) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::goal_settings::set_goal_mode(&database_path, enabled)
+}
+
+pub fn get_goal_mode_token_budget() -> Result<i64> {
+    let database_path = ensure_database_file()?;
+    services::goal_settings::get_goal_mode_token_budget(&database_path)
+}
+
+pub fn set_goal_mode_token_budget(budget: i64) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::goal_settings::set_goal_mode_token_budget(&database_path, budget)
 }
 
 pub fn get_request_logging() -> Result<bool> {
@@ -1228,6 +1249,18 @@ pub fn update_conversation_emoji(
         &database_path,
         &conversation_id,
         &emoji,
+    )
+}
+
+pub fn update_conversation_api_profile(
+    conversation_id: String,
+    profile_name: String,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::update_conversation_api_profile(
+        &database_path,
+        &conversation_id,
+        &profile_name,
     )
 }
 

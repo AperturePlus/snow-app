@@ -12,6 +12,7 @@ import { useI18n } from "../../i18n";
 import { ChatInput } from "./ChatInput";
 import { EmptyChatGreeting } from "./EmptyChatGreeting";
 import { ChatMessageList, useChatConversationContext } from "./chatMessages";
+import { FileChangeStatsPanel } from "./chatMessages/components/FileChangeStatsPanel";
 import { RollbackConfirmDialog } from "./chatMessages/dialogs/RollbackConfirmDialog";
 import { CompactionStream } from "./chatMessages/components/CompactionStream";
 import type { ChatInputSendOptions } from "./chatInput/types";
@@ -58,6 +59,7 @@ const ChatContentBody = ({
     cancelRollback,
     pendingMessages,
     withdrawPendingMessage,
+    sendPendingMessageNow,
     compactConversation,
     compactionPreview,
     compactionError,
@@ -71,6 +73,12 @@ const ChatContentBody = ({
     isUpdatingPlanMode,
     setPlanMode,
     refreshPlanMode,
+    goalMode,
+    isUpdatingGoalMode,
+    setGoalMode,
+    refreshGoalMode,
+    goalModeTokenBudget,
+    setGoalModeTokenBudget,
     pendingToolAuthorizations,
   } = useChatConversationContext();
   const { t } = useI18n();
@@ -99,6 +107,11 @@ const ChatContentBody = ({
   const shouldStickToBottomRef = useRef(true);
   const isInitialBottomPositioningRef = useRef(false);
   const isUserScrollIntentRef = useRef(false);
+  // True while the scroll-to-bottom button's smooth animation is running:
+  // the scroll handler must not re-derive the follow state from the still-far
+  // distance during the animation, or a streaming conversation stops tracking
+  // new content right after the animation lands on its stale target.
+  const isSmoothScrollingToBottomRef = useRef(false);
   const previousIsCompactingRef = useRef(isCompactingActive);
   const scrollRafIdRef = useRef(0);
   const hasMessagesRef = useRef(hasMessages);
@@ -112,6 +125,12 @@ const ChatContentBody = ({
   // follow state and button visibility must be derived from live geometry.
   const updateScrollFollowState = useCallback(
     (container: HTMLDivElement): void => {
+      if (isSmoothScrollingToBottomRef.current) {
+        shouldStickToBottomRef.current = true;
+        setShowScrollToBottom(false);
+        return;
+      }
+
       const distanceFromBottom =
         container.scrollHeight - container.scrollTop - container.clientHeight;
 
@@ -279,6 +298,18 @@ const ChatContentBody = ({
     };
 
     const resizeObserver = new ResizeObserver(keepAtBottomSync);
+    // Once the smooth scroll-to-bottom animation finishes (or is interrupted
+    // by the pinning jump below), the follow state can be re-derived from the
+    // live geometry again. "scrollend" fires after every programmatic and
+    // user-initiated scroll settles, including one that was cut short.
+    const handleScrollEnd = (): void => {
+      if (!isSmoothScrollingToBottomRef.current) {
+        return;
+      }
+      isSmoothScrollingToBottomRef.current = false;
+      updateScrollFollowState(container);
+    };
+    container.addEventListener("scrollend", handleScrollEnd);
     const observeCurrentChildren = (): void => {
       for (const child of observedChildren) {
         if (!container.contains(child)) {
@@ -308,6 +339,7 @@ const ChatContentBody = ({
       if (resizeRafId !== 0) {
         cancelAnimationFrame(resizeRafId);
       }
+      container.removeEventListener("scrollend", handleScrollEnd);
       container.removeEventListener("load", scheduleResizeCheck, true);
       mutationObserver.disconnect();
       resizeObserver.disconnect();
@@ -433,6 +465,9 @@ const ChatContentBody = ({
   const markUserScrollIntent = useCallback((): void => {
     isUserScrollIntentRef.current = true;
     isInitialBottomPositioningRef.current = false;
+    // A user-initiated scroll cancels the button's smooth animation: stop
+    // protecting the follow state so the user's position is respected.
+    isSmoothScrollingToBottomRef.current = false;
   }, []);
 
   const handleChatPointerDown = useCallback(
@@ -511,6 +546,12 @@ const ChatContentBody = ({
     shouldStickToBottomRef.current = true;
     isInitialBottomPositioningRef.current = false;
     isUserScrollIntentRef.current = false;
+    // Protect the follow state while the smooth animation runs: during the
+    // animation the distance is still large, so without this the scroll
+    // handler would flip the stick flag back to false and a streaming
+    // conversation would stop tracking new content right after the animation
+    // lands on its stale target.
+    isSmoothScrollingToBottomRef.current = true;
     container.scrollTo({
       top: container.scrollHeight,
       behavior: "smooth",
@@ -596,6 +637,7 @@ const ChatContentBody = ({
                 <div className="chat-history-skeleton-line" />
               </div>
             ) : null}
+            <FileChangeStatsPanel conversationId={activeConversationId} />
             <ChatMessageList
               messages={messages}
               isStreaming={isStreaming}
@@ -644,6 +686,7 @@ const ChatContentBody = ({
           onDraftRestored={clearDraftToRestore}
           pendingMessages={pendingMessages}
           onWithdrawPendingMessage={withdrawPendingMessage}
+          onSendPendingMessageNow={sendPendingMessageNow}
           onCompactConversation={compactConversation}
           yoloMode={yoloMode}
           isUpdatingYoloMode={isUpdatingYoloMode}
@@ -653,6 +696,12 @@ const ChatContentBody = ({
           isUpdatingPlanMode={isUpdatingPlanMode}
           onPlanModeChange={setPlanMode}
           onRefreshPlanMode={refreshPlanMode}
+          goalMode={goalMode}
+          isUpdatingGoalMode={isUpdatingGoalMode}
+          onGoalModeChange={setGoalMode}
+          onRefreshGoalMode={refreshGoalMode}
+          goalModeTokenBudget={goalModeTokenBudget}
+          onGoalModeTokenBudgetChange={setGoalModeTokenBudget}
           autoScrollEnabled={autoScrollEnabled}
           onAutoScrollChange={setAutoScrollEnabled}
           isCompacting={isCompactingActive}

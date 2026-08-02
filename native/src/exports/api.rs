@@ -15,6 +15,9 @@ use crate::api::models::{
 use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback,
 };
+use crate::api::file_search_agent::{
+    run_file_search_agent as run_agent, FileSearchAgentProgressCallback,
+};
 use crate::api::summary::generate_conversation_summary as generate_summary;
 use crate::api::theme_palette::generate_theme_palette_stream;
 use crate::mcp::servers::bash::{
@@ -24,6 +27,7 @@ use crate::mcp::servers::bash::{
 use crate::mcp::servers::browser::BrowserCommandCallback;
 use crate::mcp::servers::remote_workspace::RemoteWorkspaceCallback;
 use crate::mcp::servers::skills::{ProjectSkillDefinition, SkillDefinition, SkillsService};
+use crate::mcp::servers::app_control::AppControlCallback;
 use crate::mcp::servers::user_interaction::UserQuestionCallback;
 use crate::mcp::tools::{
     call_mcp_tool as call_tool,
@@ -36,6 +40,7 @@ use crate::mcp::tools::{
     McpProjectServerStatus, McpProjectToolStatus, McpToolDefinition,
 };
 use crate::storage::initialize_app_storage;
+use crate::storage::services::fs_explorer::FileSearchResult;
 
 #[napi]
 pub async fn fetch_available_models() -> napi::Result<Vec<Model>> {
@@ -89,6 +94,23 @@ pub async fn create_response_stream(
 #[napi]
 pub fn abort_response_stream(stream_id: String) -> napi::Result<bool> {
     Ok(crate::api::cancel::cancel_stream(&stream_id))
+}
+
+/// Abort an in-flight tool execution (e.g. a bash subprocess) by the
+/// execution id that was streamed to the frontend as a `tool_execution`
+/// chunk.  The executing service races its wait against this cancellation
+/// and kills the process tree.  Returns `true` if a running execution was
+/// found and cancelled.
+#[napi]
+pub fn abort_tool_execution(tool_execution_id: String) -> napi::Result<bool> {
+    let trimmed = tool_execution_id.trim();
+    if trimmed.is_empty() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Tool execution ID is required".to_string(),
+        ));
+    }
+    Ok(crate::api::cancel::cancel_tool_execution(trimmed))
 }
 
 /// Generate a theme palette JSON from a background image using the selected
@@ -151,6 +173,27 @@ pub async fn generate_conversation_summary(conversation_id: String) -> napi::Res
 pub fn cancel_conversation_summary(conversation_id: String) -> napi::Result<bool> {
     Ok(crate::api::cancel::cancel_summary(&conversation_id))
 }
+
+/// Run a natural-language file search agent over a workspace.
+///
+/// The agent drives the configured basic model with the read-only MCP tools
+/// (`grep-search`, `filesystem-read`) in a loop of at most 10 tool-call
+/// rounds, then returns the matching files as `FileSearchResult` entries.
+/// Request scheme follows the active API config (chat / responses /
+/// anthropic / gemini). `onProgress` is invoked after every tool execution
+/// so the UI can display the search process.
+#[napi(
+    ts_args_type = "query: string, workspacePath: string, onProgress: ((chunk: FileSearchAgentProgress) => void) | undefined"
+)]
+pub async fn search_files_by_agent(
+    query: String,
+    workspace_path: String,
+    on_progress: Option<FileSearchAgentProgressCallback>,
+) -> napi::Result<Vec<FileSearchResult>> {
+    let token = CancellationToken::new();
+    run_agent(query, workspace_path, token, on_progress).await
+}
+
 #[napi]
 pub async fn list_mcp_tools() -> napi::Result<Vec<McpToolDefinition>> {
     list_all_mcp_tools().await
@@ -248,7 +291,7 @@ pub async fn write_interactive_stdin(
 }
 
 #[napi(
-    ts_args_type = "toolFullName: string, argsJson: string, projectId: string | undefined, checkpointIds: string[] | undefined, checkpointWorkDir: string | undefined, sensitiveAuthorizationToken: string | undefined, onChunk: (chunk: BashStreamChunk) => void, onBrowserCommand: (command: BrowserCommand) => Promise<string>, onUserQuestion: (question: UserQuestionCommand) => Promise<string>, onRemoteWorkspaceCommand: (command: RemoteWorkspaceCommand) => Promise<string>, subAgentAllowedTools: string[] | undefined, planMode: boolean | undefined, planApproved: boolean | undefined",
+    ts_args_type = "toolFullName: string, argsJson: string, projectId: string | undefined, checkpointIds: string[] | undefined, checkpointWorkDir: string | undefined, sensitiveAuthorizationToken: string | undefined, onChunk: (chunk: BashStreamChunk) => void, onBrowserCommand: (command: BrowserCommand) => Promise<string>, onUserQuestion: (question: UserQuestionCommand) => Promise<string>, onAppControl: (command: AppControlCommand) => Promise<string>, onRemoteWorkspaceCommand: (command: RemoteWorkspaceCommand) => Promise<string>, subAgentAllowedTools: string[] | undefined, planMode: boolean | undefined, planApproved: boolean | undefined",
     ts_return_type = "Promise<string>"
 )]
 pub async fn call_mcp_tool(
@@ -261,6 +304,7 @@ pub async fn call_mcp_tool(
     on_chunk: BashStreamCallback,
     on_browser_command: BrowserCommandCallback,
     on_user_question: UserQuestionCallback,
+    on_app_control: AppControlCallback,
     on_remote_workspace_command: RemoteWorkspaceCallback,
     sub_agent_allowed_tools: Option<Vec<String>>,
     plan_mode: Option<bool>,
@@ -276,6 +320,7 @@ pub async fn call_mcp_tool(
         on_chunk,
         on_browser_command,
         on_user_question,
+        on_app_control,
         on_remote_workspace_command,
         sub_agent_allowed_tools,
         plan_mode.unwrap_or(false),

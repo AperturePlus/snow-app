@@ -170,6 +170,42 @@ pub(super) fn collect_tool_calls(value: Option<&Value>, calls: &mut Vec<Value>) 
     }
 }
 
+/// Collect reasoning output items from a Responses API output tree.
+///
+/// Unlike `collect_reasoning_text` (which extracts text only), this function
+/// clones the entire reasoning item so it can be round-tripped verbatim on
+/// the next request when `store: false`. Recursively traverses arrays and
+/// nested objects (e.g. `content`, `summary`) to find all items with
+/// `type == "reasoning"`.
+pub(super) fn collect_reasoning_items(value: Option<&Value>, items: &mut Vec<Value>) {
+    let Some(value) = value else {
+        return;
+    };
+
+    match value {
+        Value::Array(elements) => {
+            for element in elements {
+                collect_reasoning_items(Some(element), items);
+            }
+        }
+        Value::Object(object) => {
+            let is_reasoning = object
+                .get("type")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value == "reasoning");
+            if is_reasoning {
+                items.push(value.clone());
+                return;
+            }
+
+            collect_reasoning_items(object.get("content"), items);
+            collect_reasoning_items(object.get("summary"), items);
+            collect_reasoning_items(object.get("output"), items);
+        }
+        _ => {}
+    }
+}
+
 /// Read a string field from a Responses API response object.
 pub(super) fn read_response_string(response: &Value, key: &str) -> Option<String> {
     response

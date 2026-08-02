@@ -10,7 +10,8 @@ export type RightPanelContentKey =
   | "terminal"
   | "browser"
   | "file"
-  | "file-diff-preview";
+  | "file-diff-preview"
+  | "codebase";
 
 export type RightPanelContentProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
@@ -49,16 +50,29 @@ export type FileDiffPreviewTabData = {
   changeType: "added" | "modified" | "deleted";
 };
 
+export type CodebaseTabData = {
+  projectId: string;
+  projectName: string;
+};
+
 export type RightPanelTab = {
   id: string;
-  type: "git" | "diff" | "terminal" | "browser" | "file" | "file-diff-preview";
+  type:
+    | "git"
+    | "diff"
+    | "terminal"
+    | "browser"
+    | "file"
+    | "file-diff-preview"
+    | "codebase";
   title: string;
   data?:
     | DiffTabData
     | TerminalTabData
     | BrowserTabData
     | FileViewerTabData
-    | FileDiffPreviewTabData;
+    | FileDiffPreviewTabData
+    | CodebaseTabData;
 };
 
 export type OpenDiffTabCallback = (

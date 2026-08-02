@@ -6,17 +6,22 @@ import type {
   CheckpointFileChange,
   CheckpointFileDiff,
   CodebaseEmbedProgress,
+  CodebaseIndexedFilePage,
   CodebaseIndexStats,
   CodebaseProjectScopeSettings,
   CodebaseScanPreview,
+  CodebaseSphereLayout,
   CodebaseSyncProgress,
   CodebaseSyncResult,
   McpProjectServerStatus,
   McpProjectToolStatus,
   McpToolDefinition,
+  GithubSkillRecord,
   ProjectSkillDefinition,
   ResumableCodebaseSession,
+  SkillBatchInstallResult,
   SkillDefinition,
+  SkillUninstallResult,
   UpdateStatus,
   UserQuestionRequest,
   UserQuestionResponse,
@@ -27,6 +32,8 @@ const BROWSER_COMMAND_CHANNEL = "browser:command";
 const BROWSER_COMMAND_RESPONSE_CHANNEL = "browser:command-response";
 const USER_QUESTION_CHANNEL = "user-question:request";
 const USER_QUESTION_RESPONSE_CHANNEL = "user-question:response";
+const APP_CONTROL_CHANNEL = "app-control:request";
+const APP_CONTROL_RESPONSE_CHANNEL = "app-control:response";
 const CODEBASE_EMBED_PROGRESS_CHANNEL = "codebase:embed:progress";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -40,7 +47,8 @@ const normalizeBashStreamChunk = (value: unknown): BashStreamChunk | null => {
     !isRecord(value) ||
     (value.stream !== "stdout" &&
       value.stream !== "stderr" &&
-      value.stream !== "interactive_session") ||
+      value.stream !== "interactive_session" &&
+      value.stream !== "tool_execution") ||
     typeof value.data !== "string"
   ) {
     return null;
@@ -195,6 +203,17 @@ export const systemApi = {
   },
   getCodebaseIndexStats: (projectId: string): Promise<CodebaseIndexStats> =>
     ipcRenderer.invoke("codebase:get-index-stats", projectId),
+  listCodebaseIndexedFiles: (
+    projectId: string,
+    page: number,
+    pageSize: number
+  ): Promise<CodebaseIndexedFilePage> =>
+    ipcRenderer.invoke("codebase:list-indexed-files", projectId, page, pageSize),
+  getCodebaseSphereLayout: (
+    projectId: string,
+    limit: number
+  ): Promise<CodebaseSphereLayout> =>
+    ipcRenderer.invoke("codebase:get-sphere-layout", projectId, limit),
   clearCodebaseIndex: (projectId: string): Promise<void> =>
     ipcRenderer.invoke("codebase:clear-index", projectId),
   startCodebaseWatch: (projectId: string, projectPath: string): Promise<void> =>
@@ -372,6 +391,19 @@ export const systemApi = {
       skillId,
       enabled
     ),
+  installSkillFromGithub: (
+    url: string,
+    location: "global" | "project",
+    projectId?: string
+  ): Promise<SkillBatchInstallResult> =>
+    ipcRenderer.invoke("skills:install-github", url, location, projectId),
+  uninstallGithubSkill: (
+    skillId: string,
+    projectId?: string
+  ): Promise<SkillUninstallResult> =>
+    ipcRenderer.invoke("skills:uninstall-github", skillId, projectId),
+  listGithubSkills: (): Promise<GithubSkillRecord[]> =>
+    ipcRenderer.invoke("skills:list-github"),
   listMcpServerTools: (configServerId: string): Promise<McpToolDefinition[]> =>
     ipcRenderer.invoke("mcp:list-server-tools", configServerId),
   listMcpProjectServers: (
@@ -485,10 +517,52 @@ export const systemApi = {
       ipcRenderer.removeListener(USER_QUESTION_CHANNEL, listener);
     };
   },
+  registerAppControlHandler: (
+    handler: (request: {
+      requestId: string;
+      action: string;
+      payloadJson: string;
+    }) => Promise<string>
+  ): (() => void) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      request: { requestId: string; action: string; payloadJson: string }
+    ): void => {
+      if (
+        !request ||
+        typeof request.requestId !== "string" ||
+        typeof request.action !== "string" ||
+        typeof request.payloadJson !== "string"
+      ) {
+        return;
+      }
+
+      void handler(request)
+        .then((resultJson) => {
+          ipcRenderer.send(APP_CONTROL_RESPONSE_CHANNEL, {
+            requestId: request.requestId,
+            resultJson,
+          });
+        })
+        .catch((error: unknown) => {
+          ipcRenderer.send(APP_CONTROL_RESPONSE_CHANNEL, {
+            requestId: request.requestId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+    };
+
+    ipcRenderer.on(APP_CONTROL_CHANNEL, listener);
+    return () => {
+      ipcRenderer.removeListener(APP_CONTROL_CHANNEL, listener);
+    };
+  },
   issueSensitiveCommandAuthorization: (command: string): Promise<string> =>
     ipcRenderer.invoke("mcp:authorize-sensitive-command", command),
   writeInteractiveStdin: (sessionId: string, input: string): Promise<void> =>
     ipcRenderer.invoke("mcp:write-interactive-stdin", sessionId, input),
+  abortToolExecution: (toolExecutionId: string): Promise<boolean> =>
+    ipcRenderer.invoke("mcp:abort-tool-execution", toolExecutionId),
   callMcpTool: (
     toolFullName: string,
     argsJson: string,

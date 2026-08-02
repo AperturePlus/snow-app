@@ -1,4 +1,5 @@
 import {
+  directoryIdToPath,
   formatMcpToolResultForModel,
   getErrorMessage,
   isUserQuestionCancellationResult,
@@ -10,6 +11,7 @@ import {
   isStructuredPlanApproval,
 } from "./agentLoopHelpers";
 import { appendHookExecutionToMessage, runHook } from "./hookOutcome";
+import { extractFileChangeFromTool } from "./fileChangeTracking";
 import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
 import type {
   ConversationContextValue,
@@ -68,6 +70,11 @@ export function createToolExecutor(
     planApprovedSessionKeysRef,
     planModeRef,
   } = deps;
+
+  // 工具 cwd / checkpoint 目录跟随会话自己的目录,而非运行时全局
+  // activeDirectory:切换项目后旧会话仍在自己的目录执行,checkpoint
+  // 与 cwd 天然一致,不会被后端以目录不匹配拦截。
+  const sessionDirPath = directoryIdToPath(sessionDirId) ?? directoryPath;
 
   return async (
     toolCalls: ToolCallInfo[],
@@ -311,6 +318,23 @@ export function createToolExecutor(
               }
             }
 
+            // Inject the current session id for bash-terminal-execute so child
+            // processes receive SNOW_SESSION_ID / TRELLIS_CONTEXT_ID — the
+            // Snow platform contract Trellis scripts rely on to track the
+            // active task per session.
+            if (toolCall.name === "bash-terminal-execute") {
+              try {
+                const parsedArgs = JSON.parse(toolArgs) as Record<
+                  string,
+                  unknown
+                >;
+                parsedArgs.sessionId = effectiveKey;
+                toolArgs = JSON.stringify(parsedArgs);
+              } catch {
+                // If args are not valid JSON, let the tool fail naturally.
+              }
+            }
+
             let sensitiveAuthorizationToken: string | undefined;
             if (
               toolCall.name === "bash-terminal-execute" &&
@@ -352,7 +376,7 @@ export function createToolExecutor(
                 const beforeHookContext = JSON.stringify({
                   toolName: toolCall.name,
                   args: JSON.parse(toolArgs),
-                  cwd: directoryPath ?? "",
+                  cwd: sessionDirPath ?? "",
                 });
                 const beforeHookResult = await runHook(
                   "beforeToolCall",
@@ -474,13 +498,16 @@ export function createToolExecutor(
                   toolArgs,
                   sessionDirId,
                   checkpointIds,
-                  checkpointIds.length > 0 ? directoryPath : undefined,
+                  checkpointIds.length > 0 ? sessionDirPath : undefined,
                   sensitiveAuthorizationToken,
                   (chunk) => {
                     if (!chunk.data) {
                       return;
                     }
-                    if (chunk.stream === "interactive_session") {
+                    if (
+                      chunk.stream === "interactive_session" ||
+                      chunk.stream === "tool_execution"
+                    ) {
                       ctx.updateSessionMessages(
                         effectiveKey,
                         (currentMessages) =>
@@ -499,7 +526,14 @@ export function createToolExecutor(
                                 ["pending", "running"],
                                 (currentToolCall) => ({
                                   ...currentToolCall,
-                                  interactiveSessionId: chunk.data,
+                                  interactiveSessionId:
+                                    chunk.stream === "interactive_session"
+                                      ? chunk.data
+                                      : currentToolCall.interactiveSessionId,
+                                  toolExecutionId:
+                                    chunk.stream === "tool_execution"
+                                      ? chunk.data
+                                      : currentToolCall.toolExecutionId,
                                 })
                               ),
                             };
@@ -545,6 +579,31 @@ export function createToolExecutor(
                   planModeRef.current,
                   planApprovedSessionKeysRef.current.has(effectiveKey)
                 );
+
+                // Record successful file modifications (filesystem-create /
+                // filesystem-replace_edit) into the conversation's file-change
+                // stats. Done right after the tool returns — before
+                // afterToolCall hooks may append context to the result — so
+                // the success JSON is always parseable. The pending session
+                // has no persisted conversation, so its changes are skipped;
+                // they land in the real session once it is created.
+                if (
+                  effectiveKey !== PENDING_SESSION_KEY &&
+                  result !== undefined
+                ) {
+                  const fileChange = extractFileChangeFromTool(
+                    toolCall.name,
+                    toolCall.arguments,
+                    result
+                  );
+                  if (fileChange) {
+                    ctx.recordFileChange(effectiveKey, {
+                      ...fileChange,
+                      agent: "main",
+                      timestamp: Date.now(),
+                    });
+                  }
+                }
               }
 
               // Execute afterToolCall hooks (with matcher) after the tool call completes.
@@ -558,7 +617,7 @@ export function createToolExecutor(
                     toolName: toolCall.name,
                     args: JSON.parse(toolArgs),
                     result: JSON.parse(result),
-                    cwd: directoryPath ?? "",
+                    cwd: sessionDirPath ?? "",
                   });
                   const afterHookResult = await runHook(
                     "afterToolCall",

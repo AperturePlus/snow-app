@@ -31,6 +31,8 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
           directoryId: dirId,
           checkpointIds: [],
           childSubAgentIds: new Set(),
+          planMode: ctx.planModeRef.current,
+          goalMode: ctx.goalModeRef.current,
         });
       }
       ctx.setSessions((prev) => {
@@ -58,7 +60,7 @@ export const useConversationSession = (ctx: ConversationContextValue) => {
         };
       });
     },
-    [ctx.sessionsRefData, ctx.setSessions]
+    [ctx.sessionsRefData, ctx.setSessions, ctx.planModeRef, ctx.goalModeRef]
   );
 
   const updateSessionMessages = useCallback(
