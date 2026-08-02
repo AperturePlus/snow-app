@@ -201,6 +201,7 @@ export const ChatInputView = ({
           setIsProjectCodebaseOpen(true);
         },
         model: selectedModel || undefined,
+        apiProfile: selectedApiProfile || undefined,
         compactDisabled: messages.length === 0 || isCompacting,
         mcpDisabled: !projectId,
         roleDisabled: !projectId,
@@ -233,6 +234,7 @@ export const ChatInputView = ({
       messages.length,
       onCompactConversation,
       projectId,
+      selectedApiProfile,
       selectedModel,
       t,
     ]

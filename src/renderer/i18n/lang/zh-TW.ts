@@ -542,6 +542,9 @@ export const zhTW = {
   "common.confirm": "確認",
   "common.retry": "重試",
   "common.loading": "載入中...",
+  "common.errorTitle": "應用程式發生問題",
+  "common.errorDescription": "應用程式發生未預期的錯誤，重新載入通常可以解決。",
+  "common.reload": "重新載入",
   "sidebar.search": "搜尋",
   "sidebar.settings": "設定",
   "settings.title": "設定",
@@ -866,6 +869,7 @@ export const zhTW = {
   "settings.skillsInstallLocationGlobal": "全域",
   "settings.skillsInstallLocationProject": "專案",
   "settings.skillsInstallTarget": "安裝到：{{scope}}",
+  "settings.skillsInstallExample": "範例：",
   "settings.skillsUninstall": "解除安裝",
   "settings.skillsUninstallConfirm":
     '確認解除安裝 "{{name}}"？這會從磁碟刪除它。',
@@ -953,14 +957,6 @@ export const zhTW = {
   "settings.mcpJsonEditorLabel": "MCP 伺服器 JSON 設定",
   "settings.mcpJsonHint":
     "以 JSON 形式編輯伺服器設定。name 必填，stdio 需要 command，http 需要 url。",
-  "settings.mcpJsonImport": "匯入 JSON",
-  "settings.mcpJsonImportTitle": "從 JSON 匯入 MCP 服務",
-  "settings.mcpJsonImportInfo":
-    "貼上 Snow CLI settings.json 的 mcpServers 區塊、Claude 風格的 mcp.json 或純伺服器對應表。匯入的服務將加入全域作用域。",
-  "settings.mcpJsonImportButton": "匯入",
-  "settings.mcpJsonImportTextarea": "MCP 服務 JSON",
-  "settings.mcpJsonImportSuccess": "已匯入 {{count}} 個 MCP 服務。",
-  "settings.mcpJsonImportError": "匯入 MCP 服務失敗",
   "settings.mcpToolDetailsTitle": "服務工具",
   "settings.mcpToolDetailsCount": "已取得 {{count}} 個工具",
   "settings.mcpToolDetailsNotFetched": "尚未取得工具清單",
@@ -1506,11 +1502,9 @@ export const zhTW = {
   "personalization.projectTitle": "專案規則",
   "personalization.projectInfo":
     "專案專屬規則會在全域規則之後載入。",
-  "personalization.projectSelect": "專案",
-  "personalization.projectSelectPlaceholder": "請選擇專案...",
-  "personalization.projectNotFound": "找不到專案目錄，請先在側邊欄新增專案。",
+  "personalization.currentProject": "目前專案",
   "personalization.projectEmpty":
-    "請先選擇專案以編輯其 ROLE.md；可在側邊欄新增專案。",
+    "目前沒有啟用的專案，請先在側邊欄開啟或新增專案後再編輯其 ROLE.md。",
   "personalization.projectScopeNote":
     "專案規則追加在全域規則之後；發生衝突時，以專案規則為準。",
   "personalization.includeGlobalTitle": "載入全域規則",

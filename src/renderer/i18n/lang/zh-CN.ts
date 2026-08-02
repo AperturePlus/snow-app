@@ -546,6 +546,9 @@ export const zhCN = {
   "common.confirm": "确认",
   "common.retry": "重试",
   "common.loading": "加载中...",
+  "common.errorTitle": "应用遇到问题",
+  "common.errorDescription": "应用遇到了意外错误，重新加载通常可以解决。",
+  "common.reload": "重新加载",
   "sidebar.search": "搜索",
   "sidebar.settings": "设置",
   "settings.title": "设置",
@@ -870,6 +873,7 @@ export const zhCN = {
   "settings.skillsInstallLocationGlobal": "全局",
   "settings.skillsInstallLocationProject": "项目",
   "settings.skillsInstallTarget": "安装到：{{scope}}",
+  "settings.skillsInstallExample": "示例：",
   "settings.skillsUninstall": "卸载",
   "settings.skillsUninstallConfirm": '确认卸载 "{{name}}"？这会从磁盘删除它。',
   "settings.skillsUninstallSuccess": "Skill 已卸载。",
@@ -956,14 +960,6 @@ export const zhCN = {
   "settings.mcpJsonEditorLabel": "MCP 服务器 JSON 配置",
   "settings.mcpJsonHint":
     "以 JSON 形式编辑服务器配置。name 必填，stdio 需要 command，http 需要 url。",
-  "settings.mcpJsonImport": "导入 JSON",
-  "settings.mcpJsonImportTitle": "从 JSON 导入 MCP 服务",
-  "settings.mcpJsonImportInfo":
-    "粘贴 Snow CLI settings.json 的 mcpServers 块、Claude 风格的 mcp.json 或纯服务器映射。导入的服务将添加到全局作用域。",
-  "settings.mcpJsonImportButton": "导入",
-  "settings.mcpJsonImportTextarea": "MCP 服务 JSON",
-  "settings.mcpJsonImportSuccess": "已导入 {{count}} 个 MCP 服务。",
-  "settings.mcpJsonImportError": "导入 MCP 服务失败",
   "settings.mcpToolDetailsTitle": "服务工具",
   "settings.mcpToolDetailsCount": "已获取 {{count}} 个工具",
   "settings.mcpToolDetailsNotFetched": "尚未获取工具列表",
@@ -1532,11 +1528,9 @@ export const zhCN = {
   "personalization.projectTitle": "项目规则",
   "personalization.projectInfo":
     "项目专属规则会在全局规则之后加载。",
-  "personalization.projectSelect": "项目",
-  "personalization.projectSelectPlaceholder": "请选择项目...",
-  "personalization.projectNotFound": "未找到项目目录，请先在侧边栏添加项目。",
+  "personalization.currentProject": "当前项目",
   "personalization.projectEmpty":
-    "请先选择项目以编辑其 ROLE.md；可在侧边栏添加项目。",
+    "当前没有激活的项目，请先在侧边栏打开或添加项目后再编辑其 ROLE.md。",
   "personalization.projectScopeNote":
     "项目规则追加在全局规则之后；发生冲突时，以项目规则为准。",
   "personalization.includeGlobalTitle": "加载全局规则",

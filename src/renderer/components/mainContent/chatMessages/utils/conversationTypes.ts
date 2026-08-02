@@ -371,7 +371,8 @@ export type ConversationContextValue = {
       conversationId: string,
       model?: string,
       isAuto?: boolean,
-      subAgentConfigProfile?: string
+      subAgentConfigProfile?: string,
+      apiProfile?: string
     ) => Promise<string | null>
   >;
   yoloModeRef: RefValue<boolean>;

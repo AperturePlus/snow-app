@@ -556,6 +556,9 @@ export const en = {
   "common.confirm": "Confirm",
   "common.retry": "Retry",
   "common.loading": "Loading...",
+  "common.errorTitle": "Something went wrong",
+  "common.errorDescription": "The app hit an unexpected error. Reloading usually resolves it.",
+  "common.reload": "Reload",
   "sidebar.search": "Search",
   "sidebar.settings": "Settings",
   "settings.title": "Settings",
@@ -892,6 +895,7 @@ export const en = {
   "settings.skillsInstallLocationGlobal": "Global",
   "settings.skillsInstallLocationProject": "Project",
   "settings.skillsInstallTarget": "Installs to: {{scope}}",
+  "settings.skillsInstallExample": "Example:",
   "settings.skillsUninstall": "Uninstall",
   "settings.skillsUninstallConfirm":
     'Uninstall "{{name}}"? This removes it from disk.',
@@ -984,14 +988,6 @@ export const en = {
   "settings.mcpJsonEditorLabel": "MCP server JSON configuration",
   "settings.mcpJsonHint":
     "Edit the server configuration as JSON. name is required; stdio needs command, http needs url.",
-  "settings.mcpJsonImport": "Import JSON",
-  "settings.mcpJsonImportTitle": "Import MCP servers from JSON",
-  "settings.mcpJsonImportInfo":
-    "Paste a Snow CLI settings.json mcpServers block, a Claude-style mcp.json, or a plain server map. Imported servers are added to the global scope.",
-  "settings.mcpJsonImportButton": "Import",
-  "settings.mcpJsonImportTextarea": "MCP servers JSON",
-  "settings.mcpJsonImportSuccess": "Imported {{count}} MCP server(s).",
-  "settings.mcpJsonImportError": "Failed to import MCP servers",
   "settings.mcpToolDetailsTitle": "Server tools",
   "settings.mcpToolDetailsCount": "{{count}} tool(s) fetched",
   "settings.mcpToolDetailsNotFetched": "Tool list has not been fetched",
@@ -1617,12 +1613,9 @@ export const en = {
   "personalization.projectTitle": "Project rules",
   "personalization.projectInfo":
     "Project-specific rules are loaded after global rules.",
-  "personalization.projectSelect": "Project",
-  "personalization.projectSelectPlaceholder": "Select a project...",
-  "personalization.projectNotFound":
-    "Project directory not found. Add projects from the sidebar first.",
+  "personalization.currentProject": "Current project",
   "personalization.projectEmpty":
-    "Select a project to edit its ROLE.md. Add projects from the sidebar first.",
+    "No active project. Open or add a project from the sidebar to edit its ROLE.md.",
   "personalization.projectScopeNote":
     "Project rules are appended after global rules and win when instructions conflict.",
   "personalization.includeGlobalTitle": "Load global rules",

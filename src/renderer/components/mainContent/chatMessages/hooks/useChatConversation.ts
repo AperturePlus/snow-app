@@ -120,7 +120,9 @@ export const useChatConversation = (
     (
       conversationId: string,
       model?: string,
-      isAuto?: boolean
+      isAuto?: boolean,
+      subAgentConfigProfile?: string,
+      apiProfile?: string
     ) => Promise<string | null>
   >(async () => null);
   const yoloModeRef = useRef(yoloMode);

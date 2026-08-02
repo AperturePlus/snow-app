@@ -4573,6 +4573,17 @@ input {
   line-height: 1.4;
 }
 
+.skills-settings-install-example {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.skills-settings-install-example code {
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
 .skills-settings-github-badge {
   display: inline-flex;
   align-items: center;
@@ -17119,15 +17130,15 @@ input {
   gap: 14px;
 }
 
-/* ===== MCP JSON 编辑 / 导入模式 ===== */
+/* ===== MCP JSON 编辑模式 ===== */
 
 .mcp-editor-mode-switch {
   display: inline-flex;
   gap: 6px;
   padding: 3px;
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--bg-secondary, #1e293b) 70%, transparent);
-  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
   align-self: flex-start;
 }
 
@@ -17137,9 +17148,9 @@ input {
   gap: 6px;
   padding: 5px 14px;
   border: none;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--text-tertiary);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -17147,12 +17158,13 @@ input {
 }
 
 .mcp-editor-mode-btn:hover:not(:disabled) {
-  color: var(--text-primary, #e2e8f0);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
 }
 
 .mcp-editor-mode-btn.active {
-  background: var(--accent-blue, #3b82f6);
-  color: #fff;
+  background: var(--text-primary);
+  color: var(--on-solid);
 }
 
 .mcp-editor-mode-btn:disabled {
@@ -17166,58 +17178,36 @@ input {
   gap: 8px;
 }
 
-.mcp-editor-json-textarea,
-.mcp-json-import-textarea {
+.mcp-editor-json-textarea {
   width: 100%;
   min-height: 260px;
   padding: 12px;
-  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.25));
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-md, 8px);
-  background: var(--bg-code, rgba(15, 23, 42, 0.6));
-  color: var(--text-primary, #e2e8f0);
+  background: var(--bg-primary);
+  color: var(--text-primary);
   font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
   font-size: 12px;
   line-height: 1.6;
   resize: vertical;
   tab-size: 2;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.mcp-editor-json-textarea:focus,
-.mcp-json-import-textarea:focus {
+.mcp-editor-json-textarea:hover {
+  border-color: var(--border-color);
+}
+
+.mcp-editor-json-textarea:focus {
   outline: none;
-  border-color: var(--accent-blue, #3b82f6);
-}
-
-.mcp-editor-json-error,
-.mcp-json-import-error {
-  padding: 8px 12px;
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: var(--radius-md, 8px);
-  background: color-mix(in srgb, var(--accent-red-bg, rgba(239, 68, 68, 0.12)) 90%, transparent);
-  color: var(--accent-red-text, #f87171);
-  font-size: 12px;
-  white-space: pre-wrap;
-  word-break: break-all;
+  border-color: var(--text-muted);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .mcp-editor-json-hint {
   color: var(--text-secondary, #94a3b8);
   font-size: 11px;
   line-height: 1.5;
-}
-
-.mcp-json-import-modal .app-modal-dialog {
-  width: min(640px, calc(100vw - 48px));
-}
-
-.mcp-json-import-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.mcp-json-import-textarea {
-  min-height: 320px;
 }
 
 @media (max-width: 640px) {
@@ -22552,7 +22542,7 @@ input {
   line-height: 1.45;
 }
 
-.personalization-project-select-row {
+.personalization-current-project {
   display: flex;
   flex-shrink: 0;
   align-items: center;
@@ -22563,25 +22553,21 @@ input {
   background: transparent;
 }
 
-.personalization-project-select-label {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: center;
-  gap: 10px;
-}
-
-.personalization-project-select-label > span {
+.personalization-current-project-label {
   flex-shrink: 0;
   color: var(--text-secondary);
   font-size: 11.5px;
   font-weight: 600;
 }
 
-.personalization-project-select-wrap {
+.personalization-current-project strong {
   min-width: 0;
-  max-width: 340px;
-  flex: 1;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .personalization-project-kind {
@@ -22851,6 +22837,9 @@ input {
 
   .personalization-section-title > span:last-child {
     margin-left: 0;
+  }
+}
+
 /* ===== Cream system-wide refinement =====
    Keep the preset recognizable across the whole workspace instead of only
    changing the empty-chat greeting. The app remains dense and operational,
@@ -23095,7 +23084,8 @@ input {
     .confirm-dialog-btn.confirm, .tool-call-user-question-submit,
     .tool-call-plan-approval-approve, .project-sensitive-command-save,
     .personalization-save-btn,
-    .branch-create-submit-btn, .git-commit-btn.primary) {
+    .branch-create-submit-btn, .git-commit-btn.primary,
+    .mcp-editor-mode-btn.active) {
   border-color: var(--accent-orange);
   background: var(--accent-orange);
   color: #fffaf5;
@@ -23107,7 +23097,8 @@ input {
     .confirm-dialog-btn.confirm, .tool-call-user-question-submit,
     .tool-call-plan-approval-approve, .project-sensitive-command-save,
     .personalization-save-btn,
-    .branch-create-submit-btn, .git-commit-btn.primary):hover:not(:disabled) {
+    .branch-create-submit-btn, .git-commit-btn.primary,
+    .mcp-editor-mode-btn.active):hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent-orange) 88%, var(--text-primary));
 }
 

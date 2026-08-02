@@ -426,7 +426,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           response.status !== "error" &&
           effectiveKey !== PENDING_SESSION_KEY
         ) {
-          const apiConfig = await ctx.getActiveApiConfig();
+          // Use the conversation-scoped profile (options.apiProfile) so the
+          // auto-compaction decision matches the API config the conversation
+          // actually runs on — never the global active profile.
+          const apiConfig = await ctx.getActiveApiConfig(options.apiProfile);
           if (apiConfig?.enableAutoCompress) {
             // autoCompressThreshold is stored in TOKENS (resolved from the
             // configured percent against maxContextTokens when the config is
@@ -471,7 +474,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                   await ctx.performCompactionRef.current(
                     effectiveKey,
                     options.model,
-                    true
+                    true,
+                    undefined,
+                    options.apiProfile
                   );
 
                 if (compactionSummary) {
@@ -798,7 +803,10 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         // direct user sends and to pending-message flushes (which re-enter
         // handleSendMessage via handleSendMessageRef).
         if (sessionKey !== PENDING_SESSION_KEY) {
-          const apiConfig = await ctx.getActiveApiConfig();
+          // Use the conversation-scoped profile (options.apiProfile) so the
+          // auto-compaction decision matches the API config the conversation
+          // actually runs on — never the global active profile.
+          const apiConfig = await ctx.getActiveApiConfig(options.apiProfile);
           if (apiConfig?.enableAutoCompress) {
             // autoCompressThreshold is stored in TOKENS — compare directly (see
             // the in-loop check for why calculateAutoCompressThresholdTokens is
@@ -815,7 +823,9 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                   await ctx.performCompactionRef.current(
                     sessionKey,
                     options.model,
-                    true
+                    true,
+                    undefined,
+                    options.apiProfile
                   );
 
                   // performCompaction resets sessionRef.isSending to false in

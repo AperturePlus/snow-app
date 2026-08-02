@@ -136,7 +136,10 @@ export const MainContent = ({
           ) : activeView === "system-prompt-settings" ? (
             <SystemPromptSettingsPanel onClose={() => onSelectView("chat")} />
           ) : activeView === "personalization-settings" ? (
-            <PersonalizationSettingsPanel onClose={() => onSelectView("chat")} />
+            <PersonalizationSettingsPanel
+              activeDirectory={activeDirectory}
+              onClose={() => onSelectView("chat")}
+            />
           ) : activeView === "custom-headers-settings" ? (
             <CustomHeadersSettingsPanel onClose={() => onSelectView("chat")} />
           ) : activeView === "mcp-settings" ? (
