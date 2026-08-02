@@ -15093,8 +15093,26 @@ input {
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
+}
+
+/* Dedicated scroll container for the file list / graph. Keeping the
+   scrollable content separate from the header means the header needs no
+   background of its own: it sits directly on the panel's frosted surface
+   instead of stacking another semi-transparent layer on top (which made
+   it visibly darker than the rest of the panel). */
+.git-control-scroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   scrollbar-gutter: stable;
+}
+
+/* Header block (repo selector, toolbar, sync status). Stays above the
+   scroll container; transparent so the panel surface shows through
+   with no colour mismatch. */
+.git-control-top {
+  flex-shrink: 0;
 }
 
 .git-control-header {
@@ -18247,6 +18265,7 @@ input {
 }
 
 .git-graph-detail {
+  position: relative;
   padding: 4px 12px 8px 40px;
   border-bottom: 1px solid var(--border-light);
   background: var(--bg-secondary);
@@ -18254,6 +18273,17 @@ input {
      not jump when the file list arrives, which would shift all following
      rows in the scroll container and cause visible jitter. */
   min-height: 30px;
+}
+
+/* Extends the graph lanes through the expanded detail area (see
+   GitGraph.tsx) so branch columns stay continuous across the detail panel.
+   Aligned with the row SVG: 12px left padding + lane columns. */
+.git-graph-detail-lines {
+  position: absolute;
+  left: 12px;
+  top: 0;
+  height: 100%;
+  pointer-events: none;
 }
 
 .git-graph-detail-loading,

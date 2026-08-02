@@ -1763,6 +1763,7 @@ export const zhCN = {
   "git.loadingStatus": "加载 Git 状态中...",
   "git.notARepo": "不是 Git 仓库",
   "git.selectRepo": "选择仓库",
+  "git.refresh": "刷新",
   "git.pull": "拉取",
   "git.pullBehind": "拉取（落后 {{count}} 个提交）",
   "git.push": "推送",

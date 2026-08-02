@@ -1736,6 +1736,7 @@ export const zhTW = {
   "git.loadingStatus": "載入 Git 狀態中...",
   "git.notARepo": "不是 Git 儲存庫",
   "git.selectRepo": "選擇儲存庫",
+  "git.refresh": "重新整理",
   "git.pull": "拉取",
   "git.pullBehind": "拉取（落後 {{count}} 個提交）",
   "git.push": "推送",

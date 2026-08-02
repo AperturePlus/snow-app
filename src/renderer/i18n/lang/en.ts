@@ -1858,6 +1858,7 @@ export const en = {
   "git.loadingStatus": "Loading git status...",
   "git.notARepo": "Not a git repository",
   "git.selectRepo": "Select repository",
+  "git.refresh": "Refresh",
   "git.pull": "Pull",
   "git.pullBehind": "Pull ({{count}} commits behind)",
   "git.push": "Push",
