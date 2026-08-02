@@ -935,6 +935,35 @@ export const zhCN = {
   "settings.mcpSaveBeforeFetchTools": "请先保存此服务再获取工具",
   "settings.mcpFetchToolsSuccess": "已从 {{name}} 获取 {{count}} 个工具。",
   "settings.mcpFetchToolsError": "获取 MCP 工具失败",
+  "settings.mcpErrorProtocolIncompatible":
+    "MCP 服务器可能不支持当前协议。请尝试更新服务器或其 SDK 版本。",
+  "settings.mcpErrorStartFailed":
+    "无法启动 MCP 服务器进程。请检查命令和参数是否正确。",
+  "settings.mcpErrorInitializeFailed":
+    "MCP 服务器连接初始化失败，服务器可能不兼容当前协议。",
+  "settings.mcpErrorHttpConnectFailed":
+    "无法连接 MCP HTTP 服务器。请检查 URL 和网络。",
+  "settings.mcpErrorMissingCommand": "此 MCP 服务器未配置启动命令。",
+  "settings.mcpErrorMissingUrl": "此 MCP 服务器未配置 URL。",
+  "settings.mcpErrorNotConfigured":
+    "此 MCP 服务器已不存在或未配置，请重新添加后再试。",
+  "settings.mcpErrorListToolsFailed": "从 MCP 服务器获取工具列表失败。",
+  "settings.mcpErrorLoadConfigsFailed": "加载 MCP 服务器配置失败。",
+  "settings.mcpErrorInvalidConfigJson": "MCP 服务器配置包含无效的 JSON 值。",
+  "settings.mcpFetchToolsErrorDetail": "获取 MCP 工具失败：{{detail}}",
+  "settings.mcpEditForm": "表单",
+  "settings.mcpJsonInvalid": "JSON 无效",
+  "settings.mcpJsonEditorLabel": "MCP 服务器 JSON 配置",
+  "settings.mcpJsonHint":
+    "以 JSON 形式编辑服务器配置。name 必填，stdio 需要 command，http 需要 url。",
+  "settings.mcpJsonImport": "导入 JSON",
+  "settings.mcpJsonImportTitle": "从 JSON 导入 MCP 服务",
+  "settings.mcpJsonImportInfo":
+    "粘贴 Snow CLI settings.json 的 mcpServers 块、Claude 风格的 mcp.json 或纯服务器映射。导入的服务将添加到全局作用域。",
+  "settings.mcpJsonImportButton": "导入",
+  "settings.mcpJsonImportTextarea": "MCP 服务 JSON",
+  "settings.mcpJsonImportSuccess": "已导入 {{count}} 个 MCP 服务。",
+  "settings.mcpJsonImportError": "导入 MCP 服务失败",
   "settings.mcpToolDetailsTitle": "服务工具",
   "settings.mcpToolDetailsCount": "已获取 {{count}} 个工具",
   "settings.mcpToolDetailsNotFetched": "尚未获取工具列表",
@@ -1675,6 +1704,8 @@ export const zhCN = {
   "rightPanel.browserTab": "浏览器",
   "rightPanel.codebaseTab": "代码库",
   "rightPanel.closeTab": "关闭标签页",
+  "rightPanel.tabContextNewTerminal": "新建终端",
+  "rightPanel.tabContextNewBrowser": "新建浏览器",
   "rightPanel.closeDiff": "关闭差异",
   "rightPanel.selectFileToViewDiff": "选择文件以查看差异",
   "rightPanel.noRepositorySelected": "未选择仓库",

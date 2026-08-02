@@ -932,6 +932,35 @@ export const zhTW = {
   "settings.mcpSaveBeforeFetchTools": "請先儲存此服務再取得工具",
   "settings.mcpFetchToolsSuccess": "已從 {{name}} 取得 {{count}} 個工具。",
   "settings.mcpFetchToolsError": "取得 MCP 工具失敗",
+  "settings.mcpErrorProtocolIncompatible":
+    "MCP 伺服器可能不支援目前協定。請嘗試更新伺服器或其 SDK 版本。",
+  "settings.mcpErrorStartFailed":
+    "無法啟動 MCP 伺服器程序。請檢查命令與參數是否正確。",
+  "settings.mcpErrorInitializeFailed":
+    "MCP 伺服器連線初始化失敗，伺服器可能不相容目前協定。",
+  "settings.mcpErrorHttpConnectFailed":
+    "無法連線 MCP HTTP 伺服器。請檢查 URL 與網路。",
+  "settings.mcpErrorMissingCommand": "此 MCP 伺服器未設定啟動命令。",
+  "settings.mcpErrorMissingUrl": "此 MCP 伺服器未設定 URL。",
+  "settings.mcpErrorNotConfigured":
+    "此 MCP 伺服器已不存在或未設定，請重新新增後再試。",
+  "settings.mcpErrorListToolsFailed": "從 MCP 伺服器取得工具清單失敗。",
+  "settings.mcpErrorLoadConfigsFailed": "載入 MCP 伺服器設定失敗。",
+  "settings.mcpErrorInvalidConfigJson": "MCP 伺服器設定包含無效的 JSON 值。",
+  "settings.mcpFetchToolsErrorDetail": "取得 MCP 工具失敗：{{detail}}",
+  "settings.mcpEditForm": "表單",
+  "settings.mcpJsonInvalid": "JSON 無效",
+  "settings.mcpJsonEditorLabel": "MCP 伺服器 JSON 設定",
+  "settings.mcpJsonHint":
+    "以 JSON 形式編輯伺服器設定。name 必填，stdio 需要 command，http 需要 url。",
+  "settings.mcpJsonImport": "匯入 JSON",
+  "settings.mcpJsonImportTitle": "從 JSON 匯入 MCP 服務",
+  "settings.mcpJsonImportInfo":
+    "貼上 Snow CLI settings.json 的 mcpServers 區塊、Claude 風格的 mcp.json 或純伺服器對應表。匯入的服務將加入全域作用域。",
+  "settings.mcpJsonImportButton": "匯入",
+  "settings.mcpJsonImportTextarea": "MCP 服務 JSON",
+  "settings.mcpJsonImportSuccess": "已匯入 {{count}} 個 MCP 服務。",
+  "settings.mcpJsonImportError": "匯入 MCP 服務失敗",
   "settings.mcpToolDetailsTitle": "服務工具",
   "settings.mcpToolDetailsCount": "已取得 {{count}} 個工具",
   "settings.mcpToolDetailsNotFetched": "尚未取得工具清單",
@@ -1648,6 +1677,8 @@ export const zhTW = {
   "rightPanel.browserTab": "瀏覽器",
   "rightPanel.codebaseTab": "程式碼庫",
   "rightPanel.closeTab": "關閉標籤頁",
+  "rightPanel.tabContextNewTerminal": "新增終端",
+  "rightPanel.tabContextNewBrowser": "新增瀏覽器",
   "rightPanel.closeDiff": "關閉差異",
   "rightPanel.selectFileToViewDiff": "選擇檔案以檢視差異",
   "rightPanel.noRepositorySelected": "未選擇儲存庫",

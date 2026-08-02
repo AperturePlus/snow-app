@@ -962,6 +962,36 @@ export const en = {
   "settings.mcpSaveBeforeFetchTools": "Save this server before fetching tools",
   "settings.mcpFetchToolsSuccess": "Fetched {{count}} tool(s) from {{name}}.",
   "settings.mcpFetchToolsError": "Failed to fetch MCP tools",
+  "settings.mcpErrorProtocolIncompatible":
+    "The MCP server may not support the current protocol. Try updating the server or its SDK.",
+  "settings.mcpErrorStartFailed":
+    "Failed to start the MCP server process. Check the command and arguments.",
+  "settings.mcpErrorInitializeFailed":
+    "Failed to initialize the MCP server connection. The server may not be compatible with the current protocol.",
+  "settings.mcpErrorHttpConnectFailed":
+    "Failed to connect to the MCP HTTP server. Check the URL and network.",
+  "settings.mcpErrorMissingCommand": "This MCP server has no command configured.",
+  "settings.mcpErrorMissingUrl": "This MCP server has no URL configured.",
+  "settings.mcpErrorNotConfigured":
+    "This MCP server is no longer configured. Re-add it and try again.",
+  "settings.mcpErrorListToolsFailed": "Failed to fetch the tool list from the MCP server.",
+  "settings.mcpErrorLoadConfigsFailed": "Failed to load MCP server configurations.",
+  "settings.mcpErrorInvalidConfigJson":
+    "The MCP server configuration contains invalid JSON values.",
+  "settings.mcpFetchToolsErrorDetail": "Failed to fetch MCP tools: {{detail}}",
+  "settings.mcpEditForm": "Form",
+  "settings.mcpJsonInvalid": "Invalid JSON",
+  "settings.mcpJsonEditorLabel": "MCP server JSON configuration",
+  "settings.mcpJsonHint":
+    "Edit the server configuration as JSON. name is required; stdio needs command, http needs url.",
+  "settings.mcpJsonImport": "Import JSON",
+  "settings.mcpJsonImportTitle": "Import MCP servers from JSON",
+  "settings.mcpJsonImportInfo":
+    "Paste a Snow CLI settings.json mcpServers block, a Claude-style mcp.json, or a plain server map. Imported servers are added to the global scope.",
+  "settings.mcpJsonImportButton": "Import",
+  "settings.mcpJsonImportTextarea": "MCP servers JSON",
+  "settings.mcpJsonImportSuccess": "Imported {{count}} MCP server(s).",
+  "settings.mcpJsonImportError": "Failed to import MCP servers",
   "settings.mcpToolDetailsTitle": "Server tools",
   "settings.mcpToolDetailsCount": "{{count}} tool(s) fetched",
   "settings.mcpToolDetailsNotFetched": "Tool list has not been fetched",
@@ -1769,6 +1799,8 @@ export const en = {
   "rightPanel.browserTab": "Browser",
   "rightPanel.codebaseTab": "Codebase",
   "rightPanel.closeTab": "Close tab",
+  "rightPanel.tabContextNewTerminal": "New Terminal",
+  "rightPanel.tabContextNewBrowser": "New Browser",
   "rightPanel.closeDiff": "Close diff",
   "rightPanel.selectFileToViewDiff": "Select a file to view its diff",
   "rightPanel.noRepositorySelected": "No repository selected",

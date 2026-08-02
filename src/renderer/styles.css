@@ -4822,6 +4822,7 @@ input {
   position: relative;
   flex-shrink: 0;
 }
+
 .sub-agent-monitor {
   display: flex;
   width: calc(100% - 24px);
@@ -17138,6 +17139,107 @@ input {
   gap: 14px;
 }
 
+/* ===== MCP JSON 编辑 / 导入模式 ===== */
+
+.mcp-editor-mode-switch {
+  display: inline-flex;
+  gap: 6px;
+  padding: 3px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-secondary, #1e293b) 70%, transparent);
+  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.2));
+  align-self: flex-start;
+}
+
+.mcp-editor-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text-secondary, #94a3b8);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.mcp-editor-mode-btn:hover:not(:disabled) {
+  color: var(--text-primary, #e2e8f0);
+}
+
+.mcp-editor-mode-btn.active {
+  background: var(--accent-blue, #3b82f6);
+  color: #fff;
+}
+
+.mcp-editor-mode-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mcp-editor-json-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mcp-editor-json-textarea,
+.mcp-json-import-textarea {
+  width: 100%;
+  min-height: 260px;
+  padding: 12px;
+  border: 1px solid var(--border-color, rgba(148, 163, 184, 0.25));
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-code, rgba(15, 23, 42, 0.6));
+  color: var(--text-primary, #e2e8f0);
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  resize: vertical;
+  tab-size: 2;
+}
+
+.mcp-editor-json-textarea:focus,
+.mcp-json-import-textarea:focus {
+  outline: none;
+  border-color: var(--accent-blue, #3b82f6);
+}
+
+.mcp-editor-json-error,
+.mcp-json-import-error {
+  padding: 8px 12px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-md, 8px);
+  background: color-mix(in srgb, var(--accent-red-bg, rgba(239, 68, 68, 0.12)) 90%, transparent);
+  color: var(--accent-red-text, #f87171);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.mcp-editor-json-hint {
+  color: var(--text-secondary, #94a3b8);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.mcp-json-import-modal .app-modal-dialog {
+  width: min(640px, calc(100vw - 48px));
+}
+
+.mcp-json-import-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mcp-json-import-textarea {
+  min-height: 320px;
+}
+
 @media (max-width: 640px) {
   .app-modal-overlay {
     align-items: stretch;
@@ -18350,6 +18452,45 @@ input {
 .right-panel-tab-close:hover {
   background: var(--bg-hover-strong);
   color: var(--text-primary);
+}
+
+/* Right panel tab context menu */
+.right-panel-tab-context-menu {
+  position: fixed;
+  z-index: 9999;
+  width: 170px;
+  padding: 4px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  box-shadow: var(--island-shadow);
+}
+
+.right-panel-tab-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.right-panel-tab-context-menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.right-panel-tab-context-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-light);
 }
 
 /* Diff Viewer Actions */
@@ -22432,7 +22573,7 @@ input {
   flex: 1;
   padding: 5px 10px;
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 6px;
   outline: none;
   background: var(--bg-primary);
   color: var(--text-primary);
@@ -22612,12 +22753,8 @@ input {
   min-height: 30px;
   padding: 5px 16px;
   border: 1px solid transparent;
-  border-radius: 8px;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--accent-blue) 88%, #fff 12%),
-    var(--accent-blue)
-  );
+  border-radius: 6px;
+  background: var(--accent-blue);
   color: #fff;
   font-size: 12px;
   font-weight: 600;
