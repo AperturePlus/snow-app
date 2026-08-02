@@ -86,10 +86,18 @@ export function PersonalizationSettingsPanel({
           </span>
         </div>
 
-        <div hidden={activeScope !== "global"} role="tabpanel">
+        <div
+          className="personalization-tabpanel"
+          hidden={activeScope !== "global"}
+          role="tabpanel"
+        >
           <GlobalRoleEditor />
         </div>
-        <div hidden={activeScope !== "project"} role="tabpanel">
+        <div
+          className="personalization-tabpanel"
+          hidden={activeScope !== "project"}
+          role="tabpanel"
+        >
           <ProjectRoleEditor />
         </div>
       </div>

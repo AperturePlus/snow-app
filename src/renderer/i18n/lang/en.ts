@@ -1211,7 +1211,7 @@ export const en = {
   "settings.themePresetsInfo":
     "Pick a built-in color scheme. Light and dark variants are bundled together.",
   "settings.themePresetSnow": "Snow",
-  "settings.themePresetAnthropic": "Anthropic",
+  "settings.themePresetCream": "Cream",
   "settings.themePresetMidnightBlue": "Midnight Blue",
   "settings.themePresetForestGreen": "Forest Green",
   "settings.themePresetRosePink": "Rose Pink",

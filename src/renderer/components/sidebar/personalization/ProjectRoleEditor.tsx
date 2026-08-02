@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkspaceDirectoryRecord } from "../../../../preload";
+import { CustomSelect } from "../../common/CustomSelect";
 import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { useI18n } from "../../../i18n";
 import {
@@ -318,23 +319,26 @@ export const ProjectRoleEditor = (): React.JSX.Element => {
               defaultValue: "Project",
             })}
           </span>
-          <select
-            className="personalization-project-select"
-            disabled={isLoadingProjects}
-            onChange={(event) => handleProjectChange(event.target.value)}
-            value={selectedProjectId}
-          >
-            <option value="">
-              {t("personalization.projectSelectPlaceholder", {
-                defaultValue: "Select a project...",
-              })}
-            </option>
-            {projects.map((project) => (
-              <option key={project.directoryId} value={project.directoryId}>
-                {project.name}
-              </option>
-            ))}
-          </select>
+          <div className="personalization-project-select-wrap">
+            <CustomSelect
+              value={selectedProjectId}
+              options={[
+                {
+                  value: "",
+                  label: t("personalization.projectSelectPlaceholder", {
+                    defaultValue: "Select a project...",
+                  }),
+                },
+                ...projects.map((project) => ({
+                  value: project.directoryId,
+                  label: project.name,
+                })),
+              ]}
+              onChange={handleProjectChange}
+              disabled={isLoadingProjects}
+              portal
+            />
+          </div>
         </label>
         {selectedProject ? (
           <span className="personalization-project-kind">
