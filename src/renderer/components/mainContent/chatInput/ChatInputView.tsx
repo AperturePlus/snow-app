@@ -1058,11 +1058,16 @@ export const ChatInputView = ({
                 <button
                   className={`toolbar-btn model ${
                     modelError ? "model-error" : ""
-                  }${isStreaming ? " is-disabled" : ""}`}
+                  }${isStreaming || isSubAgentConversation ? " is-disabled" : ""}`}
                   aria-label={labels.selectModel}
                   aria-expanded={isModelMenuOpen}
                   onClick={handleToggleModelMenu}
-                  disabled={isStreaming}
+                  disabled={isStreaming || isSubAgentConversation}
+                  title={
+                    isSubAgentConversation
+                      ? t("chat.subAgentModelFixed")
+                      : labels.selectModel
+                  }
                   type="button"
                 >
                   {modelError ? (
@@ -1469,6 +1474,7 @@ export const ChatInputView = ({
               <TokenUsageRing
                 tokenUsage={tokenUsage}
                 maxContextTokens={runtimeApiConfig?.maxContextTokens ?? null}
+                isLoading={isLoadingApiConfig}
               />
               <div className="input-action-buttons">
                 {isStreaming || isAborting ? (

@@ -1040,6 +1040,8 @@ input {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* 会话列表是操作型 UI，不允许文本选中，避免拖选列表项时产生误选 */
+  user-select: none;
 }
 
 .sidebar-section.chats-section .section-list {
@@ -1206,18 +1208,20 @@ input {
   transform: rotate(90deg);
 }
 
-.chat-item-sub-agents {
+/* 子代理列表面板：渲染在 ChatItem 外部（兄弟节点），
+   以树形轴从主会话图标中心引出连接，子代理项平时透明，
+   仅在悬浮/选中时显示小块背景，不占整行背景 */
+.sub-agent-list-panel {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  width: 100%;
-  flex-basis: 100%;
-  margin-left: 28px;
-  padding-left: 8px;
+  /* 轴对齐主会话图标中心：8px padding + 11px 半图标 */
+  margin: 0 0 4px 19px;
+  padding-left: 19px;
   border-left: 1px solid var(--border-color);
 }
 
-.chat-sub-agent-item {
+.sub-agent-list-item {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1227,27 +1231,15 @@ input {
   transition: background 0.12s ease;
 }
 
-.chat-sub-agent-item:hover {
-  background: var(--bg-active, rgba(255, 255, 255, 0.05));
+.sub-agent-list-item:hover {
+  background: var(--bg-hover);
 }
 
-.chat-sub-agent-item.active {
-  background: var(--bg-active, rgba(255, 255, 255, 0.08));
+.sub-agent-list-item.active {
+  background: var(--bg-active);
 }
 
-.chat-item.active .chat-sub-agent-item {
-  background: var(--bg-secondary);
-}
-
-.chat-item.active .chat-sub-agent-item:hover {
-  background: var(--bg-tertiary);
-}
-
-.chat-item.active .chat-sub-agent-item.active {
-  background: var(--bg-primary);
-}
-
-.chat-sub-agent-icon {
+.sub-agent-list-icon {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1255,20 +1247,33 @@ input {
   color: var(--text-muted);
 }
 
-.chat-sub-agent-icon svg {
+.sub-agent-list-icon svg {
   color: var(--text-muted);
 }
 
-.chat-sub-agent-item .chat-sub-agent-icon svg[stroke="currentColor"] {
+.sub-agent-list-item .sub-agent-list-icon svg[stroke="currentColor"] {
   color: var(--text-muted);
 }
 
-.chat-sub-agent-name {
+.sub-agent-list-icon .sub-agent-failed {
+  color: var(--accent-red-text, #ef4444);
+}
+
+.sub-agent-list-icon .sub-agent-completed {
+  color: var(--accent-green, #22c55e);
+}
+
+.sub-agent-list-name {
   font-size: 11.5px;
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.sub-agent-list-item.active .sub-agent-list-name {
+  color: var(--text-primary);
+  font-weight: 500;
 }
 
 .chat-item-sub-agent-count {
@@ -1285,19 +1290,6 @@ input {
   font-weight: 600;
   line-height: 1;
   flex-shrink: 0;
-}
-
-.chat-sub-agent-icon .sub-agent-failed {
-  color: var(--accent-red-text, #ef4444);
-}
-
-.chat-sub-agent-icon .sub-agent-completed {
-  color: var(--accent-green, #22c55e);
-}
-
-.chat-sub-agent-item.active .chat-sub-agent-name {
-  color: var(--text-primary);
-  font-weight: 500;
 }
 
 .chat-item-badge {
@@ -4864,67 +4856,6 @@ input {
 .chat-input-region {
   position: relative;
   flex-shrink: 0;
-}
-
-.sub-agent-monitor {
-  display: flex;
-  width: calc(100% - 24px);
-  max-width: 1120px;
-  min-height: 36px;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  margin: 8px auto 12px;
-  padding: 0 2px;
-  flex-wrap: wrap;
-}
-
-.sub-agent-monitor-status,
-.sub-agent-monitor-controls {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.sub-agent-monitor-status {
-  min-height: 24px;
-  padding: 3px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-island);
-  color: var(--text-tertiary);
-  font-size: 11px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.sub-agent-monitor-status svg {
-  flex-shrink: 0;
-  color: var(--text-muted);
-}
-
-.sub-agent-monitor-controls {
-  min-width: 0;
-}
-
-.sub-agent-monitor-controls .stream-metrics {
-  min-width: 0;
-}
-
-@media (max-width: 720px) {
-  .sub-agent-monitor {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .sub-agent-monitor-status,
-  .sub-agent-monitor-controls {
-    justify-content: center;
-  }
-
-  .sub-agent-monitor-controls {
-    overflow-x: auto;
-    padding-bottom: 2px;
-  }
 }
 
 .chat-scroll-to-bottom {

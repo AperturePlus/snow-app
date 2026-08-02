@@ -171,10 +171,6 @@ export const useConversationManagement = (
                     messages: buildConversationMessages(page.items),
                     messageRecords: page.items,
                     summary: nextTitle,
-                    conversationType:
-                      conversationRecord?.conversationType === "sub_agent"
-                        ? "sub_agent"
-                        : "main",
                     isStreaming: false,
                     isAborting: false,
                     isPaused: false,

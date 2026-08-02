@@ -429,7 +429,6 @@ export const useChatConversation = (
     recordFileChange,
     sessions,
     activeConversationId,
-    activeConversationType: activeSession?.conversationType ?? "main",
     conversationDirectoryId: activeSession?.directoryId,
     tokenUsage: activeSession?.tokenUsage ?? null,
     streamTokenCount: activeSession?.streamTokenCount ?? 0,
