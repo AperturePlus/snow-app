@@ -13206,77 +13206,13 @@ input {
   margin-left: auto;
 }
 
-/* ===== API Profile Selector ===== */
-.api-profile-selector {
+/* ===== Model Selector ===== */
+.model-selector {
   position: relative;
 }
 
-.toolbar-btn.api-profile {
-  max-width: 200px;
-}
-
-.api-profile-icon {
-  flex-shrink: 0;
-  color: var(--text-tertiary);
-}
-
-.api-profile-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 120px;
-}
-
-.api-profile-dropdown {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  right: 0;
-  min-width: 240px;
-  max-width: 320px;
-  max-height: 320px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  padding: 6px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
-  background: var(--bg-secondary);
-  box-shadow: var(--island-shadow);
-  z-index: 100;
-}
-
-.api-profile-dropdown-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 7px 8px;
-  border: none;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.api-profile-dropdown-item:hover,
-.api-profile-dropdown-item.is-active {
-  background: var(--bg-hover, rgba(127, 127, 127, 0.08));
-}
-
-.api-profile-dropdown-item.is-active {
-  color: var(--accent, #3b82f6);
-}
-
-.api-profile-dropdown-item-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.api-profile-dropdown-item-model {
+.model-dropdown-item-model {
+  margin-left: auto;
   flex-shrink: 0;
   max-width: 120px;
   overflow: hidden;
@@ -13284,11 +13220,6 @@ input {
   white-space: nowrap;
   font-size: 11px;
   color: var(--text-tertiary);
-}
-
-/* ===== Model Selector ===== */
-.model-selector {
-  position: relative;
 }
 
 /* ===== Token Usage Ring ===== */

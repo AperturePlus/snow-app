@@ -13,7 +13,6 @@ import {
   Loader2,
   Paperclip,
   RefreshCw,
-  Server,
   Square,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -61,7 +60,7 @@ export const ChatInputView = ({
   textareaRef,
   apiConfigs,
   selectedApiProfile,
-  isApiProfileMenuOpen,
+  modelMenuView,
   isSubAgentConversation,
   models,
   selectedModel,
@@ -108,6 +107,7 @@ export const ChatInputView = ({
   isCompacting,
   setManualValue,
   setIsManualMode,
+  setModelMenuView,
   handleChange,
   handleSend,
   handleAbort,
@@ -118,7 +118,6 @@ export const ChatInputView = ({
   handleManualKeyDown,
   handleRetryFetchModels,
   handleToggleModelMenu,
-  handleToggleApiProfileMenu,
   handleSelectApiProfile,
   handleSelectThinking,
   restoreContent,
@@ -153,41 +152,13 @@ export const ChatInputView = ({
   const [isRoleEditorOpen, setIsRoleEditorOpen] = useState(false);
   const [isCustomThinkingMode, setIsCustomThinkingMode] = useState(false);
   const [customThinkingValue, setCustomThinkingValue] = useState("");
-  const [modelMenuView, setModelMenuView] = useState<
-    "root" | "model" | "thinking"
-  >("root");
 
+  // 菜单关闭时退出自定义思考强度输入
   useEffect(() => {
     if (!isModelMenuOpen) {
-      setModelMenuView("root");
       setIsCustomThinkingMode(false);
     }
   }, [isModelMenuOpen]);
-
-  const profileDropdownRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!isApiProfileMenuOpen) {
-      return;
-    }
-
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        profileDropdownRef.current &&
-        !profileDropdownRef.current.contains(event.target as Node)
-      ) {
-        // The menu has no imperative close handle; clicking outside just
-        // closes the local dropdown state via a re-render toggle. Use a
-        // custom event-free approach: hide by unmounting through state is
-        // owned by the controller, so dispatch through the toggle handler.
-        handleToggleApiProfileMenu();
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [isApiProfileMenuOpen, handleToggleApiProfileMenu]);
 
   const commands = useMemo(
     () =>
@@ -1081,59 +1052,6 @@ export const ChatInputView = ({
               )}
             </div>
             <div className="toolbar-right">
-              {!isSubAgentConversation && apiConfigs.length > 0 && (
-                <div
-                  className="api-profile-selector"
-                  ref={profileDropdownRef}
-                >
-                  <button
-                    className={`toolbar-btn api-profile ${
-                      isStreaming ? " is-disabled" : ""
-                    }`}
-                    aria-label={labels.selectApiProfile}
-                    aria-expanded={isApiProfileMenuOpen}
-                    onClick={handleToggleApiProfileMenu}
-                    disabled={isStreaming}
-                    type="button"
-                    title={labels.selectApiProfile}
-                  >
-                    <Server size={14} className="api-profile-icon" />
-                    <span className="api-profile-name">
-                      {runtimeApiConfig?.displayName ||
-                        labels.selectApiProfile}
-                    </span>
-                    <ChevronDown size={12} />
-                  </button>
-                  {isApiProfileMenuOpen && (
-                    <div className="api-profile-dropdown">
-                      {apiConfigs.map((config) => (
-                        <button
-                          key={config.profileName}
-                          className={`api-profile-dropdown-item${
-                            config.profileName === selectedApiProfile
-                              ? " is-active"
-                              : ""
-                          }`}
-                          onClick={() => {
-                            void handleSelectApiProfile(config.profileName);
-                          }}
-                          type="button"
-                        >
-                          <span className="api-profile-dropdown-item-name">
-                            {config.displayName}
-                          </span>
-                          <span className="api-profile-dropdown-item-model">
-                            {config.advancedModel || config.basicModel || "-"}
-                          </span>
-                          {config.profileName === selectedApiProfile ? (
-                            <Check size={13} />
-                          ) : null}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
               <div className="model-selector" ref={dropdownRef}>
                 <button
                   className={`toolbar-btn model ${
@@ -1223,7 +1141,75 @@ export const ChatInputView = ({
                             <ChevronRight size={12} />
                           </span>
                         </button>
+                        {!isSubAgentConversation && apiConfigs.length > 0 && (
+                          <button
+                            className="model-dropdown-item"
+                            onClick={() => setModelMenuView("apiProfile")}
+                            type="button"
+                          >
+                            <span className="model-dropdown-item-name">
+                              {labels.selectApiProfile}
+                            </span>
+                            <span className="model-menu-value">
+                              <span
+                                className="model-menu-value-text"
+                                title={runtimeApiConfig?.displayName}
+                              >
+                                {runtimeApiConfig?.displayName ||
+                                  labels.selectApiProfile}
+                              </span>
+                              <ChevronRight size={12} />
+                            </span>
+                          </button>
+                        )}
                       </div>
+                    )}
+                    {modelMenuView === "apiProfile" && (
+                      <>
+                        <div className="model-menu-header">
+                          <button
+                            aria-label={t("common.back")}
+                            className="model-menu-back"
+                            onClick={() => setModelMenuView("root")}
+                            type="button"
+                          >
+                            <ChevronLeft size={14} />
+                          </button>
+                          <span>{labels.selectApiProfile}</span>
+                        </div>
+                        <div className="model-dropdown-list">
+                          {apiConfigs.map((config) => (
+                            <button
+                              key={config.profileName}
+                              className={`model-dropdown-item ${
+                                config.profileName === selectedApiProfile
+                                  ? "active"
+                                  : ""
+                              }`}
+                              onClick={() => {
+                                void handleSelectApiProfile(config.profileName);
+                              }}
+                              type="button"
+                              title={config.displayName}
+                            >
+                              <span className="model-dropdown-item-name">
+                                {config.displayName}
+                              </span>
+                              <span className="model-dropdown-item-model">
+                                {config.advancedModel ||
+                                  config.basicModel ||
+                                  "-"}
+                              </span>
+                              {config.profileName === selectedApiProfile && (
+                                <Check
+                                  size={14}
+                                  className="model-dropdown-check"
+                                />
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </>
                     )}
                     {modelMenuView === "model" &&
                       (isManualMode ? (

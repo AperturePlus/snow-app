@@ -1369,7 +1369,7 @@ export const en = {
   "settings.shortcutOpenTodo": "Open todo list",
   "settings.shortcutCycleProject": "Cycle through projects",
   "settings.shortcutOpenExplorer": "Open current project explorer",
-  "settings.shortcutCycleApiProfile": "Cycle through API providers",
+  "settings.shortcutCycleApiProfile": "Open API provider picker",
   "settings.shortcutEnabled": "Enabled",
   "settings.shortcutForegroundOnly": "Foreground only",
   "settings.shortcutForegroundOnlyNote":

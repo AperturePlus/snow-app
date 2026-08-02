@@ -43,6 +43,9 @@ export type ChatInputProps = {
 
 export type RequestMethod = "chat" | "responses" | "gemini" | "anthropic";
 
+/** 模型选择菜单的二级视图。 */
+export type ModelMenuView = "root" | "model" | "thinking" | "apiProfile";
+
 export type ThinkingOption = {
   value: string;
   label: string;
@@ -54,7 +57,7 @@ export type ChatInputState = {
   textareaRef: RefObject<HTMLDivElement | null>;
   apiConfigs: ApiConfigRecord[];
   selectedApiProfile: string;
-  isApiProfileMenuOpen: boolean;
+  modelMenuView: ModelMenuView;
   isSubAgentConversation: boolean;
   models: Model[];
   selectedModel: string;
@@ -106,7 +109,8 @@ export type ChatInputActions = {
   handleManualKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   handleRetryFetchModels: () => Promise<void>;
   handleToggleModelMenu: () => void;
-  handleToggleApiProfileMenu: () => void;
+  setModelMenuView: (view: ModelMenuView) => void;
+  handleOpenApiProfileMenu: () => void;
   handleSelectApiProfile: (profileName: string) => Promise<void>;
   handleSelectThinking: (nextValue: string) => Promise<void>;
   restoreContent: (content: string) => void;

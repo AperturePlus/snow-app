@@ -25,6 +25,7 @@ import type {
   ChatInputActions,
   ChatInputSendOptions,
   ChatInputState,
+  ModelMenuView,
 } from "./types";
 import {
   createChangeChipHtml,
@@ -83,7 +84,7 @@ export const useChatInputController = ({
   // scoped: switching it here never mutates the global profile settings.
   const [apiConfigs, setApiConfigs] = useState<ApiConfigRecord[]>([]);
   const [selectedApiProfile, setSelectedApiProfile] = useState<string>("");
-  const [isApiProfileMenuOpen, setIsApiProfileMenuOpen] = useState(false);
+  const [modelMenuView, setModelMenuView] = useState<ModelMenuView>("root");
   const [isSubAgentConversation, setIsSubAgentConversation] = useState(false);
   const [isLoadingApiConfig, setIsLoadingApiConfig] = useState(true);
   const [thinkingValue, setThinkingValue] = useState(DEFAULT_THINKING_VALUE);
@@ -291,6 +292,13 @@ export const useChatInputController = ({
       setIsManualMode(false);
     }
   }, [isStreaming, isModelMenuOpen]);
+
+  // 菜单关闭时重置二级视图
+  useEffect(() => {
+    if (!isModelMenuOpen) {
+      setModelMenuView("root");
+    }
+  }, [isModelMenuOpen]);
 
   useEffect(() => {
     if (!isModelMenuOpen) {
@@ -548,10 +556,6 @@ export const useChatInputController = ({
     });
   }, [loadModels]);
 
-  const handleToggleApiProfileMenu = useCallback(() => {
-    setIsApiProfileMenuOpen((open) => !open);
-  }, []);
-
   // Switch the conversation-scoped API profile. Persists the binding on the
   // conversation row so it survives reloads; for a brand-new conversation the
   // choice is kept locally and carried on the first request instead.
@@ -565,7 +569,8 @@ export const useChatInputController = ({
       }
 
       setSelectedApiProfile(profileName);
-      setIsApiProfileMenuOpen(false);
+      setIsModelMenuOpen(false);
+      setModelMenuView("root");
       setRuntimeApiConfig(nextConfig);
       // Reset the model picker to the new provider's default.
       setModels([]);
@@ -591,24 +596,24 @@ export const useChatInputController = ({
     [apiConfigs, conversationId, isSubAgentConversation]
   );
 
-  // Cycle to the next API profile (wraps around). Driven by the Alt+P
-  // shortcut; no-op for sub-agent conversations (their provider is fixed by
-  // the agent config) or when fewer than two providers exist.
-  const handleCycleApiProfile = useCallback((): void => {
-    if (isSubAgentConversation || apiConfigs.length < 2) {
+  // Open the API profile picker (a sub-view of the model menu). Driven by the
+  // Alt+P / Ctrl+P shortcut; no-op while a conversation is streaming, for
+  // sub-agent conversations (their provider is fixed by the agent config),
+  // or when no API profile exists.
+  const handleOpenApiProfileMenu = useCallback((): void => {
+    if (isStreaming || isSubAgentConversation || apiConfigs.length === 0) {
       return;
     }
-    const currentIndex = apiConfigs.findIndex(
-      (config) => config.profileName === selectedApiProfile
-    );
-    const nextIndex =
-      currentIndex === -1 ? 0 : (currentIndex + 1) % apiConfigs.length;
-    void handleSelectApiProfile(apiConfigs[nextIndex].profileName);
-  }, [apiConfigs, handleSelectApiProfile, isSubAgentConversation, selectedApiProfile]);
+    setIsModelMenuOpen(true);
+    setModelMenuView("apiProfile");
+  }, [apiConfigs.length, isStreaming, isSubAgentConversation]);
 
   useEffect(() => {
-    return shortcutEvents.on("cycle-api-profile", handleCycleApiProfile);
-  }, [handleCycleApiProfile]);
+    return shortcutEvents.on(
+      "open-api-profile-menu",
+      handleOpenApiProfileMenu
+    );
+  }, [handleOpenApiProfileMenu]);
 
   const requestMethod = normalizeRequestMethod(runtimeApiConfig?.requestMethod);
   const thinkingOptions = THINKING_OPTIONS_BY_METHOD[requestMethod];
@@ -673,7 +678,7 @@ export const useChatInputController = ({
     textareaRef,
     apiConfigs,
     selectedApiProfile,
-    isApiProfileMenuOpen,
+    modelMenuView,
     isSubAgentConversation,
     models,
     selectedModel,
@@ -708,7 +713,8 @@ export const useChatInputController = ({
     handleManualKeyDown,
     handleRetryFetchModels,
     handleToggleModelMenu,
-    handleToggleApiProfileMenu,
+    setModelMenuView,
+    handleOpenApiProfileMenu,
     handleSelectApiProfile,
     handleSelectThinking,
     restoreContent,

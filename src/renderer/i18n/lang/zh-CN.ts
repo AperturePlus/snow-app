@@ -1308,7 +1308,7 @@ export const zhCN = {
   "settings.shortcutOpenTodo": "打开待办列表",
   "settings.shortcutCycleProject": "循环切换项目",
   "settings.shortcutOpenExplorer": "打开当前项目明细",
-  "settings.shortcutCycleApiProfile": "循环切换 API 提供商",
+  "settings.shortcutCycleApiProfile": "打开 API 提供商选择器",
   "settings.shortcutEnabled": "启用",
   "settings.shortcutForegroundOnly": "仅台前生效",
   "settings.shortcutForegroundOnlyNote":
