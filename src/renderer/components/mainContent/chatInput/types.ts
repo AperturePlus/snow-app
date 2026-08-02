@@ -3,6 +3,7 @@ import type { LucideIcon } from "lucide-react";
 import type { ApiConfigRecord, Model, TokenUsage } from "../../../../preload";
 export type ChatInputSendOptions = {
   model?: string;
+  apiProfile?: string;
 };
 export type ChatInputProps = {
   placeholder?: string;
@@ -51,6 +52,10 @@ export type ThinkingOption = {
 export type ChatInputState = {
   value: string;
   textareaRef: RefObject<HTMLDivElement | null>;
+  apiConfigs: ApiConfigRecord[];
+  selectedApiProfile: string;
+  isApiProfileMenuOpen: boolean;
+  isSubAgentConversation: boolean;
   models: Model[];
   selectedModel: string;
   displayModel: string;
@@ -76,6 +81,7 @@ export type ChatInputState = {
 
 export type ChatInputLabels = {
   selectModel: string;
+  selectApiProfile: string;
   loadModelsError: string;
   loadingModels: string;
   refreshModels: string;
@@ -100,6 +106,8 @@ export type ChatInputActions = {
   handleManualKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   handleRetryFetchModels: () => Promise<void>;
   handleToggleModelMenu: () => void;
+  handleToggleApiProfileMenu: () => void;
+  handleSelectApiProfile: (profileName: string) => Promise<void>;
   handleSelectThinking: (nextValue: string) => Promise<void>;
   restoreContent: (content: string) => void;
 };

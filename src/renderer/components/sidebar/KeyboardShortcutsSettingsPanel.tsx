@@ -32,6 +32,7 @@ const DEFAULT_KEYS: Record<KeyboardShortcutAction, string> = {
   openTodo: "mod+t",
   cycleProject: "mod+backtick",
   openProjectExplorer: "mod+d",
+  cycleApiProfile: "alt+p",
 };
 
 type KeyboardShortcutsSettingsPanelProps = {

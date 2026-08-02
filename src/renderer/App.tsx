@@ -97,6 +97,9 @@ const ShortcutHandlerBridge = (): null => {
     const unsubExplorer = registerHandler("openProjectExplorer", () => {
       shortcutEvents.emit("open-project-explorer");
     });
+    const unsubCycleApiProfile = registerHandler("cycleApiProfile", () => {
+      shortcutEvents.emit("cycle-api-profile");
+    });
 
     return () => {
       unsubCancel();
@@ -105,6 +108,7 @@ const ShortcutHandlerBridge = (): null => {
       unsubTodo();
       unsubCycle();
       unsubExplorer();
+      unsubCycleApiProfile();
     };
   }, [registerHandler]);
 
