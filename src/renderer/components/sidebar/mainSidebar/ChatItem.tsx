@@ -136,7 +136,7 @@ export function ChatItem({
 
   const now = new Date();
   const parsedDate = parseDbTimestamp(conversation.updatedAt);
-  const rawTimeLabel = formatTimeLabel(parsedDate, now);
+  const rawTimeLabel = formatTimeLabel(parsedDate, now, t);
   const timeLabel =
     rawTimeLabel === "yesterday"
       ? t("sidebar.chatTimeYesterday", { defaultValue: "Yesterday" })

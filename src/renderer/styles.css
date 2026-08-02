@@ -996,6 +996,38 @@ input {
   gap: 2px;
 }
 
+.section-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 2px 4px;
+  margin-left: -4px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  transition: background 0.12s, color 0.12s;
+}
+
+.section-toggle-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.section-toggle-btn svg {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.section-toggle-btn .section-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.section-toggle-chevron--open {
+  transform: rotate(90deg);
+}
+
 .section-list {
   display: flex;
   flex-direction: column;
