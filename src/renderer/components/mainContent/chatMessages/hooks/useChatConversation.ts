@@ -180,6 +180,11 @@ export const useChatConversation = (
   // `resolve` callback before proceeding to the next iteration.
   const pauseControllerRef = useRef<Map<string, PauseController>>(new Map());
 
+  // Per-conversation Plan Mode approval keys (see
+  // ConversationContextValue.planApprovedSessionKeysRef). Owned here so every
+  // mode-management hook can clear it when Plan Mode is genuinely turned off.
+  const planApprovedSessionKeysRef = useRef<Set<string>>(new Set());
+
   // --- Active API config accessor ---
   // Fetches the active config fresh from storage on every call so that user
   // edits (e.g. the auto-compress threshold) take effect immediately at the
@@ -251,6 +256,7 @@ export const useChatConversation = (
     planModeRef,
     goalModeRef,
     alwaysApprovedToolsRef,
+    planApprovedSessionKeysRef,
     pendingToolAuthorizationRef,
     pendingUserQuestionRef,
     pendingHookDecisionRef,

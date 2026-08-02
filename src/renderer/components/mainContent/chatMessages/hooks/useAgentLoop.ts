@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback } from "react";
 import type { ChatInputSendOptions } from "../../chatInput/types";
 import type {
   ChatConversationMessage,
@@ -50,14 +50,13 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
   const { ctx, requestToolAuthorizations } = params;
 
   // Plan approval is isolated per main-conversation session so parallel chats
-  // cannot borrow each other's approval. Disabling Plan Mode re-locks all runs.
-  const planApprovedSessionKeysRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    if (!ctx.planMode) {
-      planApprovedSessionKeysRef.current.clear();
-    }
-  }, [ctx.planMode]);
+  // cannot borrow each other's approval. The key set lives on ctx
+  // (planApprovedSessionKeysRef) so it is cleared only when Plan Mode is
+  // genuinely turned off (user toggle / Goal Mode mutual exclusion / new
+  // chat). Switching conversations restores the target session's mode via
+  // setPlanModeState directly and must NOT clear it — otherwise an approved
+  // plan is lost when the user navigates away and back.
+  const planApprovedSessionKeysRef = ctx.planApprovedSessionKeysRef;
 
   const handleSendMessage = useCallback(
     (message: string, options: ChatInputSendOptions) => {
@@ -291,6 +290,16 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
 
         if (response.conversationId) {
           if (effectiveKey === PENDING_SESSION_KEY) {
+            // Plan Mode approval obtained while the session was still pending
+            // must follow the session to its real conversation id. Otherwise
+            // the approval stays keyed under PENDING_SESSION_KEY and the next
+            // agent-loop iteration (effectiveKey = conversationId) hits the
+            // Rust hard gate again — the model sees "Plan Mode write blocked"
+            // even though the user already approved the plan.
+            if (planApprovedSessionKeysRef.current.has(PENDING_SESSION_KEY)) {
+              planApprovedSessionKeysRef.current.delete(PENDING_SESSION_KEY);
+              planApprovedSessionKeysRef.current.add(response.conversationId);
+            }
             ctx.migrateSession(PENDING_SESSION_KEY, response.conversationId);
             effectiveKey = response.conversationId;
             finalSessionKey = response.conversationId;

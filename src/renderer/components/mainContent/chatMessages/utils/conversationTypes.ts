@@ -375,6 +375,11 @@ export type ConversationContextValue = {
   planModeRef: RefValue<boolean>;
   goalModeRef: RefValue<boolean>;
   alwaysApprovedToolsRef: RefValue<Set<string>>;
+  /** Per-conversation Plan Mode approval keys. Cleared only when Plan Mode is
+   *  genuinely turned off (user toggle, Goal Mode mutual exclusion, new chat)
+   *  — NOT on conversation switches, so an approved plan survives switching
+   *  away and back. */
+  planApprovedSessionKeysRef: RefValue<Set<string>>;
   pendingToolAuthorizationRef: RefValue<Map<string, PendingToolAuthorization>>;
   pendingUserQuestionRef: RefValue<Map<string, PendingUserQuestion>>;
   pendingHookDecisionRef: RefValue<Map<string, PendingHookDecision>>;
