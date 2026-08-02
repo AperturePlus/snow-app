@@ -1582,7 +1582,7 @@ export const en = {
     "Changes take effect in the next conversation.",
   "personalization.projectTitle": "Project rules",
   "personalization.projectInfo":
-    "Apply only to the selected project and override the matching global rules.",
+    "Project-specific rules are loaded after global rules.",
   "personalization.projectSelect": "Project",
   "personalization.projectSelectPlaceholder": "Select a project...",
   "personalization.projectNotFound":
@@ -1590,14 +1590,20 @@ export const en = {
   "personalization.projectEmpty":
     "Select a project to edit its ROLE.md. Add projects from the sidebar first.",
   "personalization.projectScopeNote":
-    "Project rules live in ROLE.md at the project root and take priority over global rules.",
+    "Project rules are appended after global rules and win when instructions conflict.",
+  "personalization.includeGlobalTitle": "Load global rules",
+  "personalization.includeGlobalDesc":
+    "Keep shared preferences active in this project, then add project-specific rules.",
   "personalization.projectSaved": "Project rules saved.",
   "personalization.projectPlaceholder":
     "Enter rules for this project here, e.g. code style, architecture conventions, tech stack notes...",
   "personalization.projectKindLocal": "Local",
   "personalization.priorityTitle": "Rule priority",
   "personalization.priorityInfo":
-    "Rules take effect in the following order, later ones override earlier ones:",
+    "Every enabled scope is loaded; later instructions win only when they conflict:",
+  "personalization.scopeSummary":
+    "Global and project rules are loaded together by default",
+  "personalization.loadOrder": "Load order",
   "personalization.prioritySession": "Conversation instructions",
   "personalization.prioritySessionDesc":
     "Temporary instructions given in the current conversation.",
@@ -1611,7 +1617,7 @@ export const en = {
   "personalization.priorityDefaultDesc":
     "Used when no project or global rules are defined.",
   "personalization.priorityNote":
-    "Project rules override global rules; if a project has no ROLE.md, the global rules are used automatically.",
+    "Every enabled scope is loaded; later rules take priority only when instructions conflict.",
   "projectSkills.location.global": "Global",
   "projectSkills.location.project": "Project",
   "projectSkills.source.snow": "Snow",

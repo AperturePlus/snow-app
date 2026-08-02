@@ -1,4 +1,5 @@
-import { Info, Layers, X } from "lucide-react";
+import { ChevronRight, FolderOpen, Globe, Info, X } from "lucide-react";
+import { useState } from "react";
 import { useI18n } from "../../../i18n";
 import { GlobalRoleEditor } from "./GlobalRoleEditor";
 import { ProjectRoleEditor } from "./ProjectRoleEditor";
@@ -10,13 +11,16 @@ export type PersonalizationSettingsPanelProps = {
 /**
  * 个性化/规则设置面板：
  * - 全局规则：编辑 ~/.snow/ROLE.md（对所有项目与对话生效）
- * - 项目规则：选择项目后编辑该项目 ROLE.md（本地/SSH，覆盖全局规则）
- * - 规则优先级说明：会话指令 > 项目规则 > 全局规则 > 内置默认
+ * - 项目规则：选择项目后编辑该项目 ROLE.md（本地/SSH）
+ * - 默认组合全局与项目规则，并允许项目单独关闭全局规则
  */
 export function PersonalizationSettingsPanel({
   onClose,
 }: PersonalizationSettingsPanelProps): React.JSX.Element {
   const { t } = useI18n();
+  const [activeScope, setActiveScope] = useState<"global" | "project">(
+    "project"
+  );
 
   return (
     <div className="api-settings-page personalization-page" role="region">
@@ -51,94 +55,66 @@ export function PersonalizationSettingsPanel({
         )}
       </div>
 
-      <GlobalRoleEditor />
-      <ProjectRoleEditor />
-
-      <section
-        className="personalization-section"
-        aria-label={t("personalization.priorityTitle")}
-      >
-        <div className="personalization-section-header">
-          <div className="personalization-section-title">
-            <Layers size={15} strokeWidth={1.8} />
-            <strong>
-              {t("personalization.priorityTitle", {
-                defaultValue: "Rule priority",
-              })}
-            </strong>
-            <span>
-              {t("personalization.priorityInfo", {
-                defaultValue:
-                  "Rules take effect in the following order, later ones override earlier ones:",
-              })}
-            </span>
+      <div className="personalization-workspace">
+        <div className="personalization-scope-bar">
+          <div className="personalization-scope-tabs" role="tablist">
+            <button
+              aria-selected={activeScope === "global"}
+              className={activeScope === "global" ? "active" : ""}
+              onClick={() => setActiveScope("global")}
+              role="tab"
+              type="button"
+            >
+              <Globe size={14} />
+              {t("personalization.globalTitle", { defaultValue: "Global rules" })}
+            </button>
+            <button
+              aria-selected={activeScope === "project"}
+              className={activeScope === "project" ? "active" : ""}
+              onClick={() => setActiveScope("project")}
+              role="tab"
+              type="button"
+            >
+              <FolderOpen size={14} />
+              {t("personalization.projectTitle", { defaultValue: "Project rules" })}
+            </button>
           </div>
-        </div>
-
-        <ol className="personalization-priority-list">
-          <li>
-            <strong>
-              {t("personalization.prioritySession", {
-                defaultValue: "Conversation instructions",
-              })}
-            </strong>
-            <span>
-              {t("personalization.prioritySessionDesc", {
-                defaultValue:
-                  "Temporary instructions given in the current conversation.",
-              })}
-            </span>
-          </li>
-          <li>
-            <strong>
-              {t("personalization.priorityProject", {
-                defaultValue: "Project rules",
-              })}
-            </strong>
-            <span>
-              {t("personalization.priorityProjectDesc", {
-                defaultValue:
-                  "ROLE.md at the selected project root, applied when a project is active.",
-              })}
-            </span>
-          </li>
-          <li>
-            <strong>
-              {t("personalization.priorityGlobal", {
-                defaultValue: "Global rules",
-              })}
-            </strong>
-            <span>
-              {t("personalization.priorityGlobalDesc", {
-                defaultValue:
-                  "~/.snow/ROLE.md, applied to every project and conversation.",
-              })}
-            </span>
-          </li>
-          <li>
-            <strong>
-              {t("personalization.priorityDefault", {
-                defaultValue: "Built-in default prompt",
-              })}
-            </strong>
-            <span>
-              {t("personalization.priorityDefaultDesc", {
-                defaultValue:
-                  "Used when no project or global rules are defined.",
-              })}
-            </span>
-          </li>
-        </ol>
-
-        <div className="personalization-priority-note">
-          <Info size={14} />
-          <span>
-            {t("personalization.priorityNote", {
-              defaultValue:
-                "Project rules override global rules; if a project has no ROLE.md, the global rules are used automatically.",
+          <span className="personalization-scope-summary">
+            {t("personalization.scopeSummary", {
+              defaultValue: "Global + project rules are loaded together by default",
             })}
           </span>
         </div>
+
+        <div hidden={activeScope !== "global"} role="tabpanel">
+          <GlobalRoleEditor />
+        </div>
+        <div hidden={activeScope !== "project"} role="tabpanel">
+          <ProjectRoleEditor />
+        </div>
+      </div>
+
+      <section
+        className="personalization-rule-chain"
+        aria-label={t("personalization.priorityTitle")}
+      >
+        <div className="personalization-rule-chain-label">
+          <Info size={14} />
+          <span>{t("personalization.loadOrder", { defaultValue: "Load order" })}</span>
+        </div>
+        <div className="personalization-rule-chain-steps">
+          <span>{t("personalization.priorityGlobal", { defaultValue: "Global rules" })}</span>
+          <ChevronRight size={13} />
+          <span>{t("personalization.priorityProject", { defaultValue: "Project rules" })}</span>
+          <ChevronRight size={13} />
+          <span>{t("personalization.prioritySession", { defaultValue: "Conversation instructions" })}</span>
+        </div>
+        <small>
+          {t("personalization.priorityNote", {
+            defaultValue:
+              "All enabled scopes are loaded; later instructions take priority only when they conflict.",
+          })}
+        </small>
       </section>
     </div>
   );

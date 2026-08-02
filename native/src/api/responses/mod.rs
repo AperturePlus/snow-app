@@ -83,6 +83,7 @@ pub struct ResponsesApiRequest {
     /// Electron main process over SSH (mirrors RoleEditorPanel's access path).
     /// Absent for local workspaces — Rust reads the file itself.
     pub remote_role_content: Option<String>,
+    pub remote_include_global_rules: Option<bool>,
 }
 
 #[napi(object)]
@@ -220,6 +221,7 @@ async fn create_response_async(
         goal_mode: request.goal_mode.unwrap_or(false),
         system_prompt_ids_json: &api_config.system_prompt_ids_json,
         remote_role_content: request.remote_role_content.as_deref(),
+        remote_include_global_rules: request.remote_include_global_rules,
     })?;
 
     // Inject conversation_id and session_id as request headers for prompt

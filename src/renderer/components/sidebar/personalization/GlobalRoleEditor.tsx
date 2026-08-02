@@ -5,8 +5,7 @@ import { useI18n } from "../../../i18n";
 
 /**
  * 全局规则编辑器：编辑 ~/.snow/ROLE.md。
- * 保存的内容会被 native 系统提示词构建管线（project > global > default）
- * 在全局作用域读取生效。
+ * 保存的内容会被 native 系统提示词构建管线读取，并默认与项目规则组合。
  */
 export const GlobalRoleEditor = (): React.JSX.Element => {
   const { t } = useI18n();

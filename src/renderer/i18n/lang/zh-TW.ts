@@ -1472,21 +1472,26 @@ export const zhTW = {
   "personalization.globalHint": "儲存後，新的規則將在下一次對話中生效。",
   "personalization.projectTitle": "專案規則",
   "personalization.projectInfo":
-    "僅對所選專案生效，並覆蓋同名的全域規則。",
+    "專案專屬規則會在全域規則之後載入。",
   "personalization.projectSelect": "專案",
   "personalization.projectSelectPlaceholder": "請選擇專案...",
   "personalization.projectNotFound": "找不到專案目錄，請先在側邊欄新增專案。",
   "personalization.projectEmpty":
     "請先選擇專案以編輯其 ROLE.md；可在側邊欄新增專案。",
   "personalization.projectScopeNote":
-    "專案規則儲存在專案根目錄的 ROLE.md，優先級高於全域規則。",
+    "專案規則追加在全域規則之後；發生衝突時，以專案規則為準。",
+  "personalization.includeGlobalTitle": "載入全域規則",
+  "personalization.includeGlobalDesc":
+    "保留該專案中的通用偏好，再追加專案專屬規則。",
   "personalization.projectSaved": "已儲存專案規則。",
   "personalization.projectPlaceholder":
     "在此輸入該專案的規則內容，例如程式碼風格、架構約定、技術棧說明...",
   "personalization.projectKindLocal": "本機",
   "personalization.priorityTitle": "規則優先級",
   "personalization.priorityInfo":
-    "規則依以下順序生效，後面的層級覆蓋前面的層級：",
+    "所有啟用的作用域都會載入，僅在衝突時以後面的指令為準：",
+  "personalization.scopeSummary": "預設同時載入全域規則與專案規則",
+  "personalization.loadOrder": "載入順序",
   "personalization.prioritySession": "對話指令",
   "personalization.prioritySessionDesc": "目前對話中臨時給出的指令。",
   "personalization.priorityProject": "專案規則",
@@ -1499,7 +1504,7 @@ export const zhTW = {
   "personalization.priorityDefaultDesc":
     "未設定任何專案或全域規則時使用的預設角色。",
   "personalization.priorityNote":
-    "專案規則存在時覆蓋全域規則；專案沒有 ROLE.md 時自動回退到全域規則。",
+    "所有啟用的作用域都會載入；只有指令衝突時，後載入的規則優先。",
   "projectSkills.location.global": "全域",
   "projectSkills.location.project": "專案",
   "projectSkills.source.snow": "Snow",

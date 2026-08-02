@@ -5,7 +5,10 @@ import type {
   ResponsesApiRequest,
   ResponsesApiStreamChunk,
 } from "../../native/types";
-import { readRemoteRoleContent } from "../../ssh/remoteWorkspaceCommand";
+import {
+  readRemoteRoleContext,
+  type RemoteRoleContext,
+} from "../../ssh/remoteWorkspaceCommand";
 import { snowLog } from "../../../utils/snowLogger";
 
 const CHAT_CREATE_RESPONSE_CHUNK_CHANNEL = "chat:create-response:chunk";
@@ -111,10 +114,10 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
  * Any failure (no directory, SSH unavailable, missing file) silently falls
  * back to `null` — the global ROLE.md remains the fallback.
  */
-const resolveRemoteRoleContent = async (
+const resolveRemoteRoleContext = async (
   directoryId: string | undefined,
   native: NativeBridge
-): Promise<string | null> => {
+): Promise<RemoteRoleContext | null> => {
   if (!directoryId) {
     return null;
   }
@@ -126,7 +129,7 @@ const resolveRemoteRoleContent = async (
     if (!matched || !matched.path.startsWith("ssh://")) {
       return null;
     }
-    return readRemoteRoleContent(matched.path);
+    return readRemoteRoleContext(matched.path);
   } catch {
     return null;
   }
@@ -140,14 +143,22 @@ export const registerChatHandlers = (native: NativeBridge): void => {
       const normalizedStreamId = normalizeCreateResponseStreamId(streamId);
 
       try {
-        const remoteRoleContent = await resolveRemoteRoleContent(
+        const remoteRoleContext = await resolveRemoteRoleContext(
           normalizedRequest.directoryId,
           native
         );
         return await native.createResponseStream(
           {
             ...normalizedRequest,
-            ...(remoteRoleContent ? { remoteRoleContent } : {}),
+            ...(remoteRoleContext?.content
+              ? { remoteRoleContent: remoteRoleContext.content }
+              : {}),
+            ...(remoteRoleContext
+              ? {
+                  remoteIncludeGlobalRules:
+                    remoteRoleContext.includeGlobalRules,
+                }
+              : {}),
           },
           (chunk: ResponsesApiStreamChunk) => {
             if (event.sender.isDestroyed()) {

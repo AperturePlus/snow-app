@@ -1498,21 +1498,26 @@ export const zhCN = {
   "personalization.globalHint": "保存后，新的规则将在下一次对话中生效。",
   "personalization.projectTitle": "项目规则",
   "personalization.projectInfo":
-    "仅对所选项目生效，并覆盖同名的全局规则。",
+    "项目专属规则会在全局规则之后加载。",
   "personalization.projectSelect": "项目",
   "personalization.projectSelectPlaceholder": "请选择项目...",
   "personalization.projectNotFound": "未找到项目目录，请先在侧边栏添加项目。",
   "personalization.projectEmpty":
     "请先选择项目以编辑其 ROLE.md；可在侧边栏添加项目。",
   "personalization.projectScopeNote":
-    "项目规则保存在项目根目录的 ROLE.md，优先级高于全局规则。",
+    "项目规则追加在全局规则之后；发生冲突时，以项目规则为准。",
+  "personalization.includeGlobalTitle": "加载全局规则",
+  "personalization.includeGlobalDesc":
+    "保留该项目中的通用偏好，再追加项目专属规则。",
   "personalization.projectSaved": "已保存项目规则。",
   "personalization.projectPlaceholder":
     "在此输入该项目的规则内容，例如代码风格、架构约定、技术栈说明...",
   "personalization.projectKindLocal": "本地",
   "personalization.priorityTitle": "规则优先级",
   "personalization.priorityInfo":
-    "规则按以下顺序生效，后面的层级覆盖前面的层级：",
+    "所有启用的作用域都会加载，仅在冲突时以后面的指令为准：",
+  "personalization.scopeSummary": "默认同时加载全局规则与项目规则",
+  "personalization.loadOrder": "加载顺序",
   "personalization.prioritySession": "会话指令",
   "personalization.prioritySessionDesc": "当前对话中临时给出的指令。",
   "personalization.priorityProject": "项目规则",
@@ -1525,7 +1530,7 @@ export const zhCN = {
   "personalization.priorityDefaultDesc":
     "未配置任何项目或全局规则时使用的默认角色。",
   "personalization.priorityNote":
-    "项目规则存在时覆盖全局规则；项目没有 ROLE.md 时自动回退到全局规则。",
+    "所有启用的作用域都会加载；只有指令冲突时，后加载的规则优先。",
   "projectSkills.location.global": "全局",
   "projectSkills.location.project": "项目",
   "projectSkills.source.snow": "Snow",

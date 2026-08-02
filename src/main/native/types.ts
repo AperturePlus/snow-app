@@ -657,6 +657,7 @@ export type ResponsesApiRequest = {
    * local workspaces — Rust reads the file itself.
    */
   remoteRoleContent?: string;
+  remoteIncludeGlobalRules?: boolean;
 };
 
 export type TokenUsage = {

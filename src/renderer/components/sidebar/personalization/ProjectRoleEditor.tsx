@@ -11,8 +11,11 @@ import { AutoDismissNotice } from "../../AutoDismissNotice";
 import { useI18n } from "../../../i18n";
 import {
   buildRoleFilePath,
+  buildRoleSettingsPath,
   buildSshConnectParams,
+  readIncludeGlobalRules,
   resolveProjectDirectory,
+  writeIncludeGlobalRules,
   type ProjectDirectoryInfo,
 } from "./roleFileUtils";
 
@@ -27,6 +30,11 @@ export const ProjectRoleEditor = (): React.JSX.Element => {
   const [directoryInfo, setDirectoryInfo] =
     useState<ProjectDirectoryInfo | null>(null);
   const [roleFilePath, setRoleFilePath] = useState("");
+  const [settingsFilePath, setSettingsFilePath] = useState("");
+  const [settingsContent, setSettingsContent] = useState("");
+  const [includeGlobalRules, setIncludeGlobalRules] = useState(true);
+  const [originalIncludeGlobalRules, setOriginalIncludeGlobalRules] =
+    useState(true);
   const [content, setContent] = useState("");
   const [originalContent, setOriginalContent] = useState("");
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
@@ -76,6 +84,10 @@ export const ProjectRoleEditor = (): React.JSX.Element => {
       setOriginalContent("");
       setDirectoryInfo(null);
       setRoleFilePath("");
+      setSettingsFilePath("");
+      setSettingsContent("");
+      setIncludeGlobalRules(true);
+      setOriginalIncludeGlobalRules(true);
       disconnectSsh();
 
       try {
@@ -93,7 +105,9 @@ export const ProjectRoleEditor = (): React.JSX.Element => {
 
         setDirectoryInfo(info);
         const filePath = buildRoleFilePath(info);
+        const projectSettingsPath = buildRoleSettingsPath(info);
         setRoleFilePath(filePath);
+        setSettingsFilePath(projectSettingsPath);
 
         if (info.isSsh) {
           const connectParams = await buildSshConnectParams(info.path);
@@ -127,6 +141,20 @@ export const ProjectRoleEditor = (): React.JSX.Element => {
             setContent("");
             setOriginalContent("");
           }
+          try {
+            const result = await window.snow.sshReadFile(
+              sessionId,
+              projectSettingsPath
+            );
+            if (loadGenerationRef.current !== generation) return;
+            const text = result.isBinary ? "" : result.content;
+            const enabled = readIncludeGlobalRules(text);
+            setSettingsContent(text);
+            setIncludeGlobalRules(enabled);
+            setOriginalIncludeGlobalRules(enabled);
+          } catch {
+            setSettingsContent("");
+          }
         } else {
           try {
             const result = await window.snow.readFileContent(filePath);
@@ -139,6 +167,17 @@ export const ProjectRoleEditor = (): React.JSX.Element => {
             // File does not exist yet — start with empty content.
             setContent("");
             setOriginalContent("");
+          }
+          try {
+            const result = await window.snow.readFileContent(projectSettingsPath);
+            if (loadGenerationRef.current !== generation) return;
+            const text = result.isBinary ? "" : result.content;
+            const enabled = readIncludeGlobalRules(text);
+            setSettingsContent(text);
+            setIncludeGlobalRules(enabled);
+            setOriginalIncludeGlobalRules(enabled);
+          } catch {
+            setSettingsContent("");
           }
         }
       } catch (loadError) {
@@ -163,6 +202,7 @@ export const ProjectRoleEditor = (): React.JSX.Element => {
       loadGenerationRef.current += 1;
       setDirectoryInfo(null);
       setRoleFilePath("");
+      setSettingsFilePath("");
       setContent("");
       setOriginalContent("");
       setError(null);
@@ -171,7 +211,7 @@ export const ProjectRoleEditor = (): React.JSX.Element => {
   };
 
   const handleSave = async (): Promise<void> => {
-    if (!directoryInfo || !roleFilePath || isSaving) return;
+    if (!directoryInfo || !roleFilePath || !settingsFilePath || isSaving) return;
 
     setIsSaving(true);
     setError(null);
@@ -198,11 +238,38 @@ export const ProjectRoleEditor = (): React.JSX.Element => {
           roleFilePath,
           content
         );
+        if (includeGlobalRules !== originalIncludeGlobalRules) {
+          const settingsDirectory = settingsFilePath.replace(/\/[^/]+$/, "");
+          const quotedDirectory = `'${settingsDirectory.replace(/'/g, `'"'"'`)}'`;
+          await window.snow.sshExecuteCommand(
+            sshSessionIdRef.current,
+            `mkdir -p -- ${quotedDirectory}`
+          );
+          const nextSettings = writeIncludeGlobalRules(
+            settingsContent,
+            includeGlobalRules
+          );
+          await window.snow.sshWriteFile(
+            sshSessionIdRef.current,
+            settingsFilePath,
+            nextSettings
+          );
+          setSettingsContent(nextSettings);
+        }
       } else {
         await window.snow.writeFileContent(roleFilePath, content);
+        if (includeGlobalRules !== originalIncludeGlobalRules) {
+          const nextSettings = writeIncludeGlobalRules(
+            settingsContent,
+            includeGlobalRules
+          );
+          await window.snow.writeFileContent(settingsFilePath, nextSettings);
+          setSettingsContent(nextSettings);
+        }
       }
 
       setOriginalContent(content);
+      setOriginalIncludeGlobalRules(includeGlobalRules);
       setSaveSuccess(true);
     } catch (saveError) {
       setError(
@@ -213,7 +280,9 @@ export const ProjectRoleEditor = (): React.JSX.Element => {
     }
   };
 
-  const hasChanges = content !== originalContent;
+  const hasChanges =
+    content !== originalContent ||
+    includeGlobalRules !== originalIncludeGlobalRules;
   const selectedProject = projects.find(
     (project) => project.directoryId === selectedProjectId
   );
@@ -236,7 +305,7 @@ export const ProjectRoleEditor = (): React.JSX.Element => {
           <span>
             {t("personalization.projectInfo", {
               defaultValue:
-                "Rules that apply only to the selected project and override global rules.",
+                "Project-specific rules are added after the global rules.",
             })}
           </span>
         </div>
@@ -278,6 +347,36 @@ export const ProjectRoleEditor = (): React.JSX.Element => {
         ) : null}
       </div>
 
+      {selectedProjectId ? (
+        <div className="personalization-inheritance-row">
+          <div className="personalization-inheritance-copy">
+            <strong>
+              {t("personalization.includeGlobalTitle", {
+                defaultValue: "Load global rules",
+              })}
+            </strong>
+            <span>
+              {t("personalization.includeGlobalDesc", {
+                defaultValue:
+                  "Keep shared preferences active in this project. Project rules are applied afterwards.",
+              })}
+            </span>
+          </div>
+          <label className="toggle-switch">
+            <input
+              checked={includeGlobalRules}
+              disabled={isLoading || isSaving}
+              onChange={(event) => {
+                setIncludeGlobalRules(event.target.checked);
+                setSaveSuccess(false);
+              }}
+              type="checkbox"
+            />
+            <span className="toggle-slider" />
+          </label>
+        </div>
+      ) : null}
+
       {!selectedProjectId ? (
         <div className="personalization-empty">
           <FolderOpen size={20} />
@@ -297,7 +396,7 @@ export const ProjectRoleEditor = (): React.JSX.Element => {
                 <span>
                   {t("personalization.projectScopeNote", {
                     defaultValue:
-                      "Project rules live in ROLE.md at the project root and take priority over global rules.",
+                      "Project rules are appended after global rules and take priority when instructions conflict.",
                   })}
                 </span>
                 {roleFilePath ? (
