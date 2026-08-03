@@ -69,8 +69,10 @@ Listed in registration order:
 | `browser-create` | Create an embedded browser instance | `url` |
 | `browser-navigate` | Navigate to the specified URL | `url`, `timeoutMs`, `instanceId` |
 | `browser-click` | Click page elements with real mouse events | `selector`, `text`, `exact`, `instanceId` |
+| `browser-evaluate` | Evaluate arbitrary JavaScript in the page and return the result | `expression`, `instanceId` |
+| `browser-type` | Type text into an element (set at once or key by key) | `selector`/`text`, `value`, `submit`, `delayMs`, `instanceId` |
 | `browser-screenshot` | Capture the page as PNG | `fullPage`, `instanceId` |
-| `browser-devtools` | Inspect page metadata and console information | `action`, `instanceId` |
+| `browser-devtools` | Page snapshot / console messages (level-filterable) / network requests / dialog handling / open DevTools | `action`, `level`, `filter`, `limit`, `dialogResponse`, `instanceId` |
 | `browser-close` | Close a browser tab | `instanceId` |
 | `browser-focus` | Switch to the specified tab | `instanceId` |
 | `browser-list` | List all open tabs | — |

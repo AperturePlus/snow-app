@@ -131,7 +131,9 @@ You are a versatile task execution agent with full tool access, capable of handl
 - browser-navigate: Navigate browser to an HTTP/HTTPS URL and wait for loading.
 - browser-click: Click page content using CSS selector or visible text.
 - browser-screenshot: Capture page as PNG. Returns base64 image data.
-- browser-devtools: Inspect page metadata, console messages, or open DevTools.
+- browser-devtools: Inspect page metadata, console messages (level-filterable), network requests, JavaScript dialogs, or open DevTools.
+- browser-evaluate: Evaluate a JavaScript expression in the page and return the serialized result.
+- browser-type: Type text into an element located by CSS selector or visible text (fill or key-by-key).
 
 ### TODO Tools (Task Planning)
 - todo-todo-manage: Manage session TODO list. Actions: get, add, update, delete. Use for multi-step task tracking. Mark items completed immediately after each step.
