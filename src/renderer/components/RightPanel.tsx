@@ -124,11 +124,12 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     ]);
     const [activeTabId, setActiveTabId] = useState<string>(GIT_TAB_ID);
     const [dirtyTabs, setDirtyTabs] = useState<Set<string>>(new Set());
-    // tab 右键菜单：记录触发位置与目标 tab（Git 固定 tab 无关闭项）。
+    // tab 右键菜单：记录触发位置与目标 tab（Git 固定 tab 无关闭项；
+    // tabId 为 null 表示右键在 tab 栏空白区域，仅提供新建项）。
     const [tabContextMenu, setTabContextMenu] = useState<{
       x: number;
       y: number;
-      tabId: string;
+      tabId: string | null;
     } | null>(null);
 
     const handleOpenDiffTab = useCallback<OpenDiffTabCallback>(
@@ -729,7 +730,26 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       <aside className={panelClasses}>
         {tabs.length > 1 && (
           <div className="right-panel-tabs">
-            <div ref={tabListRef} className="right-panel-tab-list">
+            <div
+              ref={tabListRef}
+              className="right-panel-tab-list"
+              onContextMenu={(event) => {
+                // 仅空白区域触发：tab 项上已有各自的右键菜单。
+                if (
+                  (event.target as HTMLElement).closest(
+                    ".right-panel-tab-item"
+                  )
+                ) {
+                  return;
+                }
+                event.preventDefault();
+                setTabContextMenu({
+                  x: event.clientX,
+                  y: event.clientY,
+                  tabId: null,
+                });
+              }}
+            >
               {tabs.map((tab) => (
                 <div
                   key={tab.id}
@@ -791,7 +811,10 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
           <RightPanelTabContextMenu
             x={tabContextMenu.x}
             y={tabContextMenu.y}
-            isClosable={tabContextMenu.tabId !== GIT_TAB_ID}
+            isClosable={
+              tabContextMenu.tabId !== null &&
+              tabContextMenu.tabId !== GIT_TAB_ID
+            }
             onNewTerminal={() => {
               setTabContextMenu(null);
               handleOpenTerminalTab(activeDirectory?.path ?? "");
@@ -802,7 +825,9 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             }}
             onCloseTab={() => {
               setTabContextMenu(null);
-              handleCloseTab(tabContextMenu.tabId);
+              if (tabContextMenu.tabId !== null) {
+                handleCloseTab(tabContextMenu.tabId);
+              }
             }}
             onClose={() => setTabContextMenu(null)}
           />
