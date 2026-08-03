@@ -18497,6 +18497,20 @@ input {
   background: var(--border-light);
 }
 
+/* Ctrl+点击打开文件：按住 Ctrl 悬停路径时给出可点击提示。
+   提示样式由 body.ctrl-held 驱动（usePathClickOpen 全局按键监听
+   直接操作 classList，不经过 React 渲染，零 re-render 开销）。 */
+body.ctrl-held [data-path],
+body.ctrl-held code:not(pre code) {
+  cursor: pointer;
+}
+
+body.ctrl-held [data-path] {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--text-muted);
+}
+
 /* Diff Viewer Actions */
 .diff-viewer-actions {
   display: flex;

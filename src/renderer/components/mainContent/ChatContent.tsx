@@ -18,6 +18,8 @@ import { CompactionStream } from "./chatMessages/components/CompactionStream";
 import type { ChatInputSendOptions } from "./chatInput/types";
 import type { MainContentView } from "./types";
 import type { RollbackMode } from "./chatMessages/utils/conversationTypes";
+import { usePathClickOpen } from "./chatMessages/hooks/usePathClickOpen";
+import { directoryIdToPath } from "./chatMessages/utils/conversationHelpers";
 
 type ChatContentProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
@@ -41,6 +43,7 @@ const ChatContentBody = ({
   const {
     messages,
     activeConversationId,
+    conversationDirectoryId,
     isLoadingOlderMessages,
     hasMoreMessages,
     isInitialHistoryLoaded,
@@ -97,6 +100,10 @@ const ChatContentBody = ({
     ? compactionError
     : null;
   const scrollRef = useRef<HTMLDivElement>(null);
+  // 覆盖整个中间输出区：文件变更统计、消息正文、Thinking、工具调用和压缩输出。
+  const pathClickOpenProps = usePathClickOpen(
+    directoryIdToPath(conversationDirectoryId) ?? activeDirectory?.path
+  );
   const activeConversationIdRef = useRef(activeConversationId);
   const previousActiveConversationIdRef = useRef(activeConversationId);
   const positionedConversationIdsRef = useRef(new Set<string>());
@@ -603,6 +610,7 @@ const ChatContentBody = ({
           isLoadingInitialHistory ? "is-loading-history" : ""
         }`}
         ref={scrollRef}
+        onClick={pathClickOpenProps.onClick}
         onWheel={markUserScrollIntent}
         onTouchStart={markUserScrollIntent}
         onPointerDown={handleChatPointerDown}

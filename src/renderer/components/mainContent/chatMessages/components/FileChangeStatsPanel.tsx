@@ -130,7 +130,7 @@ export const FileChangeStatsPanel = ({
                     size: 13,
                     "aria-hidden": true,
                   })}
-                  <span className="file-change-stats-path">
+                  <span className="file-change-stats-path" data-path={change.filePath}>
                     {change.filePath}
                   </span>
                 </span>

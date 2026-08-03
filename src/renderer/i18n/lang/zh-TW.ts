@@ -1677,6 +1677,7 @@ export const zhTW = {
   "rightPanel.browserTab": "瀏覽器",
   "rightPanel.codebaseTab": "程式碼庫",
   "rightPanel.closeTab": "關閉標籤頁",
+  "rightPanel.closeAllTabs": "關閉所有標籤頁",
   "rightPanel.tabContextNewTerminal": "新增終端",
   "rightPanel.tabContextNewBrowser": "新增瀏覽器",
   "rightPanel.closeDiff": "關閉差異",

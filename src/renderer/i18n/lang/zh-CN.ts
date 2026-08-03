@@ -1704,6 +1704,7 @@ export const zhCN = {
   "rightPanel.browserTab": "浏览器",
   "rightPanel.codebaseTab": "代码库",
   "rightPanel.closeTab": "关闭标签页",
+  "rightPanel.closeAllTabs": "关闭所有标签页",
   "rightPanel.tabContextNewTerminal": "新建终端",
   "rightPanel.tabContextNewBrowser": "新建浏览器",
   "rightPanel.closeDiff": "关闭差异",

@@ -1,4 +1,4 @@
-import { Globe, Terminal, X } from "lucide-react";
+import { Globe, Terminal, X, XCircle } from "lucide-react";
 import { useI18n } from "../../i18n";
 import {
   ContextMenu,
@@ -11,6 +11,8 @@ type RightPanelTabContextMenuProps = {
   y: number;
   /** 该 tab 是否允许关闭（Git 固定 tab 不可关闭）。 */
   isClosable: boolean;
+  /** 是否提供“关闭所有标签页”（仅 tab 栏空白处右键时提供）。 */
+  onCloseAllTabs?: () => void;
   onNewTerminal: () => void;
   onNewBrowser: () => void;
   onCloseTab: () => void;
@@ -25,6 +27,7 @@ export function RightPanelTabContextMenu({
   x,
   y,
   isClosable,
+  onCloseAllTabs,
   onNewTerminal,
   onNewBrowser,
   onCloseTab,
@@ -51,23 +54,30 @@ export function RightPanelTabContextMenu({
     },
   ];
 
-  const footerItems: ContextMenuItem[] | undefined = isClosable
-    ? [
-        {
-          id: "close-tab",
-          label: t("rightPanel.closeTab", { defaultValue: "Close tab" }),
-          icon: <X size={13} strokeWidth={1.8} />,
-          onClick: onCloseTab,
-        },
-      ]
-    : undefined;
+  const footerItems: ContextMenuItem[] = [];
+  if (isClosable) {
+    footerItems.push({
+      id: "close-tab",
+      label: t("rightPanel.closeTab", { defaultValue: "Close tab" }),
+      icon: <X size={13} strokeWidth={1.8} />,
+      onClick: onCloseTab,
+    });
+  }
+  if (onCloseAllTabs) {
+    footerItems.push({
+      id: "close-all-tabs",
+      label: t("rightPanel.closeAllTabs", { defaultValue: "Close all tabs" }),
+      icon: <XCircle size={13} strokeWidth={1.8} />,
+      onClick: onCloseAllTabs,
+    });
+  }
 
   return (
     <ContextMenu
       x={x}
       y={y}
       items={items}
-      footerItems={footerItems}
+      footerItems={footerItems.length > 0 ? footerItems : undefined}
       onClose={onClose}
     />
   );

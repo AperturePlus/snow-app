@@ -26,9 +26,11 @@ import {
   type OpenBrowserTabPayload,
   type FocusBrowserTabPayload,
   type OpenFileDiffPreviewPayload,
+  type OpenFilePayload,
 } from "./rightPanel/rightPanelEvents";
 import { generateComparePatch } from "../utils/generateComparePatch";
 import { getFileTypeIcon } from "../utils/fileIcons";
+import { buildSshConnectParams } from "./sidebar/personalization/roleFileUtils";
 import type {
   BrowserTabData,
   CodebaseTabData,
@@ -124,6 +126,11 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     ]);
     const [activeTabId, setActiveTabId] = useState<string>(GIT_TAB_ID);
     const [dirtyTabs, setDirtyTabs] = useState<Set<string>>(new Set());
+    // 聊天区 Ctrl+点击远程路径时按工作区复用 SSH 连接；Promise 缓存还能
+    // 合并快速连续点击产生的并发连接请求。
+    const sshFileSessionPromisesRef = useRef<Map<string, Promise<string>>>(
+      new Map()
+    );
     // tab 右键菜单：记录触发位置与目标 tab（Git 固定 tab 无关闭项；
     // tabId 为 null 表示右键在 tab 栏空白区域，仅提供新建项）。
     const [tabContextMenu, setTabContextMenu] = useState<{
@@ -335,7 +342,9 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         sshSessionId?: string | null,
         focusLine?: number
       ) => {
-        const tabId = `file:${filePath}`;
+        const tabId = isSsh
+          ? `file:ssh:${sshSessionId ?? "unknown"}:${filePath}`
+          : `file:${filePath}`;
         setTabs((prev) => {
           const existing = prev.find((t) => t.id === tabId);
           if (existing) {
@@ -454,6 +463,87 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       return rightPanelEvents.on("open-browser-tab", handleOpenBrowserTabEvent);
     }, [handleOpenBrowserTabEvent]);
 
+    // 为远程文件查看建立/复用 SSH 会话。失败时删除缓存，允许下次重试。
+    const getSshFileSession = useCallback(
+      (workspacePath: string): Promise<string> => {
+        const cached = sshFileSessionPromisesRef.current.get(workspacePath);
+        if (cached) {
+          return cached;
+        }
+        const connecting = buildSshConnectParams(workspacePath)
+          .then((params) => {
+            if (!params) {
+              throw new Error("Unable to resolve SSH connection parameters");
+            }
+            return window.snow.sshConnect(params);
+          })
+          .catch((error: unknown) => {
+            sshFileSessionPromisesRef.current.delete(workspacePath);
+            throw error;
+          });
+        sshFileSessionPromisesRef.current.set(workspacePath, connecting);
+        return connecting;
+      },
+      []
+    );
+
+    useEffect(() => {
+      const sessions = sshFileSessionPromisesRef.current;
+      return () => {
+        for (const sessionPromise of sessions.values()) {
+          void sessionPromise
+            .then((sessionId) => window.snow.sshDisconnect(sessionId))
+            .catch(() => {
+              // 连接失败或已断开，无需额外处理。
+            });
+        }
+        sessions.clear();
+      };
+    }, []);
+
+    // Ctrl+点击聊天区路径（usePathClickOpen 委托）请求打开文件：
+    // 在右侧面板新建 file tab 查看，与 Git 面板「打开文件」行为一致。
+    const handleOpenFileEvent = useCallback(
+      (payload: OpenFilePayload) => {
+        const filePath = payload.filePath.trim();
+        if (!filePath) {
+          return;
+        }
+
+        void (async () => {
+          const isSsh = payload.isSsh ?? false;
+          let sshSessionId = payload.sshSessionId;
+          if (isSsh && !sshSessionId) {
+            const workspacePath = payload.sshWorkspacePath?.trim();
+            if (!workspacePath) {
+              return;
+            }
+            sshSessionId = await getSshFileSession(workspacePath);
+          }
+
+          const fileName =
+            payload.fileName ??
+            filePath.split(/[\\/]/).filter(Boolean).pop() ??
+            filePath;
+          handleOpenFileTab(
+            filePath,
+            fileName,
+            isSsh,
+            sshSessionId,
+            payload.focusLine
+          );
+          rightPanelEvents.emit("request-expand");
+        })().catch((error: unknown) => {
+          console.error("Failed to open file from chat path", error);
+        });
+      },
+      [getSshFileSession, handleOpenFileTab]
+    );
+
+    useEffect(() => {
+      return rightPanelEvents.on("open-file", handleOpenFileEvent);
+    }, [handleOpenFileEvent]);
+
     useImperativeHandle(
       ref,
       () => ({
@@ -527,6 +617,13 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       },
       [tabs]
     );
+
+    // 关闭所有可关闭的 tab（Git 为固定 tab，始终保留），回到 Git 视图。
+    const handleCloseAllTabs = useCallback(() => {
+      setTabs((prev) => prev.filter((t) => t.id === GIT_TAB_ID));
+      setDirtyTabs(new Set());
+      setActiveTabId(GIT_TAB_ID);
+    }, []);
 
     const handleCloseBrowserTab = useCallback(
       (instanceId: string): boolean => {
@@ -814,6 +911,14 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             isClosable={
               tabContextMenu.tabId !== null &&
               tabContextMenu.tabId !== GIT_TAB_ID
+            }
+            onCloseAllTabs={
+              tabContextMenu.tabId === null
+                ? () => {
+                    setTabContextMenu(null);
+                    handleCloseAllTabs();
+                  }
+                : undefined
             }
             onNewTerminal={() => {
               setTabContextMenu(null);

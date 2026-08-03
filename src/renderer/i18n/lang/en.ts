@@ -1798,6 +1798,7 @@ export const en = {
   "rightPanel.browserTab": "Browser",
   "rightPanel.codebaseTab": "Codebase",
   "rightPanel.closeTab": "Close tab",
+  "rightPanel.closeAllTabs": "Close all tabs",
   "rightPanel.tabContextNewTerminal": "New Terminal",
   "rightPanel.tabContextNewBrowser": "New Browser",
   "rightPanel.closeDiff": "Close diff",
