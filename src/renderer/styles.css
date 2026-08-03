@@ -23764,6 +23764,11 @@ input {
   padding: 20px 14px;
 }
 
+/* 全屏时与其他主题保持一致：清空 main-content 的内边距 */
+:root[data-theme-preset="cream"] .app-shell.right-panel-fullscreen .main-content {
+  padding: 0;
+}
+
 :root[data-theme-preset="cream"] .main-header,
 :root[data-theme-preset="cream"] .panel-tabs {
   background: var(--surface-island-muted);

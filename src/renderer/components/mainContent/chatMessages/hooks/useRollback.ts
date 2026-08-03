@@ -9,7 +9,7 @@ import { PENDING_SESSION_KEY } from "../utils/conversationTypes";
 import {
   deleteCheckpoints,
   directoryIdToPath,
-  killRunningBashExecutions,
+  killRunningToolExecutions,
 } from "../utils/conversationHelpers";
 
 /**
@@ -60,7 +60,7 @@ export const useRollback = (ctx: ConversationContextValue) => {
 
       // Kill every in-flight bash subprocess before truncating the
       // conversation, so no orphaned OS process keeps running afterwards.
-      killRunningBashExecutions(session.messages);
+      killRunningToolExecutions(session.messages);
 
       const messages = session.messages;
       const targetIndex = messages.findIndex((m) => m.id === messageId);

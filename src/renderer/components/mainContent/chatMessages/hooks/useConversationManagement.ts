@@ -11,7 +11,7 @@ import {
   buildConversationMessages,
   deleteCheckpoints,
   directoryIdToPath,
-  killRunningBashExecutions,
+  killRunningToolExecutions,
 } from "../utils/conversationHelpers";
 import { extractFileChangesFromRecords } from "./fileChangeTracking";
 import {
@@ -523,7 +523,7 @@ export const useConversationManagement = (
     );
     // Kill every in-flight bash subprocess of this session so the OS
     // process does not keep running until its timeout.
-    killRunningBashExecutions(
+    killRunningToolExecutions(
       ctx.sessionsRef.current?.[key]?.messages ?? []
     );
     ctx.updateSessionField(key, "isStreaming", false);
@@ -560,7 +560,7 @@ export const useConversationManagement = (
       // session key) so its agent loop cannot stay blocked awaiting a
       // decision that will never arrive.
       rejectToolAuthorizations(subKey);
-      killRunningBashExecutions(
+      killRunningToolExecutions(
         ctx.sessionsRef.current?.[subKey]?.messages ?? []
       );
 
@@ -614,7 +614,7 @@ export const useConversationManagement = (
 
       rejectToolAuthorizations(conversationId);
       rejectPendingUserQuestions(conversationId);
-      killRunningBashExecutions(
+      killRunningToolExecutions(
         ctx.sessionsRef.current?.[conversationId]?.messages ?? []
       );
       if (ref?.streamId) {
