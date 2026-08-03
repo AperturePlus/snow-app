@@ -222,6 +222,7 @@ export const zhCN = {
   "chat.greetingWithProject": "想在 {{name}} 中做些什么？",
   "chat.greetingNoProject": "请选择一个工作区项目以开始对话。",
   "chat.scrollToBottom": "滚动到底部",
+  "chat.userMessageRail.title": "用户消息",
   "chat.subAgentModelFixed": "子代理使用其自身配置的模型",
   "chat.quickActionAddProject": "添加一个项目",
   "chat.quickActionAddProjectDesc": "打开一个本地工作区目录",

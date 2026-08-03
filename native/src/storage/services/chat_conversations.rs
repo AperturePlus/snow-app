@@ -7,7 +7,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row, TransactionBehavior};
 use super::super::database;
 use super::super::{
     ChatConversationPage, ChatConversationRecord, ChatMessagePage, ChatMessageRecord,
-    ConversationSearchResult,
+    ConversationSearchResult, UserMessageSummary,
 };
 
 #[derive(Clone, Debug)]
@@ -1148,6 +1148,41 @@ pub fn list_chat_messages(
             rows.collect()
         })
         .map_err(|error| database::database_error(database_path, "list chat messages", error))
+}
+
+/// Fetch only user-role messages (excluding context-compaction markers) for
+/// a conversation. Returns just id, content and created_at — enough for the
+/// chat UI's user-message rail to preview and navigate. Because it skips the
+/// heavy thinking/tool_calls_json columns and filters on role, it stays fast
+/// even for conversations with thousands of messages.
+pub fn list_user_messages(
+    database_path: &Path,
+    conversation_id: &str,
+) -> Result<Vec<UserMessageSummary>> {
+    database::open_connection(database_path)
+        .and_then(|connection| {
+            let mut statement = connection.prepare(
+                "SELECT id,
+                        content,
+                        created_at
+                   FROM chat_messages
+                  WHERE conversation_id = ?1
+                    AND role = 'user'
+                    AND (status = '' OR status IS NULL OR status != 'context_compaction')
+                  ORDER BY id ASC",
+            )?;
+
+            let rows = statement.query_map(params![conversation_id], |row| {
+                Ok(UserMessageSummary {
+                    id: row.get(0)?,
+                    content: row.get(1)?,
+                    created_at: row.get(2)?,
+                })
+            })?;
+
+            rows.collect()
+        })
+        .map_err(|error| database::database_error(database_path, "list user messages", error))
 }
 
 pub fn list_chat_messages_paginated(

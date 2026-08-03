@@ -404,6 +404,11 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
           }
         }
 
+        // Bump the conversation version so dependent components (e.g. the
+        // user-message rail) know the DB message list changed (the user
+        // message is now persisted via store_chat_exchange) and re-fetch.
+        ctx.setConversationVersion((version) => version + 1);
+
         if (response.tokenUsage && response.status !== "error") {
           ctx.updateSessionField(
             effectiveKey,

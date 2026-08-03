@@ -608,6 +608,12 @@ export type ChatMessagePage = {
   hasMore: boolean;
 };
 
+export type UserMessageSummary = {
+  id: string;
+  content: string;
+  createdAt: string;
+};
+
 export type MemoStatus = "pending" | "done";
 
 export type MemoRecord = {
@@ -1143,6 +1149,9 @@ export type NativeBridge = {
   deleteConversation: (conversationId: string) => Promise<void>;
   appendToolMessage: (conversationId: string, content: string) => Promise<void>;
   listChatMessages: (conversationId: string) => Promise<ChatMessageRecord[]>;
+  listUserMessages: (
+    conversationId: string
+  ) => Promise<UserMessageSummary[]>;
   listChatMessagesPaginated: (
     conversationId: string,
     beforeMessageId: string,

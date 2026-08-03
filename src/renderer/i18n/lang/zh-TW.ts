@@ -222,6 +222,7 @@ export const zhTW = {
   "chat.greetingWithProject": "想在 {{name}} 中做些什麼？",
   "chat.greetingNoProject": "請選擇一個工作區專案以開始對話。",
   "chat.scrollToBottom": "捲動到底部",
+  "chat.userMessageRail.title": "使用者訊息",
   "chat.subAgentModelFixed": "子代理使用其自身配置的模型",
   "chat.quickActionAddProject": "新增一個專案",
   "chat.quickActionAddProjectDesc": "開啟一個本機工作區目錄",

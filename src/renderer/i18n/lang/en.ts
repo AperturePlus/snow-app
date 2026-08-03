@@ -228,6 +228,7 @@ export const en = {
   "chat.greetingWithProject": "What would you like to work on in {{name}}?",
   "chat.greetingNoProject": "Select a workspace project to get started.",
   "chat.scrollToBottom": "Scroll to bottom",
+  "chat.userMessageRail.title": "User messages",
   "chat.subAgentModelFixed": "Sub-agent uses the model from its own configuration",
   "chat.quickActionAddProject": "Add a project",
   "chat.quickActionAddProjectDesc": "Open a local workspace directory",
