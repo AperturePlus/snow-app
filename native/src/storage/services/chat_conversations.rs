@@ -178,10 +178,11 @@ pub fn load_context_messages(
         .map_err(|error| database::database_error(database_path, "load chat context", error))
 }
 
-pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<'_>) -> Result<()> {
+pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<'_>) -> Result<Vec<String>> {
     database::open_connection(database_path)
         .and_then(|mut connection| {
             let transaction = connection.transaction()?;
+            let mut persisted_user_message_ids = Vec::new();
             let title = create_title(input.request_messages);
             let preview = create_snippet(input.response_content, 180);
             // Context compaction also persists the real token usage so the
@@ -233,7 +234,7 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                 // post-compaction agent loop. Treat the boundary as a user
                 // message: its checkpoint captures the pre-compaction working
                 // directory state.
-                insert_message(
+                let message_id = insert_message(
                     &transaction,
                     input.conversation_id,
                     "user",
@@ -248,6 +249,7 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                     "[]",
                     0,
                 )?;
+                persisted_user_message_ids.push(message_id);
             } else {
                 for (index, message) in input.request_messages.iter().enumerate() {
                     let checkpoint_id = if index == 0 && normalize_role(&message.role) == "user" {
@@ -265,7 +267,7 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                     } else {
                         "{}"
                     };
-                    insert_message(
+                    let message_id = insert_message(
                         &transaction,
                         input.conversation_id,
                         &message.role,
@@ -280,6 +282,9 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                         "[]",
                         index,
                     )?;
+                    if normalize_role(&message.role) == "user" {
+                        persisted_user_message_ids.push(message_id);
+                    }
                 }
 
                 insert_message(
@@ -344,7 +349,8 @@ pub fn store_chat_exchange(database_path: &Path, input: &StoreChatExchangeInput<
                 ],
             )?;
 
-            transaction.commit()
+            transaction.commit()?;
+            Ok(persisted_user_message_ids)
         })
         .map_err(|error| database::database_error(database_path, "store chat exchange", error))
 }
@@ -1663,7 +1669,8 @@ fn insert_message(
     thinking_blocks_json: &str,
     tool_calls_json: &str,
     index: usize,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<String> {
+    let id = database::create_snowflake_id();
     connection.execute(
         "INSERT INTO chat_messages (
            id,
@@ -1684,7 +1691,7 @@ fn insert_message(
            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, datetime('now', 'localtime')
          )",
         params![
-            database::create_snowflake_id(),
+            id,
             create_chat_id(&format!("msg{index}")),
             conversation_id,
             normalize_role(role),
@@ -1700,7 +1707,7 @@ fn insert_message(
         ],
     )?;
 
-    Ok(())
+    Ok(id)
 }
 
 fn normalize_role(role: &str) -> &str {

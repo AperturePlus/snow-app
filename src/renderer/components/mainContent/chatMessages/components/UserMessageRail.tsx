@@ -83,9 +83,11 @@ export const UserMessageRail = memo(
       null
     );
     const [popoverHeight, setPopoverHeight] = useState<number>(0);
+    const [visibleUserIndices, setVisibleUserIndices] = useState<Set<number>>(new Set());
     const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const railRef = useRef<HTMLDivElement | null>(null);
     const popoverRef = useRef<HTMLDivElement | null>(null);
+    const userMessagesRef = useRef<UserMessageSummary[]>([]);
 
     // Fetch all user messages from the Rust backend on every version bump
     // and conversation switch. No caching — the backend query is lightweight
@@ -94,6 +96,7 @@ export const UserMessageRail = memo(
     useEffect(() => {
       if (!conversationId) {
         setUserMessages([]);
+        userMessagesRef.current = [];
         return;
       }
 
@@ -101,13 +104,15 @@ export const UserMessageRail = memo(
       setLoading(true);
       window.snow
         .listUserMessages(conversationId)
-        .then((messages) => {
+        .then((fetchedMessages) => {
           if (cancelled) return;
-          setUserMessages(messages);
+          setUserMessages(fetchedMessages);
+          userMessagesRef.current = fetchedMessages;
         })
         .catch(() => {
           if (cancelled) return;
           setUserMessages([]);
+          userMessagesRef.current = [];
         })
         .finally(() => {
           if (!cancelled) setLoading(false);
@@ -117,6 +122,74 @@ export const UserMessageRail = memo(
         cancelled = true;
       };
     }, [conversationId, conversationVersion]);
+
+    // Track which user messages are currently visible in the scroll viewport.
+    // On every scroll/resize, iterate the DB user messages, find their DOM
+    // elements by id, and check whether they intersect the viewport. The
+    // resulting Set of indices (into userMessages) is used to
+    // highlight the corresponding rail popover items so the user knows where
+    // they are in the conversation.
+    useEffect(() => {
+      const container = scrollContainerRef.current;
+      if (!container) return;
+
+      const computeVisible = (): void => {
+        const dbUserMsgs = userMessagesRef.current;
+        if (dbUserMsgs.length === 0) {
+          setVisibleUserIndices(new Set());
+          return;
+        }
+
+        const containerRect = container.getBoundingClientRect();
+        const visible = new Set<number>();
+
+        for (let i = 0; i < dbUserMsgs.length; i++) {
+          const dbMsg = dbUserMsgs[i];
+          // The frontend replaces temporary ids with DB ids after persistence,
+          // so data-message-id always matches the DB snowflake id.
+          const el = findMessageElement(container, dbMsg.id);
+          if (!el) continue;
+
+          const rect = el.getBoundingClientRect();
+          // Consider the message visible if it overlaps the viewport band
+          // of the scroll container (with a small threshold so partially
+          // visible messages count).
+          const THRESHOLD = 40;
+          const isVisible =
+            rect.bottom > containerRect.top + THRESHOLD &&
+            rect.top < containerRect.bottom - THRESHOLD;
+
+          if (isVisible) {
+            visible.add(i);
+          }
+        }
+
+        setVisibleUserIndices((prev) => {
+          if (prev.size === visible.size) {
+            let same = true;
+            for (const idx of visible) {
+              if (!prev.has(idx)) {
+                same = false;
+                break;
+              }
+            }
+            if (same) return prev;
+          }
+          return visible;
+        });
+      };
+
+      // Initial compute after a frame so layout is ready.
+      const raf = requestAnimationFrame(computeVisible);
+      container.addEventListener("scroll", computeVisible, { passive: true });
+      window.addEventListener("resize", computeVisible);
+
+      return () => {
+        cancelAnimationFrame(raf);
+        container.removeEventListener("scroll", computeVisible);
+        window.removeEventListener("resize", computeVisible);
+      };
+    }, [scrollContainerRef, conversationId, conversationVersion]);
 
     // Compute popover position relative to the rail element so it opens to
     // the left, hugging the rail's left edge. The popover top is clamped to
@@ -251,12 +324,14 @@ export const UserMessageRail = memo(
       return () => window.removeEventListener("resize", onResize);
     }, [hovered, popoverHeight]);
 
-    // Scroll to a target message. If the message is not yet in the DOM
-    // (paginated loading hasn't reached it), repeatedly call loadOlderMessages
-    // until it appears or there are no more pages. Then use scrollIntoView
-    // and iterate: virtualized placeholders above the target expand to real
-    // content (height changes), pushing the target down. We keep re-scrolling
-    // until the position stabilizes.
+    // Scroll to a target user message. The frontend replaces temporary ids
+    // with real DB ids after persistence, so the DOM's data-message-id always
+    // matches the DB snowflake id from listUserMessages. If the message is not
+    // yet in the DOM (paginated loading hasn't reached it), repeatedly call
+    // loadOlderMessages until it appears or there are no more pages. Then use
+    // scrollIntoView and iterate: virtualized placeholders above the target
+    // expand to real content (height changes), pushing the target down. We
+    // keep re-scrolling until the position stabilizes.
     const handleItemClick = useCallback(
       async (messageId: string): Promise<void> => {
         const container = scrollContainerRef.current;
@@ -367,11 +442,12 @@ export const UserMessageRail = memo(
                         ? `${summary.slice(0, 64)}...`
                         : summary
                       : `#${index + 1}`;
+                  const isVisible = visibleUserIndices.has(index);
                   return (
                     <button
                       type="button"
                       key={msg.id}
-                      className="user-message-rail-popover-item"
+                      className={`user-message-rail-popover-item${isVisible ? " is-visible" : ""}`}
                       onClick={() => void handleItemClick(msg.id)}
                       title={summary}
                     >
