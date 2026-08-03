@@ -96,6 +96,16 @@
       "node_modules/ssh2/**",
       "node_modules/cpu-features/**"
     ],
+    "extraResources": [
+      {
+        "from": "resources/icon.png",
+        "to": "icon.png"
+      },
+      {
+        "from": "resources/web",
+        "to": "web"
+      }
+    ],
     "directories": {
       "output": "release"
     },
