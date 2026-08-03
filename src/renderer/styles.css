@@ -10733,7 +10733,9 @@ input {
 }
 
 .search-modal-input:focus {
-  border-color: var(--accent-blue);
+  outline: none;
+  border-color: var(--text-tertiary);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .search-modal-input::placeholder {
