@@ -7043,6 +7043,10 @@ input {
   animation: mermaid-image-viewer-fade 0.16s ease-out;
 }
 
+.mermaid-image-viewer.is-light {
+  background: rgba(245, 245, 245, 0.92);
+}
+
 @keyframes mermaid-image-viewer-fade {
   from {
     opacity: 0;
