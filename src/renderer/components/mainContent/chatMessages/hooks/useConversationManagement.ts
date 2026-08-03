@@ -691,8 +691,10 @@ export const useConversationManagement = (
   );
 
   const refreshConversations = useCallback((): void => {
-    ctx.setConversationVersion((version) => version + 1);
-  }, []);
+    // 仅触发侧边栏列表全量重拉（置顶/取消置顶/重命名/删除后使用）。
+    // 与 conversationVersion（消息持久化信号）解耦，避免 AI 响应刷新列表。
+    ctx.setConversationListVersion((version) => version + 1);
+  }, [ctx]);
 
   const handleForkConversation = useCallback(
     async (conversationId: string, upToResponseId: string): Promise<void> => {

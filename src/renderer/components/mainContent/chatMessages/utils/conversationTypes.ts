@@ -321,6 +321,9 @@ export type ConversationContextValue = {
   sessions: Record<string, ConversationSessionState>;
   activeConversationId: string | undefined;
   conversationVersion: number;
+  /** 侧边栏会话列表刷新信号（置顶/删除/重命名等显式操作后 +1）。
+   *  与 conversationVersion 解耦：AI 响应迭代不会触发列表全量重拉。 */
+  conversationListVersion: number;
   upsertedConversation: UpsertedConversation | null;
   /** All sub-agent session events keyed by sub-agent conversationId. Multiple
    *  parallel sub-agents each keep their own entry so the UI can match every
@@ -423,6 +426,7 @@ export type ConversationContextValue = {
   >;
   setActiveConversationId: Dispatch<SetStateAction<string | undefined>>;
   setConversationVersion: Dispatch<SetStateAction<number>>;
+  setConversationListVersion: Dispatch<SetStateAction<number>>;
   setUpsertedConversation: Dispatch<
     SetStateAction<UpsertedConversation | null>
   >;
@@ -478,6 +482,7 @@ export type UseChatConversationResult = {
   messages: ChatConversationMessage[];
   summary: string;
   conversationVersion: number;
+  conversationListVersion: number;
   upsertedConversation: UpsertedConversation | null;
   /** All sub-agent session events keyed by sub-agent conversationId. */
   subAgentSessionEvents: Record<string, SubAgentSessionEvent>;
