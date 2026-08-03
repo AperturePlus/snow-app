@@ -69,18 +69,24 @@ export const initBrowserNetworkRecorder = (): void => {
 
   // onBeforeSendHeaders 携带最终请求头；仅记录已识别的 webview 请求，
   // 避免把 Snow App 自身 API、更新检查等请求混进浏览器调试结果。
-  session.defaultSession.webRequest.onBeforeSendHeaders((details) => {
-    const webContentsId = getBrowserWebContentsId(details);
-    if (webContentsId === undefined) {
-      return;
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    (details, callback) => {
+      const webContentsId = getBrowserWebContentsId(details);
+      if (webContentsId !== undefined) {
+        pendingRequests.set(details.id, {
+          webContentsId,
+          startedAt: Date.now(),
+          method: details.method,
+          requestHeaders: details.requestHeaders,
+        });
+      }
+
+      // onBeforeSendHeaders 是阻塞型事件；无论是否记录该请求，都必须调用
+      // callback 放行，否则 defaultSession 的所有请求（包括主窗口 file://）
+      // 都会永久停在 about:blank，表现为全应用白屏。
+      callback({ requestHeaders: details.requestHeaders });
     }
-    pendingRequests.set(details.id, {
-      webContentsId,
-      startedAt: Date.now(),
-      method: details.method,
-      requestHeaders: details.requestHeaders,
-    });
-  });
+  );
 
   session.defaultSession.webRequest.onCompleted((details) => {
     const pending = pendingRequests.get(details.id);
