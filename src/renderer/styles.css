@@ -23025,7 +23025,6 @@ input {
 }
 
 :root[data-theme-preset="cream"] .app-layout {
-  gap: 8px;
   padding: 0 12px 12px;
 }
 
