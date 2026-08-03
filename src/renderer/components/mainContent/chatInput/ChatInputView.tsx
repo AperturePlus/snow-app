@@ -50,6 +50,7 @@ import { StreamMetrics } from "./StreamMetrics";
 import { useChatConversationContext } from "../chatMessages";
 import { CommandPanel, type CommandPanelHandle } from "./commands/CommandPanel";
 import { createChatCommands } from "./commands/commandRegistry";
+import { FileChangesPanel } from "./commands/FileChangesPanel";
 import type { ChatCommand } from "./commands/types";
 
 export const ChatInputView = ({
@@ -126,6 +127,7 @@ export const ChatInputView = ({
   const {
     handleNewChat,
     messages,
+    activeConversationId,
     streamTokenCount,
     streamElapsedMs,
     streamTtftMs,
@@ -150,6 +152,7 @@ export const ChatInputView = ({
   const [isProjectSkillsOpen, setIsProjectSkillsOpen] = useState(false);
   const [isProjectCodebaseOpen, setIsProjectCodebaseOpen] = useState(false);
   const [isRoleEditorOpen, setIsRoleEditorOpen] = useState(false);
+  const [isFileChangesOpen, setIsFileChangesOpen] = useState(false);
   const [isCustomThinkingMode, setIsCustomThinkingMode] = useState(false);
   const [customThinkingValue, setCustomThinkingValue] = useState("");
 
@@ -165,11 +168,20 @@ export const ChatInputView = ({
       createChatCommands({
         onNewChat: handleNewChat,
         onCompactConversation,
+        onOpenFileChangesPanel: () => {
+          setIsProjectMcpOpen(false);
+          setIsProjectSensitiveCommandsOpen(false);
+          setIsProjectSkillsOpen(false);
+          setIsProjectCodebaseOpen(false);
+          setIsRoleEditorOpen(false);
+          setIsFileChangesOpen(true);
+        },
         onOpenMcpPanel: () => {
           setIsProjectSensitiveCommandsOpen(false);
           setIsProjectSkillsOpen(false);
           setIsProjectCodebaseOpen(false);
           setIsRoleEditorOpen(false);
+          setIsFileChangesOpen(false);
           setIsProjectMcpOpen(true);
         },
         onOpenRolePanel: () => {
@@ -177,6 +189,7 @@ export const ChatInputView = ({
           setIsProjectSensitiveCommandsOpen(false);
           setIsProjectSkillsOpen(false);
           setIsProjectCodebaseOpen(false);
+          setIsFileChangesOpen(false);
           setIsRoleEditorOpen(true);
         },
         onOpenSensitiveCommandsPanel: () => {
@@ -184,6 +197,7 @@ export const ChatInputView = ({
           setIsProjectSkillsOpen(false);
           setIsProjectCodebaseOpen(false);
           setIsRoleEditorOpen(false);
+          setIsFileChangesOpen(false);
           setIsProjectSensitiveCommandsOpen(true);
         },
         onOpenSkillsPanel: () => {
@@ -191,6 +205,7 @@ export const ChatInputView = ({
           setIsProjectSensitiveCommandsOpen(false);
           setIsProjectCodebaseOpen(false);
           setIsRoleEditorOpen(false);
+          setIsFileChangesOpen(false);
           setIsProjectSkillsOpen(true);
         },
         onOpenCodebasePanel: () => {
@@ -198,11 +213,13 @@ export const ChatInputView = ({
           setIsProjectSensitiveCommandsOpen(false);
           setIsProjectSkillsOpen(false);
           setIsRoleEditorOpen(false);
+          setIsFileChangesOpen(false);
           setIsProjectCodebaseOpen(true);
         },
         model: selectedModel || undefined,
         apiProfile: selectedApiProfile || undefined,
         compactDisabled: messages.length === 0 || isCompacting,
+        fileChangesDisabled: !activeConversationId,
         mcpDisabled: !projectId,
         roleDisabled: !projectId,
         sensitiveCommandsDisabled: !projectId,
@@ -212,6 +229,7 @@ export const ChatInputView = ({
         labels: {
           clearDescription: t("chatCommand.clearDescription"),
           compactDescription: t("chatCommand.compactDescription"),
+          fileChangesDescription: t("chatCommand.fileChangesDescription"),
           mcpDescription: projectId
             ? t("chatCommand.mcpDescription")
             : t("chatCommand.mcpNoProject"),
@@ -228,6 +246,7 @@ export const ChatInputView = ({
         },
       }),
     [
+      activeConversationId,
       handleNewChat,
       isCompacting,
       isStreaming,
@@ -906,6 +925,10 @@ export const ChatInputView = ({
         projectId={projectId}
         projectName={projectName}
         onClose={() => setIsRoleEditorOpen(false)}
+      />
+      <FileChangesPanel
+        open={isFileChangesOpen}
+        onClose={() => setIsFileChangesOpen(false)}
       />
       <div className="input-content" ref={mentionAnchorRef}>
         <FileMentionPopup

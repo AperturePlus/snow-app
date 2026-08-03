@@ -5417,6 +5417,10 @@ input {
   color: var(--text-secondary);
   font-size: 14px;
   line-height: 1.6;
+  /* Long unbroken names (e.g. SSH remote workspace paths like
+     user@host:/very/long/path) must wrap instead of overflowing. */
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 /* Quick action cards in empty chat state */
@@ -5545,63 +5549,42 @@ input {
   contain: layout paint;
 }
 
-/* File-change stats panel: collapsible summary of files modified by the
-   main agent and its sub-agents during this conversation session. */
-.file-change-stats {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  background: var(--surface-island-muted);
-  overflow: hidden;
-  max-width: 760px;
-  margin: 0 auto 4px;
-  width: 100%;
+/* File changes panel: full list of files modified by the main agent and its
+   sub-agents during this conversation session. Rendered inside the
+   /changes command modal. */
+.file-changes-modal .app-modal-body {
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
-.file-change-stats-header {
+.file-changes-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.file-changes-summary {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  padding: 7px 12px;
-  background: transparent;
-  border: none;
-  color: var(--text-primary, inherit);
-  cursor: pointer;
+  flex-wrap: wrap;
+  padding: 2px 2px 0;
+}
+
+.file-changes-summary-text {
   font-size: 12.5px;
-  text-align: left;
-  transition: background 0.15s ease;
-}
-
-.file-change-stats-header:hover {
-  background: var(--surface-island-strong);
-}
-
-.file-change-stats-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-secondary);
-  flex-shrink: 0;
-}
-
-.file-change-stats-title {
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: var(--text-primary);
 }
 
-.file-change-stats-badges {
+.file-changes-badges {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   margin-left: auto;
-  flex-shrink: 0;
 }
 
-.file-change-stats-badge {
+.file-changes-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -5613,43 +5596,41 @@ input {
   white-space: nowrap;
 }
 
-.file-change-stats-badge.is-main {
+.file-changes-badge.is-main {
   background: var(--accent-blue-bg);
   color: var(--accent-blue-text);
 }
 
-.file-change-stats-badge.is-sub {
+.file-changes-badge.is-sub {
   background: var(--accent-green-bg);
   color: var(--accent-green-text);
 }
 
-.file-change-stats-list {
+.file-changes-list {
   list-style: none;
   margin: 0;
-  padding: 4px 8px 8px;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  border-top: 1px solid var(--border-color);
-  max-height: 260px;
-  overflow-y: auto;
 }
 
-.file-change-stats-item {
+.file-changes-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 6px;
-  border-radius: 6px;
+  padding: 5px 8px;
+  border-radius: 8px;
   font-size: 12px;
   min-width: 0;
+  transition: background-color 0.12s ease;
 }
 
-.file-change-stats-item:hover {
+.file-changes-row:hover {
   background: var(--surface-island-strong);
 }
 
-.file-change-stats-icon {
+.file-changes-row-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5657,15 +5638,15 @@ input {
   flex-shrink: 0;
 }
 
-.file-change-stats-file {
+.file-changes-path {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-width: 0;
   flex: 1;
+  min-width: 0;
 }
 
-.file-change-stats-path {
+.file-changes-path-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5674,7 +5655,7 @@ input {
   font-size: 11.5px;
 }
 
-.file-change-stats-kind {
+.file-changes-kind {
   display: inline-flex;
   align-items: center;
   padding: 0 7px;
@@ -5686,17 +5667,17 @@ input {
   flex-shrink: 0;
 }
 
-.file-change-stats-kind.is-create {
+.file-changes-kind.is-create {
   background: var(--accent-green-bg);
   color: var(--accent-green-text);
 }
 
-.file-change-stats-kind.is-edit {
+.file-changes-kind.is-edit {
   background: var(--accent-blue-bg);
   color: var(--accent-blue-text);
 }
 
-.file-change-stats-agent {
+.file-changes-agent {
   display: inline-flex;
   align-items: center;
   padding: 0 7px;
@@ -5706,15 +5687,105 @@ input {
   line-height: 17px;
   white-space: nowrap;
   flex-shrink: 0;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   background: var(--surface-island-strong);
   color: var(--text-secondary);
   border: 1px solid var(--border-color);
 }
 
-.file-change-stats-agent.is-sub {
+.file-changes-agent.is-sub {
   background: var(--accent-green-bg);
   color: var(--accent-green-text);
   border-color: transparent;
+}
+
+.file-changes-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.file-changes-empty-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.file-changes-empty-hint {
+  max-width: 320px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.file-changes-diff-view {
+  display: flex;
+  flex-direction: column;
+  height: 52vh;
+  min-height: 260px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.file-changes-diff-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+}
+
+.file-changes-diff-toolbar-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.file-changes-view-diff-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.file-changes-view-diff-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--text-muted);
+}
+
+.file-changes-row-diff-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.file-changes-row-diff-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .chat-message-group {
@@ -23238,6 +23309,8 @@ input {
   font-family: var(--font-brand-display);
   font-size: 30px;
   line-height: 1.2;
+  max-width: 620px;
+  overflow-wrap: anywhere;
 }
 
 :root[data-theme-preset="cream"] .chat-empty-quick-card {

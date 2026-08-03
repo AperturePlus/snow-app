@@ -1506,6 +1506,8 @@ export const en = {
   "chatCommand.codebaseDescription":
     "Manage codebase indexing for this project",
   "chatCommand.codebaseNoProject": "Select a project before managing codebase",
+  "chatCommand.fileChangesDescription":
+    "View files modified in this conversation",
   "chatCommand.empty": "No matching commands",
   "chatCommand.trigger": "Open command panel",
   "projectSensitiveCommands.title": "Project sensitive commands",
@@ -1770,6 +1772,18 @@ export const en = {
   "chat.fileChanges.kindEdit": "Modified",
   "chat.fileChanges.agentMainName": "Main agent",
   "chat.fileChanges.agentSubName": "Sub-agent",
+  "chat.fileChanges.close": "Close",
+  "chat.fileChanges.title": "File changes",
+  "chat.fileChanges.description":
+    "Files created or edited by the agent in this conversation.",
+  "chat.fileChanges.emptyTitle": "No file changes yet",
+  "chat.fileChanges.emptyHint":
+    "Files created or edited by the agent in this conversation appear here.",
+  "chat.fileChanges.viewDiff": "View changes",
+  "chat.fileChanges.backToList": "Back to list",
+  "chat.fileChanges.diffTitle": "Change preview",
+  "chat.fileChanges.diffEmpty": "No changes to display",
+  "chat.fileChanges.selectFile": "Select a file to view changes",
   "chatInput.pendingLabel": "Queued",
   "chatInput.withdraw": "Withdraw",
   "chatInput.sendNow": "Send now",
