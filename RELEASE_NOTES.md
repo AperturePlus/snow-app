@@ -38,6 +38,17 @@
 
 ## Improvements
 
+- **Unified Gallery Layout for Parallel Image Generations**: Images from a
+  single `imagegen-generate` call now share one row width — the gallery grid
+  sizes its columns to the batch so it reads as one cohesive block that fills
+  the message width instead of ragged auto-fill columns: 2–4 images share a
+  single row, 5–6 use three columns over two rows, 7–8 use four columns over
+  two rows (no lone tail image). Card aspect ratio follows the real
+  generated-image ratio (median of the batch): ultra-wide images span the
+  full row and ultra-tall ones are height-capped so extreme aspect ratios
+  stay pleasant. The per-card frame and download/label chrome was removed in
+  favor of a clean image with a subtle index badge and click-to-zoom; the
+  download action now lives in the lightbox only.
 - **Image Generation Settings Panel (aligned with the API settings panel)**:
   channel rows no longer show redundant provider icons, the provider dropdown
   uses the shared `CustomSelect` component, and the inline enable toggle
