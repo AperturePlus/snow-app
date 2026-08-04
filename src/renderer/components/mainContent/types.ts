@@ -7,6 +7,7 @@ export type MainContentView =
   | "personalization-settings"
   | "custom-headers-settings"
   | "mcp-settings"
+  | "import-settings"
   | "skills-settings"
   | "sub-agent-settings"
   | "sensitive-command-settings"

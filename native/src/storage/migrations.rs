@@ -71,6 +71,7 @@ pub fn run_pre_schema_migrations(connection: &Connection) -> rusqlite::Result<()
 /// already have via `CREATE TABLE`).
 pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<()> {
     migrate_chat_conversations_api_profile(connection)?;
+    migrate_plugins_runtime(connection)?;
     Ok(())
 }
 
@@ -157,6 +158,29 @@ fn migrate_chat_conversations_api_profile(connection: &Connection) -> rusqlite::
         connection.execute(
             "ALTER TABLE chat_conversations
                 ADD COLUMN api_profile_name TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+    }
+
+    Ok(())
+}
+
+/// Adds the `runtime_json` column to the `plugins` table for databases that
+/// were created with an earlier plugin schema.
+///
+/// The column stores the serialized plugin runtime declaration (entry,
+/// permissions, timeout). Idempotent: no-op when the column is already
+/// present (fresh databases get it from `CREATE TABLE` in `create_schema`).
+fn migrate_plugins_runtime(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(plugins)")?;
+    let mut columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+    let has_runtime_column = columns.try_fold(false, |found, column| {
+        Ok::<bool, rusqlite::Error>(found || column? == "runtime_json")
+    })?;
+
+    if !has_runtime_column {
+        connection.execute(
+            "ALTER TABLE plugins ADD COLUMN runtime_json TEXT NOT NULL DEFAULT 'null'",
             [],
         )?;
     }
