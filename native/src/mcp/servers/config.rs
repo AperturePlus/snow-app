@@ -52,6 +52,10 @@ const SCOPE_SKILLS: &str = "skills";
 /// key = 日志文件名（如 `2026-08-03-error.log`）或级别简写（error/warn/info/debug，
 /// 读取今天的对应文件）；config-list 返回日志文件清单与错误摘要。
 const SCOPE_LOGS: &str = "logs";
+/// 图像生成设置域（DB-backed，SQLite system_settings 表）：让 agent 查看/配置
+/// 生图双渠道（openai / gemini）的启用状态与模型；apiKey 读取时脱敏。
+/// key = "openai" | "gemini"（缺省返回全部渠道）。
+const SCOPE_IMAGEGEN: &str = "imagegen";
 /// 日志目录名（~/.snow/log）。
 const LOG_DIR_NAME: &str = "log";
 /// 日志文件名的合法形态：YYYY-MM-DD-(debug|info|warn|error).log。
@@ -248,6 +252,11 @@ impl ConfigService {
         // logs scope（只读日志域）：文件读取是同步操作，直接分发。
         if args.get("scope").and_then(Value::as_str) == Some(SCOPE_LOGS) {
             return execute_logs_scope(&tool_name, &args);
+        }
+
+        // imagegen scope（图像生成设置，DB-backed）：同步 DB 操作，直接分发。
+        if args.get("scope").and_then(Value::as_str) == Some(SCOPE_IMAGEGEN) {
+            return execute_imagegen_scope(&tool_name, &args);
         }
 
         let db_path = self.db_path.clone();
@@ -1914,6 +1923,352 @@ impl ConfigService {
     }
 }
 
+/// imagegen scope（图像生成设置，DB-backed system_settings 表）：
+/// - list：返回所有渠道（id/name/provider/enabled/model/configured）概览
+/// - get：读取完整配置（apiKey 脱敏）；key 可选（渠道 id / 渠道名 / 协议类型，缺省全部）
+/// - set：value 为 {channels: [...]} 全量替换，或 {<channelId>: {...}} 按 id 合并更新（不存在则追加）
+/// - delete：清空图像生成设置（所有渠道都未配置时生图工具不再暴露）
+fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Result<Value> {
+    match tool_name {
+        TOOL_LIST => {
+            // 先迁移旧格式（{openai, gemini} 顶层字段）为 channels 数组
+            let settings = migrate_imagegen_channels(&load_imagegen_settings_value()?);
+            let channels = settings
+                .get("channels")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            let entries: Vec<Value> = channels
+                .iter()
+                .map(|channel| {
+                    let enabled = channel
+                        .get("enabled")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false);
+                    let model = channel
+                        .get("model")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    json!({
+                        "key": channel.get("id").and_then(Value::as_str).unwrap_or(""),
+                        "id": channel.get("id").and_then(Value::as_str).unwrap_or(""),
+                        "name": channel.get("name").and_then(Value::as_str).unwrap_or(""),
+                        "provider": channel.get("provider").and_then(Value::as_str).unwrap_or("openai"),
+                        "enabled": enabled,
+                        "model": model,
+                        "configured": enabled
+                            && !model.is_empty()
+                            && !channel.get("apiKey").and_then(Value::as_str).unwrap_or("").is_empty(),
+                    })
+                })
+                .collect();
+            Ok(json!({
+                "scope": SCOPE_IMAGEGEN,
+                "keys": entries,
+                "note": "Channels are independent; enable one or more at once. When none is configured the imagegen-generate tool is hidden from the model. Pass provider=<channelId|channelName|openai|gemini> to imagegen-generate to pick a channel.",
+            }))
+        }
+        TOOL_GET => {
+            // 先迁移旧格式（{openai, gemini} 顶层字段）为 channels 数组
+            let settings = migrate_imagegen_channels(&load_imagegen_settings_value()?);
+            let requested_key = args
+                .get("key")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+            match requested_key.as_deref() {
+                Some(key) => {
+                    let key_lower = key.to_lowercase();
+                    let is_provider_type = key_lower == "openai" || key_lower == "gemini";
+                    let channel = settings
+                        .get("channels")
+                        .and_then(Value::as_array)
+                        .and_then(|channels| {
+                            channels.iter().find(|channel| {
+                                if is_provider_type {
+                                    channel
+                                        .get("provider")
+                                        .and_then(Value::as_str)
+                                        .map(|provider| provider.eq_ignore_ascii_case(&key_lower))
+                                        .unwrap_or(false)
+                                } else {
+                                    channel
+                                        .get("id")
+                                        .and_then(Value::as_str)
+                                        .map(|id| id.eq_ignore_ascii_case(key))
+                                        .unwrap_or(false)
+                                        || channel
+                                            .get("name")
+                                            .and_then(Value::as_str)
+                                            .map(|name| name.eq_ignore_ascii_case(key))
+                                            .unwrap_or(false)
+                                }
+                            })
+                        })
+                        .cloned();
+                    match channel {
+                        Some(channel) => Ok(json!({
+                            "scope": SCOPE_IMAGEGEN,
+                            "key": key,
+                            "value": mask_channel_api_key(channel),
+                        })),
+                        None => Err(Error::new(
+                            Status::InvalidArg,
+                            format!(
+                                "Unknown imagegen channel: \"{key}\". Use config-list scope=imagegen to see available channels."
+                            ),
+                        )),
+                    }
+                }
+                None => Ok(json!({
+                    "scope": SCOPE_IMAGEGEN,
+                    "key": "settings",
+                    "value": mask_channel_api_key(settings),
+                })),
+            }
+        }
+        TOOL_SET => {
+            let value = args.get("value").cloned().ok_or_else(|| {
+                Error::new(
+                    Status::InvalidArg,
+                    "value is required for config-set (an object with channels or channel overrides)",
+                )
+            })?;
+            if !value.is_object() {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "value must be an object like {channels: [...]} or {<channelId>: {...}}",
+                ));
+            }
+
+            // 先迁移存储为 channels 数组格式
+            let mut settings = migrate_imagegen_channels(&load_imagegen_settings_value()?);
+            if let Some(channels_value) = value.get("channels") {
+                // 全量替换
+                if !channels_value.is_array() {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "value.channels must be an array",
+                    ));
+                }
+                settings = json!({ "channels": channels_value.clone() });
+            } else if let Some(value_map) = value.as_object() {
+                // 按渠道 id / 名称合并更新；不存在则追加为新渠道
+                let mut channels: Vec<Value> = settings
+                    .get("channels")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                for (key, override_value) in value_map {
+                    if key == "channels" || !override_value.is_object() {
+                        continue;
+                    }
+                    let is_legacy_key = key == "openai" || key == "gemini";
+                    let mut merged_any = false;
+                    for channel in channels.iter_mut() {
+                        let matches = if is_legacy_key {
+                            channel
+                                .get("provider")
+                                .and_then(Value::as_str)
+                                .map(|provider| provider == key.as_str())
+                                .unwrap_or(false)
+                        } else {
+                            channel
+                                .get("id")
+                                .and_then(Value::as_str)
+                                .map(|id| id == key.as_str())
+                                .unwrap_or(false)
+                                || channel
+                                    .get("name")
+                                    .and_then(Value::as_str)
+                                    .map(|name| name == key.as_str())
+                                    .unwrap_or(false)
+                        };
+                        if matches {
+                            let mut merged = channel.clone();
+                            if let Some(merged_map) = merged.as_object_mut() {
+                                if let Some(override_map) = override_value.as_object() {
+                                    for (field, val) in override_map {
+                                        merged_map.insert(field.clone(), val.clone());
+                                    }
+                                }
+                            }
+                            *channel = merged;
+                            merged_any = true;
+                        }
+                    }
+                    if !merged_any {
+                        let mut new_channel = override_value.clone();
+                        if let Some(map) = new_channel.as_object_mut() {
+                            map.entry("id".to_string())
+                                .or_insert_with(|| json!(key));
+                            map.entry("provider".to_string())
+                                .or_insert_with(|| json!("openai"));
+                            map.entry("name".to_string())
+                                .or_insert_with(|| json!(""));
+                        }
+                        channels.push(new_channel);
+                    }
+                }
+                settings = json!({ "channels": channels });
+            }
+
+            save_imagegen_settings_value(&settings)?;
+            Ok(json!({
+                "scope": SCOPE_IMAGEGEN,
+                "key": "settings",
+                "value": mask_channel_api_key(settings),
+            }))
+        }
+        TOOL_DELETE => {
+            save_imagegen_settings_value(&json!({}))?;
+            Ok(json!({
+                "scope": SCOPE_IMAGEGEN,
+                "key": "settings",
+                "deleted": true,
+            }))
+        }
+        _ => Err(Error::new(
+            Status::GenericFailure,
+            format!(
+                "Unknown tool: \"{tool_name}\" for MCP server \"{SERVER_ID}\". Available tools: [config-list, config-get, config-set, config-delete]"
+            ),
+        )),
+    }
+}
+
+/// 将任意 imagegen 存储格式迁移为 { channels: [...] } 新格式：
+/// - 已有 channels 数组 → 原样返回
+/// - 旧双渠道 {openai, gemini} → 转为渠道数组
+/// - 更旧单渠道（顶层字段）→ 转为单个渠道
+fn migrate_imagegen_channels(settings: &Value) -> Value {
+    if let Some(channels) = settings.get("channels") {
+        if channels.is_array() {
+            return settings.clone();
+        }
+    }
+
+    let mut channels: Vec<Value> = Vec::new();
+    for (key, provider) in [("openai", "openai"), ("gemini", "gemini")] {
+        if let Some(channel) = settings.get(key) {
+            if channel.is_object() {
+                let mut migrated = channel.clone();
+                if let Some(map) = migrated.as_object_mut() {
+                    map.entry("id".to_string())
+                        .or_insert_with(|| json!(key));
+                    map.entry("provider".to_string())
+                        .or_insert_with(|| json!(provider));
+                    map.entry("name".to_string())
+                        .or_insert_with(|| json!(""));
+                }
+                channels.push(migrated);
+            }
+        }
+    }
+
+    // 更旧单渠道格式（顶层 apiKey/model/...）
+    if channels.is_empty() && settings.get("apiKey").is_some() {
+        let old_provider = settings
+            .get("provider")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let old_base_url = settings
+            .get("baseUrl")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let is_gemini = old_provider == "gemini"
+            || old_base_url.contains("generativelanguage")
+            || old_base_url.contains("googleapis.com");
+        let mut channel = settings.clone();
+        if let Some(map) = channel.as_object_mut() {
+            map.insert(
+                "id".to_string(),
+                json!(if is_gemini { "gemini" } else { "openai" }),
+            );
+            map.insert(
+                "provider".to_string(),
+                json!(if is_gemini { "gemini" } else { "openai" }),
+            );
+            map.insert("enabled".to_string(), json!(true));
+        }
+        channels.push(channel);
+    }
+
+    json!({ "channels": channels })
+}
+
+/// 读取 imagegen_settings 的 JSON 值（无配置时返回空对象）。
+fn load_imagegen_settings_value() -> napi::Result<Value> {
+    let storage_info = crate::storage::initialize_app_storage()?;
+    let database_path = std::path::PathBuf::from(storage_info.database_path);
+    let value = crate::storage::services::system_settings::get_system_setting_value(
+        &database_path,
+        "imagegen_settings",
+    )?;
+    match value {
+        Some(raw) if !raw.trim().is_empty() => {
+            serde_json::from_str(&raw).map_err(|error| {
+                Error::from_reason(format!(
+                    "Failed to parse imagegen settings: {error}"
+                ))
+            })
+        }
+        _ => Ok(json!({})),
+    }
+}
+
+/// 写入 imagegen_settings。
+fn save_imagegen_settings_value(settings: &Value) -> napi::Result<()> {
+    let storage_info = crate::storage::initialize_app_storage()?;
+    let database_path = std::path::PathBuf::from(storage_info.database_path);
+    crate::storage::services::system_settings::set_system_setting(
+        &database_path,
+        "Image Generation Settings",
+        "imagegen_settings",
+        &serde_json::to_string(settings).map_err(|error| {
+            Error::from_reason(format!("Failed to serialize imagegen settings: {error}"))
+        })?,
+    )
+    .map_err(|error| Error::from_reason(format!("Failed to save imagegen settings: {error}")))
+}
+
+/// 递归脱敏对象中的 apiKey 字段（如 sk-****abcd），防止明文密钥外泄。
+fn mask_channel_api_key(value: Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut masked = serde_json::Map::new();
+            for (key, val) in map {
+                if key == "apiKey" {
+                    if let Some(text) = val.as_str() {
+                        masked.insert(key, json!(mask_api_key(text)));
+                        continue;
+                    }
+                }
+                masked.insert(key, mask_channel_api_key(val));
+            }
+            Value::Object(masked)
+        }
+        Value::Array(items) => {
+            Value::Array(items.into_iter().map(mask_channel_api_key).collect())
+        }
+        other => other,
+    }
+}
+
+fn mask_api_key(key: &str) -> String {
+    let trimmed = key.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if trimmed.len() <= 8 {
+        return "****".to_string();
+    }
+    let prefix = &trimmed[..4];
+    let suffix = &trimmed[trimmed.len() - 4..];
+    format!("{prefix}****{suffix}")
+}
+
 /// 校验并返回应用数据库路径；native 存储未初始化时给出明确错误。
     /// logs scope（只读日志域）：列出/读取/清理 ~/.snow/log 下的应用日志，
     /// 供 agent 自主进行异常分析。set 只读；delete 需精确文件名（防路径穿越）。
@@ -2214,13 +2569,14 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_LIST.to_string(),
-                description: "List manageable configuration scopes and their keys. Scopes: settings (~/.snow/settings.json: mcpServers, codebase, sensitiveCommands, yoloMode, planMode, ...), snowcfg (~/.snow/config.json snowcfg object: baseUrl, apiKey, advancedModel, chatThinking, ...), proxy (~/.snow/proxy-config.json: enabled, host, port, searchEngine, browserPath, browserDebugPort), app (~/.snow/active-profile.json: activeProfile), custom-headers (~/.snow/custom-headers.json: active, schemes), system-prompt (~/.snow/system-prompt.json: active, prompts), theme (~/.snow/theme.json: theme, simpleMode, diffOpacity, toolIcons, customColors, ...), language (~/.snow/language.json: language), permissions (~/.snow/permissions.json: alwaysApprovedTools), lsp-config (~/.snow/lsp-config.json: schemaVersion, servers), buddy (~/.snow/buddy.json: version, companion, muted). DB-backed scopes: subAgents (sub-agent configs in the app database, key=agentId), hooks (lifecycle hook configs in the app database, key=hookType). Pass `scope` to inspect a single scope with current values; sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts) are masked. Pass `projectId` to scope subAgents/hooks listings to a specific project (omitted = global). Read-only scope: logs (lists app log files under ~/.snow/log for agent-driven diagnostics).".to_string(),
+                description: "List manageable configuration scopes and their keys. Scopes: settings (~/.snow/settings.json: mcpServers, codebase, sensitiveCommands, yoloMode, planMode, ...), snowcfg (~/.snow/config.json snowcfg object: baseUrl, apiKey, advancedModel, chatThinking, ...), proxy (~/.snow/proxy-config.json: enabled, host, port, searchEngine, browserPath, browserDebugPort), app (~/.snow/active-profile.json: activeProfile), custom-headers (~/.snow/custom-headers.json: active, schemes), system-prompt (~/.snow/system-prompt.json: active, prompts), theme (~/.snow/theme.json: theme, simpleMode, diffOpacity, toolIcons, customColors, ...), language (~/.snow/language.json: language), permissions (~/.snow/permissions.json: alwaysApprovedTools), lsp-config (~/.snow/lsp-config.json: schemaVersion, servers), buddy (~/.snow/buddy.json: version, companion, muted). DB-backed scopes: subAgents (sub-agent configs in the app database, key=agentId), hooks (lifecycle hook configs in the app database, key=hookType), imagegen (image generation channels in the app database, keys: channel ids/names, provider types openai|gemini). Pass `scope` to inspect a single scope with current values; sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts, imagegen apiKey) are masked. Pass `projectId` to scope subAgents/hooks listings to a specific project (omitted = global). Read-only scope: logs (lists app log files under ~/.snow/log for agent-driven diagnostics)."
+                    .to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs"],
+                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen"],
                             "description": "Optional config scope name; when omitted, lists all scopes."
                         },
                         "projectId": {
@@ -2354,6 +2710,7 @@ fn available_scopes() -> String {
     scopes.push(SCOPE_HOOKS);
     scopes.push(SCOPE_SKILLS);
     scopes.push(SCOPE_LOGS);
+    scopes.push(SCOPE_IMAGEGEN);
     scopes.join(", ")
 }
 

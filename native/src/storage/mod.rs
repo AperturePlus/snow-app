@@ -4,6 +4,7 @@ mod paths;
 pub mod services;
 
 use std::{
+    collections::HashMap,
     fs,
     path::PathBuf,
     sync::{Mutex, Once, OnceLock},
@@ -1512,6 +1513,16 @@ pub fn list_sub_agent_conversations(
     )
 }
 
+pub fn list_sub_agent_conversations_by_parents(
+    parent_conversation_ids: Vec<String>,
+) -> Result<HashMap<String, Vec<ChatConversationRecord>>> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::list_sub_agent_conversations_by_parents(
+        &database_path,
+        &parent_conversation_ids,
+    )
+}
+
 pub fn create_sub_agent_session(
     conversation_id: String,
     parent_conversation_id: String,
@@ -1611,6 +1622,11 @@ pub fn update_conversation_api_profile(
 pub fn delete_conversation(conversation_id: String) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::chat_conversations::delete_conversation(&database_path, &conversation_id)
+}
+
+pub fn delete_conversations(conversation_ids: Vec<String>) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::delete_conversations(&database_path, &conversation_ids)
 }
 
 pub fn append_tool_message(conversation_id: String, content: String) -> Result<()> {
