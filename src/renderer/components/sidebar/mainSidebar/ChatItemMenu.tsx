@@ -9,6 +9,7 @@ import {
   ChevronRight,
   ChevronLeft,
   SmilePlus,
+  ListChecks,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -27,6 +28,7 @@ type ChatItemMenuProps = {
   onSetEmoji: (emoji: string) => void | Promise<void>;
   onDelete: () => void;
   onExport: (format: ExportFormat) => void;
+  onEnterMultiSelect?: () => void;
   onOpenChange?: (isOpen: boolean) => void;
   /** 右键菜单锚点（光标位置）：非空时菜单以该点定位并保持打开 */
   contextMenuAnchor?: { x: number; y: number } | null;
@@ -42,6 +44,7 @@ export function ChatItemMenu({
   onSetEmoji,
   onDelete,
   onExport,
+  onEnterMultiSelect,
   onOpenChange,
   contextMenuAnchor = null,
   onContextMenuClose,
@@ -184,6 +187,11 @@ export function ChatItemMenu({
     onRename();
     setIsButtonOpen(false);
     onContextMenuCloseRef.current?.();
+  };
+
+  const handleMultiSelect = (): void => {
+    onEnterMultiSelect?.();
+    setIsOpen(false);
   };
 
   const handleDeleteClick = (): void => {
@@ -375,6 +383,19 @@ export function ChatItemMenu({
                       })}
                     </span>
                     <ChevronRight size={11} className="chat-item-menu-sub-arrow" />
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-item-menu-item"
+                    onClick={handleMultiSelect}
+                    role="menuitem"
+                  >
+                    <ListChecks size={13} />
+                    <span>
+                      {t("sidebar.chatActionMultiSelect", {
+                        defaultValue: "Multi-select",
+                      })}
+                    </span>
                   </button>
                   <button
                     type="button"

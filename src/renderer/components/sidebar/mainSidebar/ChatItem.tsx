@@ -31,6 +31,7 @@ type ChatItemProps = {
   onSetEmoji: (emoji: string) => Promise<void>;
   onDelete: () => void;
   onExport: (format: ExportFormat) => void;
+  onEnterMultiSelect?: () => void;
   onSelect?: () => void;
   onToggleSubAgentPanel?: () => void;
 };
@@ -51,6 +52,7 @@ export function ChatItem({
   onSetEmoji,
   onDelete,
   onExport,
+  onEnterMultiSelect,
   onSelect,
   onToggleSubAgentPanel,
 }: ChatItemProps): React.JSX.Element {
@@ -324,6 +326,7 @@ export function ChatItem({
             onSetEmoji={onSetEmoji}
             onDelete={onDelete}
             onExport={onExport}
+            onEnterMultiSelect={onEnterMultiSelect}
             onOpenChange={setIsMenuOpen}
             contextMenuAnchor={contextMenuAnchor}
             onContextMenuClose={() => setContextMenuAnchor(null)}
