@@ -31,6 +31,8 @@ type GitControlProps = {
   onFileSelect: (file: GitFileStatus | null) => void;
   onStatusChange?: (status: GitStatusResult | null) => void;
   onOpenFile?: (filePath: string, fileName: string) => void;
+  /** 在文件所在目录打开终端。 */
+  onOpenTerminal?: (cwd: string) => void;
 };
 
 const isSelectedKey = (section: "staged" | "unstaged", path: string) =>
@@ -43,6 +45,7 @@ export const GitControl = ({
   onFileSelect,
   onStatusChange,
   onOpenFile,
+  onOpenTerminal,
 }: GitControlProps): React.JSX.Element => {
   const { t } = useI18n();
   const { status, isLoading, error, refresh } = useGitStatus(repoPath);
@@ -662,6 +665,7 @@ export const GitControl = ({
             onStageAll={handleStageAll}
             onDiscard={handleDiscardRequest}
             onOpenFile={handleOpenFile}
+            onOpenTerminal={onOpenTerminal}
           />
 
           <GitFileList
@@ -674,6 +678,7 @@ export const GitControl = ({
             onStageToggle={handleStageToggle}
             onUnstageAll={handleUnstageAll}
             onOpenFile={handleOpenFile}
+            onOpenTerminal={onOpenTerminal}
           />
 
           <div className="git-commit-section">

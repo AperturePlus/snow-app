@@ -718,6 +718,10 @@ export const windowApi = {
   stopWindowDrag: (): Promise<void> => ipcRenderer.invoke("window:stop-drag"),
   writeImageToClipboard: (dataUrl: string): Promise<void> =>
     ipcRenderer.invoke("clipboard:write-image", dataUrl),
+  readClipboardText: (): Promise<string> =>
+    ipcRenderer.invoke("clipboard:read-text"),
+  writeClipboardText: (text: string): Promise<void> =>
+    ipcRenderer.invoke("clipboard:write-text", text),
   clearBrowserCache: (): Promise<void> =>
     ipcRenderer.invoke("browser:clear-cache"),
   clearBrowserCookies: (): Promise<void> =>

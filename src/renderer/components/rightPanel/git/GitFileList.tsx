@@ -1,17 +1,20 @@
 import {
   ChevronDown,
-  FilePlus,
+  Copy,
   FileMinus,
+  FilePlus,
   FileEdit,
   FileText,
   FileX,
   Plus,
+  Terminal as TerminalIcon,
   Undo2,
 } from "lucide-react";
 import { useCallback, useState } from "react";
 import type { GitFileStatus } from "../../../../preload";
 import { useI18n } from "../../../i18n";
 import { getFileTypeIcon } from "../../../utils/fileIcons";
+import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
 
 type GitFileListProps = {
   repoPath: string;
@@ -32,6 +35,8 @@ type GitFileListProps = {
   onUnstageAll?: () => void;
   onDiscard?: (files: GitFileStatus[]) => void;
   onOpenFile?: (file: GitFileStatus) => void;
+  /** 在文件所在目录打开终端。 */
+  onOpenTerminal?: (cwd: string) => void;
 };
 
 const getStatusIcon = (status: string): React.ReactNode => {
@@ -101,11 +106,106 @@ export const GitFileList = ({
   onUnstageAll,
   onDiscard,
   onOpenFile,
+  onOpenTerminal,
 }: GitFileListProps): React.JSX.Element => {
   const { t } = useI18n();
   const isStaged = section === "staged";
   const headerLabel = isStaged ? t("git.stagedChanges") : t("git.changes");
   const headerCount = files.length;
+
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    file: GitFileStatus;
+  } | null>(null);
+
+  /** 将文件相对路径拼成仓库绝对路径（兼容 Windows 反斜杠与 SSH 仓库）。 */
+  const resolveRepoPath = (dirPath: string): string => {
+    const base = repoPath.replace(/[\\/]+$/, "");
+    const sep = base.includes("\\") ? "\\" : "/";
+    const dir = dirPath.replace(/[\\/]+$/, "");
+    return dir ? `${base}${sep}${dir}` : base;
+  };
+
+  /** 与行内按钮一致的多选语义：右键文件在选中集内时操作应用到全部选中。 */
+  const getTargetFiles = (file: GitFileStatus): GitFileStatus[] => {
+    if (selectedPaths.has(`${section}:${file.path}`)) {
+      const selected = files.filter((f) =>
+        selectedPaths.has(`${section}:${f.path}`)
+      );
+      return selected.length > 0 ? selected : [file];
+    }
+    return [file];
+  };
+
+  const buildMenuItems = (file: GitFileStatus): ContextMenuItem[] => {
+    const items: ContextMenuItem[] = [];
+    if (onOpenFile && file.status !== "D") {
+      items.push({
+        id: "open",
+        label: t("git.openFile"),
+        icon: <FileText size={13} strokeWidth={1.8} />,
+        onClick: () => {
+          setContextMenu(null);
+          onOpenFile(file);
+        },
+      });
+    }
+    items.push({
+      id: "stage-toggle",
+      label: isStaged ? t("git.unstageFile") : t("git.stageFile"),
+      icon: isStaged ? (
+        <FileMinus size={13} strokeWidth={1.8} />
+      ) : (
+        <Plus size={13} strokeWidth={1.8} />
+      ),
+      onClick: () => {
+        setContextMenu(null);
+        onStageToggle(getTargetFiles(file), section);
+      },
+    });
+    if (!isStaged && onDiscard) {
+      items.push({
+        id: "discard",
+        label: t("git.discardFile"),
+        icon: <Undo2 size={13} strokeWidth={1.8} />,
+        onClick: () => {
+          setContextMenu(null);
+          onDiscard(getTargetFiles(file));
+        },
+      });
+    }
+    if (onOpenTerminal) {
+      items.push({
+        id: "open-terminal",
+        label: t("git.openInTerminal", {
+          defaultValue: "Open in Terminal",
+        }),
+        icon: <TerminalIcon size={13} strokeWidth={1.8} />,
+        onClick: () => {
+          setContextMenu(null);
+          const lastSep = Math.max(
+            file.path.lastIndexOf("/"),
+            file.path.lastIndexOf("\\")
+          );
+          const dirPath = lastSep === -1 ? "" : file.path.slice(0, lastSep + 1);
+          onOpenTerminal(resolveRepoPath(dirPath));
+        },
+      });
+    }
+    items.push({
+      id: "copy-path",
+      label: t("git.copyPath", { defaultValue: "Copy Path" }),
+      icon: <Copy size={13} strokeWidth={1.8} />,
+      onClick: () => {
+        setContextMenu(null);
+        void window.snow.writeClipboardText(file.path).catch(() => {
+          // 剪贴板写入失败时静默忽略。
+        });
+      },
+    });
+    return items;
+  };
 
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -215,6 +315,10 @@ export const GitFileList = ({
                   key={`${section}-${file.path}`}
                   className={`git-file-item${isSelected ? " selected" : ""}`}
                   onClick={(e) => onFileSelect(file, e, section)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setContextMenu({ x: e.clientX, y: e.clientY, file });
+                  }}
                   draggable
                   onDragStart={(event) => handleFileDragStart(event, file)}
                 >
@@ -295,6 +399,14 @@ export const GitFileList = ({
             })}
           </div>
         ))}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={buildMenuItems(contextMenu.file)}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 };

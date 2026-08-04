@@ -135,6 +135,18 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
     clipboard.writeImage(image);
   });
 
+  // ===== Clipboard (text) =====
+  // 走主进程 clipboard 模块：渲染进程的 navigator.clipboard.readText()
+  // 需要 clipboard-read 权限（默认未授予），通过 IPC 则始终可用。
+  ipcMain.handle("clipboard:read-text", () => clipboard.readText());
+
+  ipcMain.handle("clipboard:write-text", (_event, text: unknown) => {
+    if (typeof text !== "string") {
+      throw new Error("Clipboard text must be a string");
+    }
+    clipboard.writeText(text);
+  });
+
   // ===== Browser (embedded webview) =====
   ipcMain.handle("browser:clear-cache", async () => {
     await session.defaultSession.clearCache();
