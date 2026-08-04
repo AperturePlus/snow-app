@@ -5926,6 +5926,11 @@ input {
   color: var(--accent-blue-text);
 }
 
+.file-changes-kind.is-delete {
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+}
+
 .file-changes-agent {
   display: inline-flex;
   align-items: center;
@@ -9038,6 +9043,38 @@ input {
   );
 }
 
+.tool-call-bash-detached-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--accent-blue-text, #4a9eff);
+  background: color-mix(
+    in srgb,
+    var(--accent-blue-text, #4a9eff) 14%,
+    transparent
+  );
+}
+
+.tool-call-bash-logpath {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-secondary) 8%, transparent);
+  word-break: break-all;
+}
+
 .tool-call-bash-countdown {
   display: inline-flex;
   align-items: center;
@@ -11597,6 +11634,7 @@ input {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-width: 0;
   padding: 0 2px;
   margin-bottom: 2px;
 }
@@ -11604,15 +11642,76 @@ input {
 .stream-metrics {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 3px 12px;
-  border-radius: var(--radius-sm);
+  gap: 8px;
+  max-width: 100%;
+  padding: 4px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
   background: var(--surface-island);
+  overflow-x: auto;
+  scrollbar-width: none;
   font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
+}
+
+.stream-metrics::-webkit-scrollbar {
+  display: none;
+}
+
+.stream-metrics-work-summary,
+.stream-metrics-task-progress,
+.stream-metrics-file-progress {
+  display: inline-flex;
+  align-items: center;
+}
+
+.stream-metrics-work-summary {
+  gap: 6px;
+}
+
+.stream-metrics-task-progress {
+  gap: 5px;
+}
+
+.stream-metrics-work-icon {
+  flex-shrink: 0;
+  color: var(--accent-blue);
+  fill: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+}
+
+.stream-metrics-work-dot {
+  color: var(--text-tertiary);
+}
+
+.stream-metrics-file-progress {
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.stream-metrics-file-progress:hover {
+  color: var(--text-primary);
+}
+
+.stream-metrics-file-progress:focus-visible {
+  outline: 1px solid var(--accent-blue);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.stream-metrics-additions {
+  color: var(--accent-green-text);
+}
+
+.stream-metrics-deletions {
+  color: var(--accent-red-text);
 }
 
 .stream-metrics-metric {
@@ -13950,14 +14049,6 @@ input {
   color: var(--text-tertiary);
 }
 
-<<<<<<< HEAD
-||||||| d2de97e
-/* ===== Model Selector ===== */
-.model-selector {
-  position: relative;
-}
-
-=======
 .api-profile-dropdown-divider {
   height: 1px;
   margin: 4px 0;
@@ -13980,13 +14071,6 @@ input {
   opacity: 0.8;
 }
 
-/* ===== Model Selector ===== */
-.model-selector {
-  position: relative;
-}
-
->>>>>>> 105ea74479f78159d69a8be08a8a0f36c2b58a19
-/* ===== Token Usage Ring ===== */
 .token-usage-ring-wrapper {
   position: relative;
   display: inline-flex;
