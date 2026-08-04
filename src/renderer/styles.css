@@ -11381,50 +11381,138 @@ input {
   font-size: 11px;
 }
 
+/* 成功结果：纯相框画廊（不渲染工具卡片头部） */
+.tool-call-imagegen-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .tool-call-imagegen-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+/* 单张图片：放大展示，避免被容器拉伸留白 */
+.tool-call-imagegen-grid.tool-call-imagegen-grid-single {
+  grid-template-columns: minmax(0, 360px);
+  justify-content: center;
 }
 
 .tool-call-imagegen-figure {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   min-width: 0;
 }
 
+/* 相框外框 */
 .tool-call-imagegen-thumb {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
-  padding: 0;
-  border: 1px solid var(--border-subtle, var(--bg-tertiary));
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  background: var(--bg-tertiary);
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, var(--bg-tertiary), var(--bg-secondary));
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
   cursor: zoom-in;
-}
-
-.tool-call-imagegen-thumb img {
-  display: block;
-  width: 100%;
-  height: auto;
-  max-height: 220px;
-  object-fit: contain;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
 }
 
 .tool-call-imagegen-thumb:hover {
   border-color: var(--accent-blue-text);
+  box-shadow:
+    0 8px 22px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transform: translateY(-1px);
 }
 
-.tool-call-imagegen-figure-caption {
+/* 生成中相框（不可点击放大，保持静态） */
+.tool-call-imagegen-thumb-static,
+.tool-call-imagegen-thumb-static:hover {
+  cursor: default;
+  border-color: var(--border-subtle);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  transform: none;
+}
+
+/* 生成中占位（等待/执行） */
+.tool-call-imagegen-placeholder {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 200px;
+  padding: 20px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  user-select: none;
+}
+
+/* 相框内的白色卡纸 + 照片 */
+.tool-call-imagegen-thumb img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 340px;
+  object-fit: contain;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: #fdfdfd;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.35);
+}
+
+/* 图注：序号徽章 | 标签 | 下载，三列布局让标签居中 */
+.tool-call-imagegen-figure-caption {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
   font-size: 11px;
   color: var(--text-tertiary);
+}
+
+.tool-call-imagegen-figure-index {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.tool-call-imagegen-figure-label {
+  justify-self: center;
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+}
+
+.tool-call-imagegen-figure-caption .tool-call-imagegen-download {
+  justify-self: end;
 }
 
 .tool-call-imagegen-download {
@@ -11470,69 +11558,6 @@ input {
   text-decoration: underline;
 }
 
-.tool-call-imagegen-pending {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-tertiary);
-  color: var(--text-tertiary);
-  font-size: 11.5px;
-}
-
-.tool-call-imagegen-pending svg {
-  display: block;
-  flex-shrink: 0;
-}
-
-.tool-call-imagegen-pending-running {
-  color: var(--accent-blue-text);
-  background: var(--accent-blue-bg);
-}
-
-.tool-call-imagegen-streaming {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.tool-call-imagegen-streaming-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--accent-blue-text);
-}
-
-.tool-call-imagegen-streaming-head svg {
-  display: block;
-  flex-shrink: 0;
-}
-
-.tool-call-imagegen-streaming-progress {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  font-size: 10px;
-  color: var(--accent-blue-text);
-  background: var(--accent-blue-bg);
-}
-
-.tool-call-imagegen-streaming-img {
-  display: block;
-  width: 100%;
-  max-width: 320px;
-  max-height: 240px;
-  object-fit: contain;
-  border-radius: var(--radius-sm);
-  border: 1px dashed var(--accent-blue-text);
-  background: var(--bg-tertiary);
-}
-
 .tool-call-imagegen-refs {
   display: flex;
   flex-direction: column;
@@ -11563,6 +11588,632 @@ input {
   background: var(--bg-tertiary);
 }
 
+/* 生图设置面板：模型能力标签 */
+.imagegen-model-caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.imagegen-model-cap {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-size: 10.5px;
+  color: var(--accent-amber-text);
+  background: var(--accent-amber-bg);
+}
+
+/* ===== 生图设置面板：双渠道布局（左侧渠道导航 + 右侧分组表单） ===== */
+.imagegen-layout {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  margin-bottom: 4px;
+}
+
+/* 左侧渠道导航 */
+.imagegen-nav {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+}
+
+.imagegen-nav-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 6px 8px;
+}
+
+.imagegen-nav-head strong {
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.imagegen-nav-head small {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.imagegen-nav-item {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.imagegen-nav-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.imagegen-nav-item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -1px;
+}
+
+.imagegen-nav-item.active {
+  border-color: var(--border-light);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.imagegen-nav-item:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.imagegen-nav-icon {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--accent-green-text);
+  background: var(--accent-green-bg);
+}
+
+.imagegen-nav-icon.gemini {
+  color: var(--accent-purple-text, var(--accent-blue-text));
+  background: color-mix(
+    in srgb,
+    var(--accent-purple-text, var(--accent-blue-text)) 14%,
+    transparent
+  );
+}
+
+.imagegen-nav-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.imagegen-nav-copy strong,
+.imagegen-nav-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.imagegen-nav-copy strong {
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.imagegen-nav-copy small {
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+}
+
+.imagegen-nav-dirty {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-amber-text);
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--accent-amber-text) 16%, transparent);
+}
+
+.imagegen-nav-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.imagegen-nav-state.on {
+  color: var(--accent-green-text);
+}
+
+.imagegen-nav-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* 渠道内联重命名（铅笔按钮，hover 显示） */
+.imagegen-nav-rename-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.imagegen-nav-item:hover .imagegen-nav-rename-btn,
+.imagegen-nav-rename-btn:focus-visible {
+  opacity: 1;
+}
+
+.imagegen-nav-rename-btn:hover {
+  color: var(--accent-blue-text);
+  background: var(--accent-blue-bg);
+}
+
+/* 重命名态条目与输入框 */
+.imagegen-nav-item.imagegen-nav-renaming {
+  cursor: default;
+  border-color: var(--border-light);
+  background: var(--bg-tertiary);
+}
+
+.imagegen-nav-rename {
+  width: 100%;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--accent-blue-text);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.imagegen-nav-rename::placeholder {
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+
+/* 当前模型支持的图片尺寸提示 */
+.imagegen-size-model-note {
+  color: var(--accent-blue-text);
+  font-weight: 600;
+}
+
+.imagegen-nav-note {
+  margin: 6px 4px 2px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-light);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.imagegen-nav-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 7px 9px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.imagegen-nav-add:hover:not(:disabled) {
+  border-color: var(--accent-color, var(--text-muted));
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.imagegen-nav-add:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -1px;
+}
+
+.imagegen-nav-add:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* 右侧表单面板 */
+.imagegen-panel-wrap {
+  min-width: 0;
+}
+
+.imagegen-empty {
+  display: flex;
+  min-height: 260px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-lg);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.imagegen-empty svg {
+  opacity: 0.6;
+}
+
+.imagegen-empty p {
+  margin: 0;
+  max-width: 300px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.imagegen-panel {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.imagegen-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+}
+
+.imagegen-panel-heading {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.imagegen-panel-heading strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.imagegen-panel-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  font-size: 10.5px;
+  font-weight: 650;
+}
+
+.imagegen-panel-badge.on {
+  color: var(--accent-green-text);
+  background: var(--accent-green-bg);
+}
+
+.imagegen-panel-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.imagegen-panel-toggle {
+  flex-shrink: 0;
+}
+
+/* 面板头部：可编辑渠道名 + 协议选择 + 开关 + 删除 */
+.imagegen-panel-heading-editable {
+  flex: 1;
+  min-width: 0;
+  gap: 4px;
+}
+
+.imagegen-channel-name {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 3px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.imagegen-channel-name:hover:not(:disabled) {
+  border-color: var(--border-light);
+}
+
+.imagegen-channel-name:focus {
+  border-color: var(--text-muted);
+  background: var(--bg-primary);
+}
+
+.imagegen-channel-name::placeholder {
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+
+.imagegen-panel-tools {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.imagegen-provider-field select {
+  min-width: 0;
+  max-width: 170px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  outline: none;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.imagegen-provider-field select:focus {
+  border-color: var(--text-muted);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.imagegen-provider-field select:disabled {
+  cursor: default;
+  opacity: 0.68;
+}
+
+.imagegen-panel-delete {
+  color: var(--text-tertiary);
+}
+
+.imagegen-panel-delete:hover:not(:disabled) {
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+}
+
+.imagegen-groups {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.imagegen-group {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.imagegen-group-title {
+  margin: 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.imagegen-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+}
+
+.imagegen-field-wide {
+  grid-column: 1 / -1;
+}
+
+.imagegen-panel .api-settings-field-hint {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+/* 开关选项列表（无卡片，行间分隔线） */
+.imagegen-toggle-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.imagegen-toggle-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.imagegen-toggle-row + .imagegen-toggle-row {
+  border-top: 1px solid var(--border-light);
+}
+
+.imagegen-toggle-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.imagegen-toggle-copy span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.imagegen-toggle-copy small {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+/* OpenAI 尺寸预设：比例 × 档位联动 + 自定义输入 */
+.imagegen-size-row {
+  display: grid;
+  grid-template-columns: 104px 70px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.imagegen-size-row select,
+.imagegen-size-input {
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  outline: none;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+}
+
+.imagegen-size-row select:focus,
+.imagegen-size-input:focus {
+  border-color: var(--text-muted);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.imagegen-size-row select:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.imagegen-size-input {
+  font-family: var(--font-mono, monospace);
+}
+
+/* 头部状态（已整合进页面头部，不再有独立保存栏） */
+.imagegen-footer-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.imagegen-footer-status.dirty {
+  color: var(--accent-amber-text);
+}
+
+.imagegen-footer-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-amber-text);
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--accent-amber-text) 16%, transparent);
+}
+
+@media (max-width: 720px) {
+  .imagegen-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .imagegen-nav {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .imagegen-nav-head {
+    width: 100%;
+  }
+
+  .imagegen-nav-item {
+    flex: 1 1 200px;
+  }
+
+  .imagegen-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .imagegen-size-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .imagegen-size-input {
+    grid-column: 1 / -1;
+  }
+}
+
+/* 生图设置页头部操作区：状态 + 保存 + 关闭 */
+.api-settings-page .api-settings-header-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .tool-call-imagegen-lightbox {
   position: fixed;
   inset: 0;
@@ -11570,17 +12221,36 @@ input {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(6px);
   cursor: zoom-out;
-  padding: 32px;
+  padding: 40px;
+  animation: tool-call-imagegen-lightbox-in 0.18s ease;
 }
 
+@keyframes tool-call-imagegen-lightbox-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* 放大照片：白色卡纸装裱，始终水平 + 垂直居中 */
 .tool-call-imagegen-lightbox img {
-  max-width: 90vw;
-  max-height: 82vh;
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(92vw, 1500px);
+  max-height: 86vh;
   object-fit: contain;
-  border-radius: var(--radius-sm);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  padding: 10px;
+  border-radius: var(--radius-md);
+  background: #fdfdfd;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
 }
 
 .tool-call-imagegen-lightbox-toolbar {
@@ -22057,6 +22727,15 @@ body.ctrl-held [data-path] {
   word-break: break-word;
 }
 
+/* .ai-message 是 flex column 布局；本容器是固定高度的滚动容器，文档内容
+   超高时 flex-shrink 会压缩子元素。overflow 非 visible 的子元素（表格
+   滚动容器 .table-wrapper、代码块 .code-block-wrapper）min-height:auto
+   失效，会被压扁到接近 0 高度（表现为表格/代码块消失）。禁止子元素
+   压缩，让容器正常滚动。 */
+.file-viewer-markdown > * {
+  flex-shrink: 0;
+}
+
 .file-viewer-markdown > :first-child {
   margin-top: 0;
 }
@@ -24807,3 +25486,110 @@ body.ctrl-held [data-path] {
   }
 }
 
+
+/* ===== 生图设置面板：渠道表格模式（复用 API 设置页交互） ===== */
+.imagegen-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.imagegen-search {
+  flex: 0 1 280px;
+  min-width: 0;
+}
+
+.imagegen-actions-count {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.imagegen-table-panel {
+  margin-bottom: 10px;
+}
+
+.imagegen-table-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.imagegen-table-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: var(--accent-green-text);
+  background: var(--accent-green-bg);
+}
+
+.imagegen-table-icon.gemini {
+  color: var(--accent-purple-text, var(--accent-blue-text));
+  background: color-mix(
+    in srgb,
+    var(--accent-purple-text, var(--accent-blue-text)) 14%,
+    transparent
+  );
+}
+
+.imagegen-table-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.imagegen-table-copy strong,
+.imagegen-table-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.imagegen-table-copy small {
+  max-width: 180px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.imagegen-provider-badge.gemini {
+  color: var(--accent-purple-text, var(--accent-blue-text));
+  border-color: color-mix(
+    in srgb,
+    var(--accent-purple-text, var(--accent-blue-text)) 30%,
+    transparent
+  );
+}
+
+/* 渠道编辑弹窗 */
+.imagegen-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.imagegen-editor .api-settings-field-hint {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.imagegen-editor-actions {
+  width: 100%;
+}
+
+.imagegen-editor-modal .app-modal-body {
+  max-height: 66vh;
+  overflow-y: auto;
+}

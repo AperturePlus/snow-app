@@ -5,6 +5,7 @@ import {
   EyeOff,
   Globe,
   FishingHook,
+  Image as ImageIcon,
   Keyboard,
   List,
   MessageSquareText,
@@ -39,6 +40,13 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
     labelKey: "settings.apiSettings",
     defaultLabel: "API settings",
     view: "api-settings",
+  },
+  {
+    id: "imagegen",
+    icon: ImageIcon,
+    labelKey: "settings.imagegenSettings",
+    defaultLabel: "Image generation",
+    view: "imagegen-settings",
   },
   {
     id: "proxy",
