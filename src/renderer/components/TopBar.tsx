@@ -497,34 +497,28 @@ export const TopBar = ({
         />
       </div>
 
-      <div className="top-bar-right">
+      <div
+        className="top-bar-right"
+        onContextMenu={(event) => {
+          // 右侧圆角卡片（项目标签 + 新建/面板/全屏按钮）任意位置右键：
+          // 提供针对当前项目的快捷操作。容器已整体脱离窗口 drag 区域，
+          // 否则卡片空白处（标签与按钮的间隙）右键不会触发 contextmenu。
+          event.preventDefault();
+          setBranchContextMenu({ x: event.clientX, y: event.clientY });
+        }}
+      >
         <div className="top-bar-branch-info">
           {activeDirectory && (
             <span
               className="top-bar-branch-label"
               title={activeDirectory.name}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                setBranchContextMenu({
-                  x: event.clientX,
-                  y: event.clientY,
-                });
-              }}
             >
               <GitBranch size={13} strokeWidth={1.8} />
               <span>{activeDirectory.name}</span>
             </span>
           )}
         </div>
-        <div
-          className="top-bar-right-actions"
-          onContextMenu={(event) => {
-            // 右侧操作区（新建/面板/全屏按钮）右键：与项目标签一致，
-            // 提供针对当前项目的快捷操作。
-            event.preventDefault();
-            setBranchContextMenu({ x: event.clientX, y: event.clientY });
-          }}
-        >
+        <div className="top-bar-right-actions">
           <div className="top-bar-plus-menu" ref={plusMenuRef}>
             <button
               className={`icon-btn ghost top-bar-plus-btn${

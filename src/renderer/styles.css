@@ -344,6 +344,12 @@ input {
   min-width: 0;
 }
 
+/* 右侧圆角卡片整体脱离窗口 drag 区域：卡片空白处（项目标签与按钮的
+   间隙）右键也要弹出业务菜单，drag 区域会拦截 contextmenu 事件。 */
+.top-bar-right {
+  -webkit-app-region: no-drag;
+}
+
 .top-bar-right-actions {
   display: flex;
   align-items: center;
@@ -16855,6 +16861,9 @@ input {
   white-space: nowrap;
   overflow: hidden;
   max-width: 200px;
+  /* 标签自带右键业务菜单，必须脱离 top-bar 的 drag 区域；
+     否则 Windows 上右键会弹出窗口系统菜单且 contextmenu 事件不触发。 */
+  -webkit-app-region: no-drag;
 }
 
 .top-bar-branch-label > span {
