@@ -31,11 +31,14 @@ pub fn upsert_system_prompt(
 
 pub fn delete_system_prompt(database_path: &Path, prompt_id: &str) -> Result<()> {
     database::open_connection(database_path)
-        .and_then(|connection| {
-            connection.execute(
+        .and_then(|mut connection| {
+            let transaction = connection.transaction()?;
+            transaction.execute(
                 "DELETE FROM system_prompts WHERE prompt_id = ?1",
                 [prompt_id],
             )?;
+            super::import_resources::delete_prompt_tracking_for_target(&transaction, prompt_id)?;
+            transaction.commit()?;
             Ok(())
         })
         .map_err(|error| database::database_error(database_path, "delete system prompt", error))
@@ -77,14 +80,14 @@ fn query_system_prompts(
     rows.collect()
 }
 
-fn upsert_system_prompt_with_connection(
+pub(crate) fn upsert_system_prompt_with_connection(
     connection: &Connection,
     item: &SystemPromptItemInput,
 ) -> rusqlite::Result<()> {
     let (scope, project_id) = normalize_scope(item).map_err(|error| {
         rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            error.reason,
+            error.reason.clone(),
         )))
     })?;
     connection.execute(
@@ -254,6 +257,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::storage::{ImportResourceInput, ImportResourceSourceInput};
 
     fn test_database_path() -> PathBuf {
         let timestamp = SystemTime::now()
@@ -281,6 +285,25 @@ mod tests {
             sort_order,
             scope: Some(scope.to_string()),
             project_id: project_id.map(str::to_string),
+        }
+    }
+
+    fn tracked_resource(resource_id: &str, resource_type: &str, target_id: &str) -> ImportResourceInput {
+        ImportResourceInput {
+            resource_id: resource_id.to_string(),
+            resource_type: resource_type.to_string(),
+            scope: GLOBAL_SCOPE.to_string(),
+            project_id: None,
+            target_id: target_id.to_string(),
+            target_path: String::new(),
+            management: "snapshot".to_string(),
+            sources: vec![ImportResourceSourceInput {
+                provider: "codex".to_string(),
+                scope: GLOBAL_SCOPE.to_string(),
+                origin_path: format!("/source/{target_id}"),
+                project_id: None,
+                content_hash: "hash".to_string(),
+            }],
         }
     }
 
@@ -328,6 +351,40 @@ mod tests {
             resolve_active_system_prompt_contents(&database_path, "", None),
             vec!["global instruction"]
         );
+
+        let _ = remove_file(&database_path);
+        let _ = remove_file(database_path.with_extension("sqlite-shm"));
+        let _ = remove_file(database_path.with_extension("sqlite-wal"));
+    }
+
+    #[test]
+    fn deleting_prompt_removes_all_matching_prompt_tracking() {
+        let database_path = test_database_path();
+        database::ensure_database(&database_path).expect("create test database");
+        upsert_system_prompt(
+            &database_path,
+            &prompt("tracked", "tracked content", GLOBAL_SCOPE, None, 0),
+        )
+        .expect("store system prompt");
+        super::super::import_resources::upsert_import_resources(
+            &database_path,
+            &[
+                tracked_resource("prompt:tracked", "prompt", "tracked"),
+                tracked_resource("command:tracked", "command", "tracked"),
+                tracked_resource("agent:other", "agent", "other"),
+            ],
+        )
+        .expect("store import tracking");
+
+        delete_system_prompt(&database_path, "tracked").expect("delete system prompt");
+
+        assert!(list_system_prompts(&database_path)
+            .expect("list system prompts")
+            .is_empty());
+        let resources = super::super::import_resources::list_import_resources(&database_path)
+            .expect("list import tracking");
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].resource_id, "agent:other");
 
         let _ = remove_file(&database_path);
         let _ = remove_file(database_path.with_extension("sqlite-shm"));

@@ -1077,7 +1077,7 @@ fn update_disabled_set(values: &mut BTreeSet<String>, value: &str, enabled: bool
     }
 }
 
-fn set_system_setting_with_connection(
+pub(crate) fn set_system_setting_with_connection(
     connection: &Connection,
     setting_name: &str,
     setting_code: &str,
@@ -1200,4 +1200,3 @@ fn seed_default_settings_with_connection(connection: &Connection) -> rusqlite::R
 
     Ok(())
 }
-

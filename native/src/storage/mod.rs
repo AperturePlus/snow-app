@@ -225,6 +225,21 @@ pub struct ImportResourceInput {
 }
 
 #[napi(object)]
+pub struct ProjectMcpServerImportInput {
+    pub project_id: String,
+    pub input: McpServerConfigInput,
+}
+
+#[napi(object)]
+pub struct ImportDatabaseTransactionInput {
+    pub mcp_servers: Vec<McpServerConfigInput>,
+    pub project_mcp_servers: Vec<ProjectMcpServerImportInput>,
+    pub system_prompts: Vec<SystemPromptItemInput>,
+    pub plugins: Vec<PluginInput>,
+    pub import_resources: Vec<ImportResourceInput>,
+}
+
+#[napi(object)]
 pub struct ImportResourceSourceRecord {
     pub source_id: String,
     pub provider: String,
@@ -329,6 +344,7 @@ pub struct PluginRecord {
     pub scope: String,
     pub project_id: Option<String>,
     pub state: String,
+    pub desired_state: String,
     pub capabilities: Vec<String>,
     pub runtime: Option<PluginRuntimeDeclaration>,
     pub content_hash: String,
@@ -1188,6 +1204,45 @@ pub fn upsert_import_resources(items: Vec<ImportResourceInput>) -> Result<()> {
     services::import_resources::upsert_import_resources(&database_path, &items)
 }
 
+pub fn commit_import_transaction(input: ImportDatabaseTransactionInput) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    commit_import_transaction_at_path(&database_path, input)
+}
+
+fn commit_import_transaction_at_path(
+    database_path: &std::path::Path,
+    input: ImportDatabaseTransactionInput,
+) -> Result<()> {
+    database::open_connection(database_path)
+        .and_then(|mut connection| {
+            let transaction = connection.transaction()?;
+            for item in &input.mcp_servers {
+                services::mcp_server_configs::upsert_mcp_server_config_with_connection(
+                    &transaction,
+                    item,
+                )?;
+            }
+            for item in &input.project_mcp_servers {
+                services::project_mcp_server_configs::upsert_project_mcp_server_config_with_connection(
+                    &transaction,
+                    &item.project_id,
+                    &item.input,
+                )?;
+            }
+            for item in &input.system_prompts {
+                services::system_prompts::upsert_system_prompt_with_connection(&transaction, item)?;
+            }
+            for item in &input.plugins {
+                services::plugins::upsert_plugin(&transaction, item)?;
+            }
+            for item in &input.import_resources {
+                services::import_resources::upsert_resource(&transaction, item)?;
+            }
+            transaction.commit()
+        })
+        .map_err(|error| database::database_error(database_path, "commit import transaction", error))
+}
+
 pub fn release_import_resource(input: ImportResourceReleaseInput) -> Result<ImportResourceRelease> {
     let database_path = ensure_database_file()?;
     services::import_resources::release_import_resource(&database_path, &input)
@@ -1834,4 +1889,75 @@ pub fn set_keyboard_shortcuts_settings(
 ) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::keyboard_shortcuts::set_keyboard_shortcuts_settings(&database_path, &settings)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::remove_file;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+
+    fn test_database_path() -> std::path::PathBuf {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "snow-import-transaction-{}-{timestamp}.sqlite",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn import_transaction_rolls_back_plugin_when_resource_tracking_is_invalid() {
+        let database_path = test_database_path();
+        database::ensure_database(&database_path).expect("create test database");
+
+        let result = commit_import_transaction_at_path(
+            &database_path,
+            ImportDatabaseTransactionInput {
+                mcp_servers: vec![],
+                project_mcp_servers: vec![],
+                system_prompts: vec![],
+                plugins: vec![PluginInput {
+                    plugin_id: "plugin:atomic".to_string(),
+                    name: "Atomic Plugin".to_string(),
+                    version: "1.0.0".to_string(),
+                    provider: "codex".to_string(),
+                    source_path: "/source/plugin".to_string(),
+                    manifest_path: "/source/plugin/.codex-plugin/plugin.json".to_string(),
+                    scope: "global".to_string(),
+                    project_id: None,
+                    state: "enabled".to_string(),
+                    capabilities: vec![],
+                    runtime: None,
+                    content_hash: "plugin-hash".to_string(),
+                    components: vec![],
+                }],
+                import_resources: vec![ImportResourceInput {
+                    resource_id: "plugin:atomic:skill".to_string(),
+                    resource_type: "skill".to_string(),
+                    scope: "global".to_string(),
+                    project_id: None,
+                    target_id: "atomic-skill".to_string(),
+                    target_path: "/target/atomic-skill".to_string(),
+                    management: "snapshot".to_string(),
+                    sources: vec![],
+                }],
+            },
+        );
+
+        assert!(result.is_err());
+        assert!(services::plugins::list_plugins(&database_path)
+            .expect("list plugins")
+            .is_empty());
+        assert!(services::import_resources::list_import_resources(&database_path)
+            .expect("list import resources")
+            .is_empty());
+
+        let _ = remove_file(&database_path);
+        let _ = remove_file(database_path.with_extension("sqlite-shm"));
+        let _ = remove_file(database_path.with_extension("sqlite-wal"));
+    }
 }

@@ -72,6 +72,7 @@ pub fn run_pre_schema_migrations(connection: &Connection) -> rusqlite::Result<()
 pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<()> {
     migrate_chat_conversations_api_profile(connection)?;
     migrate_plugins_runtime(connection)?;
+    migrate_plugins_desired_state(connection)?;
     migrate_system_prompt_scope(connection)?;
     migrate_chat_conversations_modes(connection)?;
     migrate_sub_agent_configs_project_id(connection)?;
@@ -184,6 +185,30 @@ fn migrate_plugins_runtime(connection: &Connection) -> rusqlite::Result<()> {
     if !has_runtime_column {
         connection.execute(
             "ALTER TABLE plugins ADD COLUMN runtime_json TEXT NOT NULL DEFAULT 'null'",
+            [],
+        )?;
+    }
+
+    Ok(())
+}
+
+/// Adds the persisted requested state for Plugins. Runtime discovery can set a
+/// Plugin to broken or update-available; this column preserves whether the
+/// user intended it to be enabled when its source becomes available again.
+fn migrate_plugins_desired_state(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(plugins)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    if !columns.iter().any(|column| column == "desired_state") {
+        connection.execute(
+            "ALTER TABLE plugins ADD COLUMN desired_state TEXT NOT NULL DEFAULT 'enabled'",
+            [],
+        )?;
+        connection.execute(
+            "UPDATE plugins
+                SET desired_state = CASE WHEN state = 'disabled' THEN 'disabled' ELSE 'enabled' END",
             [],
         )?;
     }

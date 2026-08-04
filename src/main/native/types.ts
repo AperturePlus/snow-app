@@ -451,6 +451,19 @@ export type McpServerConfigInput = {
   source: string;
 };
 
+export type ProjectMcpServerImportInput = {
+  projectId: string;
+  input: McpServerConfigInput;
+};
+
+export type ImportDatabaseTransactionInput = {
+  mcpServers: McpServerConfigInput[];
+  projectMcpServers: ProjectMcpServerImportInput[];
+  systemPrompts: SystemPromptItemInput[];
+  plugins: PluginInput[];
+  importResources: ImportResourceInput[];
+};
+
 export type HookScope = "global" | "project";
 
 export type HookConfigInput = {
@@ -1117,6 +1130,7 @@ export type NativeBridge = {
   ) => Promise<void>;
   listImportResources: () => Promise<ImportResourceRecord[]>;
   upsertImportResources: (items: ImportResourceInput[]) => Promise<void>;
+  commitImportTransaction: (input: ImportDatabaseTransactionInput) => Promise<void>;
   releaseImportResource: (input: ImportResourceReleaseInput) => Promise<ImportResourceRelease>;
   listPlugins: () => Promise<PluginRecord[]>;
   upsertPlugins: (items: PluginInput[]) => Promise<void>;

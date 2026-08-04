@@ -273,7 +273,7 @@ const globPatternToRegExp = (pattern: string): RegExp => {
   return new RegExp(`${expression}$`);
 };
 
-const resolveInstructionPaths = (source: ConfigSource, declaredPath: string): string[] => {
+const resolveInstructionPaths = async (source: ConfigSource, declaredPath: string): Promise<string[]> => {
   const root = dirname(source.path);
   if (!/[?*]/.test(declaredPath)) {
     return [resolveDeclaredPath(root, declaredPath)];
@@ -286,11 +286,11 @@ const resolveInstructionPaths = (source: ConfigSource, declaredPath: string): st
   );
 };
 
-const collectPrompts = (
+const collectPrompts = async (
   sources: ConfigSource[],
   configHome: string,
   warnings: string[]
-): { prompts: SystemPromptItemInput[]; instructionPaths: string[] } => {
+): Promise<{ prompts: SystemPromptItemInput[]; instructionPaths: string[] }> => {
   const prompts = new Map<string, SystemPromptItemInput>();
   const instructionPaths: string[] = [];
   const addFile = (
@@ -307,8 +307,8 @@ const collectPrompts = (
       addPrompt(prompts, id, name, content, scope, projectId, isActive);
     }
   };
-  const addDirectoryPrompts = (source: ConfigSource, kind: "agent" | "command", root: string): void => {
-    for (const path of walkFiles(root, (file) => file.endsWith(".md"))) {
+  const addDirectoryPrompts = async (source: ConfigSource, kind: "agent" | "command", root: string): Promise<void> => {
+    for (const path of await walkFiles(root, (file) => file.endsWith(".md"))) {
       const id = source.scope === "global"
         ? `${SOURCE}:global:${kind}:${safeSegment(path)}`
         : `${SOURCE}:project:${source.projectId}:${kind}:${safeSegment(path)}`;
@@ -321,8 +321,8 @@ const collectPrompts = (
       ? `${SOURCE}:global`
       : `${SOURCE}:project:${source.projectId}`;
     const instructions = asStringArray(source.values.instructions);
-    instructions.forEach((instruction, index) => {
-      resolveInstructionPaths(source, instruction).forEach((path, pathIndex) => {
+    for (const [index, instruction] of instructions.entries()) {
+      (await resolveInstructionPaths(source, instruction)).forEach((path, pathIndex) => {
         addFile(
           `${idPrefix}:instruction:${index}:${pathIndex}`,
           "OpenCode instruction",
@@ -331,7 +331,7 @@ const collectPrompts = (
           source.projectId
         );
       });
-    });
+    }
     const commands = isRecord(source.values.command) ? source.values.command : {};
     for (const [name, command] of Object.entries(commands)) {
       if (isRecord(command) && typeof command.template === "string") {
@@ -360,22 +360,22 @@ const collectPrompts = (
         );
       }
     }
-    addDirectoryPrompts(source, "agent", join(source.root, "agent"));
-    addDirectoryPrompts(source, "agent", join(source.root, "agents"));
-    addDirectoryPrompts(source, "command", join(source.root, "command"));
-    addDirectoryPrompts(source, "command", join(source.root, "commands"));
+    await addDirectoryPrompts(source, "agent", join(source.root, "agent"));
+    await addDirectoryPrompts(source, "agent", join(source.root, "agents"));
+    await addDirectoryPrompts(source, "command", join(source.root, "command"));
+    await addDirectoryPrompts(source, "command", join(source.root, "commands"));
   }
-  for (const path of walkFiles(join(configHome, "instructions"), (file) => file.endsWith(".md"))) {
+  for (const path of await walkFiles(join(configHome, "instructions"), (file) => file.endsWith(".md"))) {
     addFile(`${SOURCE}:global:instruction:${safeSegment(path)}`, "OpenCode instruction", path, "global");
   }
   return { prompts: [...prompts.values()], instructionPaths };
 };
 
-const collectSkills = (sources: ConfigSource[]): DiscoveredSkill[] => {
+const collectSkills = async (sources: ConfigSource[]): Promise<DiscoveredSkill[]> => {
   const skills: DiscoveredSkill[] = [];
   const sourcePaths = new Set<string>();
-  const addRoot = (source: ConfigSource, sourceRoot: string): void => {
-    for (const sourceDir of collectSkillDirectories(sourceRoot)) {
+  const addRoot = async (source: ConfigSource, sourceRoot: string): Promise<void> => {
+    for (const sourceDir of await collectSkillDirectories(sourceRoot)) {
       const key = resolve(sourceDir);
       if (sourcePaths.has(key)) {
         continue;
@@ -391,10 +391,10 @@ const collectSkills = (sources: ConfigSource[]): DiscoveredSkill[] => {
   };
 
   for (const source of sources) {
-    addRoot(source, join(source.root, "skills"));
+    await addRoot(source, join(source.root, "skills"));
     const declaredSkills = isRecord(source.values.skills) ? source.values.skills : {};
     for (const path of asStringArray(declaredSkills.paths)) {
-      addRoot(source, resolveDeclaredPath(dirname(source.path), path));
+      await addRoot(source, resolveDeclaredPath(dirname(source.path), path));
     }
   }
   return skills;
@@ -406,8 +406,10 @@ const buildContext = async (native: NativeBridge): Promise<ImportContext> => {
   const projects = await native.listWorkspaceDirectories();
   const sources = collectConfigSources(configHome, projects, warnings);
   const mcp = collectMcpServers(sources, warnings);
-  const promptData = collectPrompts(sources, configHome, warnings);
-  const skills = collectSkills(sources);
+  const [promptData, skills] = await Promise.all([
+    collectPrompts(sources, configHome, warnings),
+    collectSkills(sources),
+  ]);
   const configPaths = [
     ...configCandidates(configHome),
     join(homedir(), ".opencode", "opencode.json"),
@@ -441,6 +443,16 @@ export const discoverOpenCodeImport = async (
   native: NativeBridge
 ): Promise<ImportSourceDiscovery> => {
   const context = await buildContext(native);
+  const skillCandidates = await Promise.all(context.skills.map(async (skill) => ({
+    type: "skill" as const,
+    provider: SOURCE,
+    scope: skill.scope,
+    originPath: skill.sourceDir,
+    logicalId: skillLogicalId(skill.sourceDir),
+    contentHash: await hashImportPath(skill.sourceDir),
+    ...(skill.projectId ? { projectId: skill.projectId } : {}),
+    ...(skill.projectRoot ? { projectRoot: skill.projectRoot } : {}),
+  })));
   const candidates: ImportCandidateInput[] = [
     ...context.mcpServers.map((server) => ({
       type: "mcp" as const,
@@ -471,16 +483,7 @@ export const discoverOpenCodeImport = async (
       contentHash: hashImportValue(prompt.content),
       ...(prompt.projectId ? { projectId: prompt.projectId } : {}),
     })),
-    ...context.skills.map((skill) => ({
-      type: "skill" as const,
-      provider: SOURCE,
-      scope: skill.scope,
-      originPath: skill.sourceDir,
-      logicalId: skillLogicalId(skill.sourceDir),
-      contentHash: hashImportPath(skill.sourceDir),
-      ...(skill.projectId ? { projectId: skill.projectId } : {}),
-      ...(skill.projectRoot ? { projectRoot: skill.projectRoot } : {}),
-    })),
+    ...skillCandidates,
   ];
   return { source: context.source, candidates };
 };
@@ -550,7 +553,7 @@ export const resolveOpenCodeSelectedImports = async (
       scope: skill.scope,
       originPath: skill.sourceDir,
       logicalId: skillLogicalId(skill.sourceDir),
-      contentHash: hashImportPath(skill.sourceDir),
+      contentHash: await hashImportPath(skill.sourceDir),
       ...(skill.projectId ? { projectId: skill.projectId } : {}),
       ...(skill.projectRoot ? { projectRoot: skill.projectRoot } : {}),
     };

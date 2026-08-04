@@ -3300,6 +3300,81 @@ input {
   flex-shrink: 0;
 }
 
+.plugin-marketplace-install-review {
+  width: min(820px, 94vw);
+  max-height: 86vh;
+}
+
+.plugin-marketplace-install-review .confirm-dialog-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.plugin-marketplace-install-review-content,
+.plugin-marketplace-install-mcps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.plugin-marketplace-install-sources,
+.plugin-marketplace-install-mcp-details {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.plugin-marketplace-install-sources > div,
+.plugin-marketplace-install-mcp-details > div {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.plugin-marketplace-install-sources dt,
+.plugin-marketplace-install-mcp-details dt {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.plugin-marketplace-install-sources dd,
+.plugin-marketplace-install-mcp-details dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.plugin-marketplace-install-sources code,
+.plugin-marketplace-install-mcp-details code {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+.plugin-marketplace-install-mcp {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-tertiary);
+}
+
+.plugin-marketplace-install-mcp-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.plugin-marketplace-install-empty {
+  margin: 0;
+  color: var(--text-tertiary);
+}
+
 .plugins-marketplace-installed,
 .plugins-marketplace-unsupported {
   display: inline-flex;
@@ -3347,6 +3422,8 @@ input {
   .plugins-marketplace-install-button,
   .plugins-marketplace-installed,
   .plugins-marketplace-unsupported { justify-self: flex-start; }
+  .plugin-marketplace-install-sources > div,
+  .plugin-marketplace-install-mcp-details > div { grid-template-columns: 1fr; gap: 2px; }
 }
 
 .import-settings-candidates {
@@ -3468,6 +3545,11 @@ input {
 }
 
 .import-candidate-status-conflict {
+  border-color: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+}
+
+.import-candidate-status-repair {
   border-color: var(--accent-amber-bg);
   color: var(--accent-amber-text);
 }
