@@ -72,9 +72,9 @@ fn wait_next_millis(last_timestamp_ms: u64) -> u64 {
     }
 }
 
-/// Opens a SQLite connection with WAL mode and a busy timeout to prevent
-/// "database is locked" errors under concurrent access from multiple
-/// `spawn_blocking` tasks.
+/// Opens a SQLite connection with foreign-key enforcement, WAL mode, and a
+/// busy timeout to prevent integrity violations and "database is locked"
+/// errors under concurrent `spawn_blocking` tasks.
 ///
 /// WAL (Write-Ahead Logging) allows readers and a writer to operate
 /// simultaneously, eliminating most reader-writer contention. The busy
@@ -85,6 +85,9 @@ fn wait_next_millis(last_timestamp_ms: u64) -> u64 {
 /// to ensure consistent concurrency behaviour across the codebase.
 pub fn open_connection(database_path: impl AsRef<Path>) -> rusqlite::Result<Connection> {
     let connection = Connection::open(database_path)?;
+    // SQLite disables foreign keys for every new connection unless enabled
+    // explicitly. Schema-level ON DELETE CASCADE clauses rely on this.
+    connection.pragma_update(None, "foreign_keys", "ON")?;
     // busy_timeout MUST be set before any pragma that acquires a write lock
     // (e.g. journal_mode=WAL). Otherwise concurrent connections will get
     // "database is locked" immediately instead of waiting.
@@ -160,6 +163,8 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            content TEXT NOT NULL DEFAULT '',
            is_active INTEGER NOT NULL DEFAULT 0,
            sort_order INTEGER NOT NULL DEFAULT 0,
+           scope TEXT NOT NULL DEFAULT 'global',
+           project_id TEXT,
            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
@@ -257,6 +262,7 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            scope TEXT NOT NULL,
            project_id TEXT,
            state TEXT NOT NULL DEFAULT 'enabled',
+           desired_state TEXT NOT NULL DEFAULT 'enabled',
            capabilities_json TEXT NOT NULL DEFAULT '[]',
            runtime_json TEXT NOT NULL DEFAULT 'null',
            content_hash TEXT NOT NULL,
@@ -498,7 +504,7 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
     // columns and the sub-agent project_id rebuild (see migrations.rs).
     migrations::run_post_schema_migrations(connection)?;
 
-    connection.pragma_update(None, "user_version", 24)?;
+    connection.pragma_update(None, "user_version", 25)?;
 
     Ok(())
 }
@@ -508,4 +514,72 @@ pub fn database_error(database_path: &Path, action: &str, error: rusqlite::Error
         "Failed to {action} Snow App sqlite database at '{}': {error}",
         database_path.display()
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs,
+        path::PathBuf,
+        process,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    use super::*;
+
+    fn test_database_path() -> PathBuf {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock is after Unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "snow-database-foreign-keys-{}-{timestamp}.sqlite",
+            process::id()
+        ))
+    }
+
+    #[test]
+    fn open_connection_enables_plugin_component_cascades() {
+        let database_path = test_database_path();
+        ensure_database(&database_path).expect("initialize test database");
+
+        {
+            let connection = open_connection(&database_path).expect("open test database");
+            let foreign_keys: i64 = connection
+                .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+                .expect("read foreign key setting");
+            assert_eq!(foreign_keys, 1);
+            connection
+                .execute(
+                    "INSERT INTO plugins (
+                       plugin_id, name, provider, source_path, manifest_path, scope, content_hash
+                     ) VALUES ('plugin:test', 'Test plugin', 'codex', '/tmp/plugin', '/tmp/plugin.json', 'global', 'hash')",
+                    [],
+                )
+                .expect("insert plugin");
+            connection
+                .execute(
+                    "INSERT INTO plugin_components (
+                       component_id, plugin_id, component_type, logical_id, origin_path, content_hash, status
+                     ) VALUES ('component:test', 'plugin:test', 'skill', 'test', '/tmp/skill', 'hash', 'supported')",
+                    [],
+                )
+                .expect("insert plugin component");
+        }
+
+        services::plugins::delete_plugin(&database_path, "plugin:test").expect("delete plugin");
+
+        let connection = open_connection(&database_path).expect("reopen test database");
+        let component_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM plugin_components", [], |row| {
+                row.get(0)
+            })
+            .expect("count plugin components");
+        assert_eq!(component_count, 0);
+        drop(connection);
+
+        let _ = fs::remove_file(&database_path);
+        let _ = fs::remove_file(database_path.with_extension("sqlite-wal"));
+        let _ = fs::remove_file(database_path.with_extension("sqlite-shm"));
+    }
 }

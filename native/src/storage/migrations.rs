@@ -72,6 +72,8 @@ pub fn run_pre_schema_migrations(connection: &Connection) -> rusqlite::Result<()
 pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<()> {
     migrate_chat_conversations_api_profile(connection)?;
     migrate_plugins_runtime(connection)?;
+    migrate_plugins_desired_state(connection)?;
+    migrate_system_prompt_scope(connection)?;
     migrate_chat_conversations_modes(connection)?;
     migrate_sub_agent_configs_project_id(connection)?;
     Ok(())
@@ -190,6 +192,127 @@ fn migrate_plugins_runtime(connection: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Adds the persisted requested state for Plugins. Runtime discovery can set a
+/// Plugin to broken or update-available; this column preserves whether the
+/// user intended it to be enabled when its source becomes available again.
+fn migrate_plugins_desired_state(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(plugins)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    if !columns.iter().any(|column| column == "desired_state") {
+        connection.execute(
+            "ALTER TABLE plugins ADD COLUMN desired_state TEXT NOT NULL DEFAULT 'enabled'",
+            [],
+        )?;
+        connection.execute(
+            "UPDATE plugins
+                SET desired_state = CASE WHEN state = 'disabled' THEN 'disabled' ELSE 'enabled' END",
+            [],
+        )?;
+    }
+
+    Ok(())
+}
+
+/// Adds project scope metadata to prompts created before imported prompts
+/// were isolated to their workspace. Existing imported prompt IDs encode the
+/// workspace identity, allowing the migration to preserve their scope.
+fn migrate_system_prompt_scope(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(system_prompts)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let added_scope = !columns.iter().any(|column| column == "scope");
+    if added_scope {
+        connection.execute(
+            "ALTER TABLE system_prompts ADD COLUMN scope TEXT NOT NULL DEFAULT 'global'",
+            [],
+        )?;
+    }
+    if !columns.iter().any(|column| column == "project_id") {
+        connection.execute("ALTER TABLE system_prompts ADD COLUMN project_id TEXT", [])?;
+    }
+    if added_scope {
+        migrate_legacy_imported_system_prompts(connection)?;
+    }
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_system_prompts_scope_active
+           ON system_prompts(scope, project_id, is_active)",
+        [],
+    )?;
+
+    Ok(())
+}
+
+fn migrate_legacy_imported_system_prompts(connection: &Connection) -> rusqlite::Result<()> {
+    for prefix in [
+        "codex:project:",
+        "claude-code:project:",
+        "opencode:project:",
+    ] {
+        connection.execute(
+            "UPDATE system_prompts
+                SET scope = 'project',
+                    project_id = COALESCE(
+                        (
+                            SELECT directory_id
+                              FROM workspace_directories
+                             WHERE system_prompts.prompt_id LIKE ?1 || directory_id || ':%'
+                             ORDER BY length(directory_id) DESC
+                             LIMIT 1
+                        ),
+                        ''
+                    )
+              WHERE scope = 'global'
+                AND project_id IS NULL
+                AND prompt_id LIKE ?1 || '%'",
+            [prefix],
+        )?;
+    }
+    connection.execute(
+        "UPDATE system_prompts
+            SET scope = 'project',
+                project_id = (
+                    SELECT plugins.project_id
+                      FROM plugin_components
+                      JOIN plugins ON plugins.plugin_id = plugin_components.plugin_id
+                     WHERE plugin_components.target_id = system_prompts.prompt_id
+                       AND plugins.scope = 'project'
+                       AND plugins.project_id IS NOT NULL
+                     LIMIT 1
+                )
+          WHERE scope = 'global'
+            AND project_id IS NULL
+            AND EXISTS (
+                SELECT 1
+                  FROM plugin_components
+                  JOIN plugins ON plugins.plugin_id = plugin_components.plugin_id
+                 WHERE plugin_components.target_id = system_prompts.prompt_id
+                   AND plugins.scope = 'project'
+                   AND plugins.project_id IS NOT NULL
+            )",
+        [],
+    )?;
+    connection.execute(
+        "UPDATE system_prompts
+            SET is_active = 0
+          WHERE prompt_id LIKE 'claude-code:%:command:%'
+             OR prompt_id LIKE 'opencode:%:command:%'
+             OR prompt_id LIKE 'opencode:%:agent:%'
+             OR prompt_id IN (
+                 SELECT target_id
+                   FROM plugin_components
+                  WHERE component_type IN ('command', 'agent')
+             )",
+        [],
+    )?;
+
+    Ok(())
+}
+
 /// Adds the per-conversation Plan/Goal Mode override columns to
 /// `chat_conversations` for databases created by older app versions.
 ///
@@ -287,4 +410,84 @@ fn migrate_sub_agent_configs_project_id(connection: &Connection) -> rusqlite::Re
     )?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migration_scopes_legacy_project_prompts_and_disables_templates() {
+        let connection = Connection::open_in_memory().expect("open test database");
+        connection
+            .execute_batch(
+                "CREATE TABLE system_prompts (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    prompt_id TEXT NOT NULL UNIQUE,
+                    name TEXT NOT NULL DEFAULT '',
+                    content TEXT NOT NULL DEFAULT '',
+                    is_active INTEGER NOT NULL DEFAULT 0,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL DEFAULT ''
+                 );
+                 CREATE TABLE workspace_directories (directory_id TEXT NOT NULL UNIQUE);
+                 CREATE TABLE plugins (
+                    plugin_id TEXT PRIMARY KEY NOT NULL,
+                    scope TEXT NOT NULL,
+                    project_id TEXT
+                 );
+                 CREATE TABLE plugin_components (
+                    plugin_id TEXT NOT NULL,
+                    component_type TEXT NOT NULL,
+                    target_id TEXT NOT NULL
+                 );
+                 INSERT INTO workspace_directories (directory_id)
+                 VALUES ('local:/workspace/a');
+                 INSERT INTO system_prompts (
+                    id, prompt_id, name, content, is_active, sort_order, created_at, updated_at
+                 ) VALUES
+                    ('1', 'codex:project:local:/workspace/a:agents', 'agents', 'A', 1, 0, '', ''),
+                    ('2', 'opencode:project:local:/workspace/a:command:review', 'command', 'B', 1, 1, '', '');",
+            )
+            .expect("create legacy prompt schema");
+
+        migrate_system_prompt_scope(&connection).expect("migrate prompt scope");
+
+        let agents = connection
+            .query_row(
+                "SELECT scope, project_id, is_active FROM system_prompts WHERE id = '1'",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                },
+            )
+            .expect("read migrated project instruction");
+        let command = connection
+            .query_row(
+                "SELECT scope, project_id, is_active FROM system_prompts WHERE id = '2'",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                },
+            )
+            .expect("read migrated command template");
+
+        assert_eq!(
+            agents,
+            ("project".to_string(), "local:/workspace/a".to_string(), 1)
+        );
+        assert_eq!(
+            command,
+            ("project".to_string(), "local:/workspace/a".to_string(), 0)
+        );
+    }
 }

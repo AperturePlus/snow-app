@@ -6,7 +6,7 @@ use crate::storage::{
     ChatConversationRecord, ChatMessagePage, ChatMessageRecord, CodebaseProjectScopeSettings,
     ConversationSearchResult,
     CustomHeaderSchemeInput, CustomHeaderSchemeRecord, HookConfigInput, HookConfigRecord,
-    ImportResourceInput, ImportResourceRecord, ImportResourceRelease, ImportResourceReleaseInput,
+    ImportDatabaseTransactionInput, ImportResourceInput, ImportResourceRecord, ImportResourceRelease, ImportResourceReleaseInput,
     McpServerConfigInput, McpServerConfigRecord, ProjectMcpServerConfigRecord,
     PluginInput, PluginMarketplaceInput, PluginMarketplaceRecord, PluginRecord,
     ProjectSensitiveCommandConfigInput, ProjectSensitiveCommandConfigRecord,
@@ -846,6 +846,15 @@ pub async fn list_import_resources() -> napi::Result<Vec<ImportResourceRecord>> 
 #[napi]
 pub async fn upsert_import_resources(items: Vec<ImportResourceInput>) -> napi::Result<()> {
     tokio::task::spawn_blocking(move || crate::storage::upsert_import_resources(items))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn commit_import_transaction(
+    input: ImportDatabaseTransactionInput,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::commit_import_transaction(input))
         .await
         .map_err(map_spawn_error)?
 }
