@@ -37,10 +37,11 @@ export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 export const DEFAULT_GEMINI_BASE_URL =
   "https://generativelanguage.googleapis.com/v1beta";
 
-/** 常见生图模型提示（placeholder 用）。 */
-export const OPENAI_MODEL_EXAMPLES = "gpt-image-1, gpt-image-2, dall-e-3, ...";
+/** 常见生图模型提示（placeholder 用，含别名与预览版）。 */
+export const OPENAI_MODEL_EXAMPLES =
+  "gpt-image-2, dall-e-3, chatgpt-image-latest (preview), ...";
 export const GEMINI_MODEL_EXAMPLES =
-  "gemini-3.1-flash-image (Nano Banana 2), gemini-3-pro-image (Pro), gemini-3.1-flash-lite-image (Lite), ...";
+  "gemini-3.1-flash-image (Nano Banana 2), gemini-3-pro-image (Nano Banana Pro), gemini-3.1-flash-lite-image (Nano Banana 2 Lite), gemini-2.5-flash-image (legacy), ...";
 
 /**
  * OpenAI gpt-image 推荐分辨率（12API 文档）：

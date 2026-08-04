@@ -18,6 +18,10 @@ import {
 } from "react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { Modal } from "../common/Modal";
+import {
+  CustomSelect,
+  type CustomSelectOption,
+} from "../common/CustomSelect";
 import { useI18n } from "../../i18n";
 import { ApiModelCombobox } from "./apiSettings/ApiModelCombobox";
 import type { Model } from "../../../preload";
@@ -26,9 +30,16 @@ import {
   DEFAULT_IMAGE_GEN_CHANNEL,
   DEFAULT_OPENAI_BASE_URL,
   GEMINI_MODEL_EXAMPLES,
+  GEMINI_ASPECT_RATIOS,
   IMAGE_GEN_SETTING_CODE,
   IMAGE_GEN_SETTING_NAME,
   OPENAI_MODEL_EXAMPLES,
+  OPENAI_SIZE_PRESETS,
+  OPENAI_SIZE_TIERS,
+  buildGeminiSize,
+  getGeminiSizePresets,
+  matchGeminiSizePreset,
+  matchOpenAISizePreset,
 } from "./imagegenSettings/constants";
 import {
   generateChannelId,
@@ -41,8 +52,272 @@ import type {
   ImageGenSettingsPanelProps,
 } from "./imagegenSettings/types";
 
-/** Gemini 常用宽高比快捷选项。 */
-const ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4", "21:9", "2:3", "3:2"];
+/**
+ * OpenAI 标准模型能力（依据 openai-node SDK images.ts，2026-08）：
+ * - dall-e-3：1024x1024 / 1792x1024 / 1024x1792，质量 hd / standard
+ * - dall-e-2：256x256 / 512x512 / 1024x1024，质量 standard
+ * - 其余 GPT image：1024x1024 / 1536x1024 / 1024x1536，质量 auto/low/medium/high
+ * gpt-image-2 系支持 `auto` 与任意分辨率，尺寸预设走「比例 × 档位」联动
+ * （OPENAI_SIZE_PRESETS 推荐表）。
+ */
+const OPENAI_STANDARD_CAPS: Array<{
+  match: (id: string) => boolean;
+  sizes: string[];
+  quality: string[];
+}> = [
+  {
+    match: (id) => id.includes("dall-e-3"),
+    sizes: ["1024x1024", "1792x1024", "1024x1792"],
+    quality: ["", "hd", "standard"],
+  },
+  {
+    match: (id) => id.includes("dall-e-2"),
+    sizes: ["256x256", "512x512", "1024x1024"],
+    quality: ["standard"],
+  },
+  {
+    match: () => true,
+    sizes: ["1024x1024", "1536x1024", "1024x1536"],
+    quality: ["", "low", "medium", "high"],
+  },
+];
+
+/** gpt-image-2 系（含兼容中转）支持任意分辨率判定。 */
+const supportsArbitraryOpenAISize = (modelId: string): boolean =>
+  modelId.toLowerCase().includes("gpt-image-2");
+
+/** 查询某 OpenAI 模型的标准能力（未识别模型使用默认规则）。 */
+const openaiStandardCaps = (modelId: string) => {
+  const id = modelId.toLowerCase();
+  return (
+    OPENAI_STANDARD_CAPS.find((rule) => rule.match(id)) ??
+    OPENAI_STANDARD_CAPS[OPENAI_STANDARD_CAPS.length - 1]
+  );
+};
+
+/**
+ * 已知生图模型知识表（别名 / 预览 / 弃用），用于模型下拉选项增强。
+ * 模型 ID 依据 OpenAI SDK ImageModel 枚举与 Gemini 官方模型清单（2026-08）。
+ */
+const KNOWN_IMAGE_MODELS: Array<{
+  id: string;
+  provider: ImageGenProvider;
+  alias?: string;
+  preview?: boolean;
+  deprecated?: boolean;
+}> = [
+  // OpenAI 兼容
+  { id: "gpt-image-2", provider: "openai", alias: "GPT Image 2" },
+  {
+    id: "chatgpt-image-latest",
+    provider: "openai",
+    alias: "ChatGPT Image (latest)",
+    preview: true,
+  },
+  { id: "dall-e-3", provider: "openai", alias: "DALL·E 3" },
+  { id: "dall-e-2", provider: "openai", alias: "DALL·E 2", deprecated: true },
+  // Google Gemini
+  {
+    id: "gemini-3.1-flash-image",
+    provider: "gemini",
+    alias: "Nano Banana 2",
+  },
+  {
+    id: "gemini-3-pro-image",
+    provider: "gemini",
+    alias: "Nano Banana Pro",
+  },
+  {
+    id: "gemini-3.1-flash-lite-image",
+    provider: "gemini",
+    alias: "Nano Banana 2 Lite",
+  },
+  {
+    id: "gemini-2.5-flash-image",
+    provider: "gemini",
+    alias: "Nano Banana 1 (legacy)",
+    deprecated: true,
+  },
+  {
+    id: "imagen-3.0-generate-002",
+    provider: "gemini",
+    alias: "Imagen 3",
+    deprecated: true,
+  },
+];
+
+/** 宽高比下拉选项：小矩形图示 + 比例文本。 */
+const RatioDiagram = ({ ratio }: { ratio: string }): React.JSX.Element => {
+  const [width, height] = ratio.split(":").map(Number);
+  const scale = 6;
+  const isPortrait = height > width;
+  return (
+    <span className="imagegen-ratio-option">
+      <span
+        className={`imagegen-ratio-box${isPortrait ? " portrait" : ""}`}
+        style={{
+          width: `${Math.max(width * scale, 10)}px`,
+          height: `${Math.max(height * scale, 10)}px`,
+        }}
+      />
+      <span className="imagegen-ratio-option-label">{ratio}</span>
+    </span>
+  );
+};
+
+/** 尺寸预设下拉选项（CustomSelect 用）。 */
+const sizePresetOptions = (presets: string[]): CustomSelectOption[] =>
+  presets.map((preset) => ({ value: preset, label: preset }));
+
+type SizeControlsProps = {
+  draft: ImageGenChannelValue;
+  onUpdate: <K extends keyof ImageGenChannelValue>(
+    field: K,
+    value: ImageGenChannelValue[K]
+  ) => void;
+  disabled: boolean;
+  t: (key: string, options?: { defaultValue?: string }) => string;
+};
+
+/** Gemini 尺寸：自定义输入 + 档位下拉 + 宽高比下拉（组合为 "16:9@2K"）。 */
+const GeminiSizeControls = ({
+  draft,
+  onUpdate,
+  disabled,
+  t,
+}: SizeControlsProps): React.JSX.Element => {
+  const parsed = matchGeminiSizePreset(draft.defaultSize);
+  const supportedSizes = getGeminiSizePresets(draft.model);
+
+  return (
+    <div className="imagegen-editor-size-row">
+      <input
+        className="imagegen-size-input"
+        type="text"
+        value={draft.defaultSize}
+        onChange={(event) => onUpdate("defaultSize", event.target.value)}
+        placeholder="1K / 16:9 / 16:9@2K"
+        disabled={disabled}
+        spellCheck={false}
+      />
+      <CustomSelect
+        value={parsed.imageSize}
+        options={[
+          {
+            value: "",
+            label: t("settings.imagegenSizeTier", {
+              defaultValue: "Size tier",
+            }),
+          },
+          ...sizePresetOptions(supportedSizes),
+        ]}
+        onChange={(value) =>
+          onUpdate("defaultSize", buildGeminiSize(parsed.ratio, value))
+        }
+        disabled={disabled}
+        portal
+      />
+      <CustomSelect
+        value={parsed.ratio}
+        options={[
+          {
+            value: "",
+            label: t("settings.imagegenAspectRatio", {
+              defaultValue: "Aspect ratio",
+            }),
+          },
+          ...GEMINI_ASPECT_RATIOS.map((ratio) => ({
+            value: ratio,
+            label: ratio,
+          })),
+        ]}
+        onChange={(value) =>
+          onUpdate("defaultSize", buildGeminiSize(value, parsed.imageSize))
+        }
+        disabled={disabled}
+        portal
+        renderOption={(option) =>
+          option.value ? <RatioDiagram ratio={option.value} /> : option.label
+        }
+      />
+    </div>
+  );
+};
+
+/** gpt-image-2 尺寸：自定义输入 + 比例下拉 + 档位下拉（推荐分辨率表）。 */
+const GptImage2SizeControls = ({
+  draft,
+  onUpdate,
+  disabled,
+  t,
+}: SizeControlsProps): React.JSX.Element => {
+  const parsed = matchOpenAISizePreset(draft.defaultSize);
+  const ratioOptions = Object.keys(OPENAI_SIZE_PRESETS).map((ratio) => ({
+    value: ratio,
+    label: ratio,
+  }));
+
+  const pickSize = (ratio: string, tier: string): string => {
+    const normalizedRatio =
+      ratio && OPENAI_SIZE_PRESETS[ratio] ? ratio : "16:9";
+    const normalizedTier =
+      tier && (OPENAI_SIZE_TIERS as readonly string[]).includes(tier)
+        ? (tier as keyof (typeof OPENAI_SIZE_PRESETS)[string])
+        : "1K";
+    return OPENAI_SIZE_PRESETS[normalizedRatio][normalizedTier];
+  };
+
+  return (
+    <div className="imagegen-editor-size-row">
+      <input
+        className="imagegen-size-input"
+        type="text"
+        value={draft.defaultSize}
+        onChange={(event) => onUpdate("defaultSize", event.target.value)}
+        placeholder="auto / 1792x1008"
+        disabled={disabled}
+        spellCheck={false}
+      />
+      <CustomSelect
+        value={parsed?.ratio ?? ""}
+        options={[
+          {
+            value: "",
+            label: t("settings.imagegenAspectRatio", {
+              defaultValue: "Aspect ratio",
+            }),
+          },
+          ...ratioOptions,
+        ]}
+        onChange={(value) =>
+          onUpdate("defaultSize", pickSize(value, parsed?.tier ?? "1K"))
+        }
+        disabled={disabled}
+        portal
+        renderOption={(option) =>
+          option.value ? <RatioDiagram ratio={option.value} /> : option.label
+        }
+      />
+      <CustomSelect
+        value={parsed?.tier ?? ""}
+        options={[
+          {
+            value: "",
+            label: t("settings.imagegenSizeTier", {
+              defaultValue: "Size tier",
+            }),
+          },
+          ...sizePresetOptions([...OPENAI_SIZE_TIERS]),
+        ]}
+        onChange={(value) =>
+          onUpdate("defaultSize", pickSize(parsed?.ratio ?? "16:9", value))
+        }
+        disabled={disabled}
+        portal
+      />
+    </div>
+  );
+};
 
 /** 从 API 返回的模型列表中筛选生图模型。 */
 const filterImageModels = (models: Model[], provider: string): Model[] => {
@@ -77,6 +352,9 @@ const getModelCapabilities = (modelId: string): string[] => {
     return ["capDeprecated"];
   }
   if (id.includes("gpt-image-2") || id.includes("gpt-image-1.5")) {
+    return ["cap4k", "capStream", "capImageToImage"];
+  }
+  if (id.includes("chatgpt-image")) {
     return ["cap4k", "capStream", "capImageToImage"];
   }
   if (id.includes("gpt-image-1-mini")) {
@@ -249,6 +527,52 @@ export function ImageGenSettingsPanel({
     setDraft(null);
   };
 
+  /**
+   * 模型联动：切换模型后，若当前尺寸/质量不在该模型支持列表内，自动
+   * 回退到该模型支持的第一个预设（尺寸）或 Auto（质量）。Gemini 覆盖
+   * 512px/1K/2K/4K 档位（如 Pro 无 512px、Lite 仅 1K）；OpenAI 覆盖
+   * dall-e/gpt-image 各自的标准尺寸与质量集。
+   */
+  useEffect(() => {
+    setDraft((previous) => {
+      if (!previous) {
+        return previous;
+      }
+      if (previous.provider === "gemini") {
+        const parsed = matchGeminiSizePreset(previous.defaultSize);
+        const supportedSizes = getGeminiSizePresets(previous.model);
+        return {
+          ...previous,
+          defaultSize: parsed.imageSize
+            ? buildGeminiSize(parsed.ratio, supportedSizes[0] ?? "")
+            : previous.defaultSize,
+          defaultQuality: ["", "low", "medium", "high"].includes(
+            previous.defaultQuality
+          )
+            ? previous.defaultQuality
+            : "",
+        };
+      }
+      if (supportsArbitraryOpenAISize(previous.model)) {
+        // gpt-image-2：auto / 任意分辨率均合法，仅修正质量
+        return ["", "low", "medium", "high"].includes(previous.defaultQuality)
+          ? previous
+          : { ...previous, defaultQuality: "" };
+      }
+      const caps = openaiStandardCaps(previous.model);
+      const currentSize = previous.defaultSize.trim();
+      return {
+        ...previous,
+        defaultSize: caps.sizes.includes(currentSize)
+          ? previous.defaultSize
+          : (caps.sizes[0] ?? ""),
+        defaultQuality: caps.quality.includes(previous.defaultQuality)
+          ? previous.defaultQuality
+          : "",
+      };
+    });
+  }, [draft?.model, draft?.provider]);
+
   /** 保存弹窗草稿（添加或编辑）。 */
   const saveDraft = async () => {
     if (!draft) {
@@ -303,16 +627,12 @@ export function ImageGenSettingsPanel({
       return;
     }
     const next = channels.filter((item) => item.id !== channel.id);
-    const ok = await persistChannels(
+    await persistChannels(
       next,
       t("settings.imagegenDeleteChannelSuccess", {
         defaultValue: "Channel {name} deleted.",
       }).replace("{name}", label)
     );
-    if (ok && draft?.id === channel.id) {
-      setEditorOpen(false);
-      setDraft(null);
-    }
   };
 
   /** 弹窗内草稿字段更新。 */
@@ -431,10 +751,7 @@ export function ImageGenSettingsPanel({
             <select
               value={draft.provider}
               onChange={(event) =>
-                updateDraft(
-                  "provider",
-                  event.target.value as ImageGenProvider
-                )
+                updateDraft("provider", event.target.value as ImageGenProvider)
               }
               disabled={draftSaving}
             >
@@ -540,6 +857,15 @@ export function ImageGenSettingsPanel({
                 onChange={(modelId) => updateDraft("model", modelId)}
                 onRequestModels={() => void requestDraftModels()}
                 onRetry={() => void requestDraftModels()}
+                knownModels={KNOWN_IMAGE_MODELS.filter(
+                  (entry) => entry.provider === draft.provider
+                )}
+                previewBadgeText={t("settings.imagegenModelPreviewBadge", {
+                  defaultValue: "Preview",
+                })}
+                deprecatedBadgeText={t("settings.imagegenCap.capDeprecated", {
+                  defaultValue: "Deprecated",
+                })}
               />
               {capabilities.length > 0 ? (
                 <span className="imagegen-model-caps">
@@ -570,56 +896,76 @@ export function ImageGenSettingsPanel({
                     defaultValue: "Default size",
                   })}
                 </span>
-                <input
-                  type="text"
-                  value={draft.defaultSize}
-                  onChange={updateDraftEvent("defaultSize")}
-                  placeholder={isGemini ? "16:9 / 1K / 2K / 4K" : "1024x1024"}
-                  disabled={draftSaving}
-                  spellCheck={false}
-                />
+                {isGemini ? (
+                  <GeminiSizeControls
+                    draft={draft}
+                    onUpdate={updateDraft}
+                    disabled={draftSaving}
+                    t={t}
+                  />
+                ) : supportsArbitraryOpenAISize(draft.model) ? (
+                  <GptImage2SizeControls
+                    draft={draft}
+                    onUpdate={updateDraft}
+                    disabled={draftSaving}
+                    t={t}
+                  />
+                ) : (
+
+                  <div className="imagegen-editor-size-row">
+                    <input
+                      className="imagegen-size-input"
+                      type="text"
+                      value={draft.defaultSize}
+                      onChange={updateDraftEvent("defaultSize")}
+                      placeholder="1024x1024"
+                      disabled={draftSaving}
+                      spellCheck={false}
+                    />
+                    <CustomSelect
+                      value={
+                        openaiStandardCaps(draft.model).sizes.includes(
+                          draft.defaultSize.trim()
+                        )
+                          ? draft.defaultSize.trim()
+                          : ""
+                      }
+                      options={[
+                        {
+                          value: "",
+                          label: t("settings.imagegenSizePreset", {
+                            defaultValue: "Preset",
+                          }),
+                        },
+                        ...sizePresetOptions(
+                          openaiStandardCaps(draft.model).sizes
+                        ),
+                      ]}
+                      onChange={(preset) => {
+                        if (preset) {
+                          updateDraft("defaultSize", preset);
+                        }
+                      }}
+                      disabled={draftSaving}
+                      portal
+                    />
+                  </div>
+                )}
+                {!isGemini && supportsArbitraryOpenAISize(draft.model) ? (
+                  <small className="imagegen-model-size-hint">
+                    {t("settings.imagegenSizeLimitsHint", {
+                      defaultValue:
+                        "Rules: max side ≤3840px AND total pixels 655,360–8,294,400 (multiples of 16, aspect ≤3:1). Largest square is 2880x2880; 16:9 tops at 3840x2160; the 4K tier is the recommended size closest to the pixel cap for each ratio.",
+                    })}
+                  </small>
+                ) : null}
                 <small className="api-settings-field-hint">
                   {t("settings.imagegenDefaultSizeHint", {
                     defaultValue:
-                      "Gemini: aspect ratio (16:9) or image size (1K/2K/4K). OpenAI: e.g. 1024x1024",
+                      "Gemini: image size (1K/2K/4K) or aspect ratio (16:9). OpenAI: e.g. 1024x1024",
                   })}
                 </small>
               </label>
-
-              {isGemini ? (
-                <label className="api-settings-field">
-                  <span className="api-settings-field-label">
-                    {t("settings.imagegenAspectRatio", {
-                      defaultValue: "Aspect ratio",
-                    })}
-                  </span>
-                  <select
-                    value={
-                      ASPECT_RATIOS.includes(draft.defaultSize.trim())
-                        ? draft.defaultSize.trim()
-                        : ""
-                    }
-                    onChange={(event) => {
-                      const preset = event.target.value;
-                      if (preset) {
-                        updateDraft("defaultSize", preset);
-                      }
-                    }}
-                    disabled={draftSaving}
-                  >
-                    <option value="">
-                      {t("settings.imagegenAspectRatio", {
-                        defaultValue: "Aspect ratio",
-                      })}
-                    </option>
-                    {ASPECT_RATIOS.map((ratio) => (
-                      <option key={ratio} value={ratio}>
-                        {ratio}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
 
               <label className="api-settings-field">
                 <span className="api-settings-field-label">
@@ -627,20 +973,35 @@ export function ImageGenSettingsPanel({
                     defaultValue: "Default quality",
                   })}
                 </span>
-                <select
+                <CustomSelect
                   value={draft.defaultQuality}
-                  onChange={updateDraftEvent("defaultQuality")}
+                  options={
+                    isGemini
+                      ? [
+                          {
+                            value: "",
+                            label: t("settings.imagegenQualityAuto", {
+                              defaultValue: "Auto",
+                            }),
+                          },
+                          { value: "low", label: "low" },
+                          { value: "medium", label: "medium" },
+                          { value: "high", label: "high" },
+                        ]
+                      : openaiStandardCaps(draft.model).quality.map((value) => ({
+                          value,
+                          label:
+                            value === ""
+                              ? t("settings.imagegenQualityAuto", {
+                                  defaultValue: "Auto",
+                                })
+                              : value,
+                        }))
+                  }
+                  onChange={(value) => updateDraft("defaultQuality", value)}
                   disabled={draftSaving}
-                >
-                  <option value="">
-                    {t("settings.imagegenQualityAuto", {
-                      defaultValue: "Auto",
-                    })}
-                  </option>
-                  <option value="low">low</option>
-                  <option value="medium">medium</option>
-                  <option value="high">high</option>
-                </select>
+                  portal
+                />
               </label>
 
               <label className="api-settings-field">
@@ -649,20 +1010,23 @@ export function ImageGenSettingsPanel({
                     defaultValue: "Output format",
                   })}
                 </span>
-                <select
+                <CustomSelect
                   value={draft.outputFormat}
-                  onChange={updateDraftEvent("outputFormat")}
+                  options={[
+                    {
+                      value: "",
+                      label: t("settings.imagegenFormatDefault", {
+                        defaultValue: "Default (png)",
+                      }),
+                    },
+                    { value: "png", label: "png" },
+                    { value: "jpeg", label: "jpeg" },
+                    { value: "webp", label: "webp" },
+                  ]}
+                  onChange={(value) => updateDraft("outputFormat", value)}
                   disabled={draftSaving}
-                >
-                  <option value="">
-                    {t("settings.imagegenFormatDefault", {
-                      defaultValue: "Default (png)",
-                    })}
-                  </option>
-                  <option value="png">png</option>
-                  <option value="jpeg">jpeg</option>
-                  <option value="webp">webp</option>
-                </select>
+                  portal
+                />
                 <small className="api-settings-field-hint">
                   {t("settings.imagegenFormatHint", {
                     defaultValue: "OpenAI only; ignored for Gemini",
@@ -833,9 +1197,7 @@ export function ImageGenSettingsPanel({
             <table className="api-settings-table">
               <thead>
                 <tr>
-                  <th>
-                    {t("settings.tableName", { defaultValue: "Name" })}
-                  </th>
+                  <th>{t("settings.tableName", { defaultValue: "Name" })}</th>
                   <th>
                     {t("settings.imagegenBaseUrl", { defaultValue: "Base URL" })}
                   </th>
@@ -843,7 +1205,9 @@ export function ImageGenSettingsPanel({
                     {t("settings.imagegenModel", { defaultValue: "Model" })}
                   </th>
                   <th>
-                    {t("settings.imagegenProvider", { defaultValue: "Provider" })}
+                    {t("settings.imagegenProvider", {
+                      defaultValue: "Provider",
+                    })}
                   </th>
                   <th>
                     {t("settings.tableStatus", { defaultValue: "Status" })}
@@ -873,7 +1237,11 @@ export function ImageGenSettingsPanel({
                             }`}
                           >
                             {isGemini ? (
-                              <Gem size={13} strokeWidth={1.9} aria-hidden="true" />
+                              <Gem
+                                size={13}
+                                strokeWidth={1.9}
+                                aria-hidden="true"
+                              />
                             ) : (
                               <Sparkles
                                 size={13}

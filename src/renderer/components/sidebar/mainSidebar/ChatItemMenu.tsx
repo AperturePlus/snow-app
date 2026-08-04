@@ -191,7 +191,7 @@ export function ChatItemMenu({
 
   const handleMultiSelect = (): void => {
     onEnterMultiSelect?.();
-    setIsOpen(false);
+    setIsButtonOpen(false);
   };
 
   const handleDeleteClick = (): void => {
