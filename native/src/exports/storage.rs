@@ -474,6 +474,55 @@ pub async fn set_goal_mode_token_budget(budget: i64) -> napi::Result<()> {
         .map_err(map_spawn_error)?
 }
 
+#[napi(object)]
+pub struct ConversationModesResult {
+    /// Whether Plan Mode is explicitly enabled (true), disabled (false) or
+    /// never configured for this conversation (null → follow global default).
+    pub plan_mode: Option<bool>,
+    /// Whether Goal Mode is explicitly enabled (true), disabled (false) or
+    /// never configured for this conversation (null → follow global default).
+    pub goal_mode: Option<bool>,
+    /// Per-conversation Goal Mode token budget override (null → follow the
+    /// global default budget).
+    pub goal_mode_token_budget: Option<i64>,
+}
+
+#[napi]
+pub async fn get_conversation_modes(
+    conversation_id: String,
+) -> napi::Result<ConversationModesResult> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::get_conversation_modes(&conversation_id).map(|modes| {
+            ConversationModesResult {
+                plan_mode: modes.plan_mode,
+                goal_mode: modes.goal_mode,
+                goal_mode_token_budget: modes.goal_mode_token_budget,
+            }
+        })
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn set_conversation_modes(
+    conversation_id: String,
+    plan_mode: Option<bool>,
+    goal_mode: Option<bool>,
+    goal_mode_token_budget: Option<i64>,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        crate::storage::set_conversation_modes(
+            &conversation_id,
+            plan_mode,
+            goal_mode,
+            goal_mode_token_budget,
+        )
+    })
+    .await
+    .map_err(map_spawn_error)?
+}
+
 #[napi]
 pub async fn get_codebase_project_scope_settings(
     project_id: String,
@@ -895,8 +944,10 @@ pub async fn execute_hooks(input: HookExecuteInput) -> napi::Result<HookExecuteR
 }
 
 #[napi]
-pub async fn list_sub_agent_configs() -> napi::Result<Vec<SubAgentConfigRecord>> {
-    tokio::task::spawn_blocking(crate::storage::list_sub_agent_configs)
+pub async fn list_sub_agent_configs(
+    project_id: Option<String>,
+) -> napi::Result<Vec<SubAgentConfigRecord>> {
+    tokio::task::spawn_blocking(move || crate::storage::list_sub_agent_configs(project_id))
         .await
         .map_err(map_spawn_error)?
 }
@@ -904,10 +955,13 @@ pub async fn list_sub_agent_configs() -> napi::Result<Vec<SubAgentConfigRecord>>
 #[napi]
 pub async fn get_sub_agent_config(
     agent_id: String,
+    project_id: Option<String>,
 ) -> napi::Result<Option<SubAgentConfigRecord>> {
-    tokio::task::spawn_blocking(move || crate::storage::get_sub_agent_config(agent_id))
-        .await
-        .map_err(map_spawn_error)?
+    tokio::task::spawn_blocking(move || {
+        crate::storage::get_sub_agent_config(agent_id, project_id)
+    })
+    .await
+    .map_err(map_spawn_error)?
 }
 
 #[napi]
@@ -918,8 +972,11 @@ pub async fn upsert_sub_agent_config(item: SubAgentConfigInput) -> napi::Result<
 }
 
 #[napi]
-pub async fn delete_sub_agent_config(agent_id: String) -> napi::Result<()> {
-    tokio::task::spawn_blocking(move || crate::storage::delete_sub_agent_config(agent_id))
+pub async fn delete_sub_agent_config(
+    agent_id: String,
+    project_id: Option<String>,
+) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::delete_sub_agent_config(agent_id, project_id))
         .await
         .map_err(map_spawn_error)?
 }

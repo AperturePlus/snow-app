@@ -1403,14 +1403,22 @@ export const ChatInputView = ({
                 onRefreshYoloMode={onRefreshYoloMode}
                 planMode={planMode}
                 isUpdatingPlanMode={isUpdatingPlanMode}
-                onPlanModeChange={onPlanModeChange}
+                onPlanModeChange={
+                  isSubAgentConversation ? undefined : onPlanModeChange
+                }
                 onRefreshPlanMode={onRefreshPlanMode}
                 goalMode={goalMode}
                 isUpdatingGoalMode={isUpdatingGoalMode}
-                onGoalModeChange={onGoalModeChange}
+                onGoalModeChange={
+                  isSubAgentConversation ? undefined : onGoalModeChange
+                }
                 onRefreshGoalMode={onRefreshGoalMode}
                 goalModeTokenBudget={goalModeTokenBudget}
-                onGoalModeTokenBudgetChange={onGoalModeTokenBudgetChange}
+                onGoalModeTokenBudgetChange={
+                  isSubAgentConversation
+                    ? undefined
+                    : onGoalModeTokenBudgetChange
+                }
                 autoScrollEnabled={autoScrollEnabled}
                 onAutoScrollChange={onAutoScrollChange}
               />

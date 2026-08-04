@@ -300,7 +300,7 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
 
          CREATE TABLE IF NOT EXISTS sub_agent_configs (
            id TEXT PRIMARY KEY NOT NULL,
-           agent_id TEXT NOT NULL UNIQUE,
+           agent_id TEXT NOT NULL,
            name TEXT NOT NULL,
            description TEXT NOT NULL DEFAULT '',
            system_prompt TEXT NOT NULL DEFAULT '',
@@ -309,8 +309,10 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            builtin INTEGER NOT NULL DEFAULT 0,
            sort_order INTEGER NOT NULL DEFAULT 0,
            source TEXT NOT NULL DEFAULT 'manual',
+           project_id TEXT NOT NULL DEFAULT '',
            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           UNIQUE(agent_id, project_id)
          );
          CREATE INDEX IF NOT EXISTS idx_sub_agent_configs_builtin
            ON sub_agent_configs(builtin);
@@ -351,13 +353,19 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
             cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
             total_duration_ms INTEGER NOT NULL DEFAULT 0,
             directory_id TEXT NOT NULL DEFAULT '',
-            forked_from_conversation_id TEXT NOT NULL DEFAULT '',
-            fork_message_count INTEGER NOT NULL DEFAULT 0,
-            emoji TEXT NOT NULL DEFAULT '',
-           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-         );
-         CREATE INDEX IF NOT EXISTS idx_chat_conversations_updated_at
+             forked_from_conversation_id TEXT NOT NULL DEFAULT '',
+             fork_message_count INTEGER NOT NULL DEFAULT 0,
+             emoji TEXT NOT NULL DEFAULT '',
+             -- Per-conversation Plan/Goal Mode overrides (NULL = unset,
+             -- fall back to the global default). NULL allows distinguishing
+             -- 'never configured' from 'explicitly disabled'.
+             plan_mode INTEGER,
+             goal_mode INTEGER,
+             goal_mode_token_budget INTEGER,
+            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+          );
+          CREATE INDEX IF NOT EXISTS idx_chat_conversations_updated_at
            ON chat_conversations(updated_at DESC, id DESC);
          CREATE INDEX IF NOT EXISTS idx_chat_conversations_status
            ON chat_conversations(status);
@@ -485,7 +493,8 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
 
     // Post-schema migrations run AFTER CREATE TABLE to add columns that
     // older databases lack but fresh databases already have. Each migration
-    // is idempotent.
+    // is idempotent. Includes the local per-conversation Plan/Goal Mode
+    // columns and the sub-agent project_id rebuild (see migrations.rs).
     migrations::run_post_schema_migrations(connection)?;
 
     connection.pragma_update(None, "user_version", 24)?;

@@ -374,6 +374,9 @@ pub struct SubAgentConfigInput {
     pub builtin: bool,
     pub sort_order: i32,
     pub source: String,
+    /// 项目 ID。空/缺省表示全局子代理；指定后为项目级子代理
+    /// （项目级与全局同 agent_id 时，项目级优先）。
+    pub project_id: Option<String>,
 }
 
 #[napi(object)]
@@ -389,6 +392,8 @@ pub struct SubAgentConfigRecord {
     pub sort_order: i32,
     pub source: String,
     pub updated_at: String,
+    /// 项目 ID，空字符串表示全局子代理。
+    pub project_id: String,
 }
 
 #[napi(object)]
@@ -655,6 +660,29 @@ pub fn get_goal_mode_token_budget() -> Result<i64> {
 pub fn set_goal_mode_token_budget(budget: i64) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::goal_settings::set_goal_mode_token_budget(&database_path, budget)
+}
+
+pub fn get_conversation_modes(
+    conversation_id: &str,
+) -> Result<services::chat_conversations::ConversationModes> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::get_conversation_modes(&database_path, conversation_id)
+}
+
+pub fn set_conversation_modes(
+    conversation_id: &str,
+    plan_mode: Option<bool>,
+    goal_mode: Option<bool>,
+    goal_mode_token_budget: Option<i64>,
+) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::chat_conversations::set_conversation_modes(
+        &database_path,
+        conversation_id,
+        plan_mode,
+        goal_mode,
+        goal_mode_token_budget,
+    )
 }
 
 pub fn get_request_logging() -> Result<bool> {
@@ -1195,14 +1223,23 @@ pub fn delete_plugin_marketplace(marketplace_id: String) -> Result<()> {
     let database_path = ensure_database_file()?;
     services::plugin_marketplaces::delete_plugin_marketplace(&database_path, &marketplace_id)
 }
-pub fn list_sub_agent_configs() -> Result<Vec<SubAgentConfigRecord>> {
+/// 列出子代理配置。project_id 为 None 时返回全部（全局 + 所有项目），
+/// 指定时只返回该项目的子代理。
+pub fn list_sub_agent_configs(project_id: Option<String>) -> Result<Vec<SubAgentConfigRecord>> {
     let database_path = ensure_database_file()?;
-    services::sub_agent_configs::list_sub_agent_configs(&database_path)
+    services::sub_agent_configs::list_sub_agent_configs(&database_path, project_id.as_deref())
 }
 
-pub fn get_sub_agent_config(agent_id: String) -> Result<Option<SubAgentConfigRecord>> {
+pub fn get_sub_agent_config(
+    agent_id: String,
+    project_id: Option<String>,
+) -> Result<Option<SubAgentConfigRecord>> {
     let database_path = ensure_database_file()?;
-    services::sub_agent_configs::get_sub_agent_config(&database_path, &agent_id)
+    services::sub_agent_configs::get_sub_agent_config(
+        &database_path,
+        &agent_id,
+        project_id.as_deref(),
+    )
 }
 
 pub fn upsert_sub_agent_config(item: SubAgentConfigInput) -> Result<()> {
@@ -1210,9 +1247,13 @@ pub fn upsert_sub_agent_config(item: SubAgentConfigInput) -> Result<()> {
     services::sub_agent_configs::upsert_sub_agent_config(&database_path, &item)
 }
 
-pub fn delete_sub_agent_config(agent_id: String) -> Result<()> {
+pub fn delete_sub_agent_config(agent_id: String, project_id: Option<String>) -> Result<()> {
     let database_path = ensure_database_file()?;
-    services::sub_agent_configs::delete_sub_agent_config(&database_path, &agent_id)
+    services::sub_agent_configs::delete_sub_agent_config(
+        &database_path,
+        &agent_id,
+        project_id.as_deref(),
+    )
 }
 
 pub fn list_sensitive_command_configs() -> Result<Vec<SensitiveCommandConfigRecord>> {

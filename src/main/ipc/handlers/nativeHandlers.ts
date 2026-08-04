@@ -72,6 +72,25 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     "settings:set-goal-mode-token-budget",
     (_event, budget: number) => native.setGoalModeTokenBudget(budget)
   );
+  ipcMain.handle("settings:get-conversation-modes", (_event, conversationId: string) =>
+    native.getConversationModes(conversationId)
+  );
+  ipcMain.handle(
+    "settings:set-conversation-modes",
+    (
+      _event,
+      conversationId: string,
+      planMode: boolean | null,
+      goalMode: boolean | null,
+      goalModeTokenBudget: number | null
+    ) =>
+      native.setConversationModes(
+        conversationId,
+        planMode,
+        goalMode,
+        goalModeTokenBudget
+      )
+  );
   ipcMain.handle("settings:get-request-logging", () =>
     native.getRequestLogging()
   );

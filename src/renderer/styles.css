@@ -14866,6 +14866,42 @@ input {
   color: var(--text-tertiary);
 }
 
+<<<<<<< HEAD
+||||||| d2de97e
+/* ===== Model Selector ===== */
+.model-selector {
+  position: relative;
+}
+
+=======
+.api-profile-dropdown-divider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border-light);
+  flex-shrink: 0;
+}
+
+.api-profile-manage-btn {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.api-profile-manage-btn:hover {
+  color: var(--accent, #3b82f6);
+  background: var(--bg-hover, rgba(127, 127, 127, 0.08));
+}
+
+.api-profile-manage-icon {
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+/* ===== Model Selector ===== */
+.model-selector {
+  position: relative;
+}
+
+>>>>>>> 105ea74479f78159d69a8be08a8a0f36c2b58a19
 /* ===== Token Usage Ring ===== */
 .token-usage-ring-wrapper {
   position: relative;
@@ -16140,6 +16176,21 @@ input {
   color: var(--text-muted);
   font-size: 10.5px;
   line-height: 1.4;
+}
+
+.sub-agent-field-hint.is-error {
+  color: var(--danger, #ef4444);
+}
+
+.sub-agent-field-hint.is-error svg {
+  flex-shrink: 0;
+  margin-right: 4px;
+  vertical-align: -2px;
+}
+
+.sub-agent-field-hint svg.spin {
+  margin-right: 4px;
+  vertical-align: -2px;
 }
 
 .sub-agent-description-textarea {
@@ -20201,43 +20252,64 @@ input {
   color: var(--text-primary);
 }
 
-/* Right panel tab context menu */
-.right-panel-tab-context-menu {
+/* Generic context menu (right-click, portal-rendered) */
+.context-menu {
   position: fixed;
   z-index: 9999;
-  width: 170px;
+  min-width: 150px;
   padding: 4px;
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  background: var(--bg-secondary);
-  box-shadow: var(--island-shadow);
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-md);
 }
 
-.right-panel-tab-context-menu-item {
+.context-menu-item {
   display: flex;
   align-items: center;
   gap: 7px;
   width: 100%;
-  padding: 7px 8px;
+  padding: 6px 8px;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-secondary);
-  cursor: pointer;
   font: inherit;
   font-size: 12px;
   text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
 }
 
-.right-panel-tab-context-menu-item:hover {
+.context-menu-item:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
-.right-panel-tab-context-menu-separator {
+.context-menu-item svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.context-menu-separator {
   height: 1px;
   margin: 4px 6px;
   background: var(--border-light);
+}
+
+/* Ctrl+点击打开文件：按住 Ctrl 悬停路径时给出可点击提示。
+   提示样式由 body.ctrl-held 驱动（usePathClickOpen 全局按键监听
+   直接操作 classList，不经过 React 渲染，零 re-render 开销）。 */
+body.ctrl-held [data-path],
+body.ctrl-held code:not(pre code) {
+  cursor: pointer;
+}
+
+body.ctrl-held [data-path] {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--text-muted);
 }
 
 /* Diff Viewer Actions */
@@ -24882,7 +24954,8 @@ input {
     .model-dropdown, .file-mention-popup, .chat-command-panel,
     .custom-select-dropdown, .custom-select-dropdown-portal,
     .browser-menu-dropdown, .branch-dropdown, .app-modal-dialog,
-    .confirm-dialog, .search-modal, .explorer-entry-context-menu) {
+    .confirm-dialog, .search-modal, .explorer-entry-context-menu,
+    .context-menu) {
   border-color: var(--border-color);
   border-radius: var(--radius-lg);
   background: var(--surface-island-strong);
@@ -24894,7 +24967,7 @@ input {
   :is(.top-bar-plus-dropdown-item, .top-bar-todo-item, .plus-menu-item,
     .model-dropdown-item, .custom-select-item, .browser-menu-item,
     .branch-dropdown-item, .chat-command-item, .mention-entry,
-    .explorer-entry-context-menu-item):hover {
+    .explorer-entry-context-menu-item, .context-menu-item):hover {
   background: var(--accent-orange-bg);
   color: var(--text-primary);
 }

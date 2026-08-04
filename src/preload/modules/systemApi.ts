@@ -722,6 +722,30 @@ export const windowApi = {
     ipcRenderer.invoke("browser:clear-cache"),
   clearBrowserCookies: (): Promise<void> =>
     ipcRenderer.invoke("browser:clear-cookies"),
+  browserNetworkRequests: (
+    webContentsId: number,
+    filter?: string,
+    limit?: number
+  ): Promise<unknown[]> =>
+    ipcRenderer.invoke(
+      "browser:network-requests",
+      webContentsId,
+      filter,
+      limit
+    ),
+  browserDialogs: (webContentsId: number): Promise<unknown[]> =>
+    ipcRenderer.invoke("browser:dialogs-list", webContentsId),
+  browserDialogRespond: (
+    webContentsId: number,
+    accept: boolean,
+    promptText?: string
+  ): Promise<{ responded: boolean; remaining: number; error?: string }> =>
+    ipcRenderer.invoke(
+      "browser:dialog-respond",
+      webContentsId,
+      accept,
+      promptText
+    ),
   onWindowMaximizeStateChanged: (
     callback: (isMaximized: boolean) => void
   ): (() => void) => {

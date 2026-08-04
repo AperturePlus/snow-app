@@ -1264,6 +1264,13 @@ export const en = {
   "settings.subAgentManageTitle": "Manage sub-agents",
   "settings.subAgentManageInfo":
     "Sub-agent configurations are stored in the local database.",
+  "settings.subAgentScopeTabs": "Sub-agent scope",
+  "settings.subAgentTabGlobal": "Global",
+  "settings.subAgentTabProject": "Project",
+  "settings.subAgentGlobalTabInfo":
+    "Manage sub-agents shared by all projects. Sub-agent configurations are stored in the local database.",
+  "settings.subAgentProjectTabInfo":
+    "Manage sub-agents for {{name}}. Project sub-agents override global ones with the same id.",
   "settings.subAgentEditorTitle": "Sub-agent editor",
   "settings.subAgentListTitle": "Sub-agent list",
   "settings.subAgentEmpty": "No sub-agent configurations are available.",
@@ -2007,6 +2014,7 @@ export const en = {
   "rightPanel.browserTab": "Browser",
   "rightPanel.codebaseTab": "Codebase",
   "rightPanel.closeTab": "Close tab",
+  "rightPanel.closeAllTabs": "Close all tabs",
   "rightPanel.tabContextNewTerminal": "New Terminal",
   "rightPanel.tabContextNewBrowser": "New Browser",
   "rightPanel.closeDiff": "Close diff",

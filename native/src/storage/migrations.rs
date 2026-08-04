@@ -72,6 +72,8 @@ pub fn run_pre_schema_migrations(connection: &Connection) -> rusqlite::Result<()
 pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<()> {
     migrate_chat_conversations_api_profile(connection)?;
     migrate_plugins_runtime(connection)?;
+    migrate_chat_conversations_modes(connection)?;
+    migrate_sub_agent_configs_project_id(connection)?;
     Ok(())
 }
 
@@ -184,6 +186,104 @@ fn migrate_plugins_runtime(connection: &Connection) -> rusqlite::Result<()> {
             [],
         )?;
     }
+
+    Ok(())
+}
+
+/// Adds the per-conversation Plan/Goal Mode override columns to
+/// `chat_conversations` for databases created by older app versions.
+///
+/// NULL means "not configured for this conversation — follow the global
+/// default"; values are 0/1 booleans and an integer token budget.
+///
+/// Idempotent: no-op when the columns are already present (fresh databases
+/// get them from the `CREATE TABLE` statement in `create_schema`).
+fn migrate_chat_conversations_modes(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(chat_conversations)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let missing: Vec<(&str, &str)> = [
+        ("plan_mode", "INTEGER"),
+        ("goal_mode", "INTEGER"),
+        ("goal_mode_token_budget", "INTEGER"),
+    ]
+    .into_iter()
+    .filter(|(name, _)| !columns.iter().any(|column| column == name))
+    .collect();
+
+    for (name, column_type) in missing {
+        connection.execute(
+            &format!("ALTER TABLE chat_conversations ADD COLUMN {name} {column_type}"),
+            [],
+        )?;
+    }
+
+    Ok(())
+}
+
+/// Adds sub-agent project scoping to databases created before it existed.
+///
+/// Older databases have `sub_agent_configs` with a single-column
+/// `UNIQUE(agent_id)` constraint and no `project_id` column. SQLite cannot
+/// alter a UNIQUE constraint, so the table is rebuilt: rename → create with
+/// the new schema (composite `UNIQUE(agent_id, project_id)`) → copy rows
+/// (existing agents become global, `project_id = ''`) → drop the old table.
+///
+/// Idempotent: no-op when the column is already present.
+fn migrate_sub_agent_configs_project_id(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(sub_agent_configs)")?;
+    let columns: Vec<String> = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    if columns.iter().any(|column| column == "project_id") {
+        // 列已存在（全新数据库或已迁移）：只需确保 project 索引存在。
+        // 注意：该索引不能放在主 execute_batch 中——旧库在此迁移执行前
+        // 还没有 project_id 列，在 batch 里创建会报 no such column。
+        connection.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_sub_agent_configs_project
+               ON sub_agent_configs(project_id);",
+        )?;
+        return Ok(());
+    }
+
+    connection.execute_batch(
+        "ALTER TABLE sub_agent_configs RENAME TO sub_agent_configs_legacy;
+         CREATE TABLE sub_agent_configs (
+           id TEXT PRIMARY KEY NOT NULL,
+           agent_id TEXT NOT NULL,
+           name TEXT NOT NULL,
+           description TEXT NOT NULL DEFAULT '',
+           system_prompt TEXT NOT NULL DEFAULT '',
+           tools_json TEXT NOT NULL DEFAULT '[]',
+           config_profile TEXT NOT NULL DEFAULT '',
+           builtin INTEGER NOT NULL DEFAULT 0,
+           sort_order INTEGER NOT NULL DEFAULT 0,
+           source TEXT NOT NULL DEFAULT 'manual',
+           project_id TEXT NOT NULL DEFAULT '',
+           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+           UNIQUE(agent_id, project_id)
+         );
+         INSERT INTO sub_agent_configs (
+           id, agent_id, name, description, system_prompt, tools_json,
+           config_profile, builtin, sort_order, source, project_id,
+           created_at, updated_at
+         )
+         SELECT id, agent_id, name, description, system_prompt, tools_json,
+                config_profile, builtin, sort_order, source, '',
+                created_at, updated_at
+           FROM sub_agent_configs_legacy;
+         CREATE INDEX IF NOT EXISTS idx_sub_agent_configs_builtin
+           ON sub_agent_configs(builtin);
+         CREATE INDEX IF NOT EXISTS idx_sub_agent_configs_source
+           ON sub_agent_configs(source);
+         CREATE INDEX IF NOT EXISTS idx_sub_agent_configs_project
+           ON sub_agent_configs(project_id);
+         DROP TABLE sub_agent_configs_legacy;",
+    )?;
 
     Ok(())
 }
