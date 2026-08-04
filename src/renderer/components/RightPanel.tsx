@@ -22,6 +22,10 @@ import {
 } from "./rightPanel/browser/useBrowserMcpCommandBridge";
 import { focusBrowserMcpInstance } from "./rightPanel/browser/browserMcpController";
 import {
+  useTerminalMcpCommandBridge,
+  type TerminalMcpTabCallbacks,
+} from "./rightPanel/terminal/useTerminalMcpCommandBridge";
+import {
   rightPanelEvents,
   type OpenBrowserTabPayload,
   type FocusBrowserTabPayload,
@@ -178,8 +182,8 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     );
 
     const handleOpenTerminalTab = useCallback(
-      (cwd: string) => {
-        const tabId = `terminal-${Date.now()}`;
+      (cwd: string, requestedTabId?: string): string => {
+        const tabId = requestedTabId ?? `terminal-${Date.now()}`;
         const terminalData: TerminalTabData = { cwd };
         setTabs((prev) => [
           ...prev,
@@ -191,6 +195,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
           },
         ]);
         setActiveTabId(tabId);
+        return tabId;
       },
       [t]
     );
@@ -702,6 +707,62 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
 
     useBrowserMcpCommandBridge(browserMcpCallbacks);
 
+    const handleCloseTerminalTab = useCallback(
+      (tabId: string): boolean => {
+        const tab = tabs.find(
+          (t) => t.id === tabId && t.type === "terminal"
+        );
+        if (!tab) {
+          return false;
+        }
+        handleCloseTab(tabId);
+        return true;
+      },
+      [tabs, handleCloseTab]
+    );
+
+    const handleFocusTerminalTab = useCallback(
+      (tabId: string): boolean => {
+        const tab = tabs.find(
+          (t) => t.id === tabId && t.type === "terminal"
+        );
+        if (!tab) {
+          return false;
+        }
+        setActiveTabId(tabId);
+        return true;
+      },
+      [tabs]
+    );
+
+    const handleListTerminalTabs = useCallback(() => {
+      return tabs
+        .filter((t) => t.type === "terminal")
+        .map((t) => ({
+          tabId: t.id,
+          title: t.title,
+          cwd: (t.data as TerminalTabData)?.cwd ?? "",
+          isActive: t.id === activeTabId,
+        }));
+    }, [tabs, activeTabId]);
+
+    const terminalMcpCallbacks = useMemo<TerminalMcpTabCallbacks>(
+      () => ({
+        openTab: handleOpenTerminalTab,
+        closeTab: handleCloseTerminalTab,
+        focusTab: handleFocusTerminalTab,
+        listTabs: handleListTerminalTabs,
+      }),
+      [
+        handleOpenTerminalTab,
+        handleCloseTerminalTab,
+        handleFocusTerminalTab,
+        handleListTerminalTabs,
+      ]
+    );
+
+    useTerminalMcpCommandBridge(terminalMcpCallbacks);
+
     const tabListRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -748,6 +809,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         <Suspense fallback={null}>
           {tab.type === "terminal" ? (
             <TerminalPanelContent
+              tabId={tab.id}
               cwd={(tab.data as TerminalTabData).cwd}
               isActive={activeTabId === tab.id}
               onTitleChange={(title) =>

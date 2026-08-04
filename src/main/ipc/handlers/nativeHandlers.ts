@@ -7,6 +7,8 @@ import type {
   BrowserCommandResponse,
   CodebaseEmbedProgress,
   NativeBridge,
+  TerminalCommand,
+  TerminalCommandResponse,
   UserQuestionCommand,
   UserQuestionResponse,
   AppLogInput,
@@ -18,6 +20,13 @@ import {
   resolveBrowserCommand,
   unregisterBrowserRenderer,
 } from "../browserCommandBroker";
+import {
+  TERMINAL_COMMAND_RESPONSE_CHANNEL,
+  dispatchTerminalCommand,
+  registerTerminalRenderer,
+  resolveTerminalCommand,
+  unregisterTerminalRenderer,
+} from "../terminalCommandBroker";
 import {
   dispatchUserQuestion,
   resolveUserQuestion,
@@ -669,6 +678,21 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
       resolveBrowserCommand(event.sender, response);
     }
   );
+  ipcMain.handle("terminal:renderer-register", (event) => {
+    registerTerminalRenderer(event.sender);
+  });
+  ipcMain.handle("terminal:renderer-unregister", (event) => {
+    unregisterTerminalRenderer(event.sender);
+  });
+  ipcMain.on(
+    TERMINAL_COMMAND_RESPONSE_CHANNEL,
+    (event, response: TerminalCommandResponse) => {
+      if (!response || typeof response.commandId !== "string") {
+        return;
+      }
+      resolveTerminalCommand(event.sender, response);
+    }
+  );
   ipcMain.on(
     USER_QUESTION_RESPONSE_CHANNEL,
     (event, response: UserQuestionResponse) => {
@@ -844,6 +868,8 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
           dispatchRemoteWorkspaceCommand(command, {
             signal: sshAbortController.signal,
           }),
+        (command: TerminalCommand) =>
+          dispatchTerminalCommand(event.sender, command),
         normalizedSubAgentAllowedTools,
         planMode as boolean | undefined,
         planApproved as boolean | undefined

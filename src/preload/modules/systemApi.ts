@@ -22,6 +22,8 @@ import type {
   SkillBatchInstallResult,
   SkillDefinition,
   SkillUninstallResult,
+  TerminalCommandRequest,
+  TerminalCommandResponse,
   UpdateStatus,
   UserQuestionRequest,
   UserQuestionResponse,
@@ -30,6 +32,8 @@ import type {
 const MCP_TOOL_CHUNK_CHANNEL = "mcp:call-tool:chunk";
 const BROWSER_COMMAND_CHANNEL = "browser:command";
 const BROWSER_COMMAND_RESPONSE_CHANNEL = "browser:command-response";
+const TERMINAL_COMMAND_CHANNEL = "terminal:command";
+const TERMINAL_COMMAND_RESPONSE_CHANNEL = "terminal:command-response";
 const USER_QUESTION_CHANNEL = "user-question:request";
 const USER_QUESTION_RESPONSE_CHANNEL = "user-question:response";
 const APP_CONTROL_CHANNEL = "app-control:request";
@@ -477,6 +481,46 @@ export const systemApi = {
     return () => {
       ipcRenderer.removeListener(BROWSER_COMMAND_CHANNEL, listener);
       void ipcRenderer.invoke("browser:renderer-unregister");
+    };
+  },
+  registerTerminalCommandHandler: (
+    handler: (request: TerminalCommandRequest) => Promise<string>
+  ): (() => void) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      request: TerminalCommandRequest
+    ): void => {
+      if (
+        !request ||
+        typeof request.commandId !== "string" ||
+        typeof request.operation !== "string" ||
+        typeof request.argsJson !== "string"
+      ) {
+        return;
+      }
+
+      void handler(request)
+        .then((resultJson) => {
+          const response: TerminalCommandResponse = {
+            commandId: request.commandId,
+            resultJson,
+          };
+          ipcRenderer.send(TERMINAL_COMMAND_RESPONSE_CHANNEL, response);
+        })
+        .catch((error: unknown) => {
+          const response: TerminalCommandResponse = {
+            commandId: request.commandId,
+            error: error instanceof Error ? error.message : String(error),
+          };
+          ipcRenderer.send(TERMINAL_COMMAND_RESPONSE_CHANNEL, response);
+        });
+    };
+
+    ipcRenderer.on(TERMINAL_COMMAND_CHANNEL, listener);
+    void ipcRenderer.invoke("terminal:renderer-register");
+    return () => {
+      ipcRenderer.removeListener(TERMINAL_COMMAND_CHANNEL, listener);
+      void ipcRenderer.invoke("terminal:renderer-unregister");
     };
   },
   registerUserQuestionHandler: (

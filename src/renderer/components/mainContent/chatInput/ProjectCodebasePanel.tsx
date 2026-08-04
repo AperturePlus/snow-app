@@ -389,7 +389,7 @@ export const ProjectCodebasePanel = ({
           <span>{description}</span>
         </div>
         <label
-          className="project-sensitive-command-switch"
+          className="toggle-switch"
           title={
             checked
               ? t("projectCodebase.disableForProject")
@@ -404,10 +404,11 @@ export const ProjectCodebasePanel = ({
             }
             checked={checked}
             disabled={isPending}
+            hidden
             onChange={(event) => void toggle(key, event.target.checked)}
             type="checkbox"
           />
-          <span aria-hidden="true" />
+          <span className="toggle-slider" />
         </label>
       </article>
     );

@@ -4948,6 +4948,11 @@ input {
   cursor: default;
 }
 
+.toggle-switch input:focus-visible + .toggle-slider {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
 /* ===== Keyboard shortcuts settings ===== */
 .shortcut-list {
   display: flex;
@@ -17361,8 +17366,7 @@ input {
 }
 
 .project-sensitive-command-toolbar-btn:focus-visible,
-.project-sensitive-command-save:focus-visible,
-.project-sensitive-command-switch input:focus-visible + span {
+.project-sensitive-command-save:focus-visible {
   outline: 2px solid var(--accent-blue);
   outline-offset: 2px;
 }
@@ -17544,91 +17548,6 @@ input {
 
 .project-sensitive-command-reset:disabled {
   cursor: not-allowed;
-  opacity: 0.45;
-}
-
-/* Shared switch styles for .project-sensitive-command-switch and .project-mcp-switch */
-:is(.project-sensitive-command-switch, .project-mcp-switch) {
-  position: relative;
-  display: inline-flex;
-  width: 32px;
-  height: 18px;
-  flex-shrink: 0;
-  cursor: pointer;
-}
-
-:is(.project-sensitive-command-switch, .project-mcp-switch) input {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  cursor: inherit;
-  opacity: 0;
-}
-
-:is(.project-sensitive-command-switch, .project-mcp-switch) > span {
-  position: relative;
-  width: 32px;
-  height: 18px;
-  border: 1px solid var(--border-color);
-  border-radius: 999px;
-  background: var(--bg-tertiary);
-  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
-}
-
-:is(.project-sensitive-command-switch, .project-mcp-switch) > span::after {
-  position: absolute;
-  top: 1px;
-  left: 1px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--text-tertiary);
-  content: "";
-  transition: transform 0.15s ease, background 0.15s ease;
-}
-
-:is(.project-sensitive-command-switch, .project-mcp-switch)
-  input:checked
-  + span {
-  border-color: var(--text-primary);
-  background: var(--text-primary);
-}
-
-:is(.project-sensitive-command-switch, .project-mcp-switch)
-  input:checked
-  + span::after {
-  transform: translateX(14px);
-  background: var(--on-solid);
-}
-
-:is(.project-sensitive-command-switch, .project-mcp-switch)
-  input:disabled
-  + span {
-  opacity: 0.45;
-}
-
-/* Switch-specific disabled cursor */
-.project-sensitive-command-switch input:disabled {
-  cursor: pointer;
-}
-
-.project-mcp-switch input:disabled {
-  cursor: not-allowed;
-}
-
-/* Focus-visible for both switches (also defined in shared rule at line ~9095) */
-:is(.project-sensitive-command-switch, .project-mcp-switch)
-  input:focus-visible
-  + span {
-  outline: 2px solid var(--accent-blue);
-  outline-offset: 2px;
-}
-
-/* MCP-specific: unavailable state */
-.project-mcp-switch.is-unavailable > span {
   opacity: 0.45;
 }
 
@@ -18423,10 +18342,6 @@ input {
   font-weight: 500;
 }
 
-/* .project-mcp-switch shared styles are defined above via :is() selector
-   with .project-sensitive-command-switch. Only MCP-specific overrides
-   (input:disabled cursor and .is-unavailable) are defined there. */
-
 .project-mcp-global-note {
   padding: 7px 12px 8px 43px;
   border-top: 1px solid var(--border-light);
@@ -18529,7 +18444,7 @@ input {
   color: var(--text-muted);
 }
 
-.project-mcp-tool-row:has(.project-mcp-switch input:disabled) {
+.project-mcp-tool-row:has(.toggle-switch input:disabled) {
   color: var(--text-muted);
 }
 

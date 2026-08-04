@@ -179,6 +179,7 @@ export const zhTW = {
   "scheduledTask.errorPromptRequired": "請填寫提示詞",
   "scheduledTask.errorInvalidSchedule": "計劃無效",
   "scheduledTask.errorCreateFailed": "建立任務失敗",
+  "sidebar.chatTimeRunning": "執行中",
   "sidebar.chatTimeToday": "今天",
   "sidebar.chatTimeYesterday": "昨天",
   "sidebar.chatTimeLast7Days": "近7天",
