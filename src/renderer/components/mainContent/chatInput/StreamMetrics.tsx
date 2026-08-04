@@ -187,10 +187,11 @@ export const StreamMetrics = memo(
                 title={t("chat.fileChanges.toggle")}
                 onClick={onOpenFileChanges}
               >
-                <span>
-                  {t("chat.streamMetrics.filesChanged", {
-                    values: { count: changedFileCount },
-                  })}
+                <span className="stream-metrics-files-count">
+                  {changedFileCount}
+                </span>
+                <span className="stream-metrics-files-label">
+                  {t("chat.streamMetrics.filesLabel")}
                 </span>
                 <span className="stream-metrics-additions">+{additions}</span>
                 <span className="stream-metrics-deletions">-{deletions}</span>
@@ -203,12 +204,16 @@ export const StreamMetrics = memo(
           className={`stream-metrics-metric stream-metrics-elapsed${
             isActive ? " is-active" : ""
           }`}
+          title={t("chat.streamMetrics.elapsedTitle")}
         >
           <Timer size={11} className="stream-metrics-icon" />
           <span className="stream-metrics-value">{elapsedDisplay}</span>
         </span>
         <span className="stream-metrics-sep" />
-        <span className="stream-metrics-metric stream-metrics-ttft">
+        <span
+          className="stream-metrics-metric stream-metrics-ttft"
+          title={t("chat.streamMetrics.ttftTitle")}
+        >
           <Clock size={11} className="stream-metrics-icon" />
           <span className="stream-metrics-value">
             {hasTtft ? formatTtft(ttftMs) : "--"}
@@ -219,6 +224,7 @@ export const StreamMetrics = memo(
           className={`stream-metrics-metric stream-metrics-tokens${
             hasTokens ? " is-active" : ""
           }`}
+          title="tokens"
         >
           <ArrowDown size={11} className="stream-metrics-icon" />
           <span className="stream-metrics-value">
@@ -231,6 +237,7 @@ export const StreamMetrics = memo(
           className={`stream-metrics-metric stream-metrics-tps${
             hasTps ? " is-active" : ""
           }`}
+          title="tok/s"
         >
           <Gauge size={11} className="stream-metrics-icon" />
           <span className="stream-metrics-value">{tps}</span>
