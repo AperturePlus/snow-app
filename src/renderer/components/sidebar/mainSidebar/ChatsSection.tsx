@@ -101,6 +101,7 @@ export function ChatsSection({
     abortConversation,
     streamingConversationIds,
     completedConversationIds,
+    clearInputDraft,
   } = useChatConversationContext();
   const [conversations, setConversations] = useState<ChatConversationRecord[]>(
     []
@@ -381,6 +382,11 @@ export function ChatsSection({
 
       await window.snow.deleteConversation(conversation.conversationId);
 
+      // 删除的会话不再需要保留输入草稿
+      for (const targetId of deleteTargetIds) {
+        clearInputDraft(targetId);
+      }
+
       if (
         activeConversationId &&
         deleteTargetIds.includes(activeConversationId)
@@ -487,6 +493,11 @@ export function ChatsSection({
       // 逐条删除：Rust 侧无批量删除接口，串行调用避免数据库锁竞争
       for (const convId of selectedIds) {
         await window.snow.deleteConversation(convId);
+      }
+
+      // 删除的会话不再需要保留输入草稿
+      for (const targetId of targetIds) {
+        clearInputDraft(targetId);
       }
 
       if (activeConversationId && targetIds.has(activeConversationId)) {

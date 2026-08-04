@@ -39,6 +39,7 @@ export function PinnedSection({
     abortConversation,
     streamingConversationIds,
     completedConversationIds,
+    clearInputDraft,
   } = useChatConversationContext();
   const [conversations, setConversations] = useState<ChatConversationRecord[]>(
     []
@@ -217,6 +218,11 @@ export function PinnedSection({
 
       await window.snow.deleteConversation(conversation.conversationId);
 
+      // 删除的会话不再需要保留输入草稿
+      for (const targetId of deleteTargetIds) {
+        clearInputDraft(targetId);
+      }
+
       if (
         activeConversationId &&
         deleteTargetIds.includes(activeConversationId)
@@ -350,6 +356,11 @@ export function PinnedSection({
 
       // 单次批量删除：native 单事务完成，避免逐条 IPC + 逐条事务
       await window.snow.deleteConversations([...selectedIds]);
+
+      // 删除的会话不再需要保留输入草稿
+      for (const targetId of allTargetIds) {
+        clearInputDraft(targetId);
+      }
 
       if (activeConversationId && allTargetIds.has(activeConversationId)) {
         handleNewChat();
