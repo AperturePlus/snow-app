@@ -55,4 +55,7 @@ Detailed steps for each configuration item can be found in the corresponding gui
 ## 4. Next Steps
 
 - Learn about the configuration file format: [3-reference/1-settings-json-reference](3-reference/1-settings-json-reference.md)
+- Learn every config file's fields: [3-reference/3-config-file-field-reference](3-reference/3-config-file-field-reference.md)
 - Learn about the built-in tools available to the AI: [3-reference/2-builtin-tools-reference](3-reference/2-builtin-tools-reference.md)
+- Browser automation: [2-guides/6-browser-automation](2-guides/6-browser-automation.md)
+- Codebase index & code diagnostics: [2-guides/7-codebase-index-and-diagnostics](2-guides/7-codebase-index-and-diagnostics.md)

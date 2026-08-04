@@ -51,7 +51,10 @@ allowed_tools:
 | 配置 API 密钥与模型 | `2-使用指南/3-配置API密钥与模型.md`（en: `2-guides/3-configure-api-keys.md`） | `3-参考手册/1-settings.json配置参考.md` |
 | 配置代理与网络 | `2-使用指南/4-配置代理与网络.md`（en: `2-guides/4-configure-proxy.md`） | — |
 | 配置 Hooks 与子代理 | `2-使用指南/5-配置Hooks与子代理.md`（en: `2-guides/5-configure-hooks-and-subagents.md`） | — |
+| 浏览器自动化 | `2-使用指南/6-浏览器自动化.md`（en: `2-guides/6-browser-automation.md`） | — |
+| 代码库索引与代码诊断 | `2-使用指南/7-代码库索引与代码诊断.md`（en: `2-guides/7-codebase-index-and-diagnostics.md`） | — |
 | 查询内置工具 / 配置域 / 日志 | — | `3-参考手册/2-内置工具参考.md`（en: `3-reference/2-builtin-tools-reference.md`） |
+| 查询配置文件字段 | — | `3-参考手册/3-配置文件字段参考.md`（en: `3-reference/3-config-file-field-reference.md`） |
 
 > 若 `~/.snow/docs/` 不存在，说明文档尚未同步，可提示用户重启应用后重试。
 
