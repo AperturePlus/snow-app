@@ -1,6 +1,5 @@
-﻿import {
+import {
   AlertTriangle,
-  CheckCheck,
   CheckSquare,
   ChevronRight,
   Loader2,
@@ -113,13 +112,12 @@ export function ChatsSection({
   const [subAgentMap, setSubAgentMap] = useState<SubAgentMap>({});
   const [expandedSubAgentConversationIds, setExpandedSubAgentConversationIds] =
     useState<Set<string>>(() => new Set());
-  // 多选模式状态
-  const [selectionMode, setSelectionMode] = useState(false);
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(
     () => new Set()
   );
-  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
+  const [showBatchConfirm, setShowBatchConfirm] = useState(false);
   // 会话区域收起/展开（localStorage 持久化，与项目区域一致）
   const [isCollapsed, setIsCollapsed] = useState(() => {
     try {
@@ -410,18 +408,18 @@ export function ChatsSection({
     );
   };
 
-  // ---------------- 多选批量删除 ----------------
-
-  const enterSelectionMode = (): void => {
+  const handleEnterMultiSelect = (): void => {
     setSelectedIds(new Set());
-    setIsConfirmingDelete(false);
-    setSelectionMode(true);
+    setIsMultiSelectMode(true);
   };
 
-  const exitSelectionMode = (): void => {
-    setSelectionMode(false);
+  const handleExitMultiSelect = (): void => {
+    if (isBatchDeleting) {
+      return;
+    }
+    setIsMultiSelectMode(false);
     setSelectedIds(new Set());
-    setIsConfirmingDelete(false);
+    setShowBatchConfirm(false);
   };
 
   /** 收起/展开会话区域；收起时退出多选模式并持久化到 localStorage */
@@ -435,12 +433,12 @@ export function ChatsSection({
       }
       return next;
     });
-    if (!isCollapsed) {
-      exitSelectionMode();
+    if (isMultiSelectMode) {
+      handleExitMultiSelect();
     }
   };
 
-  const toggleSelect = (conversationId: string): void => {
+  const handleToggleSelect = (conversationId: string): void => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(conversationId)) {
@@ -450,97 +448,59 @@ export function ChatsSection({
       }
       return next;
     });
-    // 变更选择时取消删除确认态
-    setIsConfirmingDelete(false);
   };
 
-  const isAllSelected =
-    conversations.length > 0 &&
-    conversations.every(
-      (conv) =>
-        conv.conversationId === PENDING_SESSION_KEY ||
-        selectedIds.has(conv.conversationId)
-    );
-
-  const handleToggleSelectAll = (): void => {
-    setSelectedIds((prev) => {
-      const next = new Set<string>();
-      if (isAllSelected) {
-        // 取消全选
-        return next;
-      }
-      for (const conv of conversations) {
-        if (conv.conversationId !== PENDING_SESSION_KEY) {
-          next.add(conv.conversationId);
-        }
-      }
-      return next;
-    });
-    setIsConfirmingDelete(false);
+  const handleSelectAll = (): void => {
+    const allIds = conversations
+      .filter((conv) => conv.conversationId !== PENDING_SESSION_KEY)
+      .map((conv) => conv.conversationId);
+    setSelectedIds(new Set(allIds));
   };
 
-  // Esc 退出多选模式
-  useEffect(() => {
-    if (!selectionMode) {
-      return;
-    }
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        exitSelectionMode();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [selectionMode]);
+  const handleDeselectAll = (): void => {
+    setSelectedIds(new Set());
+  };
 
-  /**
-   * 批量删除选中的会话。
-   * - 子代理会话不允许单独删除，不会出现在选中集里；
-   *   选中父会话时其子代理会话由 native 侧在单事务内级联删除，
-   *   这里收集全部受影响会话仅用于中止流与判断是否需要清空聊天区。
-   * - 删除前中止对应流式会话；若当前正打开被删会话（或其子代理），
-   *   则清空聊天区。
-   */
   const handleBatchDelete = async (): Promise<void> => {
-    if (selectedIds.size === 0 || isDeleting) {
+    if (isBatchDeleting || selectedIds.size === 0) {
       return;
     }
 
-    // 收集所有受影响会话：选中父会话 + 其子代理（用于中止流/清空聊天区）
-    const allTargetIds = new Set<string>(selectedIds);
-    for (const id of selectedIds) {
-      const subAgents = subAgentMap[id];
-      if (subAgents && subAgents.length > 0) {
-        for (const sub of subAgents) {
-          allTargetIds.add(sub.conversationId);
+    setIsBatchDeleting(true);
+    setShowBatchConfirm(false);
+
+    try {
+      // 收集所有待删会话 ID（含子代理级联）以及需要中止的流 ID
+      const targetIds = new Set<string>();
+      for (const convId of selectedIds) {
+        targetIds.add(convId);
+        const subs = subAgentMap[convId] ?? [];
+        for (const sub of subs) {
+          targetIds.add(sub.conversationId);
         }
       }
-    }
 
-    setIsDeleting(true);
-    try {
-      for (const targetId of allTargetIds) {
+      for (const targetId of targetIds) {
         abortConversation(targetId);
       }
 
-      // 单次批量删除：native 单事务完成，避免逐条 IPC + 逐条事务
-      await window.snow.deleteConversations([...selectedIds]);
+      // 逐条删除：Rust 侧无批量删除接口，串行调用避免数据库锁竞争
+      for (const convId of selectedIds) {
+        await window.snow.deleteConversation(convId);
+      }
 
-      if (activeConversationId && allTargetIds.has(activeConversationId)) {
+      if (activeConversationId && targetIds.has(activeConversationId)) {
         handleNewChat();
       }
       refreshConversations();
-      exitSelectionMode();
+      setSelectedIds(new Set());
+      setIsMultiSelectMode(false);
     } catch {
-      // 静默失败，保留多选状态以便重试
+      // Silent fail
     } finally {
-      setIsDeleting(false);
+      setIsBatchDeleting(false);
     }
   };
-
-  const selectedCount = selectedIds.size;
 
   const timeGroups = groupConversationsByTime(
     conversations,
@@ -558,16 +518,21 @@ export function ChatsSection({
     let cancelled = false;
 
     const loadSubAgents = async (): Promise<void> => {
-      // 一次批量查询所有会话的子代理（单条 SQL，避免 N+1）
-      let entries: Array<readonly [string, ChatConversationRecord[]]> = [];
-      try {
-        const grouped = await window.snow.listSubAgentConversationsByParents(
-          current.map((conv) => conv.conversationId)
-        );
-        entries = Object.entries(grouped);
-      } catch {
-        entries = [];
-      }
+      const entries = await Promise.all(
+        current.map(async (conv) => {
+          try {
+            const subAgents = await window.snow.listSubAgentConversations(
+              conv.conversationId
+            );
+            return [conv.conversationId, subAgents] as const;
+          } catch {
+            return [
+              conv.conversationId,
+              [] as ChatConversationRecord[],
+            ] as const;
+          }
+        })
+      );
 
       if (!cancelled) {
         const map: SubAgentMap = {};
@@ -712,130 +677,137 @@ export function ChatsSection({
         isCollapsed ? " collapsed" : ""
       }`}
     >
-      <div className="section-header">
-        {selectionMode ? (
-          <div className="chats-select-toolbar">
-            <span className="chats-select-count">
-              {t("sidebar.chatSelectedCount", {
-                values: { count: selectedCount },
-                defaultValue: "{{count}} selected",
-              })}
-            </span>
-            <span className="section-actions chats-select-actions">
-              <button
-                type="button"
-                className="section-toggle-btn"
-                onClick={handleToggleSelectAll}
-              >
-                <CheckCheck size={12} />
-                <span className="chats-select-btn-label">
-                  {t("sidebar.chatSelectAll", {
-                    defaultValue: "Select all",
-                  })}
-                </span>
-              </button>
-              {!isConfirmingDelete && (
-                <button
-                  type="button"
-                  className="section-toggle-btn danger"
-                  disabled={selectedCount === 0 || isDeleting}
-                  onClick={() => setIsConfirmingDelete(true)}
-                >
-                  <Trash2 size={12} />
-                  <span className="chats-select-btn-label">
-                    {t("sidebar.chatActionDelete", {
-                      defaultValue: "Delete",
-                    })}
-                  </span>
-                </button>
-              )}
-              <button
-                type="button"
-                className="section-toggle-btn"
-                onClick={exitSelectionMode}
-                aria-label={t("common.cancel", { defaultValue: "Cancel" })}
-                title={t("common.cancel", { defaultValue: "Cancel" })}
-              >
-                <X size={13} />
-              </button>
-            </span>
-          </div>
-        ) : (
-          <>
-            <button
-              type="button"
-              aria-expanded={!isCollapsed}
-              className="section-toggle-btn chats-section-toggle"
-              onClick={toggleCollapsed}
-              title={t("sidebar.chatToggleCollapse", {
-                defaultValue: "Collapse chats",
-              })}
-            >
-              <ChevronRight
-                className={isCollapsed ? "" : "section-toggle-chevron--open"}
-                size={12}
-              />
-              <span className="section-title">
-                {t("sidebar.chats", { defaultValue: "Chats" })}
-              </span>
-            </button>
-            {!isCollapsed && (
-              <span className="section-actions">
-                <button
-                  type="button"
-                  className="section-toggle-btn chats-select-mode-btn"
-                  onClick={enterSelectionMode}
-                  title={t("sidebar.chatSelectMode", {
-                    defaultValue: "Multi-select",
-                  })}
-                >
-                  <CheckSquare size={13} />
-                </button>
-              </span>
-            )}
-          </>
-        )}
-      </div>
-      {selectionMode && isConfirmingDelete && (
-        <div className="chat-item-menu-confirm chats-select-confirm">
-          <AlertTriangle
-            size={13}
-            className="chat-item-menu-confirm-icon"
-          />
-          <span className="chat-item-menu-confirm-text">
-            {t("sidebar.chatBatchDeleteConfirm", {
-              values: { count: selectedCount },
-              defaultValue:
-                "Delete {{count}} selected conversation(s)? Sub-agent conversations of selected chats will also be deleted.",
+      {isMultiSelectMode ? (
+        <div className="chat-multi-select-bar">
+          <button
+            type="button"
+            className="chat-multi-select-exit-btn"
+            onClick={handleExitMultiSelect}
+            disabled={isBatchDeleting}
+            title={t("sidebar.chatMultiSelectExit", { defaultValue: "Exit" })}
+          >
+            <X size={14} />
+          </button>
+          <span className="chat-multi-select-count">
+            {t("sidebar.chatMultiSelectCount", {
+              defaultValue: "{{count}} selected",
+              values: { count: selectedIds.size },
             })}
           </span>
-          <span className="chat-item-menu-confirm-actions">
+          <div className="chat-multi-select-actions">
+            <button
+              type="button"
+              className="chat-multi-select-action-btn"
+              onClick={() =>
+                selectedIds.size ===
+                conversations.filter(
+                  (conv) => conv.conversationId !== PENDING_SESSION_KEY
+                ).length
+                  ? handleDeselectAll()
+                  : handleSelectAll()
+              }
+              disabled={isBatchDeleting}
+            >
+              <CheckSquare size={13} />
+              <span>
+                {selectedIds.size ===
+                conversations.filter(
+                  (conv) => conv.conversationId !== PENDING_SESSION_KEY
+                ).length
+                  ? t("sidebar.chatMultiSelectDeselectAll", {
+                      defaultValue: "Deselect all",
+                    })
+                  : t("sidebar.chatMultiSelectAll", {
+                      defaultValue: "Select all",
+                    })}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="chat-multi-select-action-btn danger"
+              onClick={() => setShowBatchConfirm(true)}
+              disabled={isBatchDeleting || selectedIds.size === 0}
+            >
+              {isBatchDeleting ? (
+                <Loader2 size={13} className="spin" />
+              ) : (
+                <Trash2 size={13} />
+              )}
+              <span>
+                {isBatchDeleting
+                  ? t("sidebar.chatMultiSelectDeleting", {
+                      defaultValue: "Deleting...",
+                    })
+                  : t("sidebar.chatMultiSelectDelete", {
+                      defaultValue: "Delete selected",
+                    })}
+              </span>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="section-header">
+          <button
+            type="button"
+            aria-expanded={!isCollapsed}
+            className="section-toggle-btn chats-section-toggle"
+            onClick={toggleCollapsed}
+            title={t("sidebar.chatToggleCollapse", {
+              defaultValue: "Collapse chats",
+            })}
+          >
+            <ChevronRight
+              className={isCollapsed ? "" : "section-toggle-chevron--open"}
+              size={12}
+            />
+            <span className="section-title">
+              {t("sidebar.chats", { defaultValue: "Chats" })}
+            </span>
+          </button>
+        </div>
+      )}
+      {isMultiSelectMode && showBatchConfirm ? (
+        <div className="chat-batch-confirm">
+          <div className="chat-batch-confirm-content">
+            <AlertTriangle
+              size={13}
+              className="chat-item-menu-confirm-icon"
+            />
+            <span className="chat-item-menu-confirm-text">
+              {t("sidebar.chatMultiSelectDeleteConfirm", {
+                defaultValue:
+                  "Delete {{count}} selected conversations?",
+                values: { count: selectedIds.size },
+              })}
+            </span>
+          </div>
+          <div className="chat-item-menu-confirm-actions">
             <button
               type="button"
               className="chat-item-menu-confirm-btn cancel"
-              disabled={isDeleting}
-              onClick={() => setIsConfirmingDelete(false)}
+              onClick={() => setShowBatchConfirm(false)}
+              disabled={isBatchDeleting}
             >
               {t("common.cancel", { defaultValue: "Cancel" })}
             </button>
             <button
               type="button"
               className="chat-item-menu-confirm-btn delete"
-              disabled={isDeleting}
               onClick={() => void handleBatchDelete()}
+              disabled={isBatchDeleting}
             >
-              {isDeleting ? (
-                <Loader2 size={11} className="spin" />
+              {isBatchDeleting ? (
+                <Loader2 size={12} className="spin" />
               ) : (
                 t("sidebar.chatActionDelete", { defaultValue: "Delete" })
               )}
             </button>
-          </span>
+          </div>
         </div>
-      )}
+      ) : null}
       {!isCollapsed && (
         <div className="section-list" ref={sectionListRef}>
-        {showLoading ? (
+          {showLoading ? (
           <span className="empty-text loading">
             <Loader2 className="spin" size={13} />
             {t("sidebar.loadingWorkspaceContent", {
@@ -883,16 +855,14 @@ export function ChatsSection({
                         )}
                         subAgentConversations={subAgentConversations}
                         isSubAgentExpanded={isSubAgentPanelExpanded}
-                        selectionMode={selectionMode}
+                        isMultiSelectMode={isMultiSelectMode}
                         isSelected={selectedIds.has(
                           conversation.conversationId
                         )}
-                        selectable={
-                          conversation.conversationId !== PENDING_SESSION_KEY
-                        }
                         onToggleSelect={() =>
-                          toggleSelect(conversation.conversationId)
+                          handleToggleSelect(conversation.conversationId)
                         }
+                        onEnterMultiSelect={handleEnterMultiSelect}
                         onToggleSubAgentPanel={() =>
                           handleToggleSubAgentPanel(
                             conversation.conversationId
@@ -928,7 +898,8 @@ export function ChatsSection({
                       {/* 面板渲染在 ChatItem 外部，作为兄弟节点，
                           完全不继承父级会话项的背景色 */}
                       {subAgentConversations.length > 0 &&
-                        isSubAgentPanelExpanded && (
+                        isSubAgentPanelExpanded &&
+                        !isMultiSelectMode && (
                           <SubAgentListPanel
                             conversations={subAgentConversations}
                             activeConversationId={activeConversationId}

@@ -521,7 +521,7 @@ export function PinnedSection({
               isCompleted={completedConversationIds.has(
                 conversation.conversationId
               )}
-              selectionMode={selectionMode}
+              isMultiSelectMode={selectionMode}
               isSelected={selectedIds.has(conversation.conversationId)}
               onToggleSelect={() => toggleSelect(conversation.conversationId)}
               onPin={() => void handleUnpin(conversation)}

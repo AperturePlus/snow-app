@@ -1,9 +1,9 @@
 import {
-  Check,
   ChevronRight,
   GitFork,
   Loader2,
   MessageSquareMore,
+  Check,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -19,19 +19,15 @@ type ChatItemProps = {
   isCompleted?: boolean;
   subAgentConversations?: ChatConversationRecord[];
   isSubAgentExpanded?: boolean;
-  /** 是否处于多选模式：点击切换选中而非打开会话 */
-  selectionMode?: boolean;
-  /** 多选模式下是否被选中 */
+  isMultiSelectMode?: boolean;
   isSelected?: boolean;
-  /** 多选模式下是否可被选中（占位符会话等不可选） */
-  selectable?: boolean;
-  onToggleSelect?: () => void;
   onPin: () => void;
   onRename: (newTitle: string) => Promise<void>;
   onSetEmoji: (emoji: string) => Promise<void>;
   onDelete: () => void;
   onExport: (format: ExportFormat) => void;
   onEnterMultiSelect?: () => void;
+  onToggleSelect?: () => void;
   onSelect?: () => void;
   onToggleSubAgentPanel?: () => void;
 };
@@ -43,16 +39,15 @@ export function ChatItem({
   isCompleted = false,
   subAgentConversations = [],
   isSubAgentExpanded = false,
-  selectionMode = false,
+  isMultiSelectMode = false,
   isSelected = false,
-  selectable = true,
-  onToggleSelect,
   onPin,
   onRename,
   onSetEmoji,
   onDelete,
   onExport,
   onEnterMultiSelect,
+  onToggleSelect,
   onSelect,
   onToggleSubAgentPanel,
 }: ChatItemProps): React.JSX.Element {
@@ -60,11 +55,6 @@ export function ChatItem({
   const [isEditing, setIsEditing] = useState(false);
   const [editingValue, setEditingValue] = useState("");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  // 右键菜单锚点（光标位置）：非空时菜单以该点定位打开
-  const [contextMenuAnchor, setContextMenuAnchor] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
   const isSubmittingRef = useRef(false);
   const cancelledRef = useRef(false);
@@ -156,23 +146,11 @@ export function ChatItem({
     if (isEditing) {
       return;
     }
-    // 多选模式下点击切换选中，不打开会话
-    if (selectionMode) {
-      if (selectable) {
-        onToggleSelect?.();
-      }
+    if (isMultiSelectMode) {
+      onToggleSelect?.();
       return;
     }
     onSelect?.();
-  };
-
-  const handleContextMenu = (event: React.MouseEvent): void => {
-    // 重命名输入框 / 多选模式下不弹右键菜单（保留系统菜单或勾选交互）
-    if (isEditing || selectionMode) {
-      return;
-    }
-    event.preventDefault();
-    setContextMenuAnchor({ x: event.clientX, y: event.clientY });
   };
 
   const handleToggleExpand = (event: React.MouseEvent): void => {
@@ -188,12 +166,11 @@ export function ChatItem({
     <div
       className={`chat-item${isMenuOpen ? " menu-open" : ""}${
         isActive ? " active" : ""
-      }${selectionMode ? " selection-mode" : ""}${
+      }${isMultiSelectMode ? " multi-select" : ""}${
         isSelected ? " selected" : ""
       }`}
       key={conversation.conversationId}
       onClick={handleSelectClick}
-      onContextMenu={handleContextMenu}
       role="button"
       tabIndex={0}
       onKeyDown={(event) => {
@@ -202,47 +179,34 @@ export function ChatItem({
         }
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          if (selectionMode) {
-            if (selectable) {
-              onToggleSelect?.();
-            }
+          if (isMultiSelectMode) {
+            onToggleSelect?.();
           } else if (onSelect) {
             onSelect();
           }
         }
       }}
     >
-      {selectionMode ? (
+      {isMultiSelectMode ? (
         <span
-          className={`chat-item-checkbox${isSelected ? " selected" : ""}${
-            !selectable ? " disabled" : ""
-          }`}
-          role="checkbox"
-          aria-checked={isSelected}
-          aria-label={conversation.summary || conversation.title}
+          className={`chat-item-checkbox${isSelected ? " checked" : ""}`}
           onClick={(event) => {
             event.stopPropagation();
-            if (selectable) {
-              onToggleSelect?.();
-            }
+            onToggleSelect?.();
           }}
-          onKeyDown={(event) => {
-            event.stopPropagation();
-            if (selectable && (event.key === "Enter" || event.key === " ")) {
-              event.preventDefault();
-              onToggleSelect?.();
-            }
-          }}
+          role="checkbox"
+          aria-checked={isSelected}
+          tabIndex={-1}
         >
-          {isSelected && <Check size={11} strokeWidth={3} />}
+          {isSelected ? <Check size={12} strokeWidth={3} /> : null}
         </span>
       ) : (
         <span
           className={`chat-item-icon${isStreaming ? " streaming" : ""}${
             isCompleted && !isStreaming ? " completed" : ""
-          }${isForked ? " forked" : ""}${
-            hasSubAgents ? " has-sub-agents" : ""
-          }${hasEmoji ? " has-emoji" : ""}`}
+          }${isForked ? " forked" : ""}${hasSubAgents ? " has-sub-agents" : ""}${
+            hasEmoji ? " has-emoji" : ""
+          }`}
           onClick={(event) => {
             // 图标不再承载交互，点击仅阻止选中会话；修改入口在右键菜单中
             event.stopPropagation();
@@ -294,10 +258,7 @@ export function ChatItem({
                 className="chat-item-title"
                 onDoubleClick={(event) => {
                   event.stopPropagation();
-                  // 多选模式下不触发重命名
-                  if (!selectionMode) {
-                    handleRenameStart();
-                  }
+                  handleRenameStart();
                 }}
               >
                 {displayName}
@@ -312,7 +273,7 @@ export function ChatItem({
           </>
         )}
       </div>
-      {!isEditing && !selectionMode && (
+      {!isEditing && !isMultiSelectMode && (
         <span
           className="chat-item-menu-wrapper"
           onClick={(event) => event.stopPropagation()}
@@ -328,8 +289,6 @@ export function ChatItem({
             onExport={onExport}
             onEnterMultiSelect={onEnterMultiSelect}
             onOpenChange={setIsMenuOpen}
-            contextMenuAnchor={contextMenuAnchor}
-            onContextMenuClose={() => setContextMenuAnchor(null)}
           />
         </span>
       )}
