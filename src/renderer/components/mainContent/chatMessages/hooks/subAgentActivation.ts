@@ -165,6 +165,11 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
       if (subSessionRef) {
         subSessionRef.isSending = true;
         subSessionRef.isAbortRequested = false;
+        // Sub-agents never run Plan/Goal Mode (Rust forces both off on the
+        // sub-agent request path). Zero the inherited defaults so the ref
+        // stays truthful for any future reader.
+        subSessionRef.planMode = false;
+        subSessionRef.goalMode = false;
       }
       // Register this sub-agent on the parent session so aborting the main
       // flow can cascade the cancellation down to it (and its children).

@@ -421,12 +421,15 @@ export const useConversationManagement = (
       ctx.setPlanModeState(defaults.planMode);
     }
 
-    // A new chat starts a brand-new task: invalidate the pending session's
-    // Plan Mode approval only. Other conversations keep their independently
-    // approved plans — including ones still executing in the background —
-    // so starting a new chat can never break an in-flight approved plan.
-    // (handleSendMessage resets the new task's own approval on first send.)
-    ctx.planApprovedSessionKeysRef.current.delete(PENDING_SESSION_KEY);
+    // A new chat starts a brand-new task. The pending session's approval is
+    // cleared ONLY when that pending session is not running in the
+    // background — a streaming pending conversation keeps its approved plan
+    // (it will be migrated to its real id). handleSendMessage resets the
+    // new task's own approval on first send, so no other cleanup is needed.
+    const pendingRef = ctx.sessionsRefData.current.get(PENDING_SESSION_KEY);
+    if (!pendingRef?.isSending) {
+      ctx.planApprovedSessionKeysRef.current.delete(PENDING_SESSION_KEY);
+    }
 
     // Reset Goal Mode so a new chat always starts with the global default.
     if (ctx.goalModeRef.current !== defaults.goalMode) {
@@ -441,7 +444,6 @@ export const useConversationManagement = (
     // When the pending session is streaming, we keep it alive so the AI
     // loop continues in the background and eventually persists the
     // conversation. The user sees the empty greeting instead.
-    const pendingRef = ctx.sessionsRefData.current.get(PENDING_SESSION_KEY);
     if (pendingRef && !pendingRef.isSending) {
       deleteCheckpoints(pendingRef.checkpointIds);
       ctx.sessionsRefData.current.delete(PENDING_SESSION_KEY);

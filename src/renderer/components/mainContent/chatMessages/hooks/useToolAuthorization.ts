@@ -241,10 +241,17 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     void window.snow
       .getPlanMode()
       .then((enabled) => {
-        if (!disposed) {
-          applyPlanMode(enabled);
-          ctx.globalModeDefaultsRef.current.planMode = enabled;
+        if (disposed) {
+          return;
         }
+        ctx.globalModeDefaultsRef.current.planMode = enabled;
+        // Resolve the EFFECTIVE mode: if the user already opened a session
+        // while this read was in flight, its ref must win — applying the
+        // global value here would desync the UI from the session ref.
+        const key =
+          ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+        const ref = ctx.sessionsRefData.current.get(key);
+        applyPlanMode(ref?.planMode ?? enabled);
       })
       .catch(() => {
         if (!disposed) {
@@ -256,10 +263,14 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     void window.snow
       .getGoalMode()
       .then((enabled) => {
-        if (!disposed) {
-          applyGoalMode(enabled);
-          ctx.globalModeDefaultsRef.current.goalMode = enabled;
+        if (disposed) {
+          return;
         }
+        ctx.globalModeDefaultsRef.current.goalMode = enabled;
+        const key =
+          ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+        const ref = ctx.sessionsRefData.current.get(key);
+        applyGoalMode(ref?.goalMode ?? enabled);
       })
       .catch(() => {
         if (!disposed) {
@@ -271,10 +282,14 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     void window.snow
       .getGoalModeTokenBudget()
       .then((budget) => {
-        if (!disposed) {
-          applyGoalModeTokenBudget(budget);
-          ctx.globalModeDefaultsRef.current.goalModeTokenBudget = budget;
+        if (disposed) {
+          return;
         }
+        ctx.globalModeDefaultsRef.current.goalModeTokenBudget = budget;
+        const key =
+          ctx.activeConversationIdRef.current ?? PENDING_SESSION_KEY;
+        const ref = ctx.sessionsRefData.current.get(key);
+        applyGoalModeTokenBudget(ref?.goalModeTokenBudget ?? budget);
       })
       .catch(() => {
         if (!disposed) {
@@ -307,9 +322,12 @@ export const useToolAuthorization = (ctx: ConversationContextValue) => {
     applyYoloMode,
     applyPlanMode,
     applyGoalMode,
+    applyGoalModeTokenBudget,
     ctx.directoryId,
     ctx.alwaysApprovedToolsRef,
     ctx.globalModeDefaultsRef,
+    ctx.activeConversationIdRef,
+    ctx.sessionsRefData,
   ]);
 
   const setYoloMode = useCallback(
