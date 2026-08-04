@@ -1291,6 +1291,150 @@ input {
 }
 
 /* ============================================================
+ * 会话多选模式（批量删除）
+ * ============================================================ */
+
+/* 复选框 */
+.chat-item-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid var(--border-color);
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.chat-item-checkbox:hover:not(.disabled) {
+  border-color: var(--accent, #3b82f6);
+}
+
+.chat-item-checkbox.selected {
+  background: var(--accent, #3b82f6);
+  border-color: var(--accent, #3b82f6);
+}
+
+.chat-item-checkbox.disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* 多选模式下选中行高亮（覆盖默认 active 背景） */
+.chat-item.selected,
+.sub-agent-list-item.selected {
+  background: color-mix(in srgb, var(--accent, #3b82f6) 14%, transparent);
+}
+
+.chat-item.selected:hover {
+  background: color-mix(in srgb, var(--accent, #3b82f6) 20%, transparent);
+}
+
+/* 多选工具栏（section-header 内） */
+.chats-select-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.chats-select-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent, #3b82f6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chats-select-actions {
+  flex-shrink: 0;
+}
+
+.chats-select-mode-btn:hover {
+  color: var(--accent, #3b82f6);
+}
+
+.section-toggle-btn.danger {
+  color: var(--accent-red-text, #ef4444);
+}
+
+.section-toggle-btn.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-red-text, #ef4444) 14%, transparent);
+  color: var(--accent-red-text, #ef4444);
+}
+
+.section-toggle-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 多选确认条（复用 chat-item-menu-confirm 基础样式） */
+.chats-select-confirm {
+  margin: 0 0 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.03));
+}
+
+.chats-select-confirm .chat-item-menu-confirm-actions {
+  padding: 0;
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+
+.chats-select-confirm .chat-item-menu-confirm-btn {
+  min-width: 56px;
+}
+
+.sub-agent-list-item.selection-mode {
+  cursor: pointer;
+}
+
+/* ============================================================
+ * 会话/置顶区域收起（与项目区域一致的折叠交互）
+ * ============================================================ */
+
+/* chats-section 默认 flex:1 占满剩余高度；折叠后收缩为 auto，
+   把空间让给上方区域（列表由 JS 条件渲染隐藏） */
+.sidebar-section.chats-section.collapsed {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+/* ============================================================
+ * 极窄侧边栏适配：section-header 作为 container，
+ * 过窄时工具栏按钮只保留图标、隐藏文字标签与计数
+ * ============================================================ */
+
+.section-header {
+  container-type: inline-size;
+}
+
+.chats-select-btn-label {
+  white-space: nowrap;
+}
+
+@container (max-width: 200px) {
+  .chats-select-btn-label {
+    display: none;
+  }
+}
+
+@container (max-width: 120px) {
+  .chats-select-count {
+    display: none;
+  }
+}
+
+/* ============================================================
  * Emoji Picker 面板（会话列表 icon 更换）
  * 通过 createPortal 渲染到 document.body，position: fixed 定位。
  * 使用主题 CSS 变量，自动适配明暗主题。
@@ -10735,6 +10879,325 @@ input {
 }
 
 .tool-call-websearch-pending-running {
+  color: var(--accent-blue-text);
+  background: var(--accent-blue-bg);
+}
+
+/* ImageGen Tool Call */
+.tool-call-imagegen-body {
+  gap: 10px;
+}
+
+.tool-call-imagegen-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--accent-amber-text);
+  background: var(--accent-amber-bg);
+}
+
+.tool-call-imagegen-count svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.tool-call-imagegen-params {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-call-imagegen-param-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.tool-call-imagegen-param-item svg {
+  display: block;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.tool-call-imagegen-param-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.tool-call-imagegen-param-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  user-select: text;
+}
+
+.tool-call-imagegen code.tool-call-imagegen-param-value {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: normal;
+  word-break: break-all;
+}
+
+.tool-call-imagegen-param-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.tool-call-imagegen-param-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.tool-call-imagegen-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.tool-call-imagegen-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  min-width: 0;
+}
+
+.tool-call-imagegen-thumb {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--border-subtle, var(--bg-tertiary));
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  cursor: zoom-in;
+}
+
+.tool-call-imagegen-thumb img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 220px;
+  object-fit: contain;
+}
+
+.tool-call-imagegen-thumb:hover {
+  border-color: var(--accent-blue-text);
+}
+
+.tool-call-imagegen-figure-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.tool-call-imagegen-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tool-call-imagegen-download:hover {
+  color: var(--accent-blue-text);
+  background: var(--accent-blue-bg);
+}
+
+.tool-call-imagegen-remote {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tool-call-imagegen-remote-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.tool-call-imagegen-remote-link {
+  font-size: 11px;
+  color: var(--accent-blue-text);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.tool-call-imagegen-remote-link:hover {
+  text-decoration: underline;
+}
+
+.tool-call-imagegen-pending {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+}
+
+.tool-call-imagegen-pending svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.tool-call-imagegen-pending-running {
+  color: var(--accent-blue-text);
+  background: var(--accent-blue-bg);
+}
+
+.tool-call-imagegen-streaming {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tool-call-imagegen-streaming-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--accent-blue-text);
+}
+
+.tool-call-imagegen-streaming-head svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.tool-call-imagegen-streaming-progress {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font-size: 10px;
+  color: var(--accent-blue-text);
+  background: var(--accent-blue-bg);
+}
+
+.tool-call-imagegen-streaming-img {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  max-height: 240px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--accent-blue-text);
+  background: var(--bg-tertiary);
+}
+
+.tool-call-imagegen-refs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-call-imagegen-refs-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.tool-call-imagegen-refs-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tool-call-imagegen-ref-thumb {
+  display: block;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--bg-tertiary);
+  background: var(--bg-tertiary);
+}
+
+.tool-call-imagegen-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.75);
+  cursor: zoom-out;
+  padding: 32px;
+}
+
+.tool-call-imagegen-lightbox img {
+  max-width: 90vw;
+  max-height: 82vh;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.tool-call-imagegen-lightbox-toolbar {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tool-call-imagegen-lightbox-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.tool-call-imagegen-lightbox-close:hover {
   color: var(--accent-blue-text);
   background: var(--accent-blue-bg);
 }

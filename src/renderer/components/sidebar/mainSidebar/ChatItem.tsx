@@ -1,4 +1,5 @@
 import {
+  Check,
   ChevronRight,
   GitFork,
   Loader2,
@@ -18,6 +19,13 @@ type ChatItemProps = {
   isCompleted?: boolean;
   subAgentConversations?: ChatConversationRecord[];
   isSubAgentExpanded?: boolean;
+  /** 是否处于多选模式：点击切换选中而非打开会话 */
+  selectionMode?: boolean;
+  /** 多选模式下是否被选中 */
+  isSelected?: boolean;
+  /** 多选模式下是否可被选中（占位符会话等不可选） */
+  selectable?: boolean;
+  onToggleSelect?: () => void;
   onPin: () => void;
   onRename: (newTitle: string) => Promise<void>;
   onSetEmoji: (emoji: string) => Promise<void>;
@@ -34,6 +42,10 @@ export function ChatItem({
   isCompleted = false,
   subAgentConversations = [],
   isSubAgentExpanded = false,
+  selectionMode = false,
+  isSelected = false,
+  selectable = true,
+  onToggleSelect,
   onPin,
   onRename,
   onSetEmoji,
@@ -137,6 +149,13 @@ export function ChatItem({
     if (isEditing) {
       return;
     }
+    // 多选模式下点击切换选中，不打开会话
+    if (selectionMode) {
+      if (selectable) {
+        onToggleSelect?.();
+      }
+      return;
+    }
     onSelect?.();
   };
 
@@ -153,44 +172,77 @@ export function ChatItem({
     <div
       className={`chat-item${isMenuOpen ? " menu-open" : ""}${
         isActive ? " active" : ""
+      }${selectionMode ? " selection-mode" : ""}${
+        isSelected ? " selected" : ""
       }`}
       key={conversation.conversationId}
       onClick={handleSelectClick}
       role="button"
       tabIndex={0}
       onKeyDown={(event) => {
-        if (
-          !isEditing &&
-          (event.key === "Enter" || event.key === " ") &&
-          onSelect
-        ) {
+        if (isEditing) {
+          return;
+        }
+        if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          onSelect();
+          if (selectionMode) {
+            if (selectable) {
+              onToggleSelect?.();
+            }
+          } else if (onSelect) {
+            onSelect();
+          }
         }
       }}
     >
-      <span
-        className={`chat-item-icon${isStreaming ? " streaming" : ""}${
-          isCompleted && !isStreaming ? " completed" : ""
-        }${isForked ? " forked" : ""}${hasSubAgents ? " has-sub-agents" : ""}${
-          hasEmoji ? " has-emoji" : ""
-        }`}
-        onClick={(event) => {
-          // 图标不再承载交互，点击仅阻止选中会话；修改入口在右键菜单中
-          event.stopPropagation();
-        }}
-      >
-        {isStreaming ? (
-          <Loader2 size={11} className="spin" />
-        ) : hasEmoji ? (
-          <span className="chat-item-emoji">{conversation.emoji}</span>
-        ) : isForked ? (
-          <GitFork size={11} />
-        ) : (
-          <MessageSquareMore size={11} />
-        )}
-        {isCompleted && !isStreaming && <span className="chat-item-badge" />}
-      </span>
+      {selectionMode ? (
+        <span
+          className={`chat-item-checkbox${isSelected ? " selected" : ""}${
+            !selectable ? " disabled" : ""
+          }`}
+          role="checkbox"
+          aria-checked={isSelected}
+          aria-label={conversation.summary || conversation.title}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (selectable) {
+              onToggleSelect?.();
+            }
+          }}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (selectable && (event.key === "Enter" || event.key === " ")) {
+              event.preventDefault();
+              onToggleSelect?.();
+            }
+          }}
+        >
+          {isSelected && <Check size={11} strokeWidth={3} />}
+        </span>
+      ) : (
+        <span
+          className={`chat-item-icon${isStreaming ? " streaming" : ""}${
+            isCompleted && !isStreaming ? " completed" : ""
+          }${isForked ? " forked" : ""}${
+            hasSubAgents ? " has-sub-agents" : ""
+          }${hasEmoji ? " has-emoji" : ""}`}
+          onClick={(event) => {
+            // 图标不再承载交互，点击仅阻止选中会话；修改入口在右键菜单中
+            event.stopPropagation();
+          }}
+        >
+          {isStreaming ? (
+            <Loader2 size={11} className="spin" />
+          ) : hasEmoji ? (
+            <span className="chat-item-emoji">{conversation.emoji}</span>
+          ) : isForked ? (
+            <GitFork size={11} />
+          ) : (
+            <MessageSquareMore size={11} />
+          )}
+          {isCompleted && !isStreaming && <span className="chat-item-badge" />}
+        </span>
+      )}
       <div className="chat-item-content">
         {isEditing ? (
           <input
@@ -225,7 +277,10 @@ export function ChatItem({
                 className="chat-item-title"
                 onDoubleClick={(event) => {
                   event.stopPropagation();
-                  handleRenameStart();
+                  // 多选模式下不触发重命名
+                  if (!selectionMode) {
+                    handleRenameStart();
+                  }
                 }}
               >
                 {displayName}
@@ -240,7 +295,7 @@ export function ChatItem({
           </>
         )}
       </div>
-      {!isEditing && (
+      {!isEditing && !selectionMode && (
         <span
           className="chat-item-menu-wrapper"
           onClick={(event) => event.stopPropagation()}
