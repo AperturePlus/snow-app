@@ -30,6 +30,7 @@ import { useKeyboardShortcutsSettings } from "../KeyboardShortcutsProvider";
 import { useI18n } from "../../i18n";
 import { MarkdownBlock } from "../mainContent/chatMessages/components/markdownRenderer";
 import { ContextMenu, type ContextMenuItem } from "../common/ContextMenu";
+import { rightPanelEvents } from "./rightPanelEvents";
 import type { FileContentResult } from "./types";
 
 type FileViewerContentProps = {
@@ -162,6 +163,62 @@ const formatSize = (bytes: number): string => {
 
 const isEditable = (content: FileContentResult): boolean =>
   !content.isBinary && !content.isImage;
+
+/** 解析 markdown 链接路径：支持 `path:line` 与 `path#Lline` 行号定位。 */
+const parseHrefPathWithLine = (
+  raw: string
+): { path: string; line?: number } => {
+  // 冒号后必须为纯数字，避免误伤 Windows 盘符（C:\foo）。
+  const hashMatch = raw.match(/^(.+?)#L(\d+)$/i);
+  if (hashMatch) {
+    return { path: hashMatch[1], line: parseInt(hashMatch[2], 10) };
+  }
+  const lineMatch = raw.match(/^(.+):(\d+)$/);
+  if (lineMatch) {
+    return { path: lineMatch[1], line: parseInt(lineMatch[2], 10) };
+  }
+  return { path: raw };
+};
+
+/**
+ * 将 markdown 链接路径解析为可打开文件的绝对路径（基于当前文件所在目录）。
+ * 支持 Windows 盘符 / POSIX 绝对路径 / SSH 路径 / 相对路径（含 ./ 与 ../）。
+ */
+const resolveHrefPath = (
+  baseFilePath: string,
+  raw: string
+): { path: string; line?: number } | null => {
+  const { path: hrefPath, line } = parseHrefPathWithLine(raw);
+  if (!hrefPath) {
+    return null;
+  }
+  // 绝对路径（Windows 盘符 / POSIX / SSH 风格）直接使用。
+  if (
+    /^[a-zA-Z]:[\\/]/.test(hrefPath) ||
+    hrefPath.startsWith("/") ||
+    hrefPath.startsWith("\\")
+  ) {
+    return { path: hrefPath, line };
+  }
+  // 相对路径：基于当前文件所在目录解析（统一归一化分隔符处理 ./ 与 ../）。
+  const sep = baseFilePath.includes("\\") ? "\\" : "/";
+  const normSep = "/";
+  const dir = baseFilePath.replace(/\\/g, normSep).replace(/[^/]+$/, "");
+  const parts = `${dir}${hrefPath.replace(/\\/g, normSep)}`.split(normSep);
+  const root = parts[0] === "" ? normSep : "";
+  const stack: string[] = [];
+  for (const part of parts) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") {
+      stack.pop();
+    } else {
+      stack.push(part);
+    }
+  }
+  const joined = stack.join(normSep);
+  const resolved = `${root}${joined}`;
+  return { path: sep === "\\" ? resolved.replace(/\//g, "\\") : resolved, line };
+};
 
 export function FileViewerContent({
   filePath,
@@ -463,6 +520,31 @@ export function FileViewerContent({
       setSaving(false);
     }
   }, [dirty, saving, isSsh, sshSessionId, filePath, editedContent, content, t]);
+
+  // Markdown 预览中点击文件链接（相对路径/绝对路径）：解析为绝对路径后
+  // 通过 open-file 事件在右侧面板新建文件阅读器 tab，替代 Electron 默认
+  // 导航（渲染进程导航到相对 URL 会导致黑屏）。
+  const handleFileLinkClick = useCallback(
+    (href: string) => {
+      let decoded: string;
+      try {
+        decoded = decodeURIComponent(href);
+      } catch {
+        decoded = href;
+      }
+      const resolved = resolveHrefPath(filePath, decoded);
+      if (!resolved) {
+        return;
+      }
+      rightPanelEvents.emit("open-file", {
+        filePath: resolved.path,
+        isSsh,
+        sshSessionId: isSsh ? sshSessionId : undefined,
+        focusLine: resolved.line,
+      });
+    },
+    [filePath, isSsh, sshSessionId]
+  );
 
   // Keyboard shortcuts handled inside the editor's onKeyDown (which runs before
   // the library's own key handling): Ctrl/Cmd+S saves, Esc exits edit mode.
@@ -1277,6 +1359,7 @@ export function FileViewerContent({
             <MarkdownBlock
               className="file-viewer-markdown ai-message"
               content={content.content}
+              onFileLinkClick={handleFileLinkClick}
             />
           )}
         {!content.isBinary &&
