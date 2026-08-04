@@ -158,6 +158,12 @@ Delegated scope (reuses the skill-management service SkillsConfigService; storag
 | --- | --- | --- | --- |
 | `skills` | `skillId` | `{enabled}` toggles / `{url, location}` installs from GitHub | Global toggle rewrites the `enable` field in SKILL.md frontmatter; project toggle writes a DB `skill_overrides` record; install/uninstall operate on `~/.snow/skills` directories and `skills-registry.json`; `projectId` scopes to a project |
 
+Read-only log scope (lets the agent self-diagnose app anomalies without a human reading logs):
+
+| Scope | key | Notes |
+| --- | --- | --- |
+| `logs` | Log file name (e.g. `2026-08-03-error.log`) or a level shortcut (`error`/`warn`/`info`/`debug` for today's file) | `config-list logs` lists all log files under `~/.snow/log` (newest first, with size/level) plus the latest error-file summary; `config-get logs` reads the file tail (optional `limit`, default 200, max 2000, ring-buffer avoids loading large files); `config-set logs` is read-only; `config-delete logs` only accepts an exact file name (path-traversal safe) |
+
 > Configuration examples: see [2-guides/5-configure-hooks-and-subagents](../2-guides/5-configure-hooks-and-subagents.md).
 
 ### skills

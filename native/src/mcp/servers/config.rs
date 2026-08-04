@@ -48,6 +48,19 @@ const SCOPE_HOOKS: &str = "hooks";
 /// delete 卸载 GitHub 安装的技能；可选 projectId 表示项目级。
 const SCOPE_SKILLS: &str = "skills";
 
+/// 只读日志域：让 agent 列出/读取 ~/.snow/log 下的应用日志用于异常分析。
+/// key = 日志文件名（如 `2026-08-03-error.log`）或级别简写（error/warn/info/debug，
+/// 读取今天的对应文件）；config-list 返回日志文件清单与错误摘要。
+const SCOPE_LOGS: &str = "logs";
+/// 日志目录名（~/.snow/log）。
+const LOG_DIR_NAME: &str = "log";
+/// 日志文件名的合法形态：YYYY-MM-DD-(debug|info|warn|error).log。
+const LOG_FILE_RE: &str = r"^[0-9]{4}-[0-9]{2}-[0-9]{2}-(debug|info|warn|error)\.log$";
+/// 读取日志时默认返回的尾部行数。
+const LOG_DEFAULT_LINES: usize = 200;
+/// 读取日志时允许的最大行数。
+const LOG_MAX_LINES: usize = 2000;
+
 /// 通过 config 工具写入的配置来源标记（与 mcpServers 同步的 source 约定一致）。
 const SOURCE_SNOW_CLI: &str = "snow-cli";
 
@@ -230,6 +243,11 @@ impl ConfigService {
         // （GitHub 下载等），因此在 spawn_blocking 之外直接分发。
         if args.get("scope").and_then(Value::as_str) == Some(SCOPE_SKILLS) {
             return self.execute_skills_scope(&tool_name, &args).await;
+        }
+
+        // logs scope（只读日志域）：文件读取是同步操作，直接分发。
+        if args.get("scope").and_then(Value::as_str) == Some(SCOPE_LOGS) {
+            return execute_logs_scope(&tool_name, &args);
         }
 
         let db_path = self.db_path.clone();
@@ -1433,7 +1451,211 @@ impl ConfigService {
 }
 
 /// 校验并返回应用数据库路径；native 存储未初始化时给出明确错误。
-fn db_path_or_error(db_path: &str) -> napi::Result<&Path> {
+    /// logs scope（只读日志域）：列出/读取/清理 ~/.snow/log 下的应用日志，
+    /// 供 agent 自主进行异常分析。set 只读；delete 需精确文件名（防路径穿越）。
+fn execute_logs_scope(tool_name: &str, args: &Value) -> napi::Result<Value> {
+        match tool_name {
+            TOOL_LIST => list_log_files(),
+            TOOL_GET => read_log_file(args),
+            TOOL_SET => Err(Error::new(
+                Status::InvalidArg,
+                "logs scope is read-only: use config-list / config-get to inspect logs; config-delete removes one log file".to_string(),
+            )),
+            TOOL_DELETE => delete_log_file(args),
+            _ => Err(Error::new(
+                Status::GenericFailure,
+                format!(
+                    "Unknown tool: \"{tool_name}\" for MCP server \"{SERVER_ID}\". Available tools: [config-list, config-get, config-set, config-delete]"
+                ),
+            )),
+        }
+    }
+
+    /// 日志文件名校验（YYYY-MM-DD-level.log，防路径穿越）。
+    fn valid_log_name(name: &str) -> bool {
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        let re = RE.get_or_init(|| {
+            regex::Regex::new(LOG_FILE_RE).expect("LOG_FILE_RE is a valid regex")
+        });
+        re.is_match(name)
+    }
+
+    /// 日志目录（~/.snow/log）。
+    fn log_dir() -> PathBuf {
+        ConfigService::snow_dir().join(LOG_DIR_NAME)
+    }
+
+    /// config-list logs：列出日志文件（按日期倒序）+ 错误摘要。
+    fn list_log_files() -> napi::Result<Value> {
+        let dir = log_dir();
+        if !dir.exists() {
+            return Ok(json!({
+                "scope": SCOPE_LOGS,
+                "directory": dir.to_string_lossy(),
+                "files": [],
+                "summary": { "totalFiles": 0, "totalBytes": 0, "latestErrorFile": null },
+            }));
+        }
+        let mut files: Vec<Value> = Vec::new();
+        let mut total_bytes: u64 = 0;
+        let mut latest_error: Option<String> = None;
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                    continue;
+                };
+                if !valid_log_name(name) {
+                    continue;
+                }
+                let metadata = entry.metadata().ok();
+                let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
+                total_bytes += size;
+                let level = name
+                    .strip_suffix(".log")
+                    .and_then(|stem| stem.rsplit('-').next())
+                    .unwrap_or("")
+                    .to_string();
+                if level == "error" {
+                    if latest_error.is_none()
+                        || name > latest_error.as_deref().unwrap_or("")
+                    {
+                        latest_error = Some(name.to_string());
+                    }
+                }
+                let last_modified = metadata
+                    .and_then(|m| m.modified().ok())
+                    .map(|t| {
+                        t.duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis() as i64)
+                            .unwrap_or(0)
+                    })
+                    .unwrap_or(0);
+                files.push(json!({
+                    "file": name,
+                    "date": name.get(..10),
+                    "level": level,
+                    "size": size,
+                    "lastModified": last_modified,
+                }));
+            }
+        }
+        // 按日期倒序（文件名前缀即日期）。
+        files.sort_by(|a, b| {
+            b.get("file")
+                .and_then(Value::as_str)
+                .cmp(&a.get("file").and_then(Value::as_str))
+        });
+        Ok(json!({
+            "scope": SCOPE_LOGS,
+            "directory": dir.to_string_lossy(),
+            "files": files,
+            "summary": {
+                "totalFiles": files.len(),
+                "totalBytes": total_bytes,
+                "latestErrorFile": latest_error,
+            },
+        }))
+    }
+
+    /// config-get logs：读取指定日志文件的尾部内容。
+    /// key 支持精确文件名（`2026-08-03-error.log`）或级别简写（error/warn/info/debug，
+    /// 读取今天的对应文件）。可选 `limit` 控制返回行数（默认 200，最大 2000）。
+    fn read_log_file(args: &Value) -> napi::Result<Value> {
+        let key = required_string(args, "key")?;
+        let limit = args
+            .get("limit")
+            .and_then(Value::as_u64)
+            .map(|v| (v as usize).clamp(1, LOG_MAX_LINES))
+            .unwrap_or(LOG_DEFAULT_LINES);
+
+        let file_name = if valid_log_name(key) {
+            key.to_string()
+        } else if ["debug", "info", "warn", "error"].contains(&key) {
+            format!(
+                "{}-{}.log",
+                chrono::Local::now().format("%Y-%m-%d"),
+                key
+            )
+        } else {
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!(
+                    "Invalid log key: \"{key}\". Use a log file name (e.g. 2026-08-03-error.log) or a level shortcut (debug/info/warn/error for today's file)"
+                ),
+            ));
+        };
+
+        let path = log_dir().join(&file_name);
+        if !path.exists() {
+            return Ok(json!({
+                "scope": SCOPE_LOGS,
+                "key": key,
+                "file": file_name,
+                "exists": false,
+                "content": "",
+                "totalLines": 0,
+                "truncated": false,
+            }));
+        }
+        let file = std::fs::File::open(&path).map_err(|error| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to open log file {}: {error}", path.to_string_lossy()),
+            )
+        })?;
+        // 环形缓冲保留最后 limit 行，避免大文件全量加载。
+        use std::io::BufRead;
+        let reader = std::io::BufReader::new(file);
+        let mut tail: std::collections::VecDeque<String> =
+            std::collections::VecDeque::with_capacity(limit);
+        let mut total_lines: usize = 0;
+        for line in reader.lines().map_while(|l| l.ok()) {
+            total_lines += 1;
+            if tail.len() == limit {
+                tail.pop_front();
+            }
+            tail.push_back(line);
+        }
+        let truncated = total_lines > limit;
+        Ok(json!({
+            "scope": SCOPE_LOGS,
+            "key": key,
+            "file": file_name,
+            "exists": true,
+            "content": tail.make_contiguous().join("\n"),
+            "totalLines": total_lines,
+            "returnedLines": tail.len(),
+            "truncated": truncated,
+            "hint": truncated.then(|| format!("file has {total_lines} lines; showing the last {limit} — read with a larger `limit` if needed")),
+        }))
+    }
+
+    /// config-delete logs：删除指定日志文件（仅精确文件名，防路径穿越）。
+    fn delete_log_file(args: &Value) -> napi::Result<Value> {
+        let key = required_string(args, "key")?;
+        if !valid_log_name(key) {
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!(
+                    "Invalid log key: \"{key}\". config-delete logs only accepts an exact log file name (e.g. 2026-08-03-error.log)"
+                ),
+            ));
+        }
+        let path = log_dir().join(key);
+        let deleted = if path.exists() {
+            std::fs::remove_file(&path).is_ok()
+        } else {
+            false
+        };
+        Ok(json!({
+            "scope": SCOPE_LOGS,
+            "key": key,
+            "deleted": deleted,
+        }))
+    }
+
+    fn db_path_or_error(db_path: &str) -> napi::Result<&Path> {
     if db_path.is_empty() {
         return Err(Error::new(
             Status::GenericFailure,
@@ -1528,13 +1750,13 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_LIST.to_string(),
-                description: "List manageable configuration scopes and their keys. Scopes: settings (~/.snow/settings.json: mcpServers, codebase, sensitiveCommands, yoloMode, planMode, ...), snowcfg (~/.snow/config.json snowcfg object: baseUrl, apiKey, advancedModel, chatThinking, ...), proxy (~/.snow/proxy-config.json: enabled, host, port, searchEngine, browserPath, browserDebugPort), app (~/.snow/active-profile.json: activeProfile), custom-headers (~/.snow/custom-headers.json: active, schemes), system-prompt (~/.snow/system-prompt.json: active, prompts), theme (~/.snow/theme.json: theme, simpleMode, diffOpacity, toolIcons, customColors, ...), language (~/.snow/language.json: language), permissions (~/.snow/permissions.json: alwaysApprovedTools), lsp-config (~/.snow/lsp-config.json: schemaVersion, servers), buddy (~/.snow/buddy.json: version, companion, muted). DB-backed scopes: subAgents (sub-agent configs in the app database, key=agentId), hooks (lifecycle hook configs in the app database, key=hookType). Pass `scope` to inspect a single scope with current values; sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts) are masked. Pass `projectId` to scope subAgents/hooks listings to a specific project (omitted = global).".to_string(),
+                description: "List manageable configuration scopes and their keys. Scopes: settings (~/.snow/settings.json: mcpServers, codebase, sensitiveCommands, yoloMode, planMode, ...), snowcfg (~/.snow/config.json snowcfg object: baseUrl, apiKey, advancedModel, chatThinking, ...), proxy (~/.snow/proxy-config.json: enabled, host, port, searchEngine, browserPath, browserDebugPort), app (~/.snow/active-profile.json: activeProfile), custom-headers (~/.snow/custom-headers.json: active, schemes), system-prompt (~/.snow/system-prompt.json: active, prompts), theme (~/.snow/theme.json: theme, simpleMode, diffOpacity, toolIcons, customColors, ...), language (~/.snow/language.json: language), permissions (~/.snow/permissions.json: alwaysApprovedTools), lsp-config (~/.snow/lsp-config.json: schemaVersion, servers), buddy (~/.snow/buddy.json: version, companion, muted). DB-backed scopes: subAgents (sub-agent configs in the app database, key=agentId), hooks (lifecycle hook configs in the app database, key=hookType). Pass `scope` to inspect a single scope with current values; sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts) are masked. Pass `projectId` to scope subAgents/hooks listings to a specific project (omitted = global). Read-only scope: logs (lists app log files under ~/.snow/log for agent-driven diagnostics).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills"],
+                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs"],
                             "description": "Optional config scope name; when omitted, lists all scopes."
                         },
                         "projectId": {
@@ -1548,13 +1770,13 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_GET.to_string(),
-                description: "Read the value of a configuration key. Sensitive keys (apiKey, visionApiKey) are always returned masked (e.g. sk-****abcd); this tool never exposes plaintext secrets. Returns null when the key is not configured. DB-backed scopes: subAgents (key=agentId) and hooks (key=hookType) read directly from the app database; pass optional `projectId` to read a project-scoped config (omitted = global).".to_string(),
+                description: "Read the value of a configuration key. Sensitive keys (apiKey, visionApiKey) are always returned masked (e.g. sk-****abcd); this tool never exposes plaintext secrets. Returns null when the key is not configured. DB-backed scopes: subAgents (key=agentId) and hooks (key=hookType) read directly from the app database; pass optional `projectId` to read a project-scoped config (omitted = global). Read-only logs scope: key is a log file name (e.g. 2026-08-03-error.log) or a level shortcut (error/warn/info/debug for today's file); optional `limit` controls returned tail lines (default 200, max 2000).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills"],
+                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs"],
                             "description": "Config scope name."
                         },
                         "key": {
@@ -1564,6 +1786,12 @@ impl McpService for ConfigService {
                         "projectId": {
                             "type": "string",
                             "description": "Optional project id for subAgents/hooks scopes; omitted = global config."
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 2000,
+                            "description": "For the read-only logs scope: max tail lines to return (default 200, max 2000)."
                         }
                     },
                     "required": ["scope", "key"],
@@ -1579,7 +1807,7 @@ impl McpService for ConfigService {
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills"],
+                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs"],
                             "description": "Config scope name."
                         },
                         "key": {
@@ -1607,7 +1835,7 @@ impl McpService for ConfigService {
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills"],
+                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs"],
                             "description": "Config scope name."
                         },
                         "key": {
@@ -1661,6 +1889,7 @@ fn available_scopes() -> String {
     scopes.push(SCOPE_SUB_AGENTS);
     scopes.push(SCOPE_HOOKS);
     scopes.push(SCOPE_SKILLS);
+    scopes.push(SCOPE_LOGS);
     scopes.join(", ")
 }
 
