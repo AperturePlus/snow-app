@@ -373,6 +373,41 @@
   font-family: var(--font-brand-body);
 }
 
+/* Pending message preview sits inside the input area, so it inherits the
+   warm muted island surface and orange-accented controls. */
+:root[data-theme-preset="cream"] .pending-messages-area {
+  border-color: var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--surface-island-muted);
+}
+
+:root[data-theme-preset="cream"] .pending-messages-header {
+  color: var(--accent-orange-text);
+}
+
+:root[data-theme-preset="cream"] .pending-message-item {
+  border-radius: var(--radius-md);
+}
+
+:root[data-theme-preset="cream"] .pending-message-item:hover {
+  background: var(--accent-orange-bg);
+}
+
+:root[data-theme-preset="cream"] .pending-message-send-now {
+  background: var(--accent-orange);
+  color: #fffaf5;
+}
+
+:root[data-theme-preset="cream"] .pending-message-send-now:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent-orange) 88%, var(--text-primary));
+}
+
+:root[data-theme-preset="cream"] .pending-message-withdraw:hover {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
 :root[data-theme-preset="cream"] .chat-message-tool,
 :root[data-theme-preset="cream"] .context-compaction-message,
 :root[data-theme-preset="cream"] .context-compaction-stream,

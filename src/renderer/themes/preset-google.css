@@ -893,6 +893,38 @@
   opacity: 1;
 }
 
+/* Pending message preview uses Material surface tones with the blue accent
+   for send and red for destructive withdraw. */
+:root[data-theme-preset="google"] .pending-messages-area {
+  border-color: var(--google-outline);
+  border-radius: var(--radius-lg);
+  background: var(--google-surface-1);
+}
+
+:root[data-theme-preset="google"] .pending-message-item {
+  border-radius: var(--radius-md);
+}
+
+:root[data-theme-preset="google"] .pending-message-item:hover {
+  background: var(--accent-blue-bg);
+}
+
+:root[data-theme-preset="google"] .pending-message-send-now {
+  background: var(--google-blue);
+  color: var(--google-on-primary);
+  box-shadow: 0 1px 3px rgba(11, 87, 208, 0.24);
+}
+
+:root[data-theme-preset="google"] .pending-message-send-now:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--google-blue) 88%, #000000);
+}
+
+:root[data-theme-preset="google"] .pending-message-withdraw:hover {
+  background: var(--accent-red-bg);
+  color: var(--google-red);
+}
+
 :root[data-theme-preset="google"]
   :is(.chat-message-tool, .context-compaction-message,
     .context-compaction-stream, .file-changes-card, .tool-call-bash-terminal) {
