@@ -1,5 +1,43 @@
 # Release Notes
 
+## v0.1.16 (Unreleased)
+
+## New Features
+
+- **Config Server Full Coverage**: The built-in `config` server now manages
+  every config file under `~/.snow/` — 11 file scopes (`settings`, `snowcfg`
+  with all 30 keys, `proxy`, `app`, `custom-headers`, `system-prompt`,
+  `theme`, `language`, `permissions`, `lsp-config`, `buddy`) plus the
+  existing DB-backed scopes (`subAgents`/`hooks`/`skills`) and a new
+  read-only `logs` scope for agent-driven diagnostics (`~/.snow/log`
+  listing, tail reads with `limit`, level shortcuts). A new `ValueType::Number`
+  supports float values (e.g. `theme.diffOpacity`).
+- **Project-Scoped mcpServers & sensitiveCommands**: Passing `projectId` to
+  `settings.mcpServers` / `settings.sensitiveCommands` now reads/writes
+  project-level config in the app database (full-replace semantics;
+  sensitive-command ids matching global rules become enabled overrides,
+  others become project custom rules).
+- **Deep Structural Validation**: `settings.codebase`, `custom-header
+  schemes`, `system-prompt prompts` and `lsp-config servers` are deeply
+  validated on write (known fields type-checked, unknown fields allowed for
+  forward compatibility), so an agent cannot corrupt nested config.
+
+## Improvements
+
+- **Docs Coverage**: Added a config-file field reference (every file's fields
+  with types and sensitive markers), browser-automation and codebase/diagnostics
+  guides (zh/en), and aligned the `snow-app-docs` skill with the full config
+  coverage.
+
+## Bug Fixes
+
+- **Sub-Agent Plan/Goal Mode Isolation**: Plan/Goal/Goal-budget toggles are
+  disabled in sub-agent conversations so toggling can no longer pollute the
+  global mode defaults; the terminal sub-agent status event is broadcast
+  immediately after the read-only flag to shrink the input-visible-but-sends-
+  dropped window; `isSubAgentFinished` now uses a terminal-status whitelist
+  and `subAgentStatus` is null-guarded.
+
 ## v0.1.15
 
 ## New Features
