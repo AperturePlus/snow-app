@@ -11,8 +11,9 @@ import {
   buildConversationMessages,
   deleteCheckpoints,
   directoryIdToPath,
-  killRunningBashExecutions,
+  killRunningToolExecutions,
 } from "../utils/conversationHelpers";
+import { extractFileChangesFromRecords } from "./fileChangeTracking";
 import {
   appendHookExecutionToMessage,
   runHook,
@@ -172,6 +173,72 @@ export const useConversationManagement = (
               );
             }
 
+            // Re-hydrate the file-change stats from persisted history so the
+            // stats panel still shows what this conversation did after an app
+            // restart or on first open. Live sessions are skipped: once the
+            // tool pipeline has recorded a change for a conversation,
+            // recordFileChange marks it hydrated and no history scan runs
+            // (avoiding duplicate entries with different timestamps).
+            //
+            // The scan uses the FULL message list (listChatMessages), not the
+            // paginated first page: pagination only covers the latest N
+            // messages, so a page-based scan would miss edits made earlier in
+            // the conversation and report a partial picture.
+            if (!ctx.fileChangeStatsHydratedRef.current.has(trimmedId)) {
+              const isSubAgentConversation = Boolean(
+                conversationRecord?.parentConversationId
+              );
+              const fullHistory = await window.snow.listChatMessages(trimmedId);
+              const ownChanges = extractFileChangesFromRecords(fullHistory);
+              if (ownChanges.length > 0) {
+                ctx.mergeFileChangeStats(
+                  trimmedId,
+                  ownChanges.map((change) => ({
+                    ...change,
+                    agent: isSubAgentConversation
+                      ? ("sub" as const)
+                      : ("main" as const),
+                    subAgentName: isSubAgentConversation
+                      ? (conversationRecord?.subAgentName || undefined)
+                      : undefined,
+                  }))
+                );
+              }
+              // A main conversation's stats panel also merges its sub-agents'
+              // changes; scan each sub-agent conversation's full history.
+              if (!isSubAgentConversation) {
+                try {
+                  const subConversations =
+                    await window.snow.listSubAgentConversations(trimmedId);
+                  await Promise.all(
+                    subConversations.map(async (subConversation) => {
+                      const subRecords = await window.snow.listChatMessages(
+                        subConversation.conversationId
+                      );
+                      const subChanges =
+                        extractFileChangesFromRecords(subRecords);
+                      if (subChanges.length > 0) {
+                        ctx.mergeFileChangeStats(
+                          trimmedId,
+                          subChanges.map((change) => ({
+                            ...change,
+                            agent: "sub" as const,
+                            subAgentName:
+                              subConversation.subAgentName ||
+                              subConversation.title ||
+                              undefined,
+                          }))
+                        );
+                      }
+                    })
+                  );
+                } catch {
+                  // Sub-agent scans must not block the session switch
+                }
+              }
+              ctx.fileChangeStatsHydratedRef.current.add(trimmedId);
+            }
+
             // Cache the fetched page even when this request was superseded
             // while in flight (the user switched to another conversation).
             // Guard with the current session so a newer load's snapshot is
@@ -182,6 +249,13 @@ export const useConversationManagement = (
               // ensureSession while the history was still loading) — the live
               // ref is authoritative.
               if (!ctx.sessionsRefData.current.has(trimmedId)) {
+                // A sub-agent conversation whose persisted run status is
+                // terminal is read-only from the moment it is opened: the
+                // input box stays hidden and sends are rejected.
+                const isTerminatedSubAgent =
+                  conversationRecord?.conversationType === "sub_agent" &&
+                  conversationRecord.subAgentStatus !== "" &&
+                  conversationRecord.subAgentStatus !== "running";
                 ctx.sessionsRefData.current.set(trimmedId, {
                   streamId: null,
                   streamPromise: null,
@@ -195,6 +269,7 @@ export const useConversationManagement = (
                   planMode: storedPlanMode,
                   goalMode: storedGoalMode,
                   goalModeTokenBudget: storedBudget,
+                  subAgentTerminated: isTerminatedSubAgent || undefined,
                 });
               }
               ctx.setSessions((prev) => {
@@ -525,7 +600,7 @@ export const useConversationManagement = (
     );
     // Kill every in-flight bash subprocess of this session so the OS
     // process does not keep running until its timeout.
-    killRunningBashExecutions(
+    killRunningToolExecutions(
       ctx.sessionsRef.current?.[key]?.messages ?? []
     );
     ctx.updateSessionField(key, "isStreaming", false);
@@ -562,7 +637,7 @@ export const useConversationManagement = (
       // session key) so its agent loop cannot stay blocked awaiting a
       // decision that will never arrive.
       rejectToolAuthorizations(subKey);
-      killRunningBashExecutions(
+      killRunningToolExecutions(
         ctx.sessionsRef.current?.[subKey]?.messages ?? []
       );
 
@@ -616,7 +691,7 @@ export const useConversationManagement = (
 
       rejectToolAuthorizations(conversationId);
       rejectPendingUserQuestions(conversationId);
-      killRunningBashExecutions(
+      killRunningToolExecutions(
         ctx.sessionsRef.current?.[conversationId]?.messages ?? []
       );
       if (ref?.streamId) {
@@ -698,23 +773,47 @@ export const useConversationManagement = (
       if (queue.length === 0) {
         ctx.pendingQueueRef.current.delete(sessionKey);
       }
-      ctx.setActivePendingMessages(queue.map((item) => item.text));
 
       if (!removed) {
+        ctx.setActivePendingMessages(queue.map((item) => item.text));
         return;
       }
+
+      // A sub-agent conversation stops accepting messages once its run ends
+      // (the abort above finishes it), so the message must not start a new
+      // loop there. Carry it to the parent conversation's pending queue —
+      // the parent loop resumes right after the interrupted sub-agent tool
+      // call and picks it up at its next iteration boundary — and follow
+      // the user to the parent view so the queued message stays visible.
+      const subAgentEvent = ctx.subAgentSessionEvents[sessionKey];
+      if (subAgentEvent?.parentConversationId) {
+        const parentId = subAgentEvent.parentConversationId;
+        const parentQueue = ctx.pendingQueueRef.current.get(parentId) ?? [];
+        parentQueue.push({
+          text: removed.text,
+          options: removed.options ?? {},
+        });
+        ctx.pendingQueueRef.current.set(parentId, parentQueue);
+        ctx.setActivePendingMessages(parentQueue.map((item) => item.text));
+        void handleSelectConversation(parentId);
+        return;
+      }
+
+      ctx.setActivePendingMessages(queue.map((item) => item.text));
 
       // Dispatch the pending message as a fresh send. handleSendMessage
       // will create a new agent loop because handleAbort already reset
       // isSending on the session ref.
       ctx.handleSendMessageRef.current(removed.text, removed.options ?? {});
     },
-    [handleAbort, ctx]
+    [handleAbort, handleSelectConversation, ctx]
   );
 
   const refreshConversations = useCallback((): void => {
-    ctx.setConversationVersion((version) => version + 1);
-  }, []);
+    // 仅触发侧边栏列表全量重拉（置顶/取消置顶/重命名/删除后使用）。
+    // 与 conversationVersion（消息持久化信号）解耦，避免 AI 响应刷新列表。
+    ctx.setConversationListVersion((version) => version + 1);
+  }, [ctx]);
 
   const handleForkConversation = useCallback(
     async (conversationId: string, upToResponseId: string): Promise<void> => {

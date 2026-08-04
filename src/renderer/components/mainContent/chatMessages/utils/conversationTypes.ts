@@ -122,6 +122,15 @@ export type UpsertedConversation = {
   timestamp: number;
 };
 
+/** Unified diff text captured for a file change, consumed by the "view
+ *  diff" action of the file-changes panel. For creates the patch shows the
+ *  full file content (empty file -> content); for edits it shows the
+ *  searchContent -> replaceContent replacement region with context lines. */
+export type FileChangeDiff = {
+  patch: string;
+  isBinary?: boolean;
+};
+
 /** A file that was modified (created or edited) by the main agent or a
  *  sub-agent during a conversation session. Recorded at tool-execution time
  *  and surfaced by the file-change stats panel. */
@@ -137,6 +146,9 @@ export type FileChangeRecord = {
   subAgentName?: string;
   /** Epoch milliseconds when the tool call completed successfully. */
   timestamp: number;
+  /** Diff payload for the "view changes" action; absent when unavailable
+   *  (e.g. the tool arguments carried no content). */
+  diff?: FileChangeDiff;
 };
 
 export type SubAgentSessionEvent = {
@@ -227,6 +239,11 @@ export type ConversationSessionRef = {
   /** Goal Mode token budget in effect for this session (per-conversation
    *  override when set, otherwise the global default at session creation). */
   goalModeTokenBudget: number;
+  /** Set once a sub-agent conversation's run has ended (completed, failed or
+   *  cancelled). A terminated sub-agent conversation is read-only: the input
+   *  box is hidden and handleSendMessage refuses to start a new loop in it.
+   *  Only meaningful for sub-agent sessions; absent for main conversations. */
+  subAgentTerminated?: boolean;
 };
 
 /** Global Plan/Goal Mode defaults loaded from persisted settings. These are
@@ -322,6 +339,9 @@ export type ConversationContextValue = {
   sessions: Record<string, ConversationSessionState>;
   activeConversationId: string | undefined;
   conversationVersion: number;
+  /** 侧边栏会话列表刷新信号（置顶/删除/重命名等显式操作后 +1）。
+   *  与 conversationVersion 解耦：AI 响应迭代不会触发列表全量重拉。 */
+  conversationListVersion: number;
   upsertedConversation: UpsertedConversation | null;
   /** All sub-agent session events keyed by sub-agent conversationId. Multiple
    *  parallel sub-agents each keep their own entry so the UI can match every
@@ -330,8 +350,17 @@ export type ConversationContextValue = {
   /** File changes recorded during this renderer session, keyed by
    *  conversationId. The main conversation collects both its own changes
    *  (agent: "main") and — via childSubAgentIds — every sub-agent's changes
-   *  (agent: "sub"). */
+   *  (agent: "sub"). Records are filled live by the tool-execution pipeline
+   *  and re-hydrated from persisted history when a conversation is opened. */
   fileChangeStats: Record<string, FileChangeRecord[]>;
+  /** Merge pre-built records into a conversation's stats, de-duplicating by
+   *  (filePath, kind, timestamp, agent). Used to re-hydrate stats from
+   *  persisted history after a restart or when reopening a conversation. */
+  mergeFileChangeStats: (conversationId: string, records: FileChangeRecord[]) => void;
+  /** Conversation ids whose file-change stats have already been re-hydrated
+   *  from persisted history during this renderer session. Guards against
+   *  repeated sub-agent scans when the same conversation is reopened. */
+  fileChangeStatsHydratedRef: RefValue<Set<string>>;
   streamingConversationIds: Set<string>;
   completedConversationIds: Set<string>;
   isLoadingInitialHistory: boolean;
@@ -418,6 +447,7 @@ export type ConversationContextValue = {
   >;
   setActiveConversationId: Dispatch<SetStateAction<string | undefined>>;
   setConversationVersion: Dispatch<SetStateAction<number>>;
+  setConversationListVersion: Dispatch<SetStateAction<number>>;
   setUpsertedConversation: Dispatch<
     SetStateAction<UpsertedConversation | null>
   >;
@@ -473,6 +503,7 @@ export type UseChatConversationResult = {
   messages: ChatConversationMessage[];
   summary: string;
   conversationVersion: number;
+  conversationListVersion: number;
   upsertedConversation: UpsertedConversation | null;
   /** All sub-agent session events keyed by sub-agent conversationId. */
   subAgentSessionEvents: Record<string, SubAgentSessionEvent>;

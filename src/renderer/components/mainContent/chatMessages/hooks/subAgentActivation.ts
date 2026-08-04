@@ -80,6 +80,29 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
     let config: Awaited<ReturnType<typeof window.snow.getSubAgentConfig>> =
       null;
 
+    // Carry queued user insertions from a sub-agent conversation over to the
+    // parent conversation's pending queue. Called when a sub-agent run ends
+    // (normally or with a failure): the sub conversation becomes read-only,
+    // so messages the user inserted mid-run must not be lost — the parent
+    // loop is still mid-execution and picks them up at its next iteration
+    // boundary (or on the user's next send).
+    const forwardSubPendingQueue = (finishedSubConvId: string): void => {
+      const subQueue = ctx.pendingQueueRef.current.get(finishedSubConvId) ?? [];
+      if (subQueue.length === 0) {
+        return;
+      }
+      ctx.pendingQueueRef.current.delete(finishedSubConvId);
+      const parentQueue =
+        ctx.pendingQueueRef.current.get(parentConversationId) ?? [];
+      parentQueue.push(...subQueue);
+      ctx.pendingQueueRef.current.set(parentConversationId, parentQueue);
+      ctx.setActivePendingMessages(
+        ctx.activeConversationIdRef.current === parentConversationId
+          ? parentQueue.map((item) => item.text)
+          : []
+      );
+    };
+
     try {
       // 项目级子代理优先：先查当前项目（dirId）下的配置，未命中再回退全局。
       config = dirId
@@ -736,15 +759,13 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         // A sub-agent cannot obtain Plan approval. Stop immediately and return
         // control to the main loop instead of feeding the denial back into a
         // recursive sub-agent iteration that could repeatedly retry the write.
+        // Queued user insertions are left in place: the post-loop flush below
+        // carries them over to the parent conversation.
         if (parentPlanApprovalRequired) {
-          ctx.pendingQueueRef.current.delete(subConvId);
-          ctx.setActivePendingMessages([]);
           return "Sub-agent stopped because the main conversation must approve the Plan Mode plan before delegated writes can run.";
         }
 
         if (subAllToolsRejected && !subHasUserProvidedRejectionReason) {
-          ctx.pendingQueueRef.current.delete(subConvId);
-          ctx.setActivePendingMessages([]);
           return subToolResults.join("\n\n");
         }
 
@@ -791,6 +812,11 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
 
       const subFinalRef = ctx.sessionsRefData.current.get(subConvId);
       if (subFinalRef) {
+        // Mark the sub-agent conversation read-only before clearing isSending:
+        // once the run ends no new agent loop may start in it, and this
+        // synchronous flag closes the race window before the UI hides the
+        // input box.
+        subFinalRef.subAgentTerminated = true;
         subFinalRef.isSending = false;
       }
       ctx.updateSessionField(subConvId, "isStreaming", false);
@@ -798,15 +824,27 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
       ctx.updateSessionField(subConvId, "isAborting", false);
       ctx.removeStreamingId(subConvId);
 
-      const subPendingQueue = ctx.pendingQueueRef.current.get(subConvId) ?? [];
-      if (!subFinalRef?.isAbortRequested && subPendingQueue.length > 0) {
-        ctx.pendingQueueRef.current.delete(subConvId);
-        const combined = subPendingQueue.map((item) => item.text).join("\n\n");
-        const lastOptions =
-          subPendingQueue[subPendingQueue.length - 1]?.options ?? {};
-        ctx.setActivePendingMessages([]);
-        ctx.handleSendMessageRef.current(combined, lastOptions);
-      }
+      // Persist and broadcast the terminal status immediately — before the
+      // completion hook, which may be slow — so the input box and the send
+      // guards flip as soon as the run loop has ended.
+      await window.snow.updateSubAgentSessionStatus(subConvId, "completed", "");
+
+      ctx.setSubAgentSessionEvent({
+        parentConversationId,
+        conversationId: subConversationId,
+        agentId,
+        agentName: subAgentName,
+        status: "completed",
+        timestamp: Date.now(),
+        toolCallInteractionId,
+      });
+
+      // Flush user messages queued while the sub-agent was busy (inserting
+      // messages mid-run is allowed). A finished sub-agent conversation no
+      // longer accepts messages, so carry them to the parent conversation.
+      // This also covers aborted runs: with the sub-conversation input
+      // hidden, the queue would otherwise be orphaned and silently lost.
+      forwardSubPendingQueue(subConvId);
 
       // Execute onSubAgentComplete hooks. The hook context includes the
       // sub-agent's summary so prompt-type hooks can inspect the result.
@@ -849,18 +887,6 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         // Hook execution failed -- use original summary
       }
 
-      await window.snow.updateSubAgentSessionStatus(subConvId, "completed", "");
-
-      ctx.setSubAgentSessionEvent({
-        parentConversationId,
-        conversationId: subConversationId,
-        agentId,
-        agentName: subAgentName,
-        status: "completed",
-        timestamp: Date.now(),
-        toolCallInteractionId,
-      });
-
       return JSON.stringify({
         success: true,
         conversationId: subConversationId,
@@ -871,6 +897,8 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
       if (subConversationId) {
         const subCatchRef = ctx.sessionsRefData.current.get(subConversationId);
         if (subCatchRef) {
+          // A failed sub-agent conversation is read-only as well.
+          subCatchRef.subAgentTerminated = true;
           subCatchRef.isSending = false;
         }
         ctx.updateSessionField(subConversationId, "isStreaming", false);
@@ -891,6 +919,10 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
           timestamp: Date.now(),
           toolCallInteractionId,
         });
+
+        // Same rationale as the success path: queued insertions must not be
+        // lost when the failed sub-agent conversation becomes read-only.
+        forwardSubPendingQueue(subConversationId);
       }
 
       return JSON.stringify({

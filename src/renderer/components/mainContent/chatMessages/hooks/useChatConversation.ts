@@ -5,6 +5,7 @@ import type { ApiConfigRecord } from "../../../../../preload";
 import type {
   ConversationContextValue,
   GlobalModeDefaults,
+  FileChangeRecord,
   PauseController,
   UseChatConversationResult,
 } from "../utils/conversationTypes";
@@ -30,6 +31,9 @@ export const useChatConversation = (
     string | undefined
   >(undefined);
   const [conversationVersion, setConversationVersion] = useState(0);
+  // 侧边栏列表刷新信号：与 conversationVersion 分离，AI 响应迭代只 bump
+  // conversationVersion（UserMessageRail 用），列表仅靠增量 upsert 同步。
+  const [conversationListVersion, setConversationListVersion] = useState(0);
   const [upsertedConversation, setUpsertedConversation] =
     useState<ConversationContextValue["upsertedConversation"]>(null);
   const [subAgentSessionEvents, setSubAgentSessionEvents] = useState<
@@ -49,18 +53,56 @@ export const useChatConversation = (
   // File-change stats collected at tool-execution time, keyed by
   // conversationId. Sub-agent changes are stored under the sub-agent's own
   // conversationId; the parent merges them via childSubAgentIds for display.
+  // When a conversation is opened (or re-opened after a restart), the stats
+  // are re-hydrated from persisted history — see mergeFileChangeStats and
+  // fileChangeStatsHydratedRef.
   const [fileChangeStats, setFileChangeStats] = useState<
     ConversationContextValue["fileChangeStats"]
   >({});
+  // Conversation ids whose file-change stats are already fully accounted for:
+  // either re-hydrated from persisted history, or recorded live by the tool
+  // pipeline (recordFileChange marks the id, so live sessions never get
+  // double-counted by a later history re-hydration).
+  const fileChangeStatsHydratedRef = useRef<Set<string>>(new Set());
   const recordFileChange = useCallback(
     (
       conversationId: string,
       record: ConversationContextValue["fileChangeStats"][string][number]
     ) => {
+      fileChangeStatsHydratedRef.current.add(conversationId);
       setFileChangeStats((prev) => ({
         ...prev,
         [conversationId]: [...(prev[conversationId] ?? []), record],
       }));
+    },
+    []
+  );
+  const mergeFileChangeStats = useCallback(
+    (conversationId: string, records: FileChangeRecord[]): void => {
+      if (records.length === 0) {
+        return;
+      }
+      setFileChangeStats((prev) => {
+        const existing = prev[conversationId] ?? [];
+        const existingKeys = new Set(
+          existing.map((record) =>
+            `${record.filePath}\u0000${record.kind}\u0000${record.timestamp}\u0000${record.agent}`
+          )
+        );
+        const fresh = records.filter(
+          (record) =>
+            !existingKeys.has(
+              `${record.filePath}\u0000${record.kind}\u0000${record.timestamp}\u0000${record.agent}`
+            )
+        );
+        if (fresh.length === 0) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [conversationId]: [...existing, ...fresh],
+        };
+      });
     },
     []
   );
@@ -231,10 +273,13 @@ export const useChatConversation = (
     sessions,
     activeConversationId,
     conversationVersion,
+    conversationListVersion,
     upsertedConversation,
     subAgentSessionEvents,
     fileChangeStats,
     recordFileChange,
+    mergeFileChangeStats,
+    fileChangeStatsHydratedRef,
     streamingConversationIds,
     completedConversationIds,
     isLoadingInitialHistory,
@@ -281,6 +326,7 @@ export const useChatConversation = (
     setSessions,
     setActiveConversationId,
     setConversationVersion,
+    setConversationListVersion,
     setUpsertedConversation,
     setSubAgentSessionEvent,
     setStreamingConversationIds,
@@ -444,6 +490,7 @@ export const useChatConversation = (
     messages: activeSession?.messages ?? [],
     summary: activeSession?.summary ?? "",
     conversationVersion,
+    conversationListVersion,
     upsertedConversation,
     subAgentSessionEvents,
     fileChangeStats,

@@ -1,4 +1,10 @@
-import { ArrowDown } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowDown,
+  ArrowLeft,
+  CheckCircle2,
+  XCircle,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -12,9 +18,9 @@ import { useI18n } from "../../i18n";
 import { ChatInput } from "./ChatInput";
 import { EmptyChatGreeting } from "./EmptyChatGreeting";
 import { ChatMessageList, useChatConversationContext } from "./chatMessages";
-import { FileChangeStatsPanel } from "./chatMessages/components/FileChangeStatsPanel";
 import { RollbackConfirmDialog } from "./chatMessages/dialogs/RollbackConfirmDialog";
 import { CompactionStream } from "./chatMessages/components/CompactionStream";
+import { UserMessageRail } from "./chatMessages/components/UserMessageRail";
 import type { ChatInputSendOptions } from "./chatInput/types";
 import type { MainContentView } from "./types";
 import type { RollbackMode } from "./chatMessages/utils/conversationTypes";
@@ -83,6 +89,9 @@ const ChatContentBody = ({
     goalModeTokenBudget,
     setGoalModeTokenBudget,
     pendingToolAuthorizations,
+    conversationVersion,
+    subAgentSessionEvents,
+    handleSelectConversation,
   } = useChatConversationContext();
   const { t } = useI18n();
   const { autoScrollEnabled, setAutoScrollEnabled } = useAutoScrollPreference();
@@ -99,6 +108,67 @@ const ChatContentBody = ({
   const activeCompactionError = isCompactionForActiveConversation
     ? compactionError
     : null;
+
+  // Sub-agent run state of the active conversation. The persisted record
+  // (fetched on switch) covers conversations opened after their run ended
+  // (e.g. after an app restart); the live session event takes precedence
+  // while a run is in flight or has just finished in this app session.
+  const [activeConversationMeta, setActiveConversationMeta] = useState<{
+    conversationType: string;
+    subAgentStatus: string;
+    parentConversationId: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!activeConversationId) {
+      setActiveConversationMeta(null);
+      return;
+    }
+
+    let cancelled = false;
+    void window.snow
+      .getChatConversation(activeConversationId)
+      .then((record) => {
+        if (cancelled || !record) {
+          return;
+        }
+        setActiveConversationMeta({
+          conversationType: record.conversationType,
+          subAgentStatus: record.subAgentStatus,
+          parentConversationId: record.parentConversationId,
+        });
+      })
+      .catch(() => {
+        // Best effort — live session events still cover in-flight runs.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeConversationId]);
+
+  const liveSubAgentEvent = activeConversationId
+    ? subAgentSessionEvents[activeConversationId]
+    : undefined;
+  const isSubAgentConversation =
+    Boolean(liveSubAgentEvent) ||
+    activeConversationMeta?.conversationType === "sub_agent";
+  const subAgentRunStatus =
+    liveSubAgentEvent?.status ??
+    activeConversationMeta?.subAgentStatus ??
+    "";
+  // Once its run ends the sub-agent conversation becomes read-only: the
+  // input box disappears and only a status notice remains. While the run is
+  // live the input stays visible so the user can insert pending messages.
+  const isSubAgentFinished =
+    isSubAgentConversation &&
+    subAgentRunStatus !== "" &&
+    subAgentRunStatus !== "running";
+  const subAgentParentConversationId =
+    activeConversationMeta?.parentConversationId ||
+    liveSubAgentEvent?.parentConversationId ||
+    "";
+
   const scrollRef = useRef<HTMLDivElement>(null);
   // 覆盖整个中间输出区：文件变更统计、消息正文、Thinking、工具调用和压缩输出。
   const pathClickOpenProps = usePathClickOpen(
@@ -119,6 +189,12 @@ const ChatContentBody = ({
   // distance during the animation, or a streaming conversation stops tracking
   // new content right after the animation lands on its stale target.
   const isSmoothScrollingToBottomRef = useRef(false);
+  // Animation-frame id of the custom scroll-to-bottom tween. Unlike the native
+  // smooth scroll, this re-derives the target every frame so streaming content
+  // that grows mid-animation is always reached, and the ResizeObserver's
+  // synchronous pin is suppressed while the tween is active to avoid the
+  // instant jump that used to interrupt the animation.
+  const scrollToBottomAnimRef = useRef(0);
   const previousIsCompactingRef = useRef(isCompactingActive);
   const scrollRafIdRef = useRef(0);
   const hasMessagesRef = useRef(hasMessages);
@@ -172,6 +248,11 @@ const ChatContentBody = ({
     shouldStickToBottomRef.current = true;
     isInitialBottomPositioningRef.current = false;
     isUserScrollIntentRef.current = false;
+    if (scrollToBottomAnimRef.current !== 0) {
+      cancelAnimationFrame(scrollToBottomAnimRef.current);
+      scrollToBottomAnimRef.current = 0;
+    }
+    isSmoothScrollingToBottomRef.current = false;
     setShowScrollToBottom(false);
     if (activeConversationId) {
       positionedConversationIdsRef.current.delete(activeConversationId);
@@ -268,14 +349,15 @@ const ChatContentBody = ({
         return;
       }
 
-      // Re-evaluate against the fresh geometry before deciding whether to
-      // pin: a shrink may have already landed the viewport at the bottom.
       // Skip while older messages are being prepended — the pending scroll
       // restore will re-position the viewport and the follow-up scroll event
-      // re-evaluates the state.
+      // re-evaluates the state. Also skip while the scroll-to-bottom tween is
+      // running: it re-derives its own target each frame, so a synchronous jump
+      // here would fight the animation and cause the half-scroll / jitter.
       if (
         !isLoadingOlderWithScrollRef.current &&
-        pendingScrollRestoreRef.current === null
+        pendingScrollRestoreRef.current === null &&
+        !isSmoothScrollingToBottomRef.current
       ) {
         updateScrollFollowState(container);
       }
@@ -283,7 +365,8 @@ const ChatContentBody = ({
       if (
         !shouldStickToBottomRef.current ||
         isLoadingOlderWithScrollRef.current ||
-        pendingScrollRestoreRef.current !== null
+        pendingScrollRestoreRef.current !== null ||
+        isSmoothScrollingToBottomRef.current
       ) {
         return;
       }
@@ -550,20 +633,77 @@ const ChatContentBody = ({
       return;
     }
 
+    // Cancel any tween already in flight before starting a new one.
+    if (scrollToBottomAnimRef.current !== 0) {
+      cancelAnimationFrame(scrollToBottomAnimRef.current);
+      scrollToBottomAnimRef.current = 0;
+    }
+
     shouldStickToBottomRef.current = true;
     isInitialBottomPositioningRef.current = false;
     isUserScrollIntentRef.current = false;
-    // Protect the follow state while the smooth animation runs: during the
-    // animation the distance is still large, so without this the scroll
-    // handler would flip the stick flag back to false and a streaming
-    // conversation would stop tracking new content right after the animation
-    // lands on its stale target.
+    // Protect the follow state while the tween runs: during the animation the
+    // distance is still large, so without this the scroll handler would flip
+    // the stick flag back to false and a streaming conversation would stop
+    // tracking new content right after the animation lands on a stale target.
     isSmoothScrollingToBottomRef.current = true;
-    container.scrollTo({
-      top: container.scrollHeight,
-      behavior: "smooth",
-    });
-  }, []);
+    setShowScrollToBottom(false);
+
+    // Capture the starting scrollTop once so the easing curve is stable. The
+    // *target* (maxScrollTop) is re-read every frame so content that streams
+    // in mid-animation is always reached — the native smooth scroll computed
+    // its target once at call time and would stop short when the target moved.
+    const startTop = container.scrollTop;
+    const startTimeMs = performance.now();
+    const durationMs = 350;
+    let lastTop = startTop;
+
+    const tick = (nowMs: number): void => {
+      if (scrollRef.current !== container) {
+        scrollToBottomAnimRef.current = 0;
+        isSmoothScrollingToBottomRef.current = false;
+        return;
+      }
+
+      const maxScrollTop =
+        container.scrollHeight - container.clientHeight;
+
+      // The user took over the wheel / keyboard and moved away from the
+      // tween's last position: stop the animation and let the live geometry
+      // drive the follow state, respecting the user's intent.
+      if (
+        isUserScrollIntentRef.current &&
+        Math.abs(container.scrollTop - lastTop) > 2
+      ) {
+        scrollToBottomAnimRef.current = 0;
+        isSmoothScrollingToBottomRef.current = false;
+        updateScrollFollowState(container);
+        return;
+      }
+
+      const elapsed = nowMs - startTimeMs;
+      const progress = Math.min(1, elapsed / durationMs);
+      // easeOutCubic — decelerates to the target, feels native.
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const currentTarget =
+        startTop + (maxScrollTop - startTop) * eased;
+      const nextTop = Math.min(currentTarget, maxScrollTop);
+      container.scrollTop = nextTop;
+      lastTop = nextTop;
+
+      if (progress >= 1 || nextTop >= maxScrollTop - 1) {
+        container.scrollTop = maxScrollTop;
+        scrollToBottomAnimRef.current = 0;
+        isSmoothScrollingToBottomRef.current = false;
+        updateScrollFollowState(container);
+        return;
+      }
+
+      scrollToBottomAnimRef.current = requestAnimationFrame(tick);
+    };
+
+    scrollToBottomAnimRef.current = requestAnimationFrame(tick);
+  }, [updateScrollFollowState]);
 
   const handleSendWithScroll = useCallback(
     (message: string, options: ChatInputSendOptions) => {
@@ -588,12 +728,17 @@ const ChatContentBody = ({
     [confirmRollback]
   );
 
-  // Cancel any pending scroll-throttle animation frame on unmount.
+  // Cancel any pending scroll-throttle and scroll-to-bottom animation frames
+  // on unmount.
   useEffect(() => {
     return () => {
       if (scrollRafIdRef.current !== 0) {
         cancelAnimationFrame(scrollRafIdRef.current);
         scrollRafIdRef.current = 0;
+      }
+      if (scrollToBottomAnimRef.current !== 0) {
+        cancelAnimationFrame(scrollToBottomAnimRef.current);
+        scrollToBottomAnimRef.current = 0;
       }
     };
   }, []);
@@ -645,7 +790,6 @@ const ChatContentBody = ({
                 <div className="chat-history-skeleton-line" />
               </div>
             ) : null}
-            <FileChangeStatsPanel conversationId={activeConversationId} />
             <ChatMessageList
               messages={messages}
               isStreaming={isStreaming}
@@ -666,6 +810,20 @@ const ChatContentBody = ({
         )}
       </div>
 
+      {hasMessages ? (
+        <UserMessageRail
+          conversationId={activeConversationId}
+          scrollContainerRef={scrollRef}
+          loadOlderMessages={loadOlderMessages}
+          isLoadingOlderMessages={isLoadingOlderMessages}
+          hasMoreMessages={hasMoreMessages}
+          conversationVersion={conversationVersion}
+          shouldStickToBottomRef={shouldStickToBottomRef}
+          isInitialBottomPositioningRef={isInitialBottomPositioningRef}
+          isUserScrollIntentRef={isUserScrollIntentRef}
+        />
+      ) : null}
+
       <div className="chat-input-region">
         {showScrollToBottom && hasMessages ? (
           <button
@@ -680,7 +838,13 @@ const ChatContentBody = ({
             <ArrowDown size={20} strokeWidth={2} aria-hidden="true" />
           </button>
         ) : null}
-        {isLoadingInitialHistory ? null : (
+        {isLoadingInitialHistory ? null : isSubAgentFinished ? (
+          <SubAgentFinishedNotice
+            status={subAgentRunStatus}
+            parentConversationId={subAgentParentConversationId}
+            onBackToParent={handleSelectConversation}
+          />
+        ) : (
           <ChatInput
             projectId={activeDirectory?.directoryId}
             projectName={activeDirectory?.name}
@@ -728,6 +892,72 @@ const ChatContentBody = ({
           onConfirm={handleConfirmRollback}
           onCancel={cancelRollback}
         />
+      ) : null}
+    </div>
+  );
+};
+
+/**
+ * Read-only footer shown in place of the input box once a sub-agent
+ * conversation's run has ended (completed, failed or cancelled). Offers a
+ * shortcut back to the parent conversation where the dialogue continues.
+ */
+const SubAgentFinishedNotice = ({
+  status,
+  parentConversationId,
+  onBackToParent,
+}: {
+  status: string;
+  parentConversationId: string;
+  onBackToParent: (conversationId: string) => Promise<void> | void;
+}): React.JSX.Element => {
+  const { t } = useI18n();
+
+  const icon =
+    status === "failed" ? (
+      <AlertCircle size={15} aria-hidden="true" />
+    ) : status === "cancelled" ? (
+      <XCircle size={15} aria-hidden="true" />
+    ) : (
+      <CheckCircle2 size={15} aria-hidden="true" />
+    );
+  const [messageKey, messageDefault] =
+    status === "failed"
+      ? [
+          "chat.subAgentFinished.failed",
+          "This sub-agent failed. The conversation is read-only.",
+        ]
+      : status === "cancelled"
+        ? [
+            "chat.subAgentFinished.cancelled",
+            "This sub-agent was cancelled. The conversation is read-only.",
+          ]
+        : [
+            "chat.subAgentFinished.completed",
+            "This sub-agent has finished. The conversation is read-only.",
+          ];
+
+  return (
+    <div
+      className={`sub-agent-finished-bar${
+        status === "failed" || status === "cancelled" ? " is-error" : ""
+      }`}
+    >
+      <span className="sub-agent-finished-bar-status">
+        {icon}
+        <span>{t(messageKey, { defaultValue: messageDefault })}</span>
+      </span>
+      {parentConversationId ? (
+        <button
+          type="button"
+          className="sub-agent-finished-bar-back"
+          onClick={() => void onBackToParent(parentConversationId)}
+        >
+          <ArrowLeft size={13} aria-hidden="true" />
+          {t("chat.subAgentFinished.backToParent", {
+            defaultValue: "Back to parent conversation",
+          })}
+        </button>
       ) : null}
     </div>
   );
