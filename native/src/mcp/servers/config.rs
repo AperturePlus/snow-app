@@ -17,6 +17,7 @@
 //!   `~/.snow/.config-backups/` (latest 10 kept per file) and the target file
 //!   is replaced atomically (tmp file + rename) so a crash cannot corrupt it.
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -848,6 +849,11 @@ impl ConfigService {
             }
         };
 
+        // 校验工具名在当前项目可用（对齐 TS validateSubAgentTools 的静态版本）：
+        // 空/["*"] 通过；选择 MCP 工具必须项目级；内置工具严格校验，
+        // 外部工具校验服务器公开名前缀须属于当前项目 enabled 的 MCP 服务器。
+        validate_sub_agent_tools(db_path, project_id.as_deref(), &tools_json)?;
+
         let sort_order = config.get("sortOrder").and_then(Value::as_i64).unwrap_or(0) as i32;
 
         let item = crate::storage::SubAgentConfigInput {
@@ -1133,6 +1139,72 @@ fn db_path_or_error(db_path: &str) -> napi::Result<&Path> {
         ));
     }
     Ok(Path::new(db_path))
+}
+
+/// 校验子代理 toolsJson 中的工具名在当前项目可用（对齐 TS validateSubAgentTools 的静态版本）：
+/// - 空数组或 ["*"] 直接通过；
+/// - 选择 MCP 工具时必须提供 projectId（全局子代理仅允许空/["*"]，与 UI 一致）；
+/// - 工具全名 `{server_id}-{tool_name}`：内置服务器须命中内置工具集；
+///   外部服务器须命中当前项目 enabled 的 MCP 服务器公开名（不实际连接服务器，
+///   因此只校验服务器归属，具体工具名留给运行时发现）。
+fn validate_sub_agent_tools(
+    db_path: &Path,
+    project_id: Option<&str>,
+    tools_json: &str,
+) -> napi::Result<()> {
+    use crate::mcp::builtin::get_builtin_tools;
+    use crate::mcp::external::public_server_name_map;
+    use crate::mcp::tools::split_tool_full_name;
+
+    let parsed: Value = serde_json::from_str(tools_json).map_err(|error| {
+        Error::new(
+            Status::InvalidArg,
+            format!("value.toolsJson must be valid JSON: {error}"),
+        )
+    })?;
+    let tool_names: Vec<&str> = parsed
+        .as_array()
+        .map(|items| items.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    if tool_names.is_empty() || (tool_names.len() == 1 && tool_names[0] == "*") {
+        return Ok(());
+    }
+    let Some(project_id) = project_id.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Project id is required when sub-agent MCP tools are selected".to_string(),
+        ));
+    };
+
+    let builtin_tool_names: HashSet<String> = get_builtin_tools()
+        .iter()
+        .map(|tool| tool.full_name())
+        .collect();
+    let configs = crate::storage::services::project_mcp_server_configs::
+        list_effective_mcp_server_configs(db_path, Some(project_id))?;
+    let public_names = public_server_name_map(&configs);
+    let enabled_server_names: HashSet<String> = configs
+        .iter()
+        .filter(|config| config.enabled)
+        .filter_map(|config| public_names.get(&config.server_id).cloned())
+        .collect();
+
+    for tool_name in tool_names {
+        if builtin_tool_names.contains(tool_name) {
+            continue;
+        }
+        let is_external = split_tool_full_name(tool_name)
+            .is_some_and(|(server_name, _)| enabled_server_names.contains(server_name));
+        if !is_external {
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!(
+                    "Selected sub-agent MCP tool is not enabled for the current project: {tool_name}"
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// 可选 projectId 参数：去空白，空串视为未提供（全局作用域）。
