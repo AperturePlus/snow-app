@@ -1,4 +1,5 @@
 pub mod database;
+mod migrations;
 mod paths;
 pub mod services;
 

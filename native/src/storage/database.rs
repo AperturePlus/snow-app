@@ -8,7 +8,7 @@ use std::{
 use napi::bindgen_prelude::*;
 use rusqlite::Connection;
 
-use super::services;
+use super::{migrations, services};
 
 const SNOWFLAKE_EPOCH_MS: u64 = 1_704_067_200_000;
 const SNOWFLAKE_WORKER_ID_BITS: u64 = 10;
@@ -16,22 +16,6 @@ const SNOWFLAKE_SEQUENCE_BITS: u64 = 12;
 const SNOWFLAKE_WORKER_ID_MASK: u64 = (1 << SNOWFLAKE_WORKER_ID_BITS) - 1;
 const SNOWFLAKE_SEQUENCE_MASK: u64 = (1 << SNOWFLAKE_SEQUENCE_BITS) - 1;
 const SNOWFLAKE_TIMESTAMP_SHIFT: u64 = SNOWFLAKE_WORKER_ID_BITS + SNOWFLAKE_SEQUENCE_BITS;
-
-const PRIMARY_KEY_TABLES: &[&str] = &[
-    "system_settings",
-    "api_configs",
-    "codebase_settings",
-    "system_prompts",
-    "custom_header_schemes",
-    "workspace_directories",
-    "mcp_server_configs",
-    "sub_agent_configs",
-    "sensitive_command_configs",
-    "chat_conversations",
-    "sub_agent_sessions",
-    "chat_messages",
-    "usage_records",
-];
 
 #[derive(Debug, Default)]
 struct SnowflakeState {
@@ -117,7 +101,10 @@ pub fn ensure_database(database_path: &Path) -> Result<()> {
 }
 
 fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
-    reset_legacy_integer_primary_key_tables(connection)?;
+    // Pre-schema migrations run BEFORE CREATE TABLE so that tables with
+    // incompatible legacy structures (e.g. INTEGER primary keys) can be
+    // dropped and recreated with the current schema.
+    migrations::run_pre_schema_migrations(connection)?;
 
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS system_settings (
@@ -416,70 +403,14 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
     // module so the schema lives next to its CRUD functions.
     services::codebase_embed_sessions::ensure_sessions_table(connection)?;
 
-    // Migrate existing databases that were created before per-conversation
-    // API profile binding existed. Idempotent: no-op when the column is
-    // already present (fresh databases get it from CREATE TABLE above).
-    migrate_chat_conversations_api_profile(connection)?;
+    // Post-schema migrations run AFTER CREATE TABLE to add columns that
+    // older databases lack but fresh databases already have. Each migration
+    // is idempotent.
+    migrations::run_post_schema_migrations(connection)?;
 
     connection.pragma_update(None, "user_version", 22)?;
 
     Ok(())
-}
-
-/// Adds the `api_profile_name` column to `chat_conversations` for databases
-/// created by older app versions. The column binds a conversation to a
-/// specific API config profile so different conversations can route to
-/// different providers/models. Empty string means "follow the global active
-/// profile" (the legacy behaviour).
-fn migrate_chat_conversations_api_profile(connection: &Connection) -> rusqlite::Result<()> {
-    let mut statement = connection.prepare("PRAGMA table_info(chat_conversations)")?;
-    let mut columns = statement.query_map([], |row| row.get::<_, String>(1))?;
-    let has_api_profile_column = columns.try_fold(false, |found, column| {
-        Ok::<bool, rusqlite::Error>(found || column? == "api_profile_name")
-    })?;
-
-    if !has_api_profile_column {
-        connection.execute(
-            "ALTER TABLE chat_conversations
-                ADD COLUMN api_profile_name TEXT NOT NULL DEFAULT ''",
-            [],
-        )?;
-    }
-
-    Ok(())
-}
-
-fn reset_legacy_integer_primary_key_tables(connection: &Connection) -> rusqlite::Result<()> {
-    let has_legacy_primary_key = PRIMARY_KEY_TABLES.iter().try_fold(false, |found, table_name| {
-        Ok::<bool, rusqlite::Error>(found || has_integer_primary_key(connection, table_name)?)
-    })?;
-
-    if !has_legacy_primary_key {
-        return Ok(());
-    }
-
-    connection.execute_batch("PRAGMA foreign_keys = OFF;")?;
-    for table_name in PRIMARY_KEY_TABLES {
-        connection.execute(&format!("DROP TABLE IF EXISTS {table_name}"), [])?;
-    }
-    connection.execute_batch("PRAGMA foreign_keys = ON;")?;
-
-    Ok(())
-}
-
-fn has_integer_primary_key(connection: &Connection, table_name: &str) -> rusqlite::Result<bool> {
-    let mut statement = connection.prepare(&format!("PRAGMA table_info({table_name})"))?;
-    let mut columns = statement.query_map([], |row| {
-        Ok((row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, i32>(5)?))
-    })?;
-
-    columns.try_fold(false, |found, column| {
-        let (column_name, column_type, primary_key_index) = column?;
-        Ok(found
-            || (column_name == "id"
-                && primary_key_index > 0
-                && column_type.eq_ignore_ascii_case("INTEGER")))
-    })
 }
 
 pub fn database_error(database_path: &Path, action: &str, error: rusqlite::Error) -> Error {
