@@ -17,6 +17,7 @@
 //!   `~/.snow/.config-backups/` (latest 10 kept per file) and the target file
 //!   is replaced atomically (tmp file + rename) so a crash cannot corrupt it.
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -33,6 +34,25 @@ const TOOL_LIST: &str = "list";
 const TOOL_GET: &str = "get";
 const TOOL_SET: &str = "set";
 const TOOL_DELETE: &str = "delete";
+
+/// DB-backed 配置域：子代理配置（写入应用 SQLite 数据库，与 UI 同源）。
+/// key = agentId，value = { name, description, systemPrompt, toolsJson, configProfile }。
+const SCOPE_SUB_AGENTS: &str = "subAgents";
+
+/// DB-backed 配置域：生命周期 hook 配置。
+/// key = hookType，value = { rules: [...] }；可选 projectId 表示项目级（缺省为全局）。
+const SCOPE_HOOKS: &str = "hooks";
+
+/// 技能管理配置域（委托 SkillsConfigService 实现，存储机制与 UI 一致）。
+/// key = skillId；value 含 `enabled` 时切换开关，含 `url`+`location` 时从 GitHub 安装；
+/// delete 卸载 GitHub 安装的技能；可选 projectId 表示项目级。
+const SCOPE_SKILLS: &str = "skills";
+
+/// 通过 config 工具写入的配置来源标记（与 mcpServers 同步的 source 约定一致）。
+const SOURCE_SNOW_CLI: &str = "snow-cli";
+
+/// 内置通用子代理 id，禁止通过 config 工具修改或删除。
+const BUILTIN_GENERAL_AGENT_ID: &str = "agent_general";
 
 /// 配置值类型。
 #[derive(Clone, Copy)]
@@ -144,6 +164,13 @@ impl ConfigService {
     pub async fn execute_async(&self, tool_name: &str, args: &Value) -> napi::Result<Value> {
         let tool_name = tool_name.to_string();
         let args = args.clone();
+
+        // skills scope（能力委托给 SkillsConfigService）：需要 async 能力
+        // （GitHub 下载等），因此在 spawn_blocking 之外直接分发。
+        if args.get("scope").and_then(Value::as_str) == Some(SCOPE_SKILLS) {
+            return self.execute_skills_scope(&tool_name, &args).await;
+        }
+
         let db_path = self.db_path.clone();
 
         tokio::task::spawn_blocking(move || {
@@ -490,6 +517,15 @@ impl ConfigService {
 
     fn execute_list(&self, args: &Value) -> napi::Result<Value> {
         if let Some(scope_name) = args.get("scope").and_then(Value::as_str) {
+            let project_id = optional_project_id(args);
+            // DB-backed 配置域：直接查应用数据库（与 UI 同源）。
+            if scope_name == SCOPE_SUB_AGENTS {
+                return self.list_db_sub_agents(project_id);
+            }
+            if scope_name == SCOPE_HOOKS {
+                return self.list_db_hooks(project_id);
+            }
+
             let scope = Self::find_scope(scope_name).ok_or_else(|| invalid_scope_error(scope_name))?;
             let mut root = Self::read_json(scope)?;
             let config_root = Self::config_root(scope, &mut root)?;
@@ -533,6 +569,14 @@ impl ConfigService {
     fn execute_get(&self, args: &Value) -> napi::Result<Value> {
         let scope_name = required_string(args, "scope")?;
         let key_name = required_string(args, "key")?;
+        let project_id = optional_project_id(args);
+        if scope_name == SCOPE_SUB_AGENTS {
+            return self.get_db_sub_agent(key_name, project_id);
+        }
+        if scope_name == SCOPE_HOOKS {
+            return self.get_db_hook(key_name, project_id);
+        }
+
         let scope = Self::find_scope(scope_name).ok_or_else(|| invalid_scope_error(scope_name))?;
         let key_spec = Self::find_key(scope, key_name).ok_or_else(|| invalid_key_error(scope, key_name))?;
 
@@ -556,6 +600,14 @@ impl ConfigService {
         let value = args.get("value").cloned().ok_or_else(|| {
             Error::new(Status::InvalidArg, "value is required for config-set".to_string())
         })?;
+        let project_id = optional_project_id(args);
+        if scope_name == SCOPE_SUB_AGENTS {
+            return self.set_db_sub_agent(key_name, &value, project_id);
+        }
+        if scope_name == SCOPE_HOOKS {
+            return self.set_db_hook(key_name, &value, project_id);
+        }
+
         let scope = Self::find_scope(scope_name).ok_or_else(|| invalid_scope_error(scope_name))?;
         let key_spec = Self::find_key(scope, key_name).ok_or_else(|| invalid_key_error(scope, key_name))?;
         Self::validate_value(key_spec, &value)?;
@@ -595,6 +647,14 @@ impl ConfigService {
     fn execute_delete(&self, args: &Value) -> napi::Result<Value> {
         let scope_name = required_string(args, "scope")?;
         let key_name = required_string(args, "key")?;
+        let project_id = optional_project_id(args);
+        if scope_name == SCOPE_SUB_AGENTS {
+            return self.delete_db_sub_agent(key_name, project_id);
+        }
+        if scope_name == SCOPE_HOOKS {
+            return self.delete_db_hook(key_name, project_id);
+        }
+
         let scope = Self::find_scope(scope_name).ok_or_else(|| invalid_scope_error(scope_name))?;
         // 仅校验键存在（白名单），无需保留绑定。
         Self::find_key(scope, key_name).ok_or_else(|| invalid_key_error(scope, key_name))?;
@@ -630,6 +690,530 @@ impl ConfigService {
             "deleted": true,
         }))
     }
+
+    // ---------------------------------------------------------------------
+    // DB-backed scopes（subAgents / hooks）
+    //
+    // 直接读写应用 SQLite 数据库（与 UI 设置面板同源），写入立即生效。
+    // 子代理写入统一标记 source=snow-cli、builtin=false；hooks 复用
+    // hooks_configs 存储服务的完整校验（hookType、rules 结构、action 类型）。
+    // ---------------------------------------------------------------------
+
+    fn list_db_sub_agents(&self, project_id: Option<String>) -> napi::Result<Value> {
+        let db_path = db_path_or_error(&self.db_path)?;
+        let configs = crate::storage::services::sub_agent_configs::list_sub_agent_configs(
+            db_path,
+            project_id.as_deref(),
+        )?;
+        let items: Vec<Value> = configs
+            .iter()
+            .map(|config| {
+                json!({
+                    "agentId": config.agent_id,
+                    "projectId": config.project_id,
+                    "name": config.name,
+                    "description": config.description,
+                    "systemPrompt": config.system_prompt,
+                    "toolsJson": config.tools_json,
+                    "configProfile": config.config_profile,
+                    "builtin": config.builtin,
+                    "sortOrder": config.sort_order,
+                    "source": config.source,
+                    "updatedAt": config.updated_at,
+                })
+            })
+            .collect();
+        Ok(json!({
+            "scope": SCOPE_SUB_AGENTS,
+            "items": items,
+            "count": items.len(),
+        }))
+    }
+
+    fn get_db_sub_agent(
+        &self,
+        agent_id: &str,
+        project_id: Option<String>,
+    ) -> napi::Result<Value> {
+        let db_path = db_path_or_error(&self.db_path)?;
+        let config =
+            crate::storage::services::sub_agent_configs::get_sub_agent_config(
+                db_path,
+                agent_id,
+                project_id.as_deref(),
+            )?;
+        let value = match config {
+            Some(config) => json!({
+                "agentId": config.agent_id,
+                "projectId": config.project_id,
+                "name": config.name,
+                "description": config.description,
+                "systemPrompt": config.system_prompt,
+                "toolsJson": config.tools_json,
+                "configProfile": config.config_profile,
+                "builtin": config.builtin,
+                "sortOrder": config.sort_order,
+                "source": config.source,
+                "updatedAt": config.updated_at,
+            }),
+            None => Value::Null,
+        };
+        Ok(json!({
+            "scope": SCOPE_SUB_AGENTS,
+            "key": agent_id,
+            "value": value,
+        }))
+    }
+
+    fn set_db_sub_agent(
+        &self,
+        agent_id: &str,
+        value: &Value,
+        project_id: Option<String>,
+    ) -> napi::Result<Value> {
+        if agent_id == BUILTIN_GENERAL_AGENT_ID {
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!(
+                    "{BUILTIN_GENERAL_AGENT_ID} is a built-in sub-agent and cannot be modified via config"
+                ),
+            ));
+        }
+        let db_path = db_path_or_error(&self.db_path)?;
+        let config = value.as_object().ok_or_else(|| {
+            Error::new(
+                Status::InvalidArg,
+                "value must be an object for the subAgents scope".to_string(),
+            )
+        })?;
+
+        let name = config
+            .get("name")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                Error::new(Status::InvalidArg, "value.name is required".to_string())
+            })?;
+        if name.chars().count() > 100 {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "value.name must be no longer than 100 characters".to_string(),
+            ));
+        }
+        let description = config
+            .get("description")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        if description.chars().count() > 500 {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "value.description must be no longer than 500 characters".to_string(),
+            ));
+        }
+        let system_prompt = config
+            .get("systemPrompt")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let config_profile = config
+            .get("configProfile")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+
+        // toolsJson 兼容两种形式：字符串数组或 JSON 字符串。
+        let tools_json = match config.get("toolsJson") {
+            Some(Value::Array(tools)) => serde_json::to_string(tools).map_err(|error| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to serialize toolsJson: {error}"),
+                )
+            })?,
+            Some(Value::String(tools)) => {
+                serde_json::from_str::<Value>(tools).map_err(|error| {
+                    Error::new(
+                        Status::InvalidArg,
+                        format!("value.toolsJson must be valid JSON: {error}"),
+                    )
+                })?;
+                tools.clone()
+            }
+            None => "[]".to_string(),
+            Some(_) => {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "value.toolsJson must be a string or an array of tool names".to_string(),
+                ));
+            }
+        };
+
+        // 校验工具名在当前项目可用（对齐 TS validateSubAgentTools 的静态版本）：
+        // 空/["*"] 通过；选择 MCP 工具必须项目级；内置工具严格校验，
+        // 外部工具校验服务器公开名前缀须属于当前项目 enabled 的 MCP 服务器。
+        validate_sub_agent_tools(db_path, project_id.as_deref(), &tools_json)?;
+
+        let sort_order = config.get("sortOrder").and_then(Value::as_i64).unwrap_or(0) as i32;
+
+        let item = crate::storage::SubAgentConfigInput {
+            agent_id: agent_id.to_string(),
+            name: name.to_string(),
+            description,
+            system_prompt,
+            tools_json,
+            config_profile,
+            builtin: false,
+            sort_order,
+            source: SOURCE_SNOW_CLI.to_string(),
+            project_id,
+        };
+        crate::storage::services::sub_agent_configs::upsert_sub_agent_config(
+            db_path, &item,
+        )?;
+        Ok(json!({
+            "scope": SCOPE_SUB_AGENTS,
+            "key": agent_id,
+            "saved": true,
+        }))
+    }
+
+    fn delete_db_sub_agent(
+        &self,
+        agent_id: &str,
+        project_id: Option<String>,
+    ) -> napi::Result<Value> {
+        if agent_id == BUILTIN_GENERAL_AGENT_ID {
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!("{BUILTIN_GENERAL_AGENT_ID} is a built-in sub-agent and cannot be deleted"),
+            ));
+        }
+        let db_path = db_path_or_error(&self.db_path)?;
+        let existing =
+            crate::storage::services::sub_agent_configs::get_sub_agent_config(
+                db_path,
+                agent_id,
+                project_id.as_deref(),
+            )?;
+        let deleted = existing.is_some();
+        if let Some(config) = existing {
+            if config.builtin {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "Built-in sub-agents cannot be deleted".to_string(),
+                ));
+            }
+        }
+        crate::storage::services::sub_agent_configs::delete_sub_agent_config(
+            db_path,
+            agent_id,
+            project_id.as_deref(),
+        )?;
+        Ok(json!({
+            "scope": SCOPE_SUB_AGENTS,
+            "key": agent_id,
+            "deleted": deleted,
+        }))
+    }
+
+    fn list_db_hooks(&self, project_id: Option<String>) -> napi::Result<Value> {
+        let db_path = db_path_or_error(&self.db_path)?;
+        let scope = if project_id.is_some() { "project" } else { "global" };
+        let records =
+            crate::storage::services::hooks_configs::list_hook_configs(
+                db_path,
+                scope,
+                project_id.as_deref(),
+            )?;
+        let items: Vec<Value> = records
+            .iter()
+            .map(|record| {
+                json!({
+                    "hookType": record.hook_type,
+                    "scope": record.scope,
+                    "projectId": record.project_id,
+                    "rules": serde_json::from_str::<Value>(&record.rules_json)
+                        .unwrap_or_else(|_| Value::Array(Vec::new())),
+                    "rulesJson": record.rules_json,
+                    "updatedAt": record.updated_at,
+                })
+            })
+            .collect();
+        Ok(json!({
+            "scope": SCOPE_HOOKS,
+            "projectId": project_id.unwrap_or_default(),
+            "items": items,
+            "count": items.len(),
+        }))
+    }
+
+    fn get_db_hook(
+        &self,
+        hook_type: &str,
+        project_id: Option<String>,
+    ) -> napi::Result<Value> {
+        let list = self.list_db_hooks(project_id)?;
+        let items = list
+            .get("items")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let found = items
+            .iter()
+            .find(|item| {
+                item.get("hookType").and_then(Value::as_str) == Some(hook_type)
+            })
+            .cloned();
+        Ok(json!({
+            "scope": SCOPE_HOOKS,
+            "key": hook_type,
+            "value": found.unwrap_or(Value::Null),
+        }))
+    }
+
+    fn set_db_hook(
+        &self,
+        hook_type: &str,
+        value: &Value,
+        project_id: Option<String>,
+    ) -> napi::Result<Value> {
+        let db_path = db_path_or_error(&self.db_path)?;
+        let rules = value.get("rules").ok_or_else(|| {
+            Error::new(
+                Status::InvalidArg,
+                "value.rules is required for the hooks scope".to_string(),
+            )
+        })?;
+        if !rules.is_array() {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "value.rules must be an array of hook rules".to_string(),
+            ));
+        }
+        let rules_json = serde_json::to_string(rules).map_err(|error| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to serialize hook rules: {error}"),
+            )
+        })?;
+        let scope = if project_id.is_some() { "project" } else { "global" };
+        let item = crate::storage::HookConfigInput {
+            hook_type: hook_type.to_string(),
+            scope: scope.to_string(),
+            project_id,
+            rules_json,
+        };
+        // 复用 hooks_configs 的完整校验（hookType 白名单、rules 结构、action 类型）。
+        crate::storage::services::hooks_configs::upsert_hook_config(db_path, &item)?;
+        Ok(json!({
+            "scope": SCOPE_HOOKS,
+            "key": hook_type,
+            "saved": true,
+        }))
+    }
+
+    fn delete_db_hook(
+        &self,
+        hook_type: &str,
+        project_id: Option<String>,
+    ) -> napi::Result<Value> {
+        let db_path = db_path_or_error(&self.db_path)?;
+        let scope = if project_id.is_some() { "project" } else { "global" };
+        // 先查存在性，与文件域 delete 的 deleted:false 语义对齐。
+        let records =
+            crate::storage::services::hooks_configs::list_hook_configs(
+                db_path,
+                scope,
+                project_id.as_deref(),
+            )?;
+        let deleted = records
+            .iter()
+            .any(|record| record.hook_type == hook_type);
+        crate::storage::services::hooks_configs::delete_hook_config(
+            db_path,
+            hook_type,
+            scope,
+            project_id.as_deref(),
+        )?;
+        Ok(json!({
+            "scope": SCOPE_HOOKS,
+            "key": hook_type,
+            "deleted": deleted,
+        }))
+    }
+
+    /// skills scope：把 config 工具的 list/get/set/delete 语义映射到
+    /// SkillsConfigService 的内部工具，复用其全部校验与实现
+    /// （list / setEnabled / installGithub / uninstall）。
+    async fn execute_skills_scope(
+        &self,
+        tool_name: &str,
+        args: &Value,
+    ) -> napi::Result<Value> {
+        let service = super::skills_config::SkillsConfigService::new();
+        match tool_name {
+            TOOL_LIST => service.execute_async("list", args).await,
+            TOOL_GET => {
+                let skill_id = required_string(args, "key")?;
+                let list = service.execute_async("list", args).await?;
+                let skills = list
+                    .get("skills")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                let found = skills
+                    .iter()
+                    .find(|skill| skill.get("id").and_then(Value::as_str) == Some(skill_id))
+                    .cloned();
+                Ok(json!({
+                    "scope": SCOPE_SKILLS,
+                    "key": skill_id,
+                    "value": found.unwrap_or(Value::Null),
+                }))
+            }
+            TOOL_SET => {
+                let skill_id = required_string(args, "key")?;
+                let value = args.get("value").cloned().ok_or_else(|| {
+                    Error::new(
+                        Status::InvalidArg,
+                        "value is required for config-set".to_string(),
+                    )
+                })?;
+                let project_id = optional_project_id(args);
+
+                // 安装：value 含 url + location。
+                if let Some(url) = value.get("url").and_then(Value::as_str) {
+                    let location = value.get("location").and_then(Value::as_str).ok_or_else(|| {
+                        Error::new(
+                            Status::InvalidArg,
+                            "value.location (\"global\" | \"project\") is required to install a skill"
+                                .to_string(),
+                        )
+                    })?;
+                    let mut install_args = json!({ "url": url, "location": location });
+                    if let Some(project_id) = &project_id {
+                        install_args["projectId"] = json!(project_id);
+                    }
+                    return service.execute_async("installGithub", &install_args).await;
+                }
+
+                // 开关：value 含 enabled。
+                if let Some(enabled) = value.get("enabled").and_then(Value::as_bool) {
+                    let mut set_args = json!({ "skillId": skill_id, "enabled": enabled });
+                    if let Some(project_id) = &project_id {
+                        set_args["projectId"] = json!(project_id);
+                    }
+                    return service.execute_async("setEnabled", &set_args).await;
+                }
+
+                Err(Error::new(
+                    Status::InvalidArg,
+                    "value must contain `enabled` (toggle) or `url` + `location` (install)".to_string(),
+                ))
+            }
+            TOOL_DELETE => {
+                let skill_id = required_string(args, "key")?;
+                let mut delete_args = json!({ "skillId": skill_id });
+                if let Some(project_id) = optional_project_id(args) {
+                    delete_args["projectId"] = json!(project_id);
+                }
+                service.execute_async("uninstall", &delete_args).await
+            }
+            _ => Err(Error::new(
+                Status::GenericFailure,
+                format!(
+                    "Unknown tool: \"{tool_name}\" for MCP server \"{SERVER_ID}\". Available tools: [config-list, config-get, config-set, config-delete]"
+                ),
+            )),
+        }
+    }
+}
+
+/// 校验并返回应用数据库路径；native 存储未初始化时给出明确错误。
+fn db_path_or_error(db_path: &str) -> napi::Result<&Path> {
+    if db_path.is_empty() {
+        return Err(Error::new(
+            Status::GenericFailure,
+            "App database is not available (native storage failed to initialize)".to_string(),
+        ));
+    }
+    Ok(Path::new(db_path))
+}
+
+/// 校验子代理 toolsJson 中的工具名在当前项目可用（对齐 TS validateSubAgentTools 的静态版本）：
+/// - 空数组或 ["*"] 直接通过；
+/// - 选择 MCP 工具时必须提供 projectId（全局子代理仅允许空/["*"]，与 UI 一致）；
+/// - 工具全名 `{server_id}-{tool_name}`：内置服务器须命中内置工具集；
+///   外部服务器须命中当前项目 enabled 的 MCP 服务器公开名（不实际连接服务器，
+///   因此只校验服务器归属，具体工具名留给运行时发现）。
+fn validate_sub_agent_tools(
+    db_path: &Path,
+    project_id: Option<&str>,
+    tools_json: &str,
+) -> napi::Result<()> {
+    use crate::mcp::builtin::get_builtin_tools;
+    use crate::mcp::external::public_server_name_map;
+    use crate::mcp::tools::split_tool_full_name;
+
+    let parsed: Value = serde_json::from_str(tools_json).map_err(|error| {
+        Error::new(
+            Status::InvalidArg,
+            format!("value.toolsJson must be valid JSON: {error}"),
+        )
+    })?;
+    let tool_names: Vec<&str> = parsed
+        .as_array()
+        .map(|items| items.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    if tool_names.is_empty() || (tool_names.len() == 1 && tool_names[0] == "*") {
+        return Ok(());
+    }
+    let Some(project_id) = project_id.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Project id is required when sub-agent MCP tools are selected".to_string(),
+        ));
+    };
+
+    let builtin_tool_names: HashSet<String> = get_builtin_tools()
+        .iter()
+        .map(|tool| tool.full_name())
+        .collect();
+    let configs = crate::storage::services::project_mcp_server_configs::
+        list_effective_mcp_server_configs(db_path, Some(project_id))?;
+    let public_names = public_server_name_map(&configs);
+    let enabled_server_names: HashSet<String> = configs
+        .iter()
+        .filter(|config| config.enabled)
+        .filter_map(|config| public_names.get(&config.server_id).cloned())
+        .collect();
+
+    for tool_name in tool_names {
+        if builtin_tool_names.contains(tool_name) {
+            continue;
+        }
+        let is_external = split_tool_full_name(tool_name)
+            .is_some_and(|(server_name, _)| enabled_server_names.contains(server_name));
+        if !is_external {
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!(
+                    "Selected sub-agent MCP tool is not enabled for the current project: {tool_name}"
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// 可选 projectId 参数：去空白，空串视为未提供（全局作用域）。
+fn optional_project_id(args: &Value) -> Option<String> {
+    args.get("projectId")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 impl McpService for ConfigService {
@@ -642,14 +1226,18 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_LIST.to_string(),
-                description: "List manageable configuration scopes and their keys. Scopes: settings (~/.snow/settings.json: mcpServers, codebase, sensitiveCommands, yoloMode, planMode, ...), snowcfg (~/.snow/config.json snowcfg object: baseUrl, apiKey, advancedModel, ...), proxy (~/.snow/proxy-config.json: enabled, host, port, searchEngine, browserPath, browserDebugPort), app (~/.snow/active-profile.json: activeProfile). Pass `scope` to inspect a single scope with current values; sensitive values (apiKey, visionApiKey) are masked.".to_string(),
+                description: "List manageable configuration scopes and their keys. Scopes: settings (~/.snow/settings.json: mcpServers, codebase, sensitiveCommands, yoloMode, planMode, ...), snowcfg (~/.snow/config.json snowcfg object: baseUrl, apiKey, advancedModel, ...), proxy (~/.snow/proxy-config.json: enabled, host, port, searchEngine, browserPath, browserDebugPort), app (~/.snow/active-profile.json: activeProfile). DB-backed scopes: subAgents (sub-agent configs in the app database, key=agentId), hooks (lifecycle hook configs in the app database, key=hookType). Pass `scope` to inspect a single scope with current values; sensitive values (apiKey, visionApiKey) are masked. Pass `projectId` to scope subAgents/hooks listings to a specific project (omitted = global).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app"],
+                            "enum": ["settings", "snowcfg", "proxy", "app", "subAgents", "hooks", "skills"],
                             "description": "Optional config scope name; when omitted, lists all scopes."
+                        },
+                        "projectId": {
+                            "type": "string",
+                            "description": "Optional project id. For subAgents/hooks scopes: when provided, lists configs for that project; when omitted, lists global configs (subAgents without projectId returns ALL configs incl. project ones)."
                         }
                     },
                     "additionalProperties": false
@@ -658,18 +1246,22 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_GET.to_string(),
-                description: "Read the value of a configuration key. Sensitive keys (apiKey, visionApiKey) are always returned masked (e.g. sk-****abcd); this tool never exposes plaintext secrets. Returns null when the key is not configured.".to_string(),
+                description: "Read the value of a configuration key. Sensitive keys (apiKey, visionApiKey) are always returned masked (e.g. sk-****abcd); this tool never exposes plaintext secrets. Returns null when the key is not configured. DB-backed scopes: subAgents (key=agentId) and hooks (key=hookType) read directly from the app database; pass optional `projectId` to read a project-scoped config (omitted = global).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app"],
+                            "enum": ["settings", "snowcfg", "proxy", "app", "subAgents", "hooks", "skills"],
                             "description": "Config scope name."
                         },
                         "key": {
                             "type": "string",
                             "description": "Key name within the scope (see config-list)."
+                        },
+                        "projectId": {
+                            "type": "string",
+                            "description": "Optional project id for subAgents/hooks scopes; omitted = global config."
                         }
                     },
                     "required": ["scope", "key"],
@@ -679,13 +1271,13 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_SET.to_string(),
-                description: "Write a value for a configuration key. Only whitelisted scopes/keys are accepted; the value is type-checked, the target file is backed up to ~/.snow/.config-backups before the write, and the file is replaced atomically. Special case: writing `mcpServers` in the `settings` scope also syncs the servers into the app database (same diff semantics as the UI 'Sync Snow CLI MCP settings' action), so MCP changes take effect immediately without manual sync. Other settings (snowcfg/proxy/app) are file-based and may require an app restart or UI re-save.".to_string(),
+                description: "Write a value for a configuration key. Only whitelisted scopes/keys are accepted; the value is type-checked, the target file is backed up to ~/.snow/.config-backups before the write, and the file is replaced atomically. Special case: writing `mcpServers` in the `settings` scope also syncs the servers into the app database (same diff semantics as the UI 'Sync Snow CLI MCP settings' action), so MCP changes take effect immediately without manual sync. Other settings (snowcfg/proxy/app) are file-based and may require an app restart or UI re-save. DB-backed scopes write directly to the app database and take effect immediately: subAgents (key=agentId, value={name, description, systemPrompt, toolsJson, configProfile}; toolsJson accepts a JSON string or an array of tool names; built-in agent_general cannot be modified) and hooks (key=hookType, value={rules:[{description, matcher?, hooks:[{type: command|prompt|context, command?, prompt?, content?, timeout?, enabled?}]}]}). Pass optional `projectId` to write a project-scoped config (omitted = global).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app"],
+                            "enum": ["settings", "snowcfg", "proxy", "app", "subAgents", "hooks", "skills"],
                             "description": "Config scope name."
                         },
                         "key": {
@@ -694,6 +1286,10 @@ impl McpService for ConfigService {
                         },
                         "value": {
                             "description": "New value; type must match the key schema (see config-list)."
+                        },
+                        "projectId": {
+                            "type": "string",
+                            "description": "Optional project id for subAgents/hooks scopes; omitted = global config."
                         }
                     },
                     "required": ["scope", "key", "value"],
@@ -703,18 +1299,22 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_DELETE.to_string(),
-                description: "Delete a configuration key (e.g. clear an apiKey). The target file is backed up before the write and replaced atomically. Returns deleted=false when the key was not configured.".to_string(),
+                description: "Delete a configuration key (e.g. clear an apiKey). The target file is backed up before the write and replaced atomically. Returns deleted=false when the key was not configured. DB-backed scopes delete from the app database: subAgents (key=agentId; built-in agent_general cannot be deleted) and hooks (key=hookType). Pass optional `projectId` to delete a project-scoped config (omitted = global).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app"],
+                            "enum": ["settings", "snowcfg", "proxy", "app", "subAgents", "hooks", "skills"],
                             "description": "Config scope name."
                         },
                         "key": {
                             "type": "string",
                             "description": "Key name within the scope (see config-list)."
+                        },
+                        "projectId": {
+                            "type": "string",
+                            "description": "Optional project id for subAgents/hooks scopes; omitted = global config."
                         }
                     },
                     "required": ["scope", "key"],
@@ -751,11 +1351,14 @@ fn type_name(value_type: ValueType) -> &'static str {
 }
 
 fn available_scopes() -> String {
-    SCOPES
+    let mut scopes: Vec<&str> = SCOPES
         .iter()
         .map(|spec| spec.scope)
-        .collect::<Vec<_>>()
-        .join(", ")
+        .collect();
+    scopes.push(SCOPE_SUB_AGENTS);
+    scopes.push(SCOPE_HOOKS);
+    scopes.push(SCOPE_SKILLS);
+    scopes.join(", ")
 }
 
 fn available_keys(scope: &ScopeSpec) -> String {

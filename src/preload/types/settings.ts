@@ -33,6 +33,14 @@ export type PrivacySettings = {
   toolResults: PrivacyToolResultsConfig;
 };
 
+/** Per-conversation Plan/Goal Mode overrides. `null` means the conversation
+ *  has never been configured and follows the global default. */
+export type ConversationModesResult = {
+  planMode: boolean | null;
+  goalMode: boolean | null;
+  goalModeTokenBudget: number | null;
+};
+
 export type ThemeMode = "system" | "light" | "dark";
 
 export type ThemePalette = {
@@ -335,11 +343,15 @@ export type SubAgentConfigInput = {
   builtin: boolean;
   sortOrder: number;
   source: string;
+  /** 项目 ID；缺省/空表示全局子代理，指定后为项目级子代理。 */
+  projectId?: string;
 };
 
 export type SubAgentConfigRecord = SubAgentConfigInput & {
   id: string;
   updatedAt: string;
+  /** 项目 ID，空字符串表示全局子代理。 */
+  projectId: string;
 };
 
 export type SensitiveCommandConfigInput = {

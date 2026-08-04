@@ -23,9 +23,8 @@ Listed in registration order:
 | `codebase` | Codebase semantic search (embedding index) |
 | `codelens` | Code diagnostics and symbol location |
 | `app-control` | App control (memos / modes / settings pages / scheduled tasks / projects) |
-| `config` | Read/write global config files (settings/snowcfg/proxy/app) |
+| `config` | Read/write global config (files: settings/snowcfg/proxy/app; database: subAgents/hooks; delegated: skills) |
 | `skills` | Skill loading and execution |
-| `skills-config` | Skill management (list / toggle / GitHub install & uninstall) |
 
 ## 3. Tool Details
 
@@ -119,12 +118,12 @@ Listed in registration order:
 
 | Full tool name | Purpose | Key parameters |
 | --- | --- | --- |
-| `config-list` | List manageable scopes (settings/snowcfg/proxy/app) and their keys; pass `scope` to inspect a single scope with current values (sensitive keys masked) | `scope` |
-| `config-get` | Read a key's value; sensitive keys (`apiKey`, `visionApiKey`) are always masked | `scope`, `key` |
-| `config-set` | Write a key (whitelist + type check + auto backup + atomic write); `settings.mcpServers` auto-syncs to the app database and takes effect immediately | `scope`, `key`, `value` |
-| `config-delete` | Delete a key | `scope`, `key` |
+| `config-list` | List manageable scopes (settings/snowcfg/proxy/app/subAgents/hooks/skills) and their keys; pass `scope` to inspect a single scope with current values (sensitive keys masked) | `scope`, `projectId` |
+| `config-get` | Read a key's value; sensitive keys (`apiKey`, `visionApiKey`) are always masked; `subAgents`/`hooks` scopes read directly from the app database | `scope`, `key`, `projectId` |
+| `config-set` | Write a key (whitelist + type check + auto backup + atomic write); `settings.mcpServers` auto-syncs to the app database and takes effect immediately; `subAgents`/`hooks` scopes write directly to the app database and take effect immediately | `scope`, `key`, `value`, `projectId` |
+| `config-delete` | Delete a key; `subAgents`/`hooks` scopes delete database records directly | `scope`, `key`, `projectId` |
 
-Supported scopes:
+File-backed scopes:
 
 | Scope | File | Main keys |
 | --- | --- | --- |
@@ -133,22 +132,31 @@ Supported scopes:
 | `proxy` | `~/.snow/proxy-config.json` | `enabled`, `host`, `port`, `searchEngine`, `browserPath`, `browserDebugPort` |
 | `app` | `~/.snow/active-profile.json` | `activeProfile` |
 
+Database-backed scopes (write to the app SQLite database, same source as the UI settings panels, take effect immediately):
+
+| Scope | key | value | Notes |
+| --- | --- | --- | --- |
+| `subAgents` | `agentId` | `{name, description?, systemPrompt?, toolsJson?, configProfile?}` | Create/update a sub-agent; `toolsJson` accepts a JSON string or an array of tool names; the built-in `agent_general` cannot be modified/deleted; omit `projectId` for global, provide it for project-scoped |
+| `hooks` | `hookType` | `{rules: [{description, matcher?, hooks: [{type, command?, prompt?, content?, timeout?, enabled?}]}]}` | Configure lifecycle hooks; omit `projectId` for global, provide it for project-scoped (project overrides global) |
+
+Delegated scope (reuses the skill-management service SkillsConfigService; storage semantics identical to the UI):
+
+| Scope | key | value | Notes |
+| --- | --- | --- | --- |
+| `skills` | `skillId` | `{enabled}` toggles / `{url, location}` installs from GitHub | Global toggle rewrites the `enable` field in SKILL.md frontmatter; project toggle writes a DB `skill_overrides` record; install/uninstall operate on `~/.snow/skills` directories and `skills-registry.json`; `projectId` scopes to a project |
+
+> Configuration examples: see [2-guides/5-configure-hooks-and-subagents](../2-guides/5-configure-hooks-and-subagents.md).
+
 ### skills
 
 | Full tool name | Purpose | Key parameters |
 | --- | --- | --- |
 | `skills-skill-execute` | Load and execute the specified skill | `skill` |
 
-### skills-config
-
-| Full tool name | Purpose | Key parameters |
-| --- | --- | --- |
-| `skills-config-list` | List available skills and GitHub-installed records. Without `projectId`: global view where `enabled` is the SKILL.md frontmatter `enable` field. With `projectId`: project-scoped view (four-directory merge, `enabled` = project DB override taking precedence over frontmatter, plus `defaultEnabled` = frontmatter value) | `projectId` |
-| `skills-config-setEnabled` | Toggle a skill. Without `projectId`: rewrites the `enable` field in the SKILL.md frontmatter (same file write as the UI toggle). With `projectId`: writes a project-scope DB override (takes effect immediately and wins over frontmatter) | `projectId`, `skillId`, `enabled` |
-| `skills-config-installGithub` | Install skill(s) from a GitHub repository (`url` accepts full URLs and `owner/repo` shorthand, optional `@branch` and `:sub/dir`; `location` is `global`/`project`, project installs need `projectId`); metadata is recorded in `~/.snow/skills-registry.json` | `url`, `location`, `projectId` |
-| `skills-config-uninstall` | Uninstall a GitHub-installed skill (registry-only; manually placed or app-bundled skills must be removed by deleting their directory) | `skillId`, `projectId` |
-
 > Note: the frontmatter field that controls the toggle is `enable` (not `enabled`).
+> The former `skills-config-*` tools (list/setEnabled/installGithub/uninstall)
+> have been removed; skill management now uses the `config` server's `skills`
+> scope exclusively (see above).
 
 ## 4. Special Notes
 

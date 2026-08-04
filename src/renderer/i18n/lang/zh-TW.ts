@@ -1039,6 +1039,11 @@ export const zhTW = {
   "settings.subAgentManageTitle": "管理子代理",
   "settings.subAgentManageInfo":
     "子代理配置儲存在本機資料庫中。內建通用子代理可以編輯，但不能刪除。",
+  "settings.subAgentScopeTabs": "子代理作用域",
+  "settings.subAgentTabGlobal": "全域",
+  "settings.subAgentTabProject": "專案",
+  "settings.subAgentGlobalTabInfo": "管理所有專案共享的子代理。子代理配置儲存在本機資料庫中。",
+  "settings.subAgentProjectTabInfo": "管理 {{name}} 專案的子代理。與全域同 id 時專案級子代理優先。",
   "settings.subAgentEditorTitle": "子代理編輯器",
   "settings.subAgentListTitle": "子代理清單",
   "settings.subAgentEmpty": "目前沒有可用的子代理配置。",
