@@ -384,19 +384,21 @@ export function ChatItemMenu({
                     </span>
                     <ChevronRight size={11} className="chat-item-menu-sub-arrow" />
                   </button>
-                  <button
-                    type="button"
-                    className="chat-item-menu-item"
-                    onClick={handleMultiSelect}
-                    role="menuitem"
-                  >
-                    <ListChecks size={13} />
-                    <span>
-                      {t("sidebar.chatActionMultiSelect", {
-                        defaultValue: "Multi-select",
-                      })}
-                    </span>
-                  </button>
+                  {onEnterMultiSelect ? (
+                    <button
+                      type="button"
+                      className="chat-item-menu-item"
+                      onClick={handleMultiSelect}
+                      role="menuitem"
+                    >
+                      <ListChecks size={13} />
+                      <span>
+                        {t("sidebar.chatActionMultiSelect", {
+                          defaultValue: "Multi-select",
+                        })}
+                      </span>
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="chat-item-menu-item danger"
