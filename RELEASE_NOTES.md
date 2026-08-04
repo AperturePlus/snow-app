@@ -1,9 +1,54 @@
 # Release Notes
 
-## v0.1.16 (Unreleased)
+## v0.1.16
 
 ## New Features
 
+- **Native Image Generation MCP Server**: A new built-in `imagegen` MCP server
+  exposes the `imagegen-generate` tool with dual-channel support —
+  OpenAI-compatible Images API (`/v1/images/generations` and
+  `/v1/images/edits`, supporting `b64_json`/`url` response formats, quality,
+  output format/compression, up to 4 images per call, and streaming
+  partial-image previews) and Google Gemini (Nano Banana 2+ models via the
+  Interactions API with aspect ratios, image sizes up to 4K, thinking levels,
+  and Google Search grounding). The tool is only visible to the model when at
+  least one channel is configured and enabled. A DB-backed `imagegen` config
+  scope handles channel persistence with legacy format migration, and
+  streaming preview images survive conversation reloads.
+- **Image Generation Settings Panel**: A graphical multi-channel management
+  panel with table + modal editing, inline enable toggles (instant save),
+  model capability linked dropdowns (Gemini size × aspect ratio combos like
+  16:9@2K, GPT image recommended resolution tables), alias and
+  deprecated/preview badges, and automatic correction of unsupported
+  size/quality combinations when switching models.
+- **Image Generation Gallery**: Generated images in chat are rendered as a
+  Polaroid-style framed photo gallery with layered shadows and hover lift
+  effects. A portaled lightbox with frosted backdrop supports full-screen
+  viewing and download. Streaming previews display inside the same frame with
+  a frame counter.
+- **Terminal MCP Server**: A new built-in terminal MCP server exposes `open`,
+  `send`, `read`, `resize`, `wait`, `close`, `focus`, and `list` tools for
+  interactive terminal tabs. Commands are bridged from the native core through
+  Electron IPC to xterm.js PTY instances. The server is disabled by default
+  and only exposed when a project explicitly enables it, keeping optional
+  tools out of the model context to save tokens.
+- **Embedded Terminal UX Polish**: The default Windows shell now prefers pwsh
+  (PowerShell 7) over cmd.exe. Terminal keybindings include Ctrl+C
+  copy-selection, Ctrl+V / Shift+Insert / Ctrl+Shift+C paste-or-copy, and
+  Ctrl+Insert copy. A right-click context menu (copy/paste/select all/clear)
+  uses main-process clipboard IPC. Clickable links open in the embedded
+  browser, full ANSI 16-color palettes are applied for light/dark themes,
+  terminal tabs auto-close on clean exit (code 0), and orphaned PTY sessions
+  are killed on renderer navigation.
+- **Bash Detached Background Execution**: Bash tool calls now support detached
+  background execution with run-level stream metrics, enabling long-running
+  commands without blocking the agent loop.
+- **Third-Party Configuration Import**: Unified import discovery and import
+  workflows for Claude Code, OpenCode, and Codex configurations. A settings
+  page provides a graphical import interface with transactional semantics
+  (all-or-nothing on failure) and project-scoped system prompt import.
+- **Plugin Marketplaces & Google Theme**: Added plugin marketplace support
+  with a management UI, plus a new Google theme preset.
 - **Config Server Full Coverage**: The built-in `config` server now manages
   every config file under `~/.snow/` — 11 file scopes (`settings`, `snowcfg`
   with all 30 keys, `proxy`, `app`, `custom-headers`, `system-prompt`,
@@ -18,16 +63,62 @@
   sensitive-command ids matching global rules become enabled overrides,
   others become project custom rules).
 - **Deep Structural Validation**: `settings.codebase`, `custom-header
-  schemes`, `system-prompt prompts` and `lsp-config servers` are deeply
+schemes`, `system-prompt prompts` and `lsp-config servers` are deeply
   validated on write (known fields type-checked, unknown fields allowed for
   forward compatibility), so an agent cannot corrupt nested config.
+- **Per-Conversation Plan/Goal Mode Isolation**: Plan Mode, Goal Mode, and
+  Goal token budget are now persisted per conversation (NULL = unset, follows
+  the global default). The session ref is the single runtime authority —
+  agent loop, tool execution, compaction, and sub-agents all read the owning
+  session's mode snapshot, so a background conversation can no longer be
+  hijacked by another session's toggles. Conversation switches no longer
+  write global settings; Plan Mode approvals are invalidated per session only.
+- **Browser MCP Enhancements**: Added `browser-evaluate` for executing page
+  JavaScript with JSON-safe results, `browser-type` with fill, key-by-key
+  delay, empty-value clearing and optional submit, and extended
+  `browser-devtools` with console level filtering, per-webview network
+  records, and dialog (alert/confirm/prompt) handling via CDP with debugger
+  recovery after DevTools closes.
+- **Multi-Select Batch Delete Conversations**: The sidebar chat list now
+  supports multi-select mode for batch deleting conversations, with
+  collapsible pinned and chat sections to keep long lists manageable.
+- **User Interaction Tool — Manual Action Wait**: The `user_interaction` tool
+  now supports waiting for the user to complete a manual action the agent
+  cannot perform itself, broadening its purpose beyond clarification
+  questions.
+- **Git Panel Context Menus**: Right-clicking a commit row in the git graph
+  now opens a context menu to copy the full/short hash or commit message, and
+  to expand/collapse commit details. The top-bar project label card also
+  responds to right-click (previously swallowed by the window drag region).
+- **Content Tag Chips in Message Rail**: The user message rail popover now
+  renders file, image, commit, change, and text-snippet tags as inline chips
+  instead of stripping them to plain text, with capped chip widths and
+  pending-message preview theming for Cream and Google presets.
+- **Tab Cleanup & Ctrl-Click Navigation**: Added tab cleanup and Ctrl+click
+  file navigation in the right panel.
 
 ## Improvements
 
+- **Database Migration Refactor**: Refactored the database migration logic
+  with pre- and post-migration hooks, updated API configuration default
+  values, enhanced thinking option support, and updated internationalization
+  texts.
+- **Design Token Extraction**: Extracted theme tokens, highlight.js styles,
+  theme settings panel styles, and Cream/Google preset styles out of
+  `styles.css` into dedicated files under `src/renderer/themes/`. Added the
+  `accentColor` field to `ThemePalette` across native, preload, and renderer
+  layers. The main `styles.css` was reduced by ~3,400 lines.
+- **Third-Party Settings Refinement**: Refined the third-party settings UI
+  and import configuration formatting; removed obsolete test files.
+- **Preset Themes Update**: Updated preset themes for memo, scheduled task,
+  and git commit buttons.
+- **Context Menu States & Responsive Layout**: Added context menu item
+  disabled/hover states and narrow-window responsive layout adjustments.
 - **Docs Coverage**: Added a config-file field reference (every file's fields
   with types and sensitive markers), browser-automation and codebase/diagnostics
-  guides (zh/en), and aligned the `snow-app-docs` skill with the full config
-  coverage.
+  guides (zh/en), data storage locations and architecture overview guides,
+  image generation guides with resolution tables, and chat/terminal/Git panel
+  guides. Aligned the `snow-app-docs` skill with the full config coverage.
 
 ## Bug Fixes
 
@@ -36,7 +127,19 @@
   global mode defaults; the terminal sub-agent status event is broadcast
   immediately after the read-only flag to shrink the input-visible-but-sends-
   dropped window; `isSubAgentFinished` now uses a terminal-status whitelist
-  and `subAgentStatus` is null-guarded.
+  and `subAgentStatus` is null-guarded. Three additional session-mode
+  isolation race holes were closed.
+- **Browser Network Recorder Startup Block**: Fixed the browser network
+  recorder from blocking application startup.
+- **Third-Party Import Hardening**: Made third-party imports transactional
+  (all-or-nothing on failure), hardened the import workflows, corrected import
+  discovery type inference, and resolved TypeScript errors in plugin imports.
+- **Imported System Prompts Scope**: Imported system prompts are now
+  correctly scoped to projects instead of leaking globally.
+- **Reader Relative Links**: Relative markdown links in the reader now open in
+  a new reader tab instead of triggering a blank navigation.
+- **Chat Completions Tool Calls**: Normalized tool calls for Chat Completions
+  and fixed conversation mode handling.
 
 ## v0.1.15
 
