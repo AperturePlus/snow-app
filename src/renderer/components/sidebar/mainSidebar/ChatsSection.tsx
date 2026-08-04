@@ -497,8 +497,9 @@ export function ChatsSection({
 
   /**
    * 批量删除选中的会话。
-   * - 选中父会话时，Rust 侧会级联删除其全部子代理会话，
-   *   因此已选中的父会话子代理无需单独删除，直接跳过。
+   * - 子代理会话不允许单独删除，不会出现在选中集里；
+   *   选中父会话时其子代理会话由 native 侧在单事务内级联删除，
+   *   这里收集全部受影响会话仅用于中止流与判断是否需要清空聊天区。
    * - 删除前中止对应流式会话；若当前正打开被删会话（或其子代理），
    *   则清空聊天区。
    */
@@ -507,32 +508,16 @@ export function ChatsSection({
       return;
     }
 
-    const allTargetIds = new Set<string>();
-    const parentSelectedIds = new Set<string>();
+    // 收集所有受影响会话：选中父会话 + 其子代理（用于中止流/清空聊天区）
+    const allTargetIds = new Set<string>(selectedIds);
     for (const id of selectedIds) {
-      allTargetIds.add(id);
       const subAgents = subAgentMap[id];
       if (subAgents && subAgents.length > 0) {
-        parentSelectedIds.add(id);
         for (const sub of subAgents) {
           allTargetIds.add(sub.conversationId);
         }
       }
     }
-
-    // 父会话被选中时其子代理随级联删除，跳过单独删除
-    const deleteIds = Array.from(allTargetIds).filter((id) => {
-      if (parentSelectedIds.has(id)) {
-        return true;
-      }
-      return !conversations.some(
-        (conv) =>
-          parentSelectedIds.has(conv.conversationId) &&
-          (subAgentMap[conv.conversationId] ?? []).some(
-            (sub) => sub.conversationId === id
-          )
-      );
-    });
 
     setIsDeleting(true);
     try {
@@ -540,9 +525,8 @@ export function ChatsSection({
         abortConversation(targetId);
       }
 
-      for (const id of deleteIds) {
-        await window.snow.deleteConversation(id);
-      }
+      // 单次批量删除：native 单事务完成，避免逐条 IPC + 逐条事务
+      await window.snow.deleteConversations([...selectedIds]);
 
       if (activeConversationId && allTargetIds.has(activeConversationId)) {
         handleNewChat();
@@ -574,21 +558,16 @@ export function ChatsSection({
     let cancelled = false;
 
     const loadSubAgents = async (): Promise<void> => {
-      const entries = await Promise.all(
-        current.map(async (conv) => {
-          try {
-            const subAgents = await window.snow.listSubAgentConversations(
-              conv.conversationId
-            );
-            return [conv.conversationId, subAgents] as const;
-          } catch {
-            return [
-              conv.conversationId,
-              [] as ChatConversationRecord[],
-            ] as const;
-          }
-        })
-      );
+      // 一次批量查询所有会话的子代理（单条 SQL，避免 N+1）
+      let entries: Array<readonly [string, ChatConversationRecord[]]> = [];
+      try {
+        const grouped = await window.snow.listSubAgentConversationsByParents(
+          current.map((conv) => conv.conversationId)
+        );
+        entries = Object.entries(grouped);
+      } catch {
+        entries = [];
+      }
 
       if (!cancelled) {
         const map: SubAgentMap = {};
@@ -953,11 +932,6 @@ export function ChatsSection({
                           <SubAgentListPanel
                             conversations={subAgentConversations}
                             activeConversationId={activeConversationId}
-                            selectionMode={selectionMode}
-                            isSelected={(subConvId) =>
-                              selectedIds.has(subConvId)
-                            }
-                            onToggleSelect={toggleSelect}
                             onSelect={(subConvId) =>
                               void handleSelectConversation(
                                 subConvId,

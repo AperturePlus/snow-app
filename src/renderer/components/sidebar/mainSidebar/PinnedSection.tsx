@@ -319,7 +319,8 @@ export function PinnedSection({
 
   /**
    * 批量删除选中的置顶会话。选中父会话时其子代理会话随级联删除：
-   * 删除前查询子代理仅用于中止对应流，以及判断当前打开会话是否需要清空。
+   * 删除前一次性批量查询所有选中会话的子代理（避免 N+1），
+   * 仅用于中止对应流，以及判断当前打开会话是否需要清空。
    */
   const handleBatchDelete = async (): Promise<void> => {
     if (selectedIds.size === 0 || isDeleting) {
@@ -328,25 +329,27 @@ export function PinnedSection({
 
     setIsDeleting(true);
     try {
+      // 收集所有受影响会话：选中父会话 + 其子代理（用于中止流/清空聊天区）
       const allTargetIds = new Set<string>(selectedIds);
-      for (const id of selectedIds) {
-        try {
-          const subAgents = await window.snow.listSubAgentConversations(id);
-          for (const sub of subAgents) {
+      try {
+        const subAgentMap = await window.snow.listSubAgentConversationsByParents(
+          [...selectedIds]
+        );
+        for (const subs of Object.values(subAgentMap)) {
+          for (const sub of subs) {
             allTargetIds.add(sub.conversationId);
           }
-        } catch {
-          // 查询失败按无子代理处理，不阻塞删除
         }
+      } catch {
+        // 查询失败按无子代理处理，不阻塞删除
       }
 
       for (const targetId of allTargetIds) {
         abortConversation(targetId);
       }
 
-      for (const id of selectedIds) {
-        await window.snow.deleteConversation(id);
-      }
+      // 单次批量删除：native 单事务完成，避免逐条 IPC + 逐条事务
+      await window.snow.deleteConversations([...selectedIds]);
 
       if (activeConversationId && allTargetIds.has(activeConversationId)) {
         handleNewChat();

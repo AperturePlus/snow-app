@@ -28,6 +28,10 @@ type ChatItemMenuProps = {
   onDelete: () => void;
   onExport: (format: ExportFormat) => void;
   onOpenChange?: (isOpen: boolean) => void;
+  /** 右键菜单锚点（光标位置）：非空时菜单以该点定位并保持打开 */
+  contextMenuAnchor?: { x: number; y: number } | null;
+  /** 右键菜单关闭回调（父组件用于清空锚点） */
+  onContextMenuClose?: () => void;
 };
 
 export function ChatItemMenu({
@@ -39,12 +43,16 @@ export function ChatItemMenu({
   onDelete,
   onExport,
   onOpenChange,
+  contextMenuAnchor = null,
+  onContextMenuClose,
 }: ChatItemMenuProps): React.JSX.Element {
   const { t } = useI18n();
-  const [isOpen, setIsOpen] = useState(false);
+  const [isButtonOpen, setIsButtonOpen] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
+  // 右键锚点存在时菜单即为打开状态
+  const isOpen = isButtonOpen || contextMenuAnchor !== null;
   const containerRef = useRef<HTMLSpanElement>(null);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -53,6 +61,8 @@ export function ChatItemMenu({
   const emojiTriggerRef = useRef<HTMLButtonElement>(null);
   const onOpenChangeRef = useRef(onOpenChange);
   onOpenChangeRef.current = onOpenChange;
+  const onContextMenuCloseRef = useRef(onContextMenuClose);
+  onContextMenuCloseRef.current = onContextMenuClose;
 
   const showExportRef = useRef(showExport);
   showExportRef.current = showExport;
@@ -62,6 +72,7 @@ export function ChatItemMenu({
     placement: "auto-up-down",
     triggerRef,
     panelRef: menuRef,
+    anchorPoint: contextMenuAnchor,
     onReposition: () => {
       if (showExportRef.current) {
         updateExportPositionRef.current?.();
@@ -92,7 +103,22 @@ export function ChatItemMenu({
       return;
     }
 
+    // 关闭菜单：清空按钮态与右键锚点态
+    const closeMenu = (): void => {
+      setIsButtonOpen(false);
+      onContextMenuCloseRef.current?.();
+      setShowConfirm(false);
+      setShowExport(false);
+      setShowEmoji(false);
+    };
+
     const handleClickOutside = (event: MouseEvent): void => {
+      // 右键按下不立即关闭：由 document 级 contextmenu 监听统一处理，
+      // 允许在同一行上连续右键时直接重新定位菜单，避免闪烁。
+      if (event.button === 2) {
+        return;
+      }
+
       const target = event.target as Node;
 
       if (
@@ -103,22 +129,46 @@ export function ChatItemMenu({
         return;
       }
 
-      setIsOpen(false);
-      setShowConfirm(false);
-      setShowExport(false);
-      setShowEmoji(false);
+      closeMenu();
+    };
+
+    // 其它区域右键时关闭本菜单（目标行会自行打开自己的菜单）
+    const handleGlobalContextMenu = (event: MouseEvent): void => {
+      const target = event.target as Node;
+
+      if (
+        (containerRef.current && containerRef.current.contains(target)) ||
+        (menuRef.current && menuRef.current.contains(target)) ||
+        (exportPanelRef.current && exportPanelRef.current.contains(target))
+      ) {
+        return;
+      }
+
+      closeMenu();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        closeMenu();
+      }
     };
 
     document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("contextmenu", handleGlobalContextMenu);
+    window.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("contextmenu", handleGlobalContextMenu);
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen]);
 
   const handleToggle = (event: React.SyntheticEvent): void => {
     event.stopPropagation();
     event.preventDefault();
-    setIsOpen((prev) => !prev);
+    // 点击 … 按钮切换按钮菜单；若右键菜单正打开则先清空锚点
+    setIsButtonOpen((prev) => !prev);
+    onContextMenuCloseRef.current?.();
     setShowConfirm(false);
     setShowExport(false);
     setShowEmoji(false);
@@ -126,12 +176,14 @@ export function ChatItemMenu({
 
   const handlePin = (): void => {
     onPin();
-    setIsOpen(false);
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
   };
 
   const handleRename = (): void => {
     onRename();
-    setIsOpen(false);
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
   };
 
   const handleDeleteClick = (): void => {
@@ -142,7 +194,8 @@ export function ChatItemMenu({
 
   const handleDeleteConfirm = (): void => {
     onDelete();
-    setIsOpen(false);
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
     setShowConfirm(false);
   };
 
@@ -158,7 +211,8 @@ export function ChatItemMenu({
 
   const handleExportSelect = (format: ExportFormat): void => {
     onExport(format);
-    setIsOpen(false);
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
     setShowExport(false);
   };
 
@@ -170,7 +224,8 @@ export function ChatItemMenu({
 
   const handleEmojiSelect = (emoji: string): void => {
     void onSetEmoji(emoji);
-    setIsOpen(false);
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
     setShowEmoji(false);
     setShowConfirm(false);
     setShowExport(false);
@@ -178,7 +233,8 @@ export function ChatItemMenu({
 
   // Escape / 焦点离开面板等场景：关闭整个菜单
   const handleEmojiClose = (): void => {
-    setIsOpen(false);
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
     setShowEmoji(false);
     setShowConfirm(false);
     setShowExport(false);

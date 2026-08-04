@@ -58,6 +58,11 @@ export function ChatItem({
   const [isEditing, setIsEditing] = useState(false);
   const [editingValue, setEditingValue] = useState("");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  // 右键菜单锚点（光标位置）：非空时菜单以该点定位打开
+  const [contextMenuAnchor, setContextMenuAnchor] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
   const isSubmittingRef = useRef(false);
   const cancelledRef = useRef(false);
@@ -159,6 +164,15 @@ export function ChatItem({
     onSelect?.();
   };
 
+  const handleContextMenu = (event: React.MouseEvent): void => {
+    // 重命名输入框 / 多选模式下不弹右键菜单（保留系统菜单或勾选交互）
+    if (isEditing || selectionMode) {
+      return;
+    }
+    event.preventDefault();
+    setContextMenuAnchor({ x: event.clientX, y: event.clientY });
+  };
+
   const handleToggleExpand = (event: React.MouseEvent): void => {
     event.stopPropagation();
     onToggleSubAgentPanel?.();
@@ -177,6 +191,7 @@ export function ChatItem({
       }`}
       key={conversation.conversationId}
       onClick={handleSelectClick}
+      onContextMenu={handleContextMenu}
       role="button"
       tabIndex={0}
       onKeyDown={(event) => {
@@ -310,6 +325,8 @@ export function ChatItem({
             onDelete={onDelete}
             onExport={onExport}
             onOpenChange={setIsMenuOpen}
+            contextMenuAnchor={contextMenuAnchor}
+            onContextMenuClose={() => setContextMenuAnchor(null)}
           />
         </span>
       )}
