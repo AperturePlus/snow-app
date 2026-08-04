@@ -1128,10 +1128,21 @@ pub fn list_checkpoint_changes(
 }
 
 /// Build unified diffs from checkpoint content to the current working state.
-/// This is read-only and is used by the renderer's rollback preview.
+/// This is read-only and is used by the renderer's rollback preview and the
+/// file-changes panel.
+///
+/// `include_all` controls which captured entries are reported:
+/// - `false` (rollback preview): only files whose current state still matches
+///   the checkpoint's post-change state. These are exactly the files rollback
+///   would restore, so the preview matches the restore behaviour.
+/// - `true` (file-changes panel): every captured entry is reported as long as
+///   its current state differs from the pre-change state. Files that were
+///   re-modified by later runs in a shared working tree stay visible, so an
+///   earlier conversation's modifications are never erased from the panel.
 pub fn list_checkpoint_diffs(
     checkpoint_id: String,
     work_dir: String,
+    include_all: bool,
 ) -> Result<Vec<CheckpointFileDiff>> {
     let _guard = checkpoint_guard()?;
     if !checkpoint_manifest_exists(&checkpoint_id) {
@@ -1150,7 +1161,9 @@ pub fn list_checkpoint_diffs(
             continue;
         };
         let current = root.join(from_forward_slashes(&entry.path));
-        if !states_match(&current, expected, manifest.git.as_ref(), &entry.path)? {
+        if !include_all
+            && !states_match(&current, expected, manifest.git.as_ref(), &entry.path)?
+        {
             continue;
         }
         let Some(change_type) = classify_change(

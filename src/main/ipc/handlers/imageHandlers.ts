@@ -24,8 +24,12 @@ export const registerImageHandlers = (native: NativeBridge): void => {
       }
       try {
         const storageInfo = await native.initializeAppStorage();
-        const uploadRoot = join(dirname(storageInfo.databasePath), "upload");
-        const filePath = normalize(join(uploadRoot, normalized));
+        // normalized 已带 upload/ 前缀（如 upload/2026-08-05/xxx.jpg），
+        // 必须基于数据库目录拼接，不能再拼一次 uploadRoot，否则会出现
+        // uploadRoot\upload\... 双重前缀导致文件读不到（历史 bug）。
+        const dbDir = dirname(storageInfo.databasePath);
+        const uploadRoot = join(dbDir, "upload");
+        const filePath = normalize(join(dbDir, normalized));
         // 二次校验：解析后的路径必须仍在 upload 目录内
         const rootPrefix = uploadRoot.endsWith(sep)
           ? uploadRoot
@@ -42,14 +46,14 @@ export const registerImageHandlers = (native: NativeBridge): void => {
           ext === "png"
             ? "image/png"
             : ext === "jpg" || ext === "jpeg"
-              ? "image/jpeg"
-              : ext === "webp"
-                ? "image/webp"
-                : ext === "gif"
-                  ? "image/gif"
-                  : ext === "bmp"
-                    ? "image/bmp"
-                    : "image/png";
+            ? "image/jpeg"
+            : ext === "webp"
+            ? "image/webp"
+            : ext === "gif"
+            ? "image/gif"
+            : ext === "bmp"
+            ? "image/bmp"
+            : "image/png";
         return `data:${mimeType};base64,${bytes.toString("base64")}`;
       } catch {
         // 文件不存在/读取失败等一律返回 null，渲染端回退到占位展示

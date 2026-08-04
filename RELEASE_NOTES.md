@@ -35,6 +35,23 @@
 - **Per-Conversation Input Draft Persistence**: Draft text (including image
   chips) is saved per conversation and restored when switching back or
   creating a new chat, so input is never lost while the chat view reloads.
+- **Image Library (Generated Image Management)**: Every generated image is
+  now persisted to an `image/` folder next to the app installation directory
+  (falls back to the storage directory when the install dir is read-only) and
+  indexed in a new `image_library` table (model / provider / prompt / mime /
+  size / dimensions / timestamp). Chat messages store the small `image/...`
+  path reference instead of the huge base64 blob, so the database stops
+  bloating. A new **Image library** panel (Settings sidebar) offers a
+  filterable grid (ratio landscape/square/portrait, time range, provider,
+  model) with click-to-zoom lightbox, per-image download, and delete —
+  deleting an image physically removes the file, its index row, **and
+  rewrites the referencing chat messages** (both `content` and `raw_json`) so
+  conversations stay consistent. Historical base64 images keep rendering
+  unchanged; if persistence fails the inline base64 fallback still works.
+  When deleting a conversation, the confirmation dialog now shows an
+  **"also delete generated images"** checkbox (single and batch delete alike)
+  — ticking it cascade-deletes every library image referenced by those
+  conversations (files + index rows) before the conversation goes away.
 
 ## Improvements
 

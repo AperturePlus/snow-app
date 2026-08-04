@@ -6,6 +6,7 @@ import {
   Globe,
   FishingHook,
   Image as ImageIcon,
+  Images,
   Keyboard,
   List,
   MessageSquareText,
@@ -47,6 +48,13 @@ export const SETTINGS_ITEMS: SettingsItem[] = [
     labelKey: "settings.imagegenSettings",
     defaultLabel: "Image generation",
     view: "imagegen-settings",
+  },
+  {
+    id: "imagelibrary",
+    icon: Images,
+    labelKey: "settings.imageLibrary",
+    defaultLabel: "Image library",
+    view: "image-library",
   },
   {
     id: "proxy",

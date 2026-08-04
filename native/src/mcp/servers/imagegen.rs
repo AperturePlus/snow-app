@@ -32,8 +32,14 @@ use super::super::tools::McpTool;
 
 const SERVER_ID: &str = "imagegen";
 const TOOL_GENERATE: &str = "generate";
-/// Image models may take up to ~2 minutes for complex prompts.
-const REQUEST_TIMEOUT_SECS: u64 = 180;
+/// Image models may take several minutes for complex prompts (gpt-image 2K/4K,
+/// Gemini Nano Banana with web search). This is the DEFAULT when the settings
+/// panel value is missing; users can raise it in Settings -> Image generation.
+const REQUEST_TIMEOUT_SECS: u64 = 300;
+/// 生图请求超时允许范围（秒）：1 分钟 ~ 1 小时（与设置面板
+/// IMAGE_GEN_TIMEOUT_RANGE 一致，防止异常配置值导致请求被立刻掐断或无限挂起）。
+const MIN_TIMEOUT_SECS: u64 = 60;
+const MAX_TIMEOUT_SECS: u64 = 3600;
 const DEFAULT_N: usize = 1;
 const MAX_N: usize = 4;
 
@@ -52,6 +58,9 @@ const DEFAULT_GEMINI_BASE_URL: &str = "https://generativelanguage.googleapis.com
 struct ImageGenSettings {
     /// 渠道列表（顺序即优先级）。
     channels: Vec<ImageGenChannel>,
+    /// 生图请求超时（秒），设置面板可配置；缺失时回退默认值
+    /// （REQUEST_TIMEOUT_SECS）。对单次生成/编辑请求生效（含流式）。
+    timeout_secs: Option<u64>,
 }
 
 impl ImageGenSettings {
@@ -128,6 +137,8 @@ impl ImageGenService {
             .map_err(|error| {
                 Error::from_reason(format!("Failed to load image generation settings: {error}"))
             })??;
+        // 生图请求超时（秒）：设置面板可配置，缺失时回退默认值。
+        let timeout_secs = settings.timeout_secs;
 
         // --- 2. Resolve channel (provider): argument > first usable channel ---
         let channel = resolve_channel(args, &settings)?;
@@ -250,7 +261,7 @@ impl ImageGenService {
                 self.generate_gemini(
                     args, channel_config, prompt, &model, &size, &quality, &base_url,
                     api_key, n, stream_enabled, on_chunk, &images, seed,
-                    thinking_level.as_deref(), image_search, &channel_label,
+                    thinking_level.as_deref(), image_search, &channel_label, timeout_secs,
                 )
                 .await
             }
@@ -259,7 +270,7 @@ impl ImageGenService {
                     args, prompt, &model, &size, &quality, &output_format,
                     &base_url, api_key, n, stream_enabled, on_chunk, &images,
                     seed, input_fidelity.as_deref(), background.as_deref(),
-                    moderation.as_deref(), &channel_label,
+                    moderation.as_deref(), &channel_label, timeout_secs,
                 )
                 .await
             }
@@ -288,6 +299,7 @@ impl ImageGenService {
         background: Option<&str>,
         moderation: Option<&str>,
         channel_label: &str,
+        timeout_secs: Option<u64>,
     ) -> napi::Result<Value> {
         let mime_type = mime_for_format(output_format.as_deref().unwrap_or("png"));
         let is_dall_e = model.to_ascii_lowercase().starts_with("dall-e");
@@ -346,7 +358,7 @@ impl ImageGenService {
                     Ok(form)
                 };
 
-            let client = build_client().await?;
+            let client = build_client(timeout_secs).await?;
             // 部分模型/代理不支持透明背景（400 "Transparent background is not
             // supported"）：去掉 background 参数后重试一次
             let mut attempt = 0;
@@ -464,7 +476,7 @@ impl ImageGenService {
             }
         }
 
-        let client = build_client().await?;
+        let client = build_client(timeout_secs).await?;
         // 部分模型/代理不支持透明背景（400 "Transparent background is not
         // supported"）：去掉 background 参数后重试一次
         let mut attempt = 0;
@@ -583,6 +595,7 @@ impl ImageGenService {
         thinking_level: Option<&str>,
         image_search: bool,
         channel_label: &str,
+        timeout_secs: Option<u64>,
     ) -> napi::Result<Value> {
         let is_nano_banana_2 = matches!(
             model,
@@ -689,7 +702,7 @@ impl ImageGenService {
                 body["generation_config"] = generation_config;
             }
 
-            let client = build_client().await?;
+            let client = build_client(timeout_secs).await?;
             let response = client
                 .post(&endpoint)
                 .header("x-goog-api-key", api_key)
@@ -803,7 +816,7 @@ impl ImageGenService {
             body["tools"] = json!(tools);
         }
 
-        let client = build_client().await?;
+        let client = build_client(timeout_secs).await?;
         let response = client
             .post(&endpoint)
             .header("x-goog-api-key", api_key)
@@ -1519,7 +1532,10 @@ fn load_imagegen_settings() -> napi::Result<ImageGenSettings> {
                         channels.push(channel);
                     }
                 }
-                return Ok(ImageGenSettings { channels });
+                return Ok(ImageGenSettings {
+                    channels,
+                    timeout_secs: None,
+                });
             }
 
             // 更旧单渠道格式（顶层字段）→ 迁移为一个渠道
@@ -1581,6 +1597,7 @@ fn load_imagegen_settings() -> napi::Result<ImageGenSettings> {
             }
             Ok(ImageGenSettings {
                 channels: vec![channel],
+                timeout_secs: None,
             })
         }
         None => Ok(ImageGenSettings::default()),
@@ -1686,12 +1703,15 @@ fn non_empty(value: &str) -> Option<String> {
     }
 }
 
-async fn build_client() -> napi::Result<reqwest::Client> {
-    crate::api::http_client::build_proxied_client_with_timeout(Duration::from_secs(
-        REQUEST_TIMEOUT_SECS,
-    ))
-    .await
-    .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {error}")))
+async fn build_client(timeout_secs: Option<u64>) -> napi::Result<reqwest::Client> {
+    // 收敛到允许范围（1 分钟 ~ 1 小时），防止异常配置值导致请求被
+    // 立刻掐断（过小）或无限挂起（过大）。
+    let timeout = timeout_secs
+        .unwrap_or(REQUEST_TIMEOUT_SECS)
+        .clamp(MIN_TIMEOUT_SECS, MAX_TIMEOUT_SECS);
+    crate::api::http_client::build_proxied_client_with_timeout(Duration::from_secs(timeout))
+        .await
+        .map_err(|error| Error::from_reason(format!("Failed to create HTTP client: {error}")))
 }
 
 fn api_error(prefix: &str, status: u16, response_body: &Value) -> Error {
@@ -1757,9 +1777,12 @@ fn build_result(
     model: &str,
     provider: &str,
     generated: usize,
-    content: Vec<Value>,
+    mut content: Vec<Value>,
     remote_urls: Vec<String>,
 ) -> Value {
+    // 生成图落盘到图库目录并写入索引（失败不阻断：保留 base64 块继续展示）
+    let _ = crate::storage::persist_generated_images(prompt, model, provider, &mut content);
+
     let mut summary = format!("Generated {generated} image(s) with {model} ({provider}).");
     if !remote_urls.is_empty() {
         summary.push_str(&format!(" Remote URLs: {}", remote_urls.join(", ")));

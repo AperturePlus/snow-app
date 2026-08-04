@@ -114,11 +114,13 @@ export function ChatsSection({
   const [expandedSubAgentConversationIds, setExpandedSubAgentConversationIds] =
     useState<Set<string>>(() => new Set());
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(
-    () => new Set()
-  );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
   const [showBatchConfirm, setShowBatchConfirm] = useState(false);
+  // 批量删除确认：所选会话引用的图库图片数（null = 未查询），
+  // 以及用户是否选择级联删除图片
+  const [batchImagesCount, setBatchImagesCount] = useState<number | null>(null);
+  const [batchDeleteImages, setBatchDeleteImages] = useState(false);
   // 会话区域收起/展开（localStorage 持久化，与项目区域一致）
   const [isCollapsed, setIsCollapsed] = useState(() => {
     try {
@@ -473,9 +475,21 @@ export function ChatsSection({
       .map((conv) => conv.conversationId);
     setSelectedIds(new Set(allIds));
   };
-
   const handleDeselectAll = (): void => {
     setSelectedIds(new Set());
+  };
+
+  // 打开批量删除确认框：查询所选会话引用的图库图片数
+  const handleOpenBatchConfirm = (): void => {
+    setShowBatchConfirm(true);
+    setBatchImagesCount(null);
+    setBatchDeleteImages(false);
+    if (selectedIds.size > 0) {
+      void window.snow
+        .countConversationImages([...selectedIds])
+        .then((count) => setBatchImagesCount(count))
+        .catch(() => setBatchImagesCount(0));
+    }
   };
 
   const handleBatchDelete = async (): Promise<void> => {
@@ -487,6 +501,12 @@ export function ChatsSection({
     setShowBatchConfirm(false);
 
     try {
+      // 用户选择不保留图片时，先级联删除所选会话引用的图库图片
+      // （物理 + 索引；会话随后被删除，无需重写消息）
+      if (batchDeleteImages && (batchImagesCount ?? 0) > 0) {
+        await window.snow.deleteConversationImages([...selectedIds]);
+      }
+
       // 收集所有受影响会话 ID（含子代理级联），用于中止流/清空聊天区
       const targetIds = new Set<string>();
       for (const convId of selectedIds) {
@@ -750,7 +770,7 @@ export function ChatsSection({
             <button
               type="button"
               className="chat-multi-select-action-btn danger"
-              onClick={() => setShowBatchConfirm(true)}
+              onClick={handleOpenBatchConfirm}
               disabled={isBatchDeleting || selectedIds.size === 0}
             >
               {isBatchDeleting ? (
@@ -794,18 +814,30 @@ export function ChatsSection({
       {isMultiSelectMode && showBatchConfirm ? (
         <div className="chat-batch-confirm">
           <div className="chat-batch-confirm-content">
-            <AlertTriangle
-              size={13}
-              className="chat-item-menu-confirm-icon"
-            />
+            <AlertTriangle size={13} className="chat-item-menu-confirm-icon" />
             <span className="chat-item-menu-confirm-text">
               {t("sidebar.chatMultiSelectDeleteConfirm", {
-                defaultValue:
-                  "Delete {{count}} selected conversations?",
+                defaultValue: "Delete {{count}} selected conversations?",
                 values: { count: selectedIds.size },
               })}
             </span>
           </div>
+          {batchImagesCount !== null && batchImagesCount > 0 ? (
+            <label className="chat-item-menu-delete-images">
+              <input
+                type="checkbox"
+                checked={batchDeleteImages}
+                onChange={(event) => setBatchDeleteImages(event.target.checked)}
+              />
+              <span>
+                {t("sidebar.chatDeleteImagesOptionBatch", {
+                  defaultValue:
+                    "Also delete the {{count}} image(s) generated in the selected conversations",
+                  values: { count: batchImagesCount },
+                })}
+              </span>
+            </label>
+          ) : null}
           <div className="chat-item-menu-confirm-actions">
             <button
               type="button"
@@ -833,175 +865,176 @@ export function ChatsSection({
       {!isCollapsed && (
         <div className="section-list" ref={sectionListRef}>
           {showLoading ? (
-          <span className="empty-text loading">
-            <Loader2 className="spin" size={13} />
-            {t("sidebar.loadingWorkspaceContent", {
-              defaultValue: "Loading workspace content...",
-            })}
-          </span>
-        ) : !directoryId ? (
-          <span className="empty-text">
-            {t("sidebar.noActiveDirectory", {
-              defaultValue: "No active directory",
-            })}
-          </span>
-        ) : error ? (
-          <span className="empty-text error">{error}</span>
-        ) : conversations.length === 0 ? (
-          <span className="empty-text">
-            {t("sidebar.noChats", { defaultValue: "No chats" })}
-          </span>
-        ) : (
-          <>
-            {timeGroups.map((group) => {
-              const isGroupCollapsed = collapsedGroupKeys[group.key] === true;
-              return (
-                <div key={group.key}>
-                  <button
-                    type="button"
-                    className="chat-time-group-header"
-                    onClick={() => toggleGroupCollapsed(group.key)}
-                    aria-expanded={!isGroupCollapsed}
-                    title={t("sidebar.chatToggleCollapse", {
-                      defaultValue: "Collapse/expand chats",
-                    })}
-                  >
-                    <ChevronRight
-                      size={12}
-                      className={
-                        isGroupCollapsed
-                          ? ""
-                          : "chat-time-group-chevron--open"
-                      }
-                    />
-                    <span>{getGroupLabel(group.key)}</span>
-                    <span className="chat-time-group-count">
-                      {group.conversations.length}
-                    </span>
-                  </button>
-                  {!isGroupCollapsed &&
-                    group.conversations.map((conversation) => {
-                  const subAgentConversations =
-                    subAgentMap[conversation.conversationId] ?? [];
-                  const isSubAgentPanelExpanded =
-                    expandedSubAgentConversationIds.has(
-                      conversation.conversationId
-                    );
-                  return (
-                    <Fragment key={conversation.conversationId}>
-                      <ChatItem
-                        conversation={conversation}
-                        isActive={
-                          conversation.conversationId === activeConversationId
-                        }
-                        isStreaming={streamingConversationIds.has(
-                          conversation.conversationId
-                        )}
-                        isCompleted={completedConversationIds.has(
-                          conversation.conversationId
-                        )}
-                        subAgentConversations={subAgentConversations}
-                        isSubAgentExpanded={isSubAgentPanelExpanded}
-                        isMultiSelectMode={isMultiSelectMode}
-                        isSelected={selectedIds.has(
-                          conversation.conversationId
-                        )}
-                        onToggleSelect={() =>
-                          handleToggleSelect(conversation.conversationId)
-                        }
-                        onEnterMultiSelect={handleEnterMultiSelect}
-                        onToggleSubAgentPanel={() =>
-                          handleToggleSubAgentPanel(
-                            conversation.conversationId
-                          )
-                        }
-                        onPin={() => void handlePin(conversation)}
-                        onRename={(newTitle) =>
-                          handleRename(conversation, newTitle)
-                        }
-                        onSetEmoji={(emoji) =>
-                          handleSetEmoji(conversation, emoji)
-                        }
-                        onDelete={() => void handleDelete(conversation)}
-                        onExport={(format) =>
-                          handleExport(conversation, format)
-                        }
-                        onSelect={() =>
-                          void handleSelectConversation(
-                            conversation.conversationId,
-                            conversation.summary || conversation.title,
-                            {
-                              inputTokens: conversation.inputTokens,
-                              outputTokens: conversation.outputTokens,
-                              cacheCreationInputTokens:
-                                conversation.cacheCreationInputTokens,
-                              cacheReadInputTokens:
-                                conversation.cacheReadInputTokens,
-                            },
-                            conversation.directoryId
-                          )
+            <span className="empty-text loading">
+              <Loader2 className="spin" size={13} />
+              {t("sidebar.loadingWorkspaceContent", {
+                defaultValue: "Loading workspace content...",
+              })}
+            </span>
+          ) : !directoryId ? (
+            <span className="empty-text">
+              {t("sidebar.noActiveDirectory", {
+                defaultValue: "No active directory",
+              })}
+            </span>
+          ) : error ? (
+            <span className="empty-text error">{error}</span>
+          ) : conversations.length === 0 ? (
+            <span className="empty-text">
+              {t("sidebar.noChats", { defaultValue: "No chats" })}
+            </span>
+          ) : (
+            <>
+              {timeGroups.map((group) => {
+                const isGroupCollapsed = collapsedGroupKeys[group.key] === true;
+                return (
+                  <div key={group.key}>
+                    <button
+                      type="button"
+                      className="chat-time-group-header"
+                      onClick={() => toggleGroupCollapsed(group.key)}
+                      aria-expanded={!isGroupCollapsed}
+                      title={t("sidebar.chatToggleCollapse", {
+                        defaultValue: "Collapse/expand chats",
+                      })}
+                    >
+                      <ChevronRight
+                        size={12}
+                        className={
+                          isGroupCollapsed
+                            ? ""
+                            : "chat-time-group-chevron--open"
                         }
                       />
-                      {/* 面板渲染在 ChatItem 外部，作为兄弟节点，
+                      <span>{getGroupLabel(group.key)}</span>
+                      <span className="chat-time-group-count">
+                        {group.conversations.length}
+                      </span>
+                    </button>
+                    {!isGroupCollapsed &&
+                      group.conversations.map((conversation) => {
+                        const subAgentConversations =
+                          subAgentMap[conversation.conversationId] ?? [];
+                        const isSubAgentPanelExpanded =
+                          expandedSubAgentConversationIds.has(
+                            conversation.conversationId
+                          );
+                        return (
+                          <Fragment key={conversation.conversationId}>
+                            <ChatItem
+                              conversation={conversation}
+                              isActive={
+                                conversation.conversationId ===
+                                activeConversationId
+                              }
+                              isStreaming={streamingConversationIds.has(
+                                conversation.conversationId
+                              )}
+                              isCompleted={completedConversationIds.has(
+                                conversation.conversationId
+                              )}
+                              subAgentConversations={subAgentConversations}
+                              isSubAgentExpanded={isSubAgentPanelExpanded}
+                              isMultiSelectMode={isMultiSelectMode}
+                              isSelected={selectedIds.has(
+                                conversation.conversationId
+                              )}
+                              onToggleSelect={() =>
+                                handleToggleSelect(conversation.conversationId)
+                              }
+                              onEnterMultiSelect={handleEnterMultiSelect}
+                              onToggleSubAgentPanel={() =>
+                                handleToggleSubAgentPanel(
+                                  conversation.conversationId
+                                )
+                              }
+                              onPin={() => void handlePin(conversation)}
+                              onRename={(newTitle) =>
+                                handleRename(conversation, newTitle)
+                              }
+                              onSetEmoji={(emoji) =>
+                                handleSetEmoji(conversation, emoji)
+                              }
+                              onDelete={() => void handleDelete(conversation)}
+                              onExport={(format) =>
+                                handleExport(conversation, format)
+                              }
+                              onSelect={() =>
+                                void handleSelectConversation(
+                                  conversation.conversationId,
+                                  conversation.summary || conversation.title,
+                                  {
+                                    inputTokens: conversation.inputTokens,
+                                    outputTokens: conversation.outputTokens,
+                                    cacheCreationInputTokens:
+                                      conversation.cacheCreationInputTokens,
+                                    cacheReadInputTokens:
+                                      conversation.cacheReadInputTokens,
+                                  },
+                                  conversation.directoryId
+                                )
+                              }
+                            />
+                            {/* 面板渲染在 ChatItem 外部，作为兄弟节点，
                           完全不继承父级会话项的背景色 */}
-                      {subAgentConversations.length > 0 &&
-                        isSubAgentPanelExpanded &&
-                        !isMultiSelectMode && (
-                          <SubAgentListPanel
-                            conversations={subAgentConversations}
-                            activeConversationId={activeConversationId}
-                            onSelect={(subConvId) =>
-                              void handleSelectConversation(
-                                subConvId,
-                                undefined,
-                                undefined,
-                                conversation.directoryId
-                              )
-                            }
-                          />
-                        )}
-                    </Fragment>
-                  );
-                })}
-                </div>
-              );
-            })}
-            {hasMore ? (
-              <div
-                className={`chat-load-more ${
-                  isLoadingMore ? "is-loading" : ""
-                }`}
-                ref={loadMoreRef}
-                role={isLoadingMore ? "status" : undefined}
-                aria-live="polite"
-                aria-label={
-                  isLoadingMore
-                    ? t("sidebar.chatLoadingMore", {
-                        defaultValue: "Loading more chats...",
-                      })
-                    : undefined
-                }
-              >
-                {isLoadingMore ? (
-                  <>
-                    <Loader2 className="spin" size={14} aria-hidden="true" />
-                    <span>
-                      {t("sidebar.chatLoadingMore", {
-                        defaultValue: "Loading more chats...",
+                            {subAgentConversations.length > 0 &&
+                              isSubAgentPanelExpanded &&
+                              !isMultiSelectMode && (
+                                <SubAgentListPanel
+                                  conversations={subAgentConversations}
+                                  activeConversationId={activeConversationId}
+                                  onSelect={(subConvId) =>
+                                    void handleSelectConversation(
+                                      subConvId,
+                                      undefined,
+                                      undefined,
+                                      conversation.directoryId
+                                    )
+                                  }
+                                />
+                              )}
+                          </Fragment>
+                        );
                       })}
-                    </span>
-                  </>
-                ) : null}
-              </div>
-            ) : (
-              <div className="chat-all-loaded">
-                {t("sidebar.chatAllLoaded", {
-                  defaultValue: "All chats loaded",
-                })}
-              </div>
-            )}
-          </>
-        )}
+                  </div>
+                );
+              })}
+              {hasMore ? (
+                <div
+                  className={`chat-load-more ${
+                    isLoadingMore ? "is-loading" : ""
+                  }`}
+                  ref={loadMoreRef}
+                  role={isLoadingMore ? "status" : undefined}
+                  aria-live="polite"
+                  aria-label={
+                    isLoadingMore
+                      ? t("sidebar.chatLoadingMore", {
+                          defaultValue: "Loading more chats...",
+                        })
+                      : undefined
+                  }
+                >
+                  {isLoadingMore ? (
+                    <>
+                      <Loader2 className="spin" size={14} aria-hidden="true" />
+                      <span>
+                        {t("sidebar.chatLoadingMore", {
+                          defaultValue: "Loading more chats...",
+                        })}
+                      </span>
+                    </>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="chat-all-loaded">
+                  {t("sidebar.chatAllLoaded", {
+                    defaultValue: "All chats loaded",
+                  })}
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>

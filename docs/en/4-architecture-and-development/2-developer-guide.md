@@ -123,18 +123,32 @@ auto-waits) → rusqlite.
   describe constraints and defaults precisely).
 - File edits follow workspace conventions: prefer apply_patch/filesystem
   tools; shell commands use PowerShell syntax (Windows default environment).
+- **Settings-panel styles are shared, not reinvented**: every sidebar settings
+  panel reuses the `api-settings-*` classes (`api-settings-page` →
+  `page-header` → `summary-grid` → actions row → `table-panel`); do not build
+  a parallel layout. Override column ratios with a page-level class that only
+  changes `grid-template-columns`. All styles live in
+  `src/renderer/styles.css` — `grep -n "<class>"` the whole file before adding
+  or removing a class (classes from retired layouts are still reused by newer
+  panels; duplicate definitions make one copy silently win). Full conventions
+  and the CSS-specificity trap: `.trellis/spec/frontend/component-guidelines.md`.
 
 ## 6. Common Pitfalls
 
-| Issue | Notes |
-|-------|-------|
-| Native changes don't take effect | Forgot `npm run build:rust` or didn't restart (`.node` can't hot-swap) |
-| storageReady deadlock | Calling native before init without the Proxy — only bootstrap may use the raw binding |
-| tsc can't find a module | Run `npm install` after adding deps; commit lockfile changes with the PR |
-| Missing translation | The three i18n files must stay structurally identical; missing keys show `undefined` at runtime |
-| CRLF warnings | Git CRLF→LF notices on Windows are normal (repo is LF-normalized) |
-| DB migration failure | Migrations must be idempotent; verify on a backup DB before committing |
-| Standalone script calling `callMcpTool` fails with `Create threadsafe function ... failed` | Positions 7–12 of `callMcpTool` (onChunk, onBrowserCommand, onUserQuestion, onAppControl, onRemoteWorkspaceCommand, onTerminalCommand) are all **required** `ThreadsafeFunction`s; passing `undefined` fails with `InvalidArg` — see the detailed section below |
+| Issue                                                                                      | Notes                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native changes don't take effect                                                           | Forgot `npm run build:rust` or didn't restart (`.node` can't hot-swap)                                                                                                                                                                                                            |
+| storageReady deadlock                                                                      | Calling native before init without the Proxy — only bootstrap may use the raw binding                                                                                                                                                                                             |
+| tsc can't find a module                                                                    | Run `npm install` after adding deps; commit lockfile changes with the PR                                                                                                                                                                                                          |
+| Missing translation                                                                        | The three i18n files must stay structurally identical; missing keys show `undefined` at runtime                                                                                                                                                                                   |
+| CRLF warnings                                                                              | Git CRLF→LF notices on Windows are normal (repo is LF-normalized)                                                                                                                                                                                                                 |
+| DB migration failure                                                                       | Migrations must be idempotent; verify on a backup DB before committing                                                                                                                                                                                                            |
+| Standalone script calling `callMcpTool` fails with `Create threadsafe function ... failed` | Positions 7–12 of `callMcpTool` (onChunk, onBrowserCommand, onUserQuestion, onAppControl, onRemoteWorkspaceCommand, onTerminalCommand) are all **required** `ThreadsafeFunction`s; passing `undefined` fails with `InvalidArg` — see the detailed section below                   |
+| CSS rules silently don't apply                                                             | A custom class inside a shared container is overridden: `.api-settings-summary-card span/small` (specificity 0,1,1) beats a bare class selector (0,1,0) — always qualify child selectors with the container class (e.g. `.imagegen-concurrency-card .imagegen-concurrency-head`)  |
+| The same class is defined twice in styles.css                                              | Classes from retired layouts (e.g. `imagegen-*` at ~line 12180) are still reused by newer panels; `grep -n` the whole file before writing a new rule, add only delta rules                                                                                                        |
+| File corrupted after a large search-replace                                                | Replacing very long JSX/CSS blocks can leave stale tails (`})}`, stray `}`); read the region back and verify pairs immediately, then run `tsc --noEmit` + `electron-vite build`                                                                                                   |
+| imagegen reference images show only placeholders                                           | `images:resolve-upload-image` used `join(uploadRoot, normalized)` while `normalized` already carries the `upload/` prefix → double `uploadRoot\upload\...` prefix made every read fail; join against `dirname(databasePath)` instead (fixed with a comment in `imageHandlers.ts`) |
+| Debugging renderer image/file chains                                                       | Use plain `node` with `require("../native/index.cjs")`, call `initializeAppStorage()` to get `databasePath`, replicate the main-process path logic + `readFile` — no Electron needed to locate the fault                                                                          |
 
 ### callMcpTool callbacks (standalone scripts / e2e verification)
 
@@ -150,18 +164,18 @@ Error: Create threadsafe function in ThreadsafeFunction::create failed
 code: 'InvalidArg'
 ```
 
-| Position | Parameter | Type | Notes |
-| --- | --- | --- | --- |
-| 1 | `toolFullName` | string | Full tool name, e.g. `config-list` |
-| 2 | `argsJson` | string | JSON string of the arguments |
-| 3–6 | projectId / checkpointIds / checkpointWorkDir / sensitiveAuthorizationToken | optional | `undefined` is fine |
-| 7 | `onChunk` | function | Streaming chunk callback (`BashStreamChunk`) |
-| 8 | `onBrowserCommand` | async function | Browser command forwarding |
-| 9 | `onUserQuestion` | async function | User-question interaction |
-| 10 | `onAppControl` | async function | App-control commands |
-| 11 | `onRemoteWorkspaceCommand` | async function | Remote (SSH) command forwarding |
-| 12 | `onTerminalCommand` | async function | **Terminal PTY command forwarding (newest callback, most commonly forgotten)** |
-| 13–15 | subAgentAllowedTools / planMode / planApproved | optional | `undefined` is fine |
+| Position | Parameter                                                                   | Type           | Notes                                                                          |
+| -------- | --------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------ |
+| 1        | `toolFullName`                                                              | string         | Full tool name, e.g. `config-list`                                             |
+| 2        | `argsJson`                                                                  | string         | JSON string of the arguments                                                   |
+| 3–6      | projectId / checkpointIds / checkpointWorkDir / sensitiveAuthorizationToken | optional       | `undefined` is fine                                                            |
+| 7        | `onChunk`                                                                   | function       | Streaming chunk callback (`BashStreamChunk`)                                   |
+| 8        | `onBrowserCommand`                                                          | async function | Browser command forwarding                                                     |
+| 9        | `onUserQuestion`                                                            | async function | User-question interaction                                                      |
+| 10       | `onAppControl`                                                              | async function | App-control commands                                                           |
+| 11       | `onRemoteWorkspaceCommand`                                                  | async function | Remote (SSH) command forwarding                                                |
+| 12       | `onTerminalCommand`                                                         | async function | **Terminal PTY command forwarding (newest callback, most commonly forgotten)** |
+| 13–15    | subAgentAllowedTools / planMode / planApproved                              | optional       | `undefined` is fine                                                            |
 
 Placeholder pattern for standalone Node scripts (see `scripts/e2e-verify-config.cjs`):
 
@@ -171,14 +185,19 @@ const asyncNoop = async () => "";
 const result = await native.callMcpTool(
   "config-list",
   JSON.stringify({ scope: "imagegen" }),
-  undefined, undefined, undefined, undefined, // projectId / checkpointIds / checkpointWorkDir / sensitiveAuthorizationToken
-  noop,      // onChunk
+  undefined,
+  undefined,
+  undefined,
+  undefined, // projectId / checkpointIds / checkpointWorkDir / sensitiveAuthorizationToken
+  noop, // onChunk
   asyncNoop, // onBrowserCommand
   asyncNoop, // onUserQuestion
   asyncNoop, // onAppControl
   asyncNoop, // onRemoteWorkspaceCommand
   asyncNoop, // onTerminalCommand ← required, 6 callbacks in total
-  undefined, undefined, undefined             // subAgentAllowedTools / planMode / planApproved
+  undefined,
+  undefined,
+  undefined // subAgentAllowedTools / planMode / planApproved
 );
 // Resolves to a Promise<string> — the tool result as a JSON string
 ```

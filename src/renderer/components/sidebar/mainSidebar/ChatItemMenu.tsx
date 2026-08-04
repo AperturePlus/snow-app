@@ -21,6 +21,7 @@ import { EmojiPicker } from "./EmojiPicker";
 export type ExportFormat = "markdown" | "html" | "json" | "csv";
 
 type ChatItemMenuProps = {
+  conversationId: string;
   isPinned: boolean;
   emoji: string;
   onPin: () => void;
@@ -37,6 +38,7 @@ type ChatItemMenuProps = {
 };
 
 export function ChatItemMenu({
+  conversationId,
   isPinned,
   emoji,
   onPin,
@@ -54,6 +56,10 @@ export function ChatItemMenu({
   const [showConfirm, setShowConfirm] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
+  // 删除会话确认：该会话引用的图库图片数（null = 未查询），
+  // 以及用户是否选择级联删除图片
+  const [imagesCount, setImagesCount] = useState<number | null>(null);
+  const [deleteImages, setDeleteImages] = useState(false);
   // 右键锚点存在时菜单即为打开状态
   const isOpen = isButtonOpen || contextMenuAnchor !== null;
   const containerRef = useRef<HTMLSpanElement>(null);
@@ -83,16 +89,14 @@ export function ChatItemMenu({
     },
   });
 
-  const {
-    position: exportPosition,
-    updatePosition: updateExportPosition,
-  } = useMenuPosition({
-    isOpen: isOpen && showExport,
-    placement: "auto-left-right",
-    triggerRef: exportTriggerRef,
-    panelRef: exportPanelRef,
-    observeRefs: [menuRef],
-  });
+  const { position: exportPosition, updatePosition: updateExportPosition } =
+    useMenuPosition({
+      isOpen: isOpen && showExport,
+      placement: "auto-left-right",
+      triggerRef: exportTriggerRef,
+      panelRef: exportPanelRef,
+      observeRefs: [menuRef],
+    });
 
   const updateExportPositionRef = useRef(updateExportPosition);
   updateExportPositionRef.current = updateExportPosition;
@@ -209,9 +213,28 @@ export function ChatItemMenu({
     setShowConfirm(true);
     setShowExport(false);
     setShowEmoji(false);
+    // 打开确认框时查询该会话引用的图库图片数
+    setImagesCount(null);
+    setDeleteImages(false);
+    void window.snow
+      .countConversationImages([conversationId])
+      .then((count) => setImagesCount(count))
+      .catch(() => setImagesCount(0));
   };
 
   const handleDeleteConfirm = (): void => {
+    // 用户选择不保留图片时，先级联删除图库图片（物理 + 索引），
+    // 再执行会话删除；删除失败不阻断会话删除
+    if (deleteImages && (imagesCount ?? 0) > 0) {
+      void window.snow
+        .deleteConversationImages([conversationId])
+        .catch((error) => {
+          console.error(
+            "[chat] cascade delete conversation images failed:",
+            error
+          );
+        });
+    }
     onDelete();
     setIsButtonOpen(false);
     onContextMenuCloseRef.current?.();
@@ -303,6 +326,24 @@ export function ChatItemMenu({
                       })}
                     </span>
                   </div>
+                  {imagesCount !== null && imagesCount > 0 ? (
+                    <label className="chat-item-menu-delete-images">
+                      <input
+                        type="checkbox"
+                        checked={deleteImages}
+                        onChange={(event) =>
+                          setDeleteImages(event.target.checked)
+                        }
+                      />
+                      <span>
+                        {t("sidebar.chatDeleteImagesOption", {
+                          defaultValue:
+                            "Also delete the {{count}} image(s) generated in this conversation",
+                          values: { count: imagesCount },
+                        })}
+                      </span>
+                    </label>
+                  ) : null}
                   <div className="chat-item-menu-confirm-actions">
                     <button
                       type="button"
@@ -393,7 +434,10 @@ export function ChatItemMenu({
                         defaultValue: "Export",
                       })}
                     </span>
-                    <ChevronRight size={11} className="chat-item-menu-sub-arrow" />
+                    <ChevronRight
+                      size={11}
+                      className="chat-item-menu-sub-arrow"
+                    />
                   </button>
                   {onEnterMultiSelect ? (
                     <button

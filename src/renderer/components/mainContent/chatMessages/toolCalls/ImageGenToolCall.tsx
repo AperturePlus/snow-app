@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertCircle,
@@ -45,6 +45,8 @@ type ParsedImageGenArgs = {
 type GeneratedImage = {
   data: string;
   mimeType: string;
+  /** 图库相对路径引用（image/...，图片已落盘到图库目录），经 IPC 读取；优先于 data */
+  path?: string;
 };
 
 type ParsedImageGenResult =
@@ -160,13 +162,32 @@ const parseImageGenArgs = (args: string): ParsedImageGenArgs | null => {
   }
 };
 
-const parseImageGenResult = (result: string | undefined): ParsedImageGenResult => {
+/** 匹配 result 文本中追加的内联图片标签（@@image:data:...@@）。该标签由
+ *  formatMcpToolResultForModel 在持久化时生成（真实 base64 换占位符 +
+ *  标签），历史回放时由 Rust resolve_inline_images_from_disk 还原为
+ *  data URL。剥离标签后 result 才是纯 JSON。 */
+const INLINE_IMAGE_TAG_RE = /@@image:(data:[^@]+)@@/g;
+
+const parseImageGenResult = (
+  result: string | undefined
+): ParsedImageGenResult => {
   if (!result) {
     return { type: "empty" };
   }
 
+  // 历史消息回放时 result 形如 "{JSON}\n@@image:data:...@@\n..."，
+  // 直接 JSON.parse 会失败 → 走 raw 兜底把 JSON + base64 当文本展示
+  // （表现为生图结果区域渲染出大量乱码/重复字符）。先提取并剥离标签。
+  const inlineDataUrls: string[] = [];
+  const stripped = result
+    .replace(INLINE_IMAGE_TAG_RE, (_match, dataUrl: string) => {
+      inlineDataUrls.push(dataUrl);
+      return "";
+    })
+    .trim();
+
   try {
-    const parsed: unknown = JSON.parse(result);
+    const parsed: unknown = JSON.parse(stripped);
     if (!isRecord(parsed)) {
       return { type: "raw", text: result };
     }
@@ -178,17 +199,44 @@ const parseImageGenResult = (result: string | undefined): ParsedImageGenResult =
     const remoteUrls: string[] = [];
 
     if (Array.isArray(parsed.content)) {
+      let inlineIndex = 0;
       for (const block of parsed.content) {
         if (
           isRecord(block) &&
           block.type === "image" &&
-          typeof block.data === "string" &&
           typeof block.mimeType === "string"
         ) {
-          images.push({
-            data: block.data as string,
-            mimeType: block.mimeType as string,
-          });
+          const data = typeof block.data === "string" ? block.data : "";
+          // 存储时真实 base64 被替换为占位符，这里用标签中的 data URL 还原
+          let resolvedData = data;
+          if (
+            (data === "" || data === "[attached as multimodal image]") &&
+            inlineIndex < inlineDataUrls.length
+          ) {
+            const dataUrl = inlineDataUrls[inlineIndex];
+            const comma = dataUrl.indexOf(",");
+            if (comma > 0) {
+              resolvedData = dataUrl.slice(comma + 1);
+            }
+          }
+          inlineIndex += 1;
+          if (
+            typeof block.path === "string" &&
+            block.path.trim() !== "" &&
+            resolvedData === ""
+          ) {
+            // 图库落盘引用（image/...）：渲染时经 IPC 读取文件
+            images.push({
+              data: "",
+              mimeType: block.mimeType as string,
+              path: block.path.trim(),
+            });
+          } else {
+            images.push({
+              data: resolvedData,
+              mimeType: block.mimeType as string,
+            });
+          }
         }
       }
     }
@@ -232,6 +280,21 @@ const mimeToExtension = (mimeType: string): string => {
   return "png";
 };
 
+/** 宽高比超过该阈值视为超宽（通栏展示），低于该阈值视为超窄（限高展示） */
+const IMG_WIDE_RATIO = 1.6;
+const IMG_TALL_RATIO = 0.7;
+
+/**
+ * 并行图片分档列数：让每张图尽量大且尾行不孤。
+ * 2-4 张：数量即列数（一行占满）；5-6 张：3 列两行（3+2/3+3）；
+ * 7-8 张：4 列两行（4+3/4+4）。
+ */
+const columnsForCount = (count: number): number => {
+  if (count <= 4) return count;
+  if (count <= 6) return 3;
+  return 4;
+};
+
 /**
  * upload 相对路径 → data URL 的进程内缓存。
  * path 引用（纯文本主模型场景的 [Reference image #N ...] 块）需要经主进程
@@ -239,15 +302,26 @@ const mimeToExtension = (mimeType: string): string => {
  */
 const uploadImageCache = new Map<string, string>();
 
+/** 将 data URL 直接解码为 Blob。不走 fetch(dataUrl) —— CSP connect-src
+ *  不允许 data:，fetch 会被拦截导致保存静默失败（点击无反应）。 */
+const dataUrlToBlob = (dataUrl: string): Blob => {
+  const [header, base64] = dataUrl.split(",");
+  const mimeType =
+    /^data:([^;]+)/.exec(header)?.[1] ?? "application/octet-stream";
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mimeType });
+};
+
 /** 保存生成的图片（原生文件选择器优先，回退为浏览器下载）。 */
 const saveImageBlob = async (
   dataUrl: string,
   filename: string
 ): Promise<void> => {
-  const blob = await (async () => {
-    const response = await fetch(dataUrl);
-    return response.blob();
-  })();
+  const blob = dataUrlToBlob(dataUrl);
 
   const picker = (
     window as unknown as {
@@ -294,6 +368,47 @@ export const ImageGenToolCall = ({
   const { t } = useI18n();
   const [lightbox, setLightbox] = useState<GeneratedImage | null>(null);
 
+  // 图片真实宽高比探测：index → width/height，加载完成后驱动卡片比例
+  const [ratios, setRatios] = useState<Record<number, number>>({});
+
+  const handleImageLoad = useCallback((index: number) => {
+    return (event: React.SyntheticEvent<HTMLImageElement>): void => {
+      const img = event.currentTarget;
+      if (img.naturalWidth <= 0 || img.naturalHeight <= 0) {
+        return;
+      }
+      const ratio = img.naturalWidth / img.naturalHeight;
+      setRatios((prev) =>
+        prev[index] === ratio ? prev : { ...prev, [index]: ratio }
+      );
+    };
+  }, []);
+
+  // 同批并行生成的图片统一展示比例：取已加载比例的中位数，避免个别图抖动
+  const unifiedRatio = useMemo(() => {
+    const values = Object.values(ratios).filter(
+      (value) => Number.isFinite(value) && value > 0
+    );
+    if (values.length === 0) {
+      return null;
+    }
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)];
+  }, [ratios]);
+
+  // 极端比例适配：超宽通栏展示；超窄限高展示（容器查询按真实比例计算高度）
+  const figureClassName = `tool-call-imagegen-figure${
+    unifiedRatio !== null && unifiedRatio > IMG_WIDE_RATIO
+      ? " tool-call-imagegen-figure-wide"
+      : unifiedRatio !== null && unifiedRatio < IMG_TALL_RATIO
+      ? " tool-call-imagegen-figure-tall"
+      : ""
+  }`;
+  const figureStyle =
+    unifiedRatio !== null
+      ? ({ "--img-ar": unifiedRatio } as React.CSSProperties)
+      : undefined;
+
   const parsedArgs = useMemo(
     () => parseImageGenArgs(toolCall.arguments),
     [toolCall.arguments]
@@ -316,6 +431,70 @@ export const ImageGenToolCall = ({
 
   const [resolvedRefs, setResolvedRefs] = useState<Record<string, string>>({});
 
+  // 收集图库落盘引用（image/... 前缀），挂载后经 IPC 读取真实图片数据
+  const libraryPaths = useMemo(() => {
+    const paths: string[] = [];
+    if (parsedResult.type === "success") {
+      for (const image of parsedResult.images) {
+        if (
+          image.path &&
+          image.path.startsWith("image/") &&
+          !paths.includes(image.path)
+        ) {
+          paths.push(image.path);
+        }
+      }
+    }
+    return paths;
+  }, [parsedResult]);
+
+  const [resolvedLibrary, setResolvedLibrary] = useState<
+    Record<string, string>
+  >({});
+
+  useEffect(() => {
+    if (libraryPaths.length === 0) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const next: Record<string, string> = {};
+      for (const path of libraryPaths) {
+        if (cancelled) {
+          return;
+        }
+        const cached = uploadImageCache.get(path);
+        if (cached) {
+          next[path] = cached;
+          continue;
+        }
+        let dataUrl: string | null = null;
+        try {
+          dataUrl = await window.snow.resolveLibraryImage(path);
+        } catch (error) {
+          console.warn(
+            "[imagegen] resolveLibraryImage failed for",
+            path,
+            error
+          );
+        }
+        if (cancelled) {
+          return;
+        }
+        if (dataUrl) {
+          uploadImageCache.set(path, dataUrl);
+          next[path] = dataUrl;
+        }
+      }
+      if (!cancelled && Object.keys(next).length > 0) {
+        setResolvedLibrary((prev) => ({ ...prev, ...next }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [libraryPaths]);
+
   useEffect(() => {
     if (referencePaths.length === 0) {
       return;
@@ -332,7 +511,14 @@ export const ImageGenToolCall = ({
           next[path] = cached;
           continue;
         }
-        const dataUrl = await window.snow.resolveUploadImage(path);
+        let dataUrl: string | null = null;
+        try {
+          dataUrl = await window.snow.resolveUploadImage(path);
+        } catch (error) {
+          // IPC 失败（如主进程未注册 handler / native 未就绪）不应中断其余
+          // 参考图的解析；记录日志便于排查，当前项回退为占位展示。
+          console.warn("[imagegen] resolveUploadImage failed for", path, error);
+        }
         if (cancelled) {
           return;
         }
@@ -361,6 +547,11 @@ export const ImageGenToolCall = ({
 
   // 灯箱：挂载到 document.body，确保 fixed 定位始终相对视口，
   // 无论页面滚动到何处都保持水平 + 垂直居中。
+  const lightboxSrc = lightbox
+    ? lightbox.path
+      ? resolvedLibrary[lightbox.path] ?? ""
+      : `data:${lightbox.mimeType};base64,${lightbox.data}`
+    : "";
   const lightboxElement = lightbox
     ? createPortal(
         <div
@@ -369,7 +560,7 @@ export const ImageGenToolCall = ({
           role="presentation"
         >
           <img
-            src={`data:${lightbox.mimeType};base64,${lightbox.data}`}
+            src={lightboxSrc}
             alt={t("toolCall.imagegen.generatedImage")}
             onClick={(event) => event.stopPropagation()}
           />
@@ -380,12 +571,24 @@ export const ImageGenToolCall = ({
             <button
               type="button"
               className="tool-call-imagegen-download"
-              onClick={() =>
-                void saveImageBlob(
-                  `data:${lightbox.mimeType};base64,${lightbox.data}`,
-                  `generated-image.${mimeToExtension(lightbox.mimeType)}`
-                )
-              }
+              onClick={() => {
+                void (async () => {
+                  let src = lightboxSrc;
+                  if (!src && lightbox.path) {
+                    src =
+                      (await window.snow.resolveLibraryImage(lightbox.path)) ??
+                      "";
+                  }
+                  if (src) {
+                    await saveImageBlob(
+                      src,
+                      `generated-image.${mimeToExtension(lightbox.mimeType)}`
+                    );
+                  }
+                })().catch((error) => {
+                  console.error("[imagegen] save image failed:", error);
+                });
+              }}
               title={t("toolCall.imagegen.download")}
               aria-label={t("toolCall.imagegen.download")}
             >
@@ -408,19 +611,30 @@ export const ImageGenToolCall = ({
 
   // 成功且有图片：直接以相框画廊展示，不再渲染工具卡片头部
   if (parsedResult.type === "success" && parsedResult.images.length > 0) {
+    const resultImageCount = parsedResult.images.length;
+    // 并行生成的多张图共享同一宽度：按数量分档列数（见 columnsForCount），
+    // 整批作为一个图块占满消息可用宽度，而非每张图独立小列
+    const gridStyle =
+      resultImageCount > 1
+        ? ({
+            gridTemplateColumns: `repeat(${columnsForCount(
+              resultImageCount
+            )}, minmax(0, 1fr))`,
+          } as React.CSSProperties)
+        : undefined;
     return (
       <div className="tool-call-imagegen tool-call-imagegen-result">
         <div
           className={`tool-call-imagegen-grid${
-            parsedResult.images.length === 1
-              ? " tool-call-imagegen-grid-single"
-              : ""
+            resultImageCount === 1 ? " tool-call-imagegen-grid-single" : ""
           }`}
+          style={gridStyle}
         >
           {parsedResult.images.map((image, index) => (
             <figure
               key={`${index}-${image.data.length}`}
-              className="tool-call-imagegen-figure"
+              className={figureClassName}
+              style={figureStyle}
             >
               <button
                 type="button"
@@ -430,34 +644,18 @@ export const ImageGenToolCall = ({
                 aria-label={t("toolCall.imagegen.zoom")}
               >
                 <img
-                  src={`data:${image.mimeType};base64,${image.data}`}
-                  alt={`${t("toolCall.imagegen.generatedImage")} ${index + 1}`}
-                />
-              </button>
-              <figcaption className="tool-call-imagegen-figure-caption">
-                <span className="tool-call-imagegen-figure-index">
-                  {index + 1}
-                </span>
-                <span className="tool-call-imagegen-figure-label">
-                  {t("toolCall.imagegen.generatedImage")}
-                </span>
-                <button
-                  type="button"
-                  className="tool-call-imagegen-download"
-                  onClick={() =>
-                    void saveImageBlob(
-                      `data:${image.mimeType};base64,${image.data}`,
-                      `generated-image-${index + 1}.${mimeToExtension(
-                        image.mimeType
-                      )}`
-                    )
+                  src={
+                    image.path
+                      ? resolvedLibrary[image.path] ?? ""
+                      : `data:${image.mimeType};base64,${image.data}`
                   }
-                  title={t("toolCall.imagegen.download")}
-                  aria-label={t("toolCall.imagegen.download")}
-                >
-                  <Download size={11} aria-hidden="true" />
-                </button>
-              </figcaption>
+                  alt={`${t("toolCall.imagegen.generatedImage")} ${index + 1}`}
+                  onLoad={handleImageLoad(index)}
+                />
+                {resultImageCount > 1 ? (
+                  <span className="tool-call-imagegen-badge">{index + 1}</span>
+                ) : null}
+              </button>
             </figure>
           ))}
         </div>
@@ -500,12 +698,13 @@ export const ImageGenToolCall = ({
     return (
       <div className="tool-call-imagegen tool-call-imagegen-result">
         <div className="tool-call-imagegen-grid tool-call-imagegen-grid-single">
-          <figure className="tool-call-imagegen-figure">
+          <figure className={figureClassName} style={figureStyle}>
             <div className="tool-call-imagegen-thumb tool-call-imagegen-thumb-static">
               {latestStream ? (
                 <img
                   src={`data:${latestStream.mimeType};base64,${latestStream.data}`}
                   alt={t("toolCall.imagegen.streamingPreview")}
+                  onLoad={handleImageLoad(0)}
                 />
               ) : (
                 <div className="tool-call-imagegen-placeholder">
@@ -530,8 +729,8 @@ export const ImageGenToolCall = ({
                 {latestStream
                   ? t("toolCall.imagegen.streamingPreview")
                   : toolCall.status === "running"
-                    ? t("toolCall.imagegen.generating")
-                    : t("toolCall.imagegen.waiting")}
+                  ? t("toolCall.imagegen.generating")
+                  : t("toolCall.imagegen.waiting")}
               </span>
               <span aria-hidden="true" />
             </figcaption>
@@ -648,14 +847,12 @@ export const ImageGenToolCall = ({
                 ) : null}
                 {parsedArgs.background ? (
                   <span className="tool-call-imagegen-param-tag">
-                    {t("toolCall.imagegen.background")}:{" "}
-                    {parsedArgs.background}
+                    {t("toolCall.imagegen.background")}: {parsedArgs.background}
                   </span>
                 ) : null}
                 {parsedArgs.moderation ? (
                   <span className="tool-call-imagegen-param-tag">
-                    {t("toolCall.imagegen.moderation")}:{" "}
-                    {parsedArgs.moderation}
+                    {t("toolCall.imagegen.moderation")}: {parsedArgs.moderation}
                   </span>
                 ) : null}
                 {parsedArgs.seed !== undefined ? (
@@ -691,8 +888,8 @@ export const ImageGenToolCall = ({
                     const src = image.data
                       ? `data:${image.mimeType};base64,${image.data}`
                       : image.path
-                        ? resolvedRefs[image.path] ?? ""
-                        : "";
+                      ? resolvedRefs[image.path] ?? ""
+                      : "";
                     return (
                       <div
                         key={`${index}-${image.path ?? image.data.length}`}
@@ -702,7 +899,9 @@ export const ImageGenToolCall = ({
                         {src ? (
                           <img
                             src={src}
-                            alt={`${t("toolCall.imagegen.refImage")} ${index + 1}`}
+                            alt={`${t("toolCall.imagegen.refImage")} ${
+                              index + 1
+                            }`}
                           />
                         ) : (
                           <span className="tool-call-imagegen-ref-placeholder">
@@ -728,7 +927,8 @@ export const ImageGenToolCall = ({
         ) : null}
 
         {/* 远程图片链接（兼容返回 url 的端点） */}
-        {parsedResult.type === "success" && parsedResult.remoteUrls.length > 0 ? (
+        {parsedResult.type === "success" &&
+        parsedResult.remoteUrls.length > 0 ? (
           <div className="tool-call-imagegen-remote">
             <span className="tool-call-imagegen-remote-label">
               <Link2 size={10} aria-hidden="true" />

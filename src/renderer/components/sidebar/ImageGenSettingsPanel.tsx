@@ -1,8 +1,13 @@
 import {
+  Clock,
+  Gauge,
+  ImageIcon,
+  Layers,
   Loader2,
   Pencil,
   Plus,
   Search,
+  SearchX,
   Trash2,
   X,
 } from "lucide-react";
@@ -16,10 +21,7 @@ import {
 } from "react";
 import { AutoDismissNotice } from "../AutoDismissNotice";
 import { Modal } from "../common/Modal";
-import {
-  CustomSelect,
-  type CustomSelectOption,
-} from "../common/CustomSelect";
+import { CustomSelect, type CustomSelectOption } from "../common/CustomSelect";
 import { useI18n } from "../../i18n";
 import { ApiModelCombobox } from "./apiSettings/ApiModelCombobox";
 import type { Model } from "../../../preload";
@@ -27,12 +29,14 @@ import {
   DEFAULT_GEMINI_BASE_URL,
   DEFAULT_IMAGE_GEN_CHANNEL,
   DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
+  DEFAULT_IMAGE_GEN_TIMEOUT_SECS,
   DEFAULT_OPENAI_BASE_URL,
   GEMINI_MODEL_EXAMPLES,
   GEMINI_ASPECT_RATIOS,
   IMAGE_GEN_MAX_CONCURRENT_RANGE,
   IMAGE_GEN_SETTING_CODE,
   IMAGE_GEN_SETTING_NAME,
+  IMAGE_GEN_TIMEOUT_RANGE,
   OPENAI_MODEL_EXAMPLES,
   OPENAI_SIZE_PRESETS,
   OPENAI_SIZE_TIERS,
@@ -340,7 +344,13 @@ const getModelCapabilities = (modelId: string): string[] => {
     return ["cap1kOnly", "capFast"];
   }
   if (id.includes("gemini-3.1-flash-image")) {
-    return ["cap4k", "capStream", "capImageToImage", "capThinking", "capImageSearch"];
+    return [
+      "cap4k",
+      "capStream",
+      "capImageToImage",
+      "capThinking",
+      "capImageSearch",
+    ];
   }
   if (id.includes("gemini-3-pro-image")) {
     return ["cap4k", "capImageToImage", "capThinking", "capInterleaved"];
@@ -380,6 +390,12 @@ export function ImageGenSettingsPanel({
   );
   /** persistChannels 闭包内读取最新并发数（避免 state 过期）。 */
   const maxConcurrentRef = useRef(DEFAULT_IMAGE_GEN_MAX_CONCURRENT);
+  /** 生图请求超时（秒，60-3600，立即保存）。 */
+  const [timeoutSecs, setTimeoutSecs] = useState(
+    DEFAULT_IMAGE_GEN_TIMEOUT_SECS
+  );
+  /** persistChannels 闭包内读取最新超时（避免 state 过期）。 */
+  const timeoutSecsRef = useRef(DEFAULT_IMAGE_GEN_TIMEOUT_SECS);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState("");
@@ -419,6 +435,8 @@ export function ImageGenSettingsPanel({
       setChannels(settings.channels);
       setMaxConcurrent(settings.maxConcurrentImages);
       maxConcurrentRef.current = settings.maxConcurrentImages;
+      setTimeoutSecs(settings.timeoutSecs);
+      timeoutSecsRef.current = settings.timeoutSecs;
     } catch (e) {
       setError(
         e instanceof Error
@@ -450,6 +468,7 @@ export function ImageGenSettingsPanel({
         toImageGenSettingsJson({
           channels: next,
           maxConcurrentImages: maxConcurrentRef.current,
+          timeoutSecs: timeoutSecsRef.current,
         })
       );
       setChannels(next);
@@ -483,6 +502,18 @@ export function ImageGenSettingsPanel({
     await persistChannels(channels);
   };
 
+  /** 更新生图请求超时（秒，收敛到允许范围后立即保存）。 */
+  const updateTimeoutSecs = async (rawValue: number) => {
+    if (isSaving) {
+      return;
+    }
+    const { min, max } = IMAGE_GEN_TIMEOUT_RANGE;
+    const next = Math.min(max, Math.max(min, Math.round(rawValue)));
+    setTimeoutSecs(next);
+    timeoutSecsRef.current = next;
+    await persistChannels(channels);
+  };
+
   /** 渠道显示名（name 留空回退协议默认名）。 */
   const channelLabel = (channel: ImageGenChannelValue): string => {
     if (channel.name.trim()) {
@@ -499,7 +530,7 @@ export function ImageGenSettingsPanel({
       });
     }
     return t("settings.imagegenChannelOpenai", {
-      defaultValue: "OpenAI-compatible",
+      defaultValue: "OpenAI",
     });
   };
 
@@ -598,7 +629,7 @@ export function ImageGenSettingsPanel({
         ...previous,
         defaultSize: caps.sizes.includes(currentSize)
           ? previous.defaultSize
-          : (caps.sizes[0] ?? ""),
+          : caps.sizes[0] ?? "",
         defaultQuality: caps.quality.includes(previous.defaultQuality)
           ? previous.defaultQuality
           : "",
@@ -787,13 +818,13 @@ export function ImageGenSettingsPanel({
                 {
                   value: "openai",
                   label: t("settings.imagegenProviderOpenai", {
-                    defaultValue: "OpenAI-compatible",
+                    defaultValue: "OpenAI",
                   }),
                 },
                 {
                   value: "gemini",
                   label: t("settings.imagegenProviderGemini", {
-                    defaultValue: "Google Gemini (Imagen)",
+                    defaultValue: "Google Gemini",
                   }),
                 },
               ]}
@@ -954,7 +985,6 @@ export function ImageGenSettingsPanel({
                     t={t}
                   />
                 ) : (
-
                   <div className="imagegen-editor-size-row">
                     <input
                       className="imagegen-size-input"
@@ -1032,9 +1062,7 @@ export function ImageGenSettingsPanel({
                             : value,
                       })
                     )}
-                    onChange={(value) =>
-                      updateDraft("defaultQuality", value)
-                    }
+                    onChange={(value) => updateDraft("defaultQuality", value)}
                     disabled={draftSaving}
                     portal
                   />
@@ -1192,10 +1220,25 @@ export function ImageGenSettingsPanel({
         ) : null}
       </div>
 
-      {/* 最大并发生成数：全局设置（1-8，立即保存） */}
-      <div className="imagegen-concurrency">
-        <label className="api-settings-field imagegen-concurrency-field">
-          <span className="api-settings-field-label">
+      {/* 汇总卡片：参照 API 设置页（渠道数 / 已启用 / 最大并发生成数） */}
+      <div className="api-settings-summary-grid imagegen-summary-grid">
+        <div className="api-settings-summary-card">
+          <Layers size={15} strokeWidth={1.8} />
+          <span>{channels.length}</span>
+          <small>
+            {t("settings.imagegenChannels", { defaultValue: "Channels" })}
+          </small>
+        </div>
+        <div className="api-settings-summary-card">
+          <Gauge size={15} strokeWidth={1.8} />
+          <span>{enabledCount}</span>
+          <small>
+            {t("settings.imagegenEnabled", { defaultValue: "Enabled" })}
+          </small>
+        </div>
+        <div className="api-settings-summary-card imagegen-concurrency-card">
+          <span className="imagegen-concurrency-head">
+            <Gauge size={14} strokeWidth={1.8} />
             {t("settings.imagegenMaxConcurrent", {
               defaultValue: "Max concurrent generations",
             })}
@@ -1205,8 +1248,13 @@ export function ImageGenSettingsPanel({
               type="button"
               className="icon-btn ghost"
               onClick={() => void updateMaxConcurrent(maxConcurrent - 1)}
-              disabled={isBusy || maxConcurrent <= IMAGE_GEN_MAX_CONCURRENT_RANGE.min}
+              disabled={
+                isBusy || maxConcurrent <= IMAGE_GEN_MAX_CONCURRENT_RANGE.min
+              }
               aria-label={t("settings.imagegenMaxConcurrentDecrease", {
+                defaultValue: "Decrease max concurrent generations",
+              })}
+              title={t("settings.imagegenMaxConcurrentDecrease", {
                 defaultValue: "Decrease max concurrent generations",
               })}
             >
@@ -1232,24 +1280,97 @@ export function ImageGenSettingsPanel({
               type="button"
               className="icon-btn ghost"
               onClick={() => void updateMaxConcurrent(maxConcurrent + 1)}
-              disabled={isBusy || maxConcurrent >= IMAGE_GEN_MAX_CONCURRENT_RANGE.max}
+              disabled={
+                isBusy || maxConcurrent >= IMAGE_GEN_MAX_CONCURRENT_RANGE.max
+              }
               aria-label={t("settings.imagegenMaxConcurrentIncrease", {
+                defaultValue: "Increase max concurrent generations",
+              })}
+              title={t("settings.imagegenMaxConcurrentIncrease", {
                 defaultValue: "Increase max concurrent generations",
               })}
             >
               +
             </button>
+            <span className="imagegen-concurrency-range">
+              {IMAGE_GEN_MAX_CONCURRENT_RANGE.min}–
+              {IMAGE_GEN_MAX_CONCURRENT_RANGE.max}
+            </span>
           </div>
-          <small className="api-settings-field-hint">
+          <small className="imagegen-concurrency-hint">
             {t("settings.imagegenMaxConcurrentHint", {
               defaultValue:
                 "When the agent requests several images at once, at most this many are generated in parallel; the rest wait in the queue. Lower it if your provider rate-limits image requests.",
             })}
           </small>
-        </label>
+        </div>
+        <div className="api-settings-summary-card imagegen-concurrency-card imagegen-timeout-card">
+          <span className="imagegen-concurrency-head">
+            <Clock size={14} strokeWidth={1.8} />
+            {t("settings.imagegenTimeout", {
+              defaultValue: "Generation timeout (s)",
+            })}
+          </span>
+          <div className="imagegen-concurrency-control">
+            <button
+              type="button"
+              className="icon-btn ghost"
+              onClick={() => void updateTimeoutSecs(timeoutSecs - 30)}
+              disabled={isBusy || timeoutSecs <= IMAGE_GEN_TIMEOUT_RANGE.min}
+              aria-label={t("settings.imagegenTimeoutDecrease", {
+                defaultValue: "Decrease generation timeout",
+              })}
+              title={t("settings.imagegenTimeoutDecrease", {
+                defaultValue: "Decrease generation timeout",
+              })}
+            >
+              −
+            </button>
+            <input
+              type="number"
+              min={IMAGE_GEN_TIMEOUT_RANGE.min}
+              max={IMAGE_GEN_TIMEOUT_RANGE.max}
+              step={30}
+              value={timeoutSecs}
+              onChange={(event) => {
+                const parsed = Number(event.target.value);
+                if (Number.isFinite(parsed)) {
+                  void updateTimeoutSecs(parsed);
+                }
+              }}
+              disabled={isBusy}
+              aria-label={t("settings.imagegenTimeout", {
+                defaultValue: "Generation timeout (s)",
+              })}
+            />
+            <button
+              type="button"
+              className="icon-btn ghost"
+              onClick={() => void updateTimeoutSecs(timeoutSecs + 30)}
+              disabled={isBusy || timeoutSecs >= IMAGE_GEN_TIMEOUT_RANGE.max}
+              aria-label={t("settings.imagegenTimeoutIncrease", {
+                defaultValue: "Increase generation timeout",
+              })}
+              title={t("settings.imagegenTimeoutIncrease", {
+                defaultValue: "Increase generation timeout",
+              })}
+            >
+              +
+            </button>
+            <span className="imagegen-concurrency-range">
+              {IMAGE_GEN_TIMEOUT_RANGE.min}–{IMAGE_GEN_TIMEOUT_RANGE.max}
+            </span>
+          </div>
+          <small className="imagegen-concurrency-hint">
+            {t("settings.imagegenTimeoutHint", {
+              defaultValue:
+                "Max wait time per generation/edit request (including streaming). Complex prompts or 2K/4K output can take several minutes — raise this if requests time out.",
+            })}
+          </small>
+        </div>
       </div>
 
-      {/* 操作区：与 API 设置页一致 */}
+      {/* 操作区：搜索 + 添加渠道（与 API 设置页交互一致） */}
       <div className="imagegen-actions">
         <div className="api-settings-table-search imagegen-search">
           <Search size={14} strokeWidth={1.8} aria-hidden="true" />
@@ -1265,16 +1386,9 @@ export function ImageGenSettingsPanel({
             disabled={isBusy && channels.length === 0}
           />
         </div>
-        <span className="imagegen-actions-count">
-          {t("settings.imagegenChannelCount", {
-            defaultValue: "{count} channels · {enabled} enabled",
-          })
-            .replace("{count}", String(channels.length))
-            .replace("{enabled}", String(enabledCount))}
-        </span>
         <button
           type="button"
-          className="api-settings-form-btn primary"
+          className="api-settings-form-btn primary imagegen-add-btn"
           onClick={openAddEditor}
           disabled={isBusy}
         >
@@ -1296,17 +1410,23 @@ export function ImageGenSettingsPanel({
               })}
             </div>
           ) : channels.length === 0 ? (
-            <div className="api-settings-empty">
-              {t("settings.imagegenNoChannels", {
-                defaultValue:
-                  "No channels yet. Click \"Add channel\" to create one.",
-              })}
+            <div className="api-settings-empty imagegen-empty-state">
+              <ImageIcon size={28} strokeWidth={1.4} aria-hidden="true" />
+              <span>
+                {t("settings.imagegenNoChannels", {
+                  defaultValue:
+                    'No channels yet. Click "Add channel" to create one.',
+                })}
+              </span>
             </div>
           ) : filteredChannels.length === 0 ? (
-            <div className="api-settings-empty">
-              {t("settings.imagegenSearchEmpty", {
-                defaultValue: "No channels match your search.",
-              })}
+            <div className="api-settings-empty imagegen-empty-state">
+              <SearchX size={24} strokeWidth={1.5} aria-hidden="true" />
+              <span>
+                {t("settings.imagegenSearchEmpty", {
+                  defaultValue: "No channels match your search.",
+                })}
+              </span>
             </div>
           ) : (
             <table className="api-settings-table">
@@ -1314,7 +1434,9 @@ export function ImageGenSettingsPanel({
                 <tr>
                   <th>{t("settings.tableName", { defaultValue: "Name" })}</th>
                   <th>
-                    {t("settings.imagegenBaseUrl", { defaultValue: "Base URL" })}
+                    {t("settings.imagegenBaseUrl", {
+                      defaultValue: "Base URL",
+                    })}
                   </th>
                   <th>
                     {t("settings.imagegenModel", { defaultValue: "Model" })}
@@ -1346,7 +1468,9 @@ export function ImageGenSettingsPanel({
                     <tr key={channel.id}>
                       <td className="cell-name">
                         <strong>{channelLabel(channel)}</strong>
-                        <small className="profile-name-hint">{channel.id}</small>
+                        <small className="profile-name-hint">
+                          {channel.id}
+                        </small>
                       </td>
                       <td className="cell-url">
                         {channel.baseUrl.trim() ||

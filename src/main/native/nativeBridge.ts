@@ -91,9 +91,7 @@ export const loadNativeBridge = (): NativeBridge => {
         ),
       getConversationModes: () =>
         Promise.reject(
-          new Error(
-            "Rust native bridge is required to read conversation modes"
-          )
+          new Error("Rust native bridge is required to read conversation modes")
         ),
       setConversationModes: () =>
         Promise.reject(
@@ -335,11 +333,15 @@ export const loadNativeBridge = (): NativeBridge => {
         ),
       commitImportTransaction: () =>
         Promise.reject(
-          new Error("Rust native bridge is required to commit imported resources")
+          new Error(
+            "Rust native bridge is required to commit imported resources"
+          )
         ),
       releaseImportResource: () =>
         Promise.reject(
-          new Error("Rust native bridge is required to release import resources")
+          new Error(
+            "Rust native bridge is required to release import resources"
+          )
         ),
       listPlugins: () =>
         Promise.reject(
@@ -359,15 +361,21 @@ export const loadNativeBridge = (): NativeBridge => {
         ),
       listPluginMarketplaces: () =>
         Promise.reject(
-          new Error("Rust native bridge is required to list plugin marketplaces")
+          new Error(
+            "Rust native bridge is required to list plugin marketplaces"
+          )
         ),
       upsertPluginMarketplace: () =>
         Promise.reject(
-          new Error("Rust native bridge is required to write plugin marketplaces")
+          new Error(
+            "Rust native bridge is required to write plugin marketplaces"
+          )
         ),
       deletePluginMarketplace: () =>
         Promise.reject(
-          new Error("Rust native bridge is required to delete plugin marketplaces")
+          new Error(
+            "Rust native bridge is required to delete plugin marketplaces"
+          )
         ),
       listHookConfigs: () =>
         Promise.reject(
@@ -947,6 +955,34 @@ export const loadNativeBridge = (): NativeBridge => {
       sha256File: () =>
         Promise.reject(
           new Error("Rust native bridge is required to compute sha256")
+        ),
+      getImageLibraryRoot: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to read image library")
+        ),
+      listImageLibrary: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to list image library")
+        ),
+      readImageLibraryFile: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to read library images")
+        ),
+      deleteImageLibraryImage: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to delete library images")
+        ),
+      countConversationImages: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to count conversation images"
+          )
+        ),
+      deleteConversationImages: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to cascade-delete conversation images"
+          )
         ),
     };
   }

@@ -1,7 +1,4 @@
-import type {
-  ImageGenChannelValue,
-  ImageGenSettingsValue,
-} from "./types";
+import type { ImageGenChannelValue, ImageGenSettingsValue } from "./types";
 
 /** system_settings 表中生图设置的 code（与 Rust native 侧一致）。 */
 export const IMAGE_GEN_SETTING_CODE = "imagegen_settings";
@@ -35,10 +32,22 @@ export const IMAGE_GEN_MAX_CONCURRENT_RANGE: { min: number; max: number } = {
   max: 8,
 };
 
+/** 生图请求超时默认值（秒）：图片模型复杂提示词 / 高分辨率生成可能
+ *  耗时数分钟，默认 5 分钟；旧数据缺失该字段时回退。 */
+export const DEFAULT_IMAGE_GEN_TIMEOUT_SECS = 300;
+
+/** 生图请求超时允许范围（秒）：下限 60 秒避免误配置把请求立刻掐断，
+ *  上限 3600 秒（1 小时）避免请求无限挂起。 */
+export const IMAGE_GEN_TIMEOUT_RANGE: { min: number; max: number } = {
+  min: 60,
+  max: 3600,
+};
+
 /** 生图设置默认值：无渠道（未配置时不暴露生图工具）。 */
 export const DEFAULT_IMAGE_GEN_SETTINGS: ImageGenSettingsValue = {
   channels: [],
   maxConcurrentImages: DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
+  timeoutSecs: DEFAULT_IMAGE_GEN_TIMEOUT_SECS,
 };
 
 /** OpenAI 兼容端点官方默认地址（baseUrl 留空时使用）。 */
@@ -119,19 +128,16 @@ export const matchGeminiSizePreset = (
   const ratio = GEMINI_ASPECT_RATIOS.includes(ratioPart.trim())
     ? ratioPart.trim()
     : "";
-  const imageSize = (
-    GEMINI_SIZE_PRESETS as readonly string[]
-  ).includes(sizePart.trim())
+  const imageSize = (GEMINI_SIZE_PRESETS as readonly string[]).includes(
+    sizePart.trim()
+  )
     ? sizePart.trim()
     : "";
   return { ratio, imageSize };
 };
 
 /** 组合 Gemini 的宽高比与图片尺寸为存储值（"16:9@2K"）。 */
-export const buildGeminiSize = (
-  ratio: string,
-  imageSize: string
-): string => {
+export const buildGeminiSize = (ratio: string, imageSize: string): string => {
   const ratioPart = ratio.trim();
   const sizePart = imageSize.trim();
   if (ratioPart && sizePart) {

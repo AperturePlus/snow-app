@@ -1980,7 +1980,11 @@ fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Result<Value> 
                     .get("maxConcurrentImages")
                     .cloned()
                     .unwrap_or_else(|| json!(4)),
-                "note": "Channels are independent; enable one or more at once. When none is configured the imagegen-generate tool is hidden from the model. maxConcurrentImages (top-level global field, 1-8, default 4) caps how many generation requests run in parallel when the agent asks for several images at once; read/write it via config-get / config-set with key=maxConcurrentImages. Pass provider=<channelId|channelName|openai|gemini> to imagegen-generate to pick a channel.",
+                "timeoutSecs": settings
+                    .get("timeoutSecs")
+                    .cloned()
+                    .unwrap_or_else(|| json!(300)),
+                "note": "Channels are independent; enable one or more at once. When none is configured the imagegen-generate tool is hidden from the model. maxConcurrentImages (top-level global field, 1-8, default 4) caps how many generation requests run in parallel when the agent asks for several images at once; read/write it via config-get / config-set with key=maxConcurrentImages. timeoutSecs (top-level global field, 60-3600, default 300) is the per-request timeout for image generation (including streaming); raise it if complex/high-resolution prompts time out. Pass provider=<channelId|channelName|openai|gemini> to imagegen-generate to pick a channel.",
             }))
         }
         TOOL_GET => {
@@ -2002,6 +2006,17 @@ fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Result<Value> 
                             .get("maxConcurrentImages")
                             .cloned()
                             .unwrap_or_else(|| json!(4)),
+                    }))
+                }
+                // 顶层全局字段：生图请求超时（秒，60-3600，默认 300）
+                Some(key) if key.eq_ignore_ascii_case("timeoutSecs") => {
+                    Ok(json!({
+                        "scope": SCOPE_IMAGEGEN,
+                        "key": "timeoutSecs",
+                        "value": settings
+                            .get("timeoutSecs")
+                            .cloned()
+                            .unwrap_or_else(|| json!(300)),
                     }))
                 }
                 Some(key) => {
@@ -2079,6 +2094,15 @@ fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Result<Value> 
                 .cloned()
                 .or_else(|| settings.get("maxConcurrentImages").cloned())
                 .map(clamp_imagegen_max_concurrent);
+            // 保留「生图请求超时（秒）」（顶层全局字段，设置面板可调）：本次
+            // value 中显式提供时采用新值（规范化到 60-3600），否则沿用现有
+            // 存储值，避免 config-set 重建 {channels} 时把用户配置的超时
+            // 静默重置。
+            let timeout_secs = value
+                .get("timeoutSecs")
+                .cloned()
+                .or_else(|| settings.get("timeoutSecs").cloned())
+                .map(clamp_imagegen_timeout_secs);
             if let Some(channels_value) = value.get("channels") {
                 // 全量替换
                 if !channels_value.is_array() {
@@ -2090,6 +2114,9 @@ fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Result<Value> 
                 settings = json!({ "channels": channels_value.clone() });
                 if let Some(max_concurrent_images) = max_concurrent_images {
                     settings["maxConcurrentImages"] = max_concurrent_images;
+                }
+                if let Some(timeout_secs) = timeout_secs {
+                    settings["timeoutSecs"] = timeout_secs;
                 }
             } else if let Some(value_map) = value.as_object() {
                 // 按渠道 id / 名称合并更新；不存在则追加为新渠道
@@ -2153,6 +2180,9 @@ fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Result<Value> 
                 if let Some(max_concurrent_images) = max_concurrent_images {
                     settings["maxConcurrentImages"] = max_concurrent_images;
                 }
+                if let Some(timeout_secs) = timeout_secs {
+                    settings["timeoutSecs"] = timeout_secs;
+                }
             }
 
             save_imagegen_settings_value(&settings)?;
@@ -2186,6 +2216,15 @@ fn clamp_imagegen_max_concurrent(value: Value) -> Value {
         return json!(4);
     };
     json!(number.round().clamp(1.0, 8.0) as i64)
+}
+
+/// 规范化「生图请求超时（秒）」：必须是有限数字，取整后收敛到 60-3600
+/// （与设置面板 IMAGE_GEN_TIMEOUT_RANGE 一致）；非法值回退默认 300。
+fn clamp_imagegen_timeout_secs(value: Value) -> Value {
+    let Some(number) = value.as_f64().filter(|n| n.is_finite()) else {
+        return json!(300);
+    };
+    json!(number.round().clamp(60.0, 3600.0) as i64)
 }
 
 /// 将任意 imagegen 存储格式迁移为 { channels: [...] } 新格式：
@@ -2619,7 +2658,7 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_LIST.to_string(),
-                description: "List configuration scopes and their keys; pass `scope` to inspect one scope (returns current values; sensitive keys masked).\nSCOPE REFERENCE:\n1. settings (~/.snow/settings.json): mcpServers, codebase, sensitiveCommands, yoloMode, planMode, goal, toolSearchEnabled, ...\n2. snowcfg (~/.snow/config.json): baseUrl, apiKey, advancedModel, basicModel, maxTokens, chatThinking, ...\n3. proxy (~/.snow/proxy-config.json): enabled, host, port, searchEngine, browserPath, browserDebugPort\n4. app (~/.snow/active-profile.json): activeProfile\n5. custom-headers (~/.snow/custom-headers.json): active, schemes (sensitive)\n6. system-prompt (~/.snow/system-prompt.json): active, prompts (sensitive)\n7. theme (~/.snow/theme.json): theme, simpleMode, diffOpacity, toolIcons, customColors, ...\n8. language (~/.snow/language.json): language\n9. permissions (~/.snow/permissions.json): alwaysApprovedTools\n10. lsp-config (~/.snow/lsp-config.json): schemaVersion, servers\n11. buddy (~/.snow/buddy.json): version, companion, muted\n12. subAgents (app DB): sub-agent configs, key=agentId; list returns items + CREATING guidance\n13. hooks (app DB): lifecycle hook configs, key=hookType; list returns items + CONFIGURING guidance\n14. imagegen (app DB): image generation channels + top-level maxConcurrentImages (1-8, default 4); list returns keys + note\n15. skills (delegated): skillId toggles / GitHub installs\n16. logs (read-only): log files under ~/.snow/log\nRULES: pass projectId to scope subAgents/hooks listings to a specific project (omitted = global); sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts, imagegen apiKey) are always masked."
+                description: "List configuration scopes and their keys; pass `scope` to inspect one scope (returns current values; sensitive keys masked).\nSCOPE REFERENCE:\n1. settings (~/.snow/settings.json): mcpServers, codebase, sensitiveCommands, yoloMode, planMode, goal, toolSearchEnabled, ...\n2. snowcfg (~/.snow/config.json): baseUrl, apiKey, advancedModel, basicModel, maxTokens, chatThinking, ...\n3. proxy (~/.snow/proxy-config.json): enabled, host, port, searchEngine, browserPath, browserDebugPort\n4. app (~/.snow/active-profile.json): activeProfile\n5. custom-headers (~/.snow/custom-headers.json): active, schemes (sensitive)\n6. system-prompt (~/.snow/system-prompt.json): active, prompts (sensitive)\n7. theme (~/.snow/theme.json): theme, simpleMode, diffOpacity, toolIcons, customColors, ...\n8. language (~/.snow/language.json): language\n9. permissions (~/.snow/permissions.json): alwaysApprovedTools\n10. lsp-config (~/.snow/lsp-config.json): schemaVersion, servers\n11. buddy (~/.snow/buddy.json): version, companion, muted\n12. subAgents (app DB): sub-agent configs, key=agentId; list returns items + CREATING guidance\n13. hooks (app DB): lifecycle hook configs, key=hookType; list returns items + CONFIGURING guidance\n14. imagegen (app DB): image generation channels + top-level maxConcurrentImages (1-8, default 4) and timeoutSecs (60-3600, default 300); list returns keys + note\n15. skills (delegated): skillId toggles / GitHub installs\n16. logs (read-only): log files under ~/.snow/log\nRULES: pass projectId to scope subAgents/hooks listings to a specific project (omitted = global); sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts, imagegen apiKey) are always masked."
                     .to_string(),
                 input_schema: json!({
                     "type": "object",
@@ -2651,7 +2690,7 @@ impl McpService for ConfigService {
                         },
                         "key": {
                             "type": "string",
-                            "description": "Key name within the scope (see config-list). For imagegen: a channel id/name or provider type (openai|gemini), or the global key maxConcurrentImages."
+                            "description": "Key name within the scope (see config-list). For imagegen: a channel id/name or provider type (openai|gemini), or a global key (maxConcurrentImages / timeoutSecs)."
                         },
                         "projectId": {
                             "type": "string",
@@ -2671,7 +2710,7 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_SET.to_string(),
-                description: "Write a value for a configuration key (whitelisted scopes only; type-checked; auto-backup to ~/.snow/.config-backups; atomic write).\nRULES:\n- settings.mcpServers: syncs into the app database on write and takes effect immediately (same diff semantics as the UI sync action).\n- Other file-backed scopes (snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy): changes may need an app restart or a UI re-save.\n- DB-backed scopes (take effect immediately): subAgents (key=agentId, value={name, description?, systemPrompt?, toolsJson?, configProfile?}; an explicit toolsJson tool list requires projectId, see the guidance from config-list scope=subAgents); hooks (key=hookType, value={rules:[...]}, see the guidance from config-list scope=hooks); imagegen (value={channels:[...]} full replace, {<channelId>: {...}} per-channel merge keeping omitted fields, or {maxConcurrentImages: N} alone, clamped to 1-8).\n- Project-scoped: pass projectId for settings.mcpServers (full replace of {name: {type,url,command,args,env,headers,enabled,timeoutMs}}) or settings.sensitiveCommands (full replace of [{commandId, pattern, description, enabled}]); other scopes ignore projectId.".to_string(),
+                description: "Write a value for a configuration key (whitelisted scopes only; type-checked; auto-backup to ~/.snow/.config-backups; atomic write).\nRULES:\n- settings.mcpServers: syncs into the app database on write and takes effect immediately (same diff semantics as the UI sync action).\n- Other file-backed scopes (snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy): changes may need an app restart or a UI re-save.\n- DB-backed scopes (take effect immediately): subAgents (key=agentId, value={name, description?, systemPrompt?, toolsJson?, configProfile?}; an explicit toolsJson tool list requires projectId, see the guidance from config-list scope=subAgents); hooks (key=hookType, value={rules:[...]}, see the guidance from config-list scope=hooks); imagegen (value={channels:[...]} full replace, {<channelId>: {...}} per-channel merge keeping omitted fields, or a global field alone: {maxConcurrentImages: N} clamped to 1-8 / {timeoutSecs: N} clamped to 60-3600).\n- Project-scoped: pass projectId for settings.mcpServers (full replace of {name: {type,url,command,args,env,headers,enabled,timeoutMs}}) or settings.sensitiveCommands (full replace of [{commandId, pattern, description, enabled}]); other scopes ignore projectId.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {

@@ -1,7 +1,9 @@
 import {
   DEFAULT_IMAGE_GEN_CHANNEL,
   DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
+  DEFAULT_IMAGE_GEN_TIMEOUT_SECS,
   IMAGE_GEN_MAX_CONCURRENT_RANGE,
+  IMAGE_GEN_TIMEOUT_RANGE,
 } from "./constants";
 import type {
   ImageGenChannelValue,
@@ -28,6 +30,15 @@ const toConcurrentCount = (value: unknown): number => {
   return Math.min(max, Math.max(min, Math.round(value)));
 };
 
+/** 解析生图请求超时（秒）：非法/缺失回退默认值，超出范围时收敛到边界。 */
+const toTimeoutSecs = (value: unknown): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_IMAGE_GEN_TIMEOUT_SECS;
+  }
+  const { min, max } = IMAGE_GEN_TIMEOUT_RANGE;
+  return Math.min(max, Math.max(min, Math.round(value)));
+};
+
 const readProvider = (
   value: unknown,
   fallback: ImageGenProvider
@@ -41,10 +52,7 @@ const readChannel = (source: unknown): ImageGenChannelValue => {
   return {
     id: toText(source.id, DEFAULT_IMAGE_GEN_CHANNEL.id),
     name: toText(source.name, DEFAULT_IMAGE_GEN_CHANNEL.name),
-    provider: readProvider(
-      source.provider,
-      DEFAULT_IMAGE_GEN_CHANNEL.provider
-    ),
+    provider: readProvider(source.provider, DEFAULT_IMAGE_GEN_CHANNEL.provider),
     enabled: toBoolean(source.enabled, DEFAULT_IMAGE_GEN_CHANNEL.enabled),
     baseUrl: toText(source.baseUrl, DEFAULT_IMAGE_GEN_CHANNEL.baseUrl),
     apiKey: toText(source.apiKey, DEFAULT_IMAGE_GEN_CHANNEL.apiKey),
@@ -99,6 +107,7 @@ export const readImageGenSettingsJson = (
     return {
       channels: [],
       maxConcurrentImages: DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
+      timeoutSecs: DEFAULT_IMAGE_GEN_TIMEOUT_SECS,
     };
   }
   try {
@@ -107,6 +116,7 @@ export const readImageGenSettingsJson = (
       return {
         channels: [],
         maxConcurrentImages: DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
+        timeoutSecs: DEFAULT_IMAGE_GEN_TIMEOUT_SECS,
       };
     }
 
@@ -122,6 +132,7 @@ export const readImageGenSettingsJson = (
       return {
         channels,
         maxConcurrentImages: toConcurrentCount(parsed.maxConcurrentImages),
+        timeoutSecs: toTimeoutSecs(parsed.timeoutSecs),
       };
     }
 
@@ -137,6 +148,7 @@ export const readImageGenSettingsJson = (
       return {
         channels,
         maxConcurrentImages: DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
+        timeoutSecs: DEFAULT_IMAGE_GEN_TIMEOUT_SECS,
       };
     }
 
@@ -154,11 +166,13 @@ export const readImageGenSettingsJson = (
     return {
       channels: [legacy],
       maxConcurrentImages: DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
+      timeoutSecs: DEFAULT_IMAGE_GEN_TIMEOUT_SECS,
     };
   } catch {
     return {
       channels: [],
       maxConcurrentImages: DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
+      timeoutSecs: DEFAULT_IMAGE_GEN_TIMEOUT_SECS,
     };
   }
 };
@@ -169,12 +183,11 @@ export const toImageGenForm = (
 ): ImageGenSettingsForm => ({
   channels: settings.channels.map((channel) => ({ ...channel })),
   maxConcurrentImages: settings.maxConcurrentImages,
+  timeoutSecs: settings.timeoutSecs,
 });
 
 /** 表单 -> 存储 JSON 字符串（channels 数组 + 最大并发生成数）。 */
-export const toImageGenSettingsJson = (
-  form: ImageGenSettingsForm
-): string =>
+export const toImageGenSettingsJson = (form: ImageGenSettingsForm): string =>
   JSON.stringify({
     channels: form.channels.map((channel) => ({
       id: channel.id.trim(),
@@ -191,4 +204,5 @@ export const toImageGenSettingsJson = (
       defaultStream: channel.defaultStream,
     })),
     maxConcurrentImages: toConcurrentCount(form.maxConcurrentImages),
+    timeoutSecs: toTimeoutSecs(form.timeoutSecs),
   });

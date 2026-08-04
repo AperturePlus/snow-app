@@ -42,6 +42,11 @@ const ImageGenSettingsPanel = lazy(() =>
     default: m.ImageGenSettingsPanel,
   }))
 );
+const ImageLibraryPanel = lazy(() =>
+  import("./sidebar/ImageLibraryPanel").then((m) => ({
+    default: m.ImageLibraryPanel,
+  }))
+);
 const PrivacySettingsPanel = lazy(() =>
   import("./sidebar/PrivacySettingsPanel").then((m) => ({
     default: m.PrivacySettingsPanel,
@@ -141,6 +146,8 @@ export const MainContent = ({
             <ApiSettingsTreePanel onClose={() => onSelectView("chat")} />
           ) : activeView === "imagegen-settings" ? (
             <ImageGenSettingsPanel onClose={() => onSelectView("chat")} />
+          ) : activeView === "image-library" ? (
+            <ImageLibraryPanel onClose={() => onSelectView("chat")} />
           ) : activeView === "proxy-browser-settings" ? (
             <ProxyBrowserSettingsPanel onClose={() => onSelectView("chat")} />
           ) : activeView === "codebase-settings" ? (

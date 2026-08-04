@@ -219,9 +219,9 @@ export function ChatItem({
         <span
           className={`chat-item-icon${isStreaming ? " streaming" : ""}${
             isCompleted && !isStreaming ? " completed" : ""
-          }${isForked ? " forked" : ""}${hasSubAgents ? " has-sub-agents" : ""}${
-            hasEmoji ? " has-emoji" : ""
-          }`}
+          }${isForked ? " forked" : ""}${
+            hasSubAgents ? " has-sub-agents" : ""
+          }${hasEmoji ? " has-emoji" : ""}`}
           onClick={(event) => {
             // 图标不再承载交互，点击仅阻止选中会话；修改入口在右键菜单中
             event.stopPropagation();
@@ -295,6 +295,7 @@ export function ChatItem({
           onKeyDown={(event) => event.stopPropagation()}
         >
           <ChatItemMenu
+            conversationId={conversation.conversationId}
             isPinned={isPinned}
             emoji={conversation.emoji}
             onPin={onPin}
