@@ -23,7 +23,7 @@ Listed in registration order:
 | `codebase` | Codebase semantic search (embedding index) |
 | `codelens` | Code diagnostics and symbol location |
 | `app-control` | App control (memos / modes / settings pages / scheduled tasks / projects) |
-| `config` | Read/write global config (files: settings/snowcfg/proxy/app; database: subAgents/hooks; delegated: skills) |
+| `config` | Read/write global config (files: settings/snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy; database: subAgents/hooks; delegated: skills) |
 | `skills` | Skill loading and execution |
 
 ## 3. Tool Details
@@ -118,19 +118,32 @@ Listed in registration order:
 
 | Full tool name | Purpose | Key parameters |
 | --- | --- | --- |
-| `config-list` | List manageable scopes (settings/snowcfg/proxy/app/subAgents/hooks/skills) and their keys; pass `scope` to inspect a single scope with current values (sensitive keys masked) | `scope`, `projectId` |
-| `config-get` | Read a key's value; sensitive keys (`apiKey`, `visionApiKey`) are always masked; `subAgents`/`hooks` scopes read directly from the app database | `scope`, `key`, `projectId` |
+| `config-list` | List manageable scopes (settings/snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy/subAgents/hooks/skills) and their keys; pass `scope` to inspect a single scope with current values (sensitive keys masked) | `scope`, `projectId` |
+| `config-get` | Read a key's value; sensitive keys (`apiKey`, `visionApiKey`, custom-header schemes, system-prompt prompts) are always masked; `subAgents`/`hooks` scopes read directly from the app database | `scope`, `key`, `projectId` |
 | `config-set` | Write a key (whitelist + type check + auto backup + atomic write); `settings.mcpServers` auto-syncs to the app database and takes effect immediately; `subAgents`/`hooks` scopes write directly to the app database and take effect immediately | `scope`, `key`, `value`, `projectId` |
 | `config-delete` | Delete a key; `subAgents`/`hooks` scopes delete database records directly | `scope`, `key`, `projectId` |
+
+> **Structural validation**: `settings.codebase`, `custom-headers.schemes`,
+> `system-prompt.prompts` and `lsp-config.servers` are deeply validated on
+> write (known fields are type-checked one by one, e.g.
+> `codebase.embedding.dimensions` must be a number) so an agent cannot corrupt
+> nested fields; unknown fields are allowed through for forward compatibility.
 
 File-backed scopes:
 
 | Scope | File | Main keys |
 | --- | --- | --- |
 | `settings` | `~/.snow/settings.json` | `mcpServers`, `codebase`, `sensitiveCommands`, `yoloMode`, `planMode`, ... |
-| `snowcfg` | `~/.snow/config.json` (`snowcfg` object) | `baseUrl`, `apiKey` (sensitive), `advancedModel`, `maxTokens`, ... |
+| `snowcfg` | `~/.snow/config.json` (`snowcfg` object) | `baseUrl`, `apiKey` (sensitive), `advancedModel`, `chatThinking`, `responsesReasoning`, `maxTokens`, ... |
 | `proxy` | `~/.snow/proxy-config.json` | `enabled`, `host`, `port`, `searchEngine`, `browserPath`, `browserDebugPort` |
 | `app` | `~/.snow/active-profile.json` | `activeProfile` |
+| `custom-headers` | `~/.snow/custom-headers.json` | `active`, `schemes` (sensitive — may contain Authorization headers) |
+| `system-prompt` | `~/.snow/system-prompt.json` | `active`, `prompts` (sensitive — prompt body) |
+| `theme` | `~/.snow/theme.json` | `theme`, `simpleMode`, `diffOpacity`, `toolDisplayMode`, `thinkDisplayMode`, `subAgentDisplayMode`, `toolIcons`, `customColors` |
+| `language` | `~/.snow/language.json` | `language` |
+| `permissions` | `~/.snow/permissions.json` | `alwaysApprovedTools` |
+| `lsp-config` | `~/.snow/lsp-config.json` | `schemaVersion`, `servers` |
+| `buddy` | `~/.snow/buddy.json` | `version`, `companion`, `muted` |
 
 Database-backed scopes (write to the app SQLite database, same source as the UI settings panels, take effect immediately):
 

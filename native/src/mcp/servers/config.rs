@@ -60,6 +60,7 @@ enum ValueType {
     String,
     Bool,
     Int,
+    Number,
     Object,
     Array,
 }
@@ -103,7 +104,9 @@ const SNOWCFG_SCOPE_KEYS: &[KeySpec] = &[
     KeySpec { key: "basicModel", value_type: ValueType::String, sensitive: false },
     KeySpec { key: "supportsVision", value_type: ValueType::Bool, sensitive: false },
     KeySpec { key: "visionBaseUrl", value_type: ValueType::String, sensitive: false },
+    KeySpec { key: "visionBaseUrlMode", value_type: ValueType::String, sensitive: false },
     KeySpec { key: "visionApiKey", value_type: ValueType::String, sensitive: true },
+    KeySpec { key: "visionRequestMethod", value_type: ValueType::String, sensitive: false },
     KeySpec { key: "visionModel", value_type: ValueType::String, sensitive: false },
     KeySpec { key: "maxContextTokens", value_type: ValueType::Int, sensitive: false },
     KeySpec { key: "maxTokens", value_type: ValueType::Int, sensitive: false },
@@ -114,6 +117,15 @@ const SNOWCFG_SCOPE_KEYS: &[KeySpec] = &[
     KeySpec { key: "enableAutoCompress", value_type: ValueType::Bool, sensitive: false },
     KeySpec { key: "autoCompressThreshold", value_type: ValueType::Int, sensitive: false },
     KeySpec { key: "toolResultTokenLimit", value_type: ValueType::Int, sensitive: false },
+    KeySpec { key: "anthropicBeta", value_type: ValueType::Bool, sensitive: false },
+    KeySpec { key: "streamingDisplay", value_type: ValueType::Bool, sensitive: false },
+    KeySpec { key: "systemPromptId", value_type: ValueType::String, sensitive: false },
+    KeySpec { key: "customHeadersSchemeId", value_type: ValueType::String, sensitive: false },
+    KeySpec { key: "anthropicCacheTTL", value_type: ValueType::String, sensitive: false },
+    KeySpec { key: "responsesReasoning", value_type: ValueType::Object, sensitive: false },
+    KeySpec { key: "responsesVerbosity", value_type: ValueType::String, sensitive: false },
+    KeySpec { key: "responsesFastMode", value_type: ValueType::Bool, sensitive: false },
+    KeySpec { key: "chatThinking", value_type: ValueType::Object, sensitive: false },
 ];
 
 const PROXY_SCOPE_KEYS: &[KeySpec] = &[
@@ -129,11 +141,60 @@ const APP_SCOPE_KEYS: &[KeySpec] = &[
     KeySpec { key: "activeProfile", value_type: ValueType::String, sensitive: false },
 ];
 
+/// 自定义请求头方案（schemes 内可能含 Authorization 等敏感头，整体脱敏）。
+const CUSTOM_HEADERS_SCOPE_KEYS: &[KeySpec] = &[
+    KeySpec { key: "active", value_type: ValueType::String, sensitive: false },
+    KeySpec { key: "schemes", value_type: ValueType::Array, sensitive: true },
+];
+
+/// 系统提示词（prompts 含提示词正文，脱敏展示）。
+const SYSTEM_PROMPT_SCOPE_KEYS: &[KeySpec] = &[
+    KeySpec { key: "active", value_type: ValueType::Array, sensitive: false },
+    KeySpec { key: "prompts", value_type: ValueType::Array, sensitive: true },
+];
+
+const THEME_SCOPE_KEYS: &[KeySpec] = &[
+    KeySpec { key: "theme", value_type: ValueType::String, sensitive: false },
+    KeySpec { key: "simpleMode", value_type: ValueType::Bool, sensitive: false },
+    KeySpec { key: "diffOpacity", value_type: ValueType::Number, sensitive: false },
+    KeySpec { key: "toolDisplayMode", value_type: ValueType::String, sensitive: false },
+    KeySpec { key: "thinkDisplayMode", value_type: ValueType::String, sensitive: false },
+    KeySpec { key: "subAgentDisplayMode", value_type: ValueType::String, sensitive: false },
+    KeySpec { key: "toolIcons", value_type: ValueType::Object, sensitive: false },
+    KeySpec { key: "customColors", value_type: ValueType::Object, sensitive: false },
+];
+
+const LANGUAGE_SCOPE_KEYS: &[KeySpec] = &[
+    KeySpec { key: "language", value_type: ValueType::String, sensitive: false },
+];
+
+const PERMISSIONS_SCOPE_KEYS: &[KeySpec] = &[
+    KeySpec { key: "alwaysApprovedTools", value_type: ValueType::Array, sensitive: false },
+];
+
+const LSP_CONFIG_SCOPE_KEYS: &[KeySpec] = &[
+    KeySpec { key: "schemaVersion", value_type: ValueType::Int, sensitive: false },
+    KeySpec { key: "servers", value_type: ValueType::Object, sensitive: false },
+];
+
+const BUDDY_SCOPE_KEYS: &[KeySpec] = &[
+    KeySpec { key: "version", value_type: ValueType::Int, sensitive: false },
+    KeySpec { key: "companion", value_type: ValueType::Object, sensitive: false },
+    KeySpec { key: "muted", value_type: ValueType::Bool, sensitive: false },
+];
+
 const SCOPES: &[ScopeSpec] = &[
     ScopeSpec { scope: "settings", file_name: "settings.json", root_key: None, keys: SETTINGS_SCOPE_KEYS },
     ScopeSpec { scope: "snowcfg", file_name: "config.json", root_key: Some("snowcfg"), keys: SNOWCFG_SCOPE_KEYS },
     ScopeSpec { scope: "proxy", file_name: "proxy-config.json", root_key: None, keys: PROXY_SCOPE_KEYS },
     ScopeSpec { scope: "app", file_name: "active-profile.json", root_key: None, keys: APP_SCOPE_KEYS },
+    ScopeSpec { scope: "custom-headers", file_name: "custom-headers.json", root_key: None, keys: CUSTOM_HEADERS_SCOPE_KEYS },
+    ScopeSpec { scope: "system-prompt", file_name: "system-prompt.json", root_key: None, keys: SYSTEM_PROMPT_SCOPE_KEYS },
+    ScopeSpec { scope: "theme", file_name: "theme.json", root_key: None, keys: THEME_SCOPE_KEYS },
+    ScopeSpec { scope: "language", file_name: "language.json", root_key: None, keys: LANGUAGE_SCOPE_KEYS },
+    ScopeSpec { scope: "permissions", file_name: "permissions.json", root_key: None, keys: PERMISSIONS_SCOPE_KEYS },
+    ScopeSpec { scope: "lsp-config", file_name: "lsp-config.json", root_key: None, keys: LSP_CONFIG_SCOPE_KEYS },
+    ScopeSpec { scope: "buddy", file_name: "buddy.json", root_key: None, keys: BUDDY_SCOPE_KEYS },
 ];
 
 /// 备份目录名（~/.snow/.config-backups）。
@@ -297,6 +358,9 @@ impl ConfigService {
             ValueType::String => value.is_string(),
             ValueType::Bool => value.is_boolean(),
             ValueType::Int => value.is_i64() || value.is_u64(),
+            ValueType::Number => {
+                value.is_f64() || value.is_i64() || value.is_u64()
+            }
             ValueType::Object => value.is_object(),
             ValueType::Array => value.is_array(),
         };
@@ -320,6 +384,244 @@ impl ConfigService {
                             format!("mcpServers.{name} must be an object"),
                         ));
                     }
+                }
+            }
+        }
+        // 嵌套结构深度校验：仅查最外层类型不足以防止 agent 写坏内部字段
+        // （如 codebase.embedding.dimensions 被写成字符串）。以下 key 在白名单
+        // 内唯一（codebase/schemes/prompts/servers 分属不同 scope），按 key
+        // 分发到对应 schema 校验；只校验「已知字段存在时的类型」，未知字段
+        // 放行以保持前向兼容。
+        match key_spec.key {
+            "codebase" => Self::validate_codebase_object(value)?,
+            "schemes" => Self::validate_custom_header_schemes(value)?,
+            "prompts" => Self::validate_system_prompt_prompts(value)?,
+            "servers" => Self::validate_lsp_servers(value)?,
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// codebase 对象结构校验（settings scope）。
+    fn validate_codebase_object(value: &Value) -> napi::Result<()> {
+        let obj = value
+            .as_object()
+            .ok_or_else(|| invalid_nested_field_error("codebase", "object"))?;
+        for key in ["enabled", "enableAgentReview", "enableReranking"] {
+            if let Some(v) = obj.get(key) {
+                if !v.is_boolean() {
+                    return Err(invalid_nested_field_error(
+                        &format!("codebase.{key}"),
+                        "boolean",
+                    ));
+                }
+            }
+        }
+        for key in ["embedding", "reranking", "batch", "chunking"] {
+            if let Some(v) = obj.get(key) {
+                if !v.is_object() {
+                    return Err(invalid_nested_field_error(
+                        &format!("codebase.{key}"),
+                        "object",
+                    ));
+                }
+            }
+        }
+        if let Some(emb) = obj.get("embedding").and_then(Value::as_object) {
+            for key in ["type", "modelName", "baseUrl", "apiKey"] {
+                if let Some(v) = emb.get(key) {
+                    if !v.is_string() {
+                        return Err(invalid_nested_field_error(
+                            &format!("codebase.embedding.{key}"),
+                            "string",
+                        ));
+                    }
+                }
+            }
+            if let Some(v) = emb.get("dimensions") {
+                if !(v.is_f64() || v.is_i64() || v.is_u64()) {
+                    return Err(invalid_nested_field_error(
+                        "codebase.embedding.dimensions",
+                        "number",
+                    ));
+                }
+            }
+        }
+        if let Some(rer) = obj.get("reranking").and_then(Value::as_object) {
+            for key in ["modelName", "baseUrl", "apiKey"] {
+                if let Some(v) = rer.get(key) {
+                    if !v.is_string() {
+                        return Err(invalid_nested_field_error(
+                            &format!("codebase.reranking.{key}"),
+                            "string",
+                        ));
+                    }
+                }
+            }
+            for key in ["contextLength", "topN"] {
+                if let Some(v) = rer.get(key) {
+                    if !(v.is_f64() || v.is_i64() || v.is_u64()) {
+                        return Err(invalid_nested_field_error(
+                            &format!("codebase.reranking.{key}"),
+                            "number",
+                        ));
+                    }
+                }
+            }
+        }
+        if let Some(batch) = obj.get("batch").and_then(Value::as_object) {
+            for key in ["maxLines", "concurrency"] {
+                if let Some(v) = batch.get(key) {
+                    if !(v.is_f64() || v.is_i64() || v.is_u64()) {
+                        return Err(invalid_nested_field_error(
+                            &format!("codebase.batch.{key}"),
+                            "number",
+                        ));
+                    }
+                }
+            }
+        }
+        if let Some(chunk) = obj.get("chunking").and_then(Value::as_object) {
+            for key in [
+                "maxLinesPerChunk",
+                "minLinesPerChunk",
+                "minCharsPerChunk",
+                "overlapLines",
+            ] {
+                if let Some(v) = chunk.get(key) {
+                    if !(v.is_f64() || v.is_i64() || v.is_u64()) {
+                        return Err(invalid_nested_field_error(
+                            &format!("codebase.chunking.{key}"),
+                            "number",
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// custom-headers.schemes 数组结构校验（元素含 headers 对象）。
+    fn validate_custom_header_schemes(value: &Value) -> napi::Result<()> {
+        let schemes = value.as_array().ok_or_else(|| {
+            invalid_nested_field_error("custom-headers.schemes", "array")
+        })?;
+        for (index, scheme) in schemes.iter().enumerate() {
+            let obj = scheme.as_object().ok_or_else(|| {
+                invalid_nested_field_error(
+                    &format!("custom-headers.schemes[{index}]"),
+                    "object",
+                )
+            })?;
+            for key in ["id", "name", "createdAt"] {
+                if let Some(v) = obj.get(key) {
+                    if !v.is_string() {
+                        return Err(invalid_nested_field_error(
+                            &format!("custom-headers.schemes[{index}].{key}"),
+                            "string",
+                        ));
+                    }
+                }
+            }
+            if let Some(headers) = obj.get("headers") {
+                let header_obj = headers.as_object().ok_or_else(|| {
+                    invalid_nested_field_error(
+                        &format!("custom-headers.schemes[{index}].headers"),
+                        "object",
+                    )
+                })?;
+                for (header_name, header_value) in header_obj {
+                    if !header_value.is_string() {
+                        return Err(invalid_nested_field_error(
+                            &format!(
+                                "custom-headers.schemes[{index}].headers.{header_name}"
+                            ),
+                            "string",
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// system-prompt.prompts 数组结构校验（元素含提示词正文）。
+    fn validate_system_prompt_prompts(value: &Value) -> napi::Result<()> {
+        let prompts = value.as_array().ok_or_else(|| {
+            invalid_nested_field_error("system-prompt.prompts", "array")
+        })?;
+        for (index, prompt) in prompts.iter().enumerate() {
+            let obj = prompt.as_object().ok_or_else(|| {
+                invalid_nested_field_error(
+                    &format!("system-prompt.prompts[{index}]"),
+                    "object",
+                )
+            })?;
+            for key in ["id", "name", "content", "createdAt"] {
+                if let Some(v) = obj.get(key) {
+                    if !v.is_string() {
+                        return Err(invalid_nested_field_error(
+                            &format!("system-prompt.prompts[{index}].{key}"),
+                            "string",
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// lsp-config.servers 对象结构校验（每个语言服务器配置）。
+    fn validate_lsp_servers(value: &Value) -> napi::Result<()> {
+        let servers = value.as_object().ok_or_else(|| {
+            invalid_nested_field_error("lsp-config.servers", "object")
+        })?;
+        for (lang, server) in servers {
+            let obj = server.as_object().ok_or_else(|| {
+                invalid_nested_field_error(
+                    &format!("lsp-config.servers.{lang}"),
+                    "object",
+                )
+            })?;
+            for key in ["command", "installCommand"] {
+                if let Some(v) = obj.get(key) {
+                    if !v.is_string() {
+                        return Err(invalid_nested_field_error(
+                            &format!("lsp-config.servers.{lang}.{key}"),
+                            "string",
+                        ));
+                    }
+                }
+            }
+            for key in ["args", "fileExtensions"] {
+                if let Some(v) = obj.get(key) {
+                    if let Some(arr) = v.as_array() {
+                        for (i, item) in arr.iter().enumerate() {
+                            if !item.is_string() {
+                                return Err(invalid_nested_field_error(
+                                    &format!(
+                                        "lsp-config.servers.{lang}.{key}[{i}]"
+                                    ),
+                                    "string",
+                                ));
+                            }
+                        }
+                    } else {
+                        return Err(invalid_nested_field_error(
+                            &format!("lsp-config.servers.{lang}.{key}"),
+                            "array",
+                        ));
+                    }
+                }
+            }
+            if let Some(v) = obj.get("initializationOptions") {
+                if !v.is_object() {
+                    return Err(invalid_nested_field_error(
+                        &format!(
+                            "lsp-config.servers.{lang}.initializationOptions"
+                        ),
+                        "object",
+                    ));
                 }
             }
         }
@@ -1226,13 +1528,13 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_LIST.to_string(),
-                description: "List manageable configuration scopes and their keys. Scopes: settings (~/.snow/settings.json: mcpServers, codebase, sensitiveCommands, yoloMode, planMode, ...), snowcfg (~/.snow/config.json snowcfg object: baseUrl, apiKey, advancedModel, ...), proxy (~/.snow/proxy-config.json: enabled, host, port, searchEngine, browserPath, browserDebugPort), app (~/.snow/active-profile.json: activeProfile). DB-backed scopes: subAgents (sub-agent configs in the app database, key=agentId), hooks (lifecycle hook configs in the app database, key=hookType). Pass `scope` to inspect a single scope with current values; sensitive values (apiKey, visionApiKey) are masked. Pass `projectId` to scope subAgents/hooks listings to a specific project (omitted = global).".to_string(),
+                description: "List manageable configuration scopes and their keys. Scopes: settings (~/.snow/settings.json: mcpServers, codebase, sensitiveCommands, yoloMode, planMode, ...), snowcfg (~/.snow/config.json snowcfg object: baseUrl, apiKey, advancedModel, chatThinking, ...), proxy (~/.snow/proxy-config.json: enabled, host, port, searchEngine, browserPath, browserDebugPort), app (~/.snow/active-profile.json: activeProfile), custom-headers (~/.snow/custom-headers.json: active, schemes), system-prompt (~/.snow/system-prompt.json: active, prompts), theme (~/.snow/theme.json: theme, simpleMode, diffOpacity, toolIcons, customColors, ...), language (~/.snow/language.json: language), permissions (~/.snow/permissions.json: alwaysApprovedTools), lsp-config (~/.snow/lsp-config.json: schemaVersion, servers), buddy (~/.snow/buddy.json: version, companion, muted). DB-backed scopes: subAgents (sub-agent configs in the app database, key=agentId), hooks (lifecycle hook configs in the app database, key=hookType). Pass `scope` to inspect a single scope with current values; sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts) are masked. Pass `projectId` to scope subAgents/hooks listings to a specific project (omitted = global).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app", "subAgents", "hooks", "skills"],
+                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills"],
                             "description": "Optional config scope name; when omitted, lists all scopes."
                         },
                         "projectId": {
@@ -1252,7 +1554,7 @@ impl McpService for ConfigService {
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app", "subAgents", "hooks", "skills"],
+                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills"],
                             "description": "Config scope name."
                         },
                         "key": {
@@ -1271,13 +1573,13 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_SET.to_string(),
-                description: "Write a value for a configuration key. Only whitelisted scopes/keys are accepted; the value is type-checked, the target file is backed up to ~/.snow/.config-backups before the write, and the file is replaced atomically. Special case: writing `mcpServers` in the `settings` scope also syncs the servers into the app database (same diff semantics as the UI 'Sync Snow CLI MCP settings' action), so MCP changes take effect immediately without manual sync. Other settings (snowcfg/proxy/app) are file-based and may require an app restart or UI re-save. DB-backed scopes write directly to the app database and take effect immediately: subAgents (key=agentId, value={name, description, systemPrompt, toolsJson, configProfile}; toolsJson accepts a JSON string or an array of tool names; built-in agent_general cannot be modified) and hooks (key=hookType, value={rules:[{description, matcher?, hooks:[{type: command|prompt|context, command?, prompt?, content?, timeout?, enabled?}]}]}). Pass optional `projectId` to write a project-scoped config (omitted = global).".to_string(),
+                description: "Write a value for a configuration key. Only whitelisted scopes/keys are accepted; the value is type-checked, the target file is backed up to ~/.snow/.config-backups before the write, and the file is replaced atomically. Special case: writing `mcpServers` in the `settings` scope also syncs the servers into the app database (same diff semantics as the UI 'Sync Snow CLI MCP settings' action), so MCP changes take effect immediately without manual sync. Other file-based scopes (snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy) are file-based and may require an app restart or UI re-save. DB-backed scopes write directly to the app database and take effect immediately: subAgents (key=agentId, value={name, description, systemPrompt, toolsJson, configProfile}; toolsJson accepts a JSON string or an array of tool names; built-in agent_general cannot be modified) and hooks (key=hookType, value={rules:[{description, matcher?, hooks:[{type: command|prompt|context, command?, prompt?, content?, timeout?, enabled?}]}]}). Pass optional `projectId` to write a project-scoped config (omitted = global).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app", "subAgents", "hooks", "skills"],
+                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills"],
                             "description": "Config scope name."
                         },
                         "key": {
@@ -1305,7 +1607,7 @@ impl McpService for ConfigService {
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app", "subAgents", "hooks", "skills"],
+                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills"],
                             "description": "Config scope name."
                         },
                         "key": {
@@ -1345,6 +1647,7 @@ fn type_name(value_type: ValueType) -> &'static str {
         ValueType::String => "string",
         ValueType::Bool => "boolean",
         ValueType::Int => "integer",
+        ValueType::Number => "number",
         ValueType::Object => "object",
         ValueType::Array => "array",
     }
@@ -1388,6 +1691,13 @@ fn invalid_key_error(scope: &ScopeSpec, key: &str) -> Error {
             scope.scope,
             available_keys(scope)
         ),
+    )
+}
+
+fn invalid_nested_field_error(field: &str, expected: &str) -> Error {
+    Error::new(
+        Status::InvalidArg,
+        format!("Invalid value for `{field}` (expected {expected})"),
     )
 }
 
