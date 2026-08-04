@@ -4,6 +4,8 @@
 
 ## New Features
 
+- **Agent-Managed Sub-Agents & Hooks**: The built-in `config` MCP server now exposes three new scopes — `subAgents` (create/update/delete sub-agents, global or project-scoped via `projectId`), `hooks` (configure all 9 lifecycle hooks, global or project-scoped) and `skills` (toggle/install/uninstall skills, delegating to the skill manager). Sub-agent and hook configs are written directly to the app database, identical to the UI settings panels, and take effect immediately. The former `skills-config-*` tools have been removed in favor of the `config` server's `skills` scope.
+- **Project-Scoped Sub-Agents**: The `sub_agent_configs` table gains a `project_id` column (composite unique key, automatic migration for existing databases). The sub-agent settings panel adds Global/Project scope tabs, and sub-agent activation resolves project-scoped agents first, falling back to the global one with the same id.
 - **App Error Boundary**: Added an application-level error boundary that automatically refreshes and self-heals when dynamic sub-package loading fails. Refresh attempts are limited via `sessionStorage` to prevent infinite refresh loops when build artifacts are missing.
 - **Direct Sub-Agent Interaction**: Sub-agent sessions are no longer read-only — they now use the regular `ChatInput` for direct interaction, and the separate monitor UI has been removed. The sub-agent model is fixed to its own `advancedModel` to prevent misleading model memorization by the parent session.
 - **Collapsible Projects Section**: The Projects section in the sidebar is now collapsible, with its expand/collapse state persisted to `localStorage`.

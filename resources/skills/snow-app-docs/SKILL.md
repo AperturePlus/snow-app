@@ -6,19 +6,14 @@ description: >-
   API keys/models, proxy & network, or look up settings.json fields and
   built-in tools. Use this skill whenever the user asks to configure,
   inspect or troubleshoot any of these areas. Covers the config built-in
-  service (config-list/get/set/delete), the skills-config built-in
-  service (list/setEnabled/installGithub/uninstall) and the
-  app-control-openSettings shortcut.
+  service (config-list/get/set/delete; scopes: settings/snowcfg/proxy/app/
+  subAgents/hooks/skills) and the app-control-openSettings shortcut.
 enabled: true
 allowed_tools:
   - config-list
   - config-get
   - config-set
   - config-delete
-  - skills-config-list
-  - skills-config-setEnabled
-  - skills-config-installGithub
-  - skills-config-uninstall
   - app-control-openSettings
   - bash-terminal-execute
   - filesystem-read
@@ -73,15 +68,17 @@ allowed_tools:
 - **编辑配置文件**：需要读写 `~/.snow/` 下的 JSON 时使用 filesystem 工具，
   注意 **Windows 路径中的反斜杠必须写成 `\\`**（JSON 转义），否则
   `\f`/`\n`/`\v` 会被解析为转义序列导致配置失效。
-- **管理 Skills**：用 `skills-config-list` 查看可用技能与 GitHub 已装记录；
-  用 `skills-config-setEnabled` 切换开关——不传 `projectId` 时改写 SKILL.md
-  frontmatter 的 `enable` 字段（全局生效，注意字段名是 `enable` 而非
-  `enabled`），传 `projectId` 时写入应用数据库项目级覆盖（立即生效且优先
-  于 frontmatter）；用 `skills-config-installGithub` 从 GitHub 安装（
-  `location` 为 `global` 或 `project`，项目安装需带 `projectId`），用
-  `skills-config-uninstall` 卸载（**仅限 GitHub 安装的技能**，手动放置或
-  应用自带的技能需删除目录）。也可按文档中的目录约定手动放置 `SKILL.md`，
-  新技能立即加载，无需重启应用。
+- **管理 Skills**：用 `config-list scope=skills` 查看可用技能与 GitHub 已装
+  记录；用 `config-set scope=skills key=<skillId> value={enabled: true|false}`
+  切换开关——不传 `projectId` 时改写 SKILL.md frontmatter 的 `enable` 字段
+  （全局生效，注意字段名是 `enable` 而非 `enabled`），传 `projectId` 时写入
+  应用数据库项目级覆盖（立即生效且优先于 frontmatter）；用
+  `config-set scope=skills key=install value={url, location}` 从 GitHub 安装
+  （`url` 支持完整 URL 与 `owner/repo` 简写，`location` 为 `global` 或
+  `project`，项目安装需带 `projectId`），用
+  `config-delete scope=skills key=<skillId>` 卸载（**仅限 GitHub 安装的技能**，
+  手动放置或应用自带的技能需删除目录）。也可按文档中的目录约定手动放置
+  `SKILL.md`，新技能立即加载，无需重启应用。
 
 ## 3. 完成确认（Confirm with the user）
 
