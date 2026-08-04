@@ -606,6 +606,8 @@ export const zhCN = {
   "settings.apiVisionRequestMethod": "视觉请求方式",
   "settings.apiVisionModel": "视觉模型",
   "settings.apiStreamIdleTimeout": "流式空闲超时（秒）",
+  "settings.apiMaxRetries": "最大重试次数",
+  "settings.apiRetryBaseDelayMs": "重试延迟（毫秒）",
   "settings.apiEnableAutoCompress": "启用自动压缩",
   "settings.apiAutoCompressThreshold": "自动压缩阈值",
   "settings.apiAutoCompressThresholdNeedMaxContext":
@@ -787,7 +789,8 @@ export const zhCN = {
   "settings.systemPromptDeleteError": "删除系统提示词失败",
   "settings.personalizationSettings": "个性化与规则",
   "settings.personalizationTitle": "个性化与规则",
-  "settings.personalizationSettingsInfo": "管理全局与项目级的 AI 助手行为规则。",
+  "settings.personalizationSettingsInfo":
+    "管理全局与项目级的 AI 助手行为规则。",
   "settings.customHeadersSettings": "自定义请求头",
   "settings.customHeadersSettingsInfo": "为 API 请求添加请求头。",
   "settings.customHeadersTitle": "自定义请求头",
@@ -1543,8 +1546,7 @@ export const zhCN = {
   "personalization.globalSaved": "已保存全局规则。",
   "personalization.globalHint": "保存后，新的规则将在下一次对话中生效。",
   "personalization.projectTitle": "项目规则",
-  "personalization.projectInfo":
-    "项目专属规则会在全局规则之后加载。",
+  "personalization.projectInfo": "项目专属规则会在全局规则之后加载。",
   "personalization.currentProject": "当前项目",
   "personalization.projectEmpty":
     "当前没有激活的项目，请先在侧边栏打开或添加项目后再编辑其 ROLE.md。",
@@ -1619,6 +1621,8 @@ export const zhCN = {
   "projectCodebase.configHint": "嵌入、重排序和分块参数请在设置页中配置。",
   "projectCodebase.gitignoreMissing":
     "当前项目根目录下未检测到 .gitignore 文件。为避免大规模嵌入无关文件（如 node_modules、构建产物等），请先在项目根目录创建 .gitignore 后再启用代码库索引。",
+  "projectCodebase.remoteUnsupported":
+    "远程（SSH）工作目录无法使用代码库功能，请切换到本地项目目录后再试。",
   "projectCodebase.embedding.title": "向量索引",
   "projectCodebase.embedding.description":
     "将项目代码文件分块后嵌入到向量数据库，支持语义搜索。",
@@ -1785,7 +1789,8 @@ export const zhCN = {
   "codebase.panel.sphereNodes": "显示 {{count}} 个文件",
   "codebase.panel.sphereNodesLimited": "显示前 {{count}} / {{total}} 个文件",
   "codebase.panel.sphereLimitAll": "全部",
-  "codebase.panel.sphereLimitTitle": "节点数量：全部将展示所有文件，文件较多时计算较慢",
+  "codebase.panel.sphereLimitTitle":
+    "节点数量：全部将展示所有文件，文件较多时计算较慢",
   "codebase.panel.sphereSearchPlaceholder": "搜索文件...",
   "codebase.panel.sphereSearchNoMatch": "未找到匹配文件",
   "codebase.panel.sphereHint": "拖拽旋转 · 悬停查看详情",

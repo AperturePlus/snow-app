@@ -229,10 +229,14 @@ export const en = {
   "chat.greetingNoProject": "Select a workspace project to get started.",
   "chat.scrollToBottom": "Scroll to bottom",
   "chat.userMessageRail.title": "User messages",
-  "chat.subAgentModelFixed": "Sub-agent uses the model from its own configuration",
-  "chat.subAgentFinished.completed": "This sub-agent has finished. The conversation is read-only.",
-  "chat.subAgentFinished.failed": "This sub-agent failed. The conversation is read-only.",
-  "chat.subAgentFinished.cancelled": "This sub-agent was cancelled. The conversation is read-only.",
+  "chat.subAgentModelFixed":
+    "Sub-agent uses the model from its own configuration",
+  "chat.subAgentFinished.completed":
+    "This sub-agent has finished. The conversation is read-only.",
+  "chat.subAgentFinished.failed":
+    "This sub-agent failed. The conversation is read-only.",
+  "chat.subAgentFinished.cancelled":
+    "This sub-agent was cancelled. The conversation is read-only.",
   "chat.subAgentFinished.backToParent": "Back to parent conversation",
   "chat.quickActionAddProject": "Add a project",
   "chat.quickActionAddProjectDesc": "Open a local workspace directory",
@@ -303,7 +307,8 @@ export const en = {
   "toolCall.bash.interactivePlaceholder": "Type input and press Enter...",
   "toolCall.bash.kill": "Stop",
   "toolCall.bash.killing": "Stopping...",
-  "toolCall.bash.killTitle": "Kill the running command without waiting for the timeout",
+  "toolCall.bash.killTitle":
+    "Kill the running command without waiting for the timeout",
   "toolCall.bash.status.pending": "Pending",
   "toolCall.bash.status.running": "Running",
   "toolCall.bash.status.completed": "Completed",
@@ -568,7 +573,8 @@ export const en = {
   "common.retry": "Retry",
   "common.loading": "Loading...",
   "common.errorTitle": "Something went wrong",
-  "common.errorDescription": "The app hit an unexpected error. Reloading usually resolves it.",
+  "common.errorDescription":
+    "The app hit an unexpected error. Reloading usually resolves it.",
   "common.reload": "Reload",
   "sidebar.search": "Search",
   "sidebar.settings": "Settings",
@@ -618,6 +624,8 @@ export const en = {
   "settings.apiVisionRequestMethod": "Vision method",
   "settings.apiVisionModel": "Vision model",
   "settings.apiStreamIdleTimeout": "Stream idle timeout (s)",
+  "settings.apiMaxRetries": "Max retries",
+  "settings.apiRetryBaseDelayMs": "Retry delay (ms)",
   "settings.apiEnableAutoCompress": "Enable auto compress",
   "settings.apiAutoCompressThreshold": "Auto compress threshold",
   "settings.apiAutoCompressThresholdNeedMaxContext":
@@ -985,12 +993,15 @@ export const en = {
     "Failed to initialize the MCP server connection. The server may not be compatible with the current protocol.",
   "settings.mcpErrorHttpConnectFailed":
     "Failed to connect to the MCP HTTP server. Check the URL and network.",
-  "settings.mcpErrorMissingCommand": "This MCP server has no command configured.",
+  "settings.mcpErrorMissingCommand":
+    "This MCP server has no command configured.",
   "settings.mcpErrorMissingUrl": "This MCP server has no URL configured.",
   "settings.mcpErrorNotConfigured":
     "This MCP server is no longer configured. Re-add it and try again.",
-  "settings.mcpErrorListToolsFailed": "Failed to fetch the tool list from the MCP server.",
-  "settings.mcpErrorLoadConfigsFailed": "Failed to load MCP server configurations.",
+  "settings.mcpErrorListToolsFailed":
+    "Failed to fetch the tool list from the MCP server.",
+  "settings.mcpErrorLoadConfigsFailed":
+    "Failed to load MCP server configurations.",
   "settings.mcpErrorInvalidConfigJson":
     "The MCP server configuration contains invalid JSON values.",
   "settings.mcpFetchToolsErrorDetail": "Failed to fetch MCP tools: {{detail}}",
@@ -1628,8 +1639,7 @@ export const en = {
   "personalization.globalPlaceholder":
     "Enter global rules here, e.g. role definition, output style, coding conventions...",
   "personalization.globalSaved": "Global rules saved.",
-  "personalization.globalHint":
-    "Changes take effect in the next conversation.",
+  "personalization.globalHint": "Changes take effect in the next conversation.",
   "personalization.projectTitle": "Project rules",
   "personalization.projectInfo":
     "Project-specific rules are loaded after global rules.",
@@ -1714,6 +1724,8 @@ export const en = {
     "Embedding, reranking and chunking parameters are configured in Settings.",
   "projectCodebase.gitignoreMissing":
     "No .gitignore file detected in the project root. To avoid embedding large amounts of irrelevant files (such as node_modules, build artifacts, etc.), please create a .gitignore in the project root before enabling codebase indexing.",
+  "projectCodebase.remoteUnsupported":
+    "Codebase features are not available for remote (SSH) workspaces. Please switch to a local project directory and try again.",
   "projectCodebase.embedding.title": "Vector Index",
   "projectCodebase.embedding.description":
     "Chunk project code files and embed them into a vector database for semantic search.",
@@ -1882,9 +1894,11 @@ export const en = {
   "codebase.panel.sphereError": "Failed to load similarity data",
   "codebase.panel.sphereEmpty": "No files to display for the current project",
   "codebase.panel.sphereNodes": "Showing {{count}} files",
-  "codebase.panel.sphereNodesLimited": "Showing first {{count}} of {{total}} files",
+  "codebase.panel.sphereNodesLimited":
+    "Showing first {{count}} of {{total}} files",
   "codebase.panel.sphereLimitAll": "All",
-  "codebase.panel.sphereLimitTitle": "Node count: All renders every file, may be slow for large codebases",
+  "codebase.panel.sphereLimitTitle":
+    "Node count: All renders every file, may be slow for large codebases",
   "codebase.panel.sphereSearchPlaceholder": "Search files...",
   "codebase.panel.sphereSearchNoMatch": "No matching files",
   "codebase.panel.sphereHint": "Drag to rotate · Hover for details",

@@ -243,6 +243,15 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
     }
   );
   ipcMain.handle(
+    "codebase:check-project-remote",
+    (_event, projectId: unknown) => {
+      if (typeof projectId !== "string" || !projectId.trim()) {
+        throw new Error("Project id is required");
+      }
+      return native.checkProjectIsRemote(projectId.trim());
+    }
+  );
+  ipcMain.handle(
     "codebase:start-embedding",
     async (event, projectId: unknown, sessionId: unknown) => {
       if (typeof projectId !== "string" || !projectId.trim()) {

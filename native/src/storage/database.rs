@@ -8,7 +8,7 @@ use std::{
 use napi::bindgen_prelude::*;
 use rusqlite::Connection;
 
-use super::services;
+use super::{migrations, services};
 
 const SNOWFLAKE_EPOCH_MS: u64 = 1_704_067_200_000;
 const SNOWFLAKE_WORKER_ID_BITS: u64 = 10;
@@ -16,22 +16,6 @@ const SNOWFLAKE_SEQUENCE_BITS: u64 = 12;
 const SNOWFLAKE_WORKER_ID_MASK: u64 = (1 << SNOWFLAKE_WORKER_ID_BITS) - 1;
 const SNOWFLAKE_SEQUENCE_MASK: u64 = (1 << SNOWFLAKE_SEQUENCE_BITS) - 1;
 const SNOWFLAKE_TIMESTAMP_SHIFT: u64 = SNOWFLAKE_WORKER_ID_BITS + SNOWFLAKE_SEQUENCE_BITS;
-
-const PRIMARY_KEY_TABLES: &[&str] = &[
-    "system_settings",
-    "api_configs",
-    "codebase_settings",
-    "system_prompts",
-    "custom_header_schemes",
-    "workspace_directories",
-    "mcp_server_configs",
-    "sub_agent_configs",
-    "sensitive_command_configs",
-    "chat_conversations",
-    "sub_agent_sessions",
-    "chat_messages",
-    "usage_records",
-];
 
 #[derive(Debug, Default)]
 struct SnowflakeState {
@@ -117,7 +101,10 @@ pub fn ensure_database(database_path: &Path) -> Result<()> {
 }
 
 fn create_schema(connection: &Connection) -> rusqlite::Result<()> {
-    reset_legacy_integer_primary_key_tables(connection)?;
+    // Pre-schema migrations run BEFORE CREATE TABLE so that tables with
+    // incompatible legacy structures (e.g. INTEGER primary keys) can be
+    // dropped and recreated with the current schema.
+    migrations::run_pre_schema_migrations(connection)?;
 
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS system_settings (
@@ -424,174 +411,15 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
     // module so the schema lives next to its CRUD functions.
     services::codebase_embed_sessions::ensure_sessions_table(connection)?;
 
-    // Migrate existing databases that were created before per-conversation
-    // API profile binding existed. Idempotent: no-op when the column is
-    // already present (fresh databases get it from CREATE TABLE above).
-    migrate_chat_conversations_api_profile(connection)?;
-
-    // Migrate existing databases that were created before per-conversation
-    // Plan/Goal Mode overrides existed. Idempotent: no-op when the columns
-    // are already present (fresh databases get them from CREATE TABLE above).
-    migrate_chat_conversations_modes(connection)?;
-
-    // Migrate existing databases that were created before sub-agent
-    // project scoping existed: adds the `project_id` column and rebuilds the
-    // table with a composite UNIQUE(agent_id, project_id) constraint so the
-    // same agent id can exist at both global and project level.
-    migrate_sub_agent_configs_project_id(connection)?;
+    // Post-schema migrations run AFTER CREATE TABLE to add columns that
+    // older databases lack but fresh databases already have. Each migration
+    // is idempotent. Includes the local per-conversation Plan/Goal Mode
+    // columns and the sub-agent project_id rebuild (see migrations.rs).
+    migrations::run_post_schema_migrations(connection)?;
 
     connection.pragma_update(None, "user_version", 23)?;
 
     Ok(())
-}
-
-/// Adds the `api_profile_name` column to `chat_conversations` for databases
-/// created by older app versions. The column binds a conversation to a
-/// specific API config profile so different conversations can route to
-/// different providers/models. Empty string means "follow the global active
-/// profile" (the legacy behaviour).
-fn migrate_chat_conversations_api_profile(connection: &Connection) -> rusqlite::Result<()> {
-    let mut statement = connection.prepare("PRAGMA table_info(chat_conversations)")?;
-    let mut columns = statement.query_map([], |row| row.get::<_, String>(1))?;
-    let has_api_profile_column = columns.try_fold(false, |found, column| {
-        Ok::<bool, rusqlite::Error>(found || column? == "api_profile_name")
-    })?;
-
-    if !has_api_profile_column {
-        connection.execute(
-            "ALTER TABLE chat_conversations
-                ADD COLUMN api_profile_name TEXT NOT NULL DEFAULT ''",
-            [],
-        )?;
-    }
-
-    Ok(())
-}
-
-/// Adds the per-conversation Plan/Goal Mode override columns to
-/// `chat_conversations` for databases created by older app versions.
-/// NULL means "not configured for this conversation — follow the global
-/// default"; values are 0/1 booleans and an integer token budget.
-fn migrate_chat_conversations_modes(connection: &Connection) -> rusqlite::Result<()> {
-    let mut statement = connection.prepare("PRAGMA table_info(chat_conversations)")?;
-    let columns: Vec<String> = statement
-        .query_map([], |row| row.get::<_, String>(1))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-
-    let missing: Vec<(&str, &str)> = [
-        ("plan_mode", "INTEGER"),
-        ("goal_mode", "INTEGER"),
-        ("goal_mode_token_budget", "INTEGER"),
-    ]
-    .into_iter()
-    .filter(|(name, _)| !columns.iter().any(|column| column == name))
-    .collect();
-
-    for (name, column_type) in missing {
-        connection.execute(
-            &format!("ALTER TABLE chat_conversations ADD COLUMN {name} {column_type}"),
-            [],
-        )?;
-    }
-
-    Ok(())
-}
-
-/// Adds sub-agent project scoping to databases created before it existed.
-///
-/// Older databases have `sub_agent_configs` with a single-column
-/// `UNIQUE(agent_id)` constraint and no `project_id` column. SQLite cannot
-/// alter a UNIQUE constraint, so the table is rebuilt: rename → create with
-/// the new schema (composite `UNIQUE(agent_id, project_id)`) → copy rows
-/// (existing agents become global, `project_id = ''`) → drop the old table.
-/// Idempotent: no-op when the column is already present.
-fn migrate_sub_agent_configs_project_id(connection: &Connection) -> rusqlite::Result<()> {
-    let mut statement = connection.prepare("PRAGMA table_info(sub_agent_configs)")?;
-    let columns: Vec<String> = statement
-        .query_map([], |row| row.get::<_, String>(1))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-
-    if columns.iter().any(|column| column == "project_id") {
-        // 列已存在（全新数据库或已迁移）：只需确保 project 索引存在。
-        // 注意：该索引不能放在主 execute_batch 中——旧库在此迁移执行前
-        // 还没有 project_id 列，在 batch 里创建会报 no such column。
-        connection.execute_batch(
-            "CREATE INDEX IF NOT EXISTS idx_sub_agent_configs_project
-               ON sub_agent_configs(project_id);",
-        )?;
-        return Ok(());
-    }
-
-    connection.execute_batch(
-        "ALTER TABLE sub_agent_configs RENAME TO sub_agent_configs_legacy;
-         CREATE TABLE sub_agent_configs (
-           id TEXT PRIMARY KEY NOT NULL,
-           agent_id TEXT NOT NULL,
-           name TEXT NOT NULL,
-           description TEXT NOT NULL DEFAULT '',
-           system_prompt TEXT NOT NULL DEFAULT '',
-           tools_json TEXT NOT NULL DEFAULT '[]',
-           config_profile TEXT NOT NULL DEFAULT '',
-           builtin INTEGER NOT NULL DEFAULT 0,
-           sort_order INTEGER NOT NULL DEFAULT 0,
-           source TEXT NOT NULL DEFAULT 'manual',
-           project_id TEXT NOT NULL DEFAULT '',
-           created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-           updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-           UNIQUE(agent_id, project_id)
-         );
-         INSERT INTO sub_agent_configs (
-           id, agent_id, name, description, system_prompt, tools_json,
-           config_profile, builtin, sort_order, source, project_id,
-           created_at, updated_at
-         )
-         SELECT id, agent_id, name, description, system_prompt, tools_json,
-                config_profile, builtin, sort_order, source, '',
-                created_at, updated_at
-           FROM sub_agent_configs_legacy;
-         CREATE INDEX IF NOT EXISTS idx_sub_agent_configs_builtin
-           ON sub_agent_configs(builtin);
-         CREATE INDEX IF NOT EXISTS idx_sub_agent_configs_source
-           ON sub_agent_configs(source);
-         CREATE INDEX IF NOT EXISTS idx_sub_agent_configs_project
-           ON sub_agent_configs(project_id);
-         DROP TABLE sub_agent_configs_legacy;",
-    )?;
-
-    Ok(())
-}
-
-fn reset_legacy_integer_primary_key_tables(connection: &Connection) -> rusqlite::Result<()> {
-    let has_legacy_primary_key = PRIMARY_KEY_TABLES.iter().try_fold(false, |found, table_name| {
-        Ok::<bool, rusqlite::Error>(found || has_integer_primary_key(connection, table_name)?)
-    })?;
-
-    if !has_legacy_primary_key {
-        return Ok(());
-    }
-
-    connection.execute_batch("PRAGMA foreign_keys = OFF;")?;
-    for table_name in PRIMARY_KEY_TABLES {
-        connection.execute(&format!("DROP TABLE IF EXISTS {table_name}"), [])?;
-    }
-    connection.execute_batch("PRAGMA foreign_keys = ON;")?;
-
-    Ok(())
-}
-
-fn has_integer_primary_key(connection: &Connection, table_name: &str) -> rusqlite::Result<bool> {
-    let mut statement = connection.prepare(&format!("PRAGMA table_info({table_name})"))?;
-    let mut columns = statement.query_map([], |row| {
-        Ok((row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, i32>(5)?))
-    })?;
-
-    columns.try_fold(false, |found, column| {
-        let (column_name, column_type, primary_key_index) = column?;
-        Ok(found
-            || (column_name == "id"
-                && primary_key_index > 0
-                && column_type.eq_ignore_ascii_case("INTEGER")))
-    })
 }
 
 pub fn database_error(database_path: &Path, action: &str, error: rusqlite::Error) -> Error {

@@ -602,6 +602,8 @@ export const zhTW = {
   "settings.apiVisionRequestMethod": "視覺請求方式",
   "settings.apiVisionModel": "視覺模型",
   "settings.apiStreamIdleTimeout": "串流閒置逾時（秒）",
+  "settings.apiMaxRetries": "最大重試次數",
+  "settings.apiRetryBaseDelayMs": "重試延遲（毫秒）",
   "settings.apiEnableAutoCompress": "啟用自動壓縮",
   "settings.apiAutoCompressThreshold": "自動壓縮閾值",
   "settings.apiAutoCompressThresholdNeedMaxContext":
@@ -783,7 +785,8 @@ export const zhTW = {
   "settings.systemPromptDeleteError": "刪除系統提示詞失敗",
   "settings.personalizationSettings": "個人化與規則",
   "settings.personalizationTitle": "個人化與規則",
-  "settings.personalizationSettingsInfo": "管理全域與專案層級的 AI 助手行為規則。",
+  "settings.personalizationSettingsInfo":
+    "管理全域與專案層級的 AI 助手行為規則。",
   "settings.customHeadersSettings": "自訂請求標頭",
   "settings.customHeadersSettingsInfo": "為 API 請求加入標頭。",
   "settings.customHeadersTitle": "自訂請求標頭",
@@ -1517,8 +1520,7 @@ export const zhTW = {
   "personalization.globalSaved": "已儲存全域規則。",
   "personalization.globalHint": "儲存後，新的規則將在下一次對話中生效。",
   "personalization.projectTitle": "專案規則",
-  "personalization.projectInfo":
-    "專案專屬規則會在全域規則之後載入。",
+  "personalization.projectInfo": "專案專屬規則會在全域規則之後載入。",
   "personalization.currentProject": "目前專案",
   "personalization.projectEmpty":
     "目前沒有啟用的專案，請先在側邊欄開啟或新增專案後再編輯其 ROLE.md。",
@@ -1593,6 +1595,8 @@ export const zhTW = {
   "projectCodebase.configHint": "嵌入、重排序和分塊參數請在設定頁中設定。",
   "projectCodebase.gitignoreMissing":
     "目前專案根目錄下未偵測到 .gitignore 檔案。為避免大規模嵌入無關檔案（如 node_modules、建置產物等），請先在專案根目錄建立 .gitignore 後再啟用程式碼庫索引。",
+  "projectCodebase.remoteUnsupported":
+    "遠端（SSH）工作目錄無法使用程式碼庫功能，請切換到本機專案目錄後再試。",
   "projectCodebase.embedding.title": "向量索引",
   "projectCodebase.embedding.description":
     "將專案程式碼檔案分塊後嵌入到向量資料庫，支援語意搜尋。",
@@ -1758,7 +1762,8 @@ export const zhTW = {
   "codebase.panel.sphereNodes": "顯示 {{count}} 個檔案",
   "codebase.panel.sphereNodesLimited": "顯示前 {{count}} / {{total}} 個檔案",
   "codebase.panel.sphereLimitAll": "全部",
-  "codebase.panel.sphereLimitTitle": "節點數量：全部將顯示所有檔案，檔案較多時計算較慢",
+  "codebase.panel.sphereLimitTitle":
+    "節點數量：全部將顯示所有檔案，檔案較多時計算較慢",
   "codebase.panel.sphereSearchPlaceholder": "搜尋檔案...",
   "codebase.panel.sphereSearchNoMatch": "找不到相符檔案",
   "codebase.panel.sphereHint": "拖曳旋轉 · 懸停檢視詳情",

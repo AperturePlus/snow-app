@@ -578,6 +578,13 @@ pub async fn check_project_has_gitignore(project_id: String) -> napi::Result<boo
 }
 
 #[napi]
+pub async fn check_project_is_remote(project_id: String) -> napi::Result<bool> {
+    tokio::task::spawn_blocking(move || crate::storage::check_project_is_remote(project_id))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn list_tool_approval_project_approved_tools(
     project_id: String,
 ) -> napi::Result<Vec<String>> {
