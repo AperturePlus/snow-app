@@ -331,8 +331,6 @@ pub(super) fn build_responses_payload(
         payload["instructions"] = json!(instructions);
     }
 
-    payload["temperature"] = json!(0.7);
-
     if let Some(max_tokens) = api_config.max_tokens {
         if max_tokens > 0 {
             payload["max_output_tokens"] = json!(max_tokens);

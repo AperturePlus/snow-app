@@ -1,5 +1,13 @@
 # Release Notes
 
+## v0.1.17
+
+## Bug Fixes
+
+- Remove temperature parameter
+- Anthropic thinking.effort is discarded after being read
+
+
 ## v0.1.16
 
 ## New Features
