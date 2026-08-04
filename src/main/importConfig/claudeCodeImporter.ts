@@ -227,14 +227,22 @@ const addPrompt = (
   prompts: Map<string, SystemPromptItemInput>,
   id: string,
   name: string,
-  content: string | null
+  content: string | null,
+  scope: "global" | "project",
+  projectId?: string,
+  isActive = true
 ): void => {
   if (!content) {
     return;
   }
   const prompt = createPrompt(id, name, content, prompts.size);
   if (prompt) {
-    prompts.set(id, prompt);
+    prompts.set(id, {
+      ...prompt,
+      isActive,
+      scope,
+      ...(scope === "project" && projectId ? { projectId } : {}),
+    });
   }
 };
 
@@ -245,32 +253,43 @@ const collectPrompts = (
 ): { prompts: SystemPromptItemInput[]; instructionPaths: string[] } => {
   const prompts = new Map<string, SystemPromptItemInput>();
   const instructionPaths: string[] = [];
-  const addFile = (id: string, name: string, path: string): void => {
+  const addFile = (
+    id: string,
+    name: string,
+    path: string,
+    scope: "global" | "project",
+    projectId?: string,
+    isActive = true
+  ): void => {
     const content = readText(path, warnings);
     if (content) {
       instructionPaths.push(path);
-      addPrompt(prompts, id, name, content);
+      addPrompt(prompts, id, name, content, scope, projectId, isActive);
     }
   };
 
-  addFile(`${SOURCE}:global:claude-md`, "Claude Code CLAUDE.md", join(claudeHome, "CLAUDE.md"));
+  addFile(`${SOURCE}:global:claude-md`, "Claude Code CLAUDE.md", join(claudeHome, "CLAUDE.md"), "global");
   for (const path of walkFiles(join(claudeHome, "rules"), (file) => file.endsWith(".md"))) {
-    addFile(`${SOURCE}:global:rule:${safeSegment(path)}`, "Claude Code rule", path);
+    addFile(`${SOURCE}:global:rule:${safeSegment(path)}`, "Claude Code rule", path, "global");
   }
   for (const path of walkFiles(join(claudeHome, "commands"), (file) => file.endsWith(".md"))) {
-    addFile(`${SOURCE}:global:command:${safeSegment(path)}`, "Claude Code command", path);
+    addFile(`${SOURCE}:global:command:${safeSegment(path)}`, "Claude Code command", path, "global", undefined, false);
   }
 
   for (const project of projects.filter((item) => item.kind === "local")) {
     addFile(
       `${SOURCE}:project:${project.directoryId}:claude-md`,
       `Claude Code CLAUDE.md (${project.directoryId})`,
-      join(project.path, "CLAUDE.md")
+      join(project.path, "CLAUDE.md"),
+      "project",
+      project.directoryId
     );
     addFile(
       `${SOURCE}:project:${project.directoryId}:claude-dir-md`,
       `Claude Code .claude/CLAUDE.md (${project.directoryId})`,
-      join(project.path, ".claude", "CLAUDE.md")
+      join(project.path, ".claude", "CLAUDE.md"),
+      "project",
+      project.directoryId
     );
     for (const [kind, root] of [
       ["rule", join(project.path, ".claude", "rules")],
@@ -280,7 +299,10 @@ const collectPrompts = (
         addFile(
           `${SOURCE}:project:${project.directoryId}:${kind}:${safeSegment(path)}`,
           `Claude Code ${kind}`,
-          path
+          path,
+          "project",
+          project.directoryId,
+          kind !== "command"
         );
       }
     }
@@ -382,12 +404,13 @@ export const discoverClaudeCodeImport = async (
       ...(server.projectId ? { projectId: server.projectId } : {}),
     })),
     ...context.prompts.map((prompt) => ({
-      type: "prompt" as const,
+      type: prompt.promptId.includes(":command:") ? "command" as const : "prompt" as const,
       provider: SOURCE,
-      scope: prompt.promptId.includes(":project:") ? "project" as const : "global" as const,
+      scope: prompt.scope ?? "global",
       originPath: context.source.sourceHome,
       logicalId: prompt.promptId,
       contentHash: hashImportValue(prompt.content),
+      ...(prompt.projectId ? { projectId: prompt.projectId } : {}),
     })),
     ...context.skills.map((skill) => ({
       type: "skill" as const,
@@ -437,17 +460,24 @@ export const resolveClaudeCodeSelectedImports = async (
     }
   }
   for (const prompt of context.prompts) {
+    const type = prompt.promptId.includes(":command:") ? "command" as const : "prompt" as const;
     const input: ImportCandidateInput = {
-      type: "prompt",
+      type,
       provider: SOURCE,
-      scope: prompt.promptId.includes(":project:") ? "project" : "global",
+      scope: prompt.scope ?? "global",
       originPath: context.source.sourceHome,
       logicalId: prompt.promptId,
       contentHash: hashImportValue(prompt.content),
+      ...(prompt.projectId ? { projectId: prompt.projectId } : {}),
     };
     const candidate = selectionForInput(input, selected);
     if (candidate) {
-      actions.push({ candidate, scope: input.scope, promptInput: prompt });
+      actions.push({
+        candidate,
+        scope: input.scope,
+        ...(prompt.projectId ? { projectId: prompt.projectId } : {}),
+        promptInput: prompt,
+      });
     }
   }
   for (const skill of context.skills) {

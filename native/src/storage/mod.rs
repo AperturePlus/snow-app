@@ -91,6 +91,8 @@ pub struct SystemPromptItemInput {
     pub content: String,
     pub is_active: bool,
     pub sort_order: i32,
+    pub scope: Option<String>,
+    pub project_id: Option<String>,
 }
 
 #[napi(object)]
@@ -101,6 +103,8 @@ pub struct SystemPromptItemRecord {
     pub content: String,
     pub is_active: bool,
     pub sort_order: i32,
+    pub scope: String,
+    pub project_id: Option<String>,
     pub updated_at: String,
 }
 

@@ -444,7 +444,14 @@ const collectPrompts = (
 ): ImportedPrompt[] => {
   const prompts = new Map<string, ImportedPrompt>();
   let order = 0;
-  const add = (id: string, name: string, content: string): void => {
+  const add = (
+    id: string,
+    name: string,
+    content: string,
+    scope: ImportScope,
+    projectId?: string,
+    isActive = true
+  ): void => {
     const trimmed = content.trim();
     if (!trimmed) {
       return;
@@ -453,14 +460,16 @@ const collectPrompts = (
       promptId: id,
       name,
       content: trimmed,
-      isActive: true,
+      isActive,
       sortOrder: order++,
+      scope,
+      ...(scope === "project" && projectId ? { projectId } : {}),
     });
   };
 
   const globalAgents = readAgentsPrompt(codexHome);
   if (globalAgents) {
-    add("codex:global:agents", "Codex AGENTS.md", globalAgents.content);
+    add("codex:global:agents", "Codex AGENTS.md", globalAgents.content, "global");
   }
 
   const collectConfigPrompts = (
@@ -477,7 +486,7 @@ const collectPrompts = (
     for (const [key, name, idPart] of labels) {
       const value = nonEmptyString(values[key]);
       if (value) {
-        add(idFor(idPart), name + labelSuffix, value);
+        add(idFor(idPart), name + labelSuffix, value, config.scope, config.projectId);
       }
     }
     const filePrompts: Array<[string, string, string]> = [
@@ -491,7 +500,7 @@ const collectPrompts = (
       }
       const path = resolveDeclaredPath(dirname(config.configPath), declaredPath);
       try {
-        add(idFor(idPart), name + labelSuffix, readFileSync(path, "utf8"));
+        add(idFor(idPart), name + labelSuffix, readFileSync(path, "utf8"), config.scope, config.projectId);
       } catch (error) {
         warnings.push("Unable to read Codex prompt file " + path + ": " + (error instanceof Error ? error.message : String(error)));
       }
@@ -516,7 +525,13 @@ const collectPrompts = (
     if (config.projectRoot) {
       const agents = readAgentsPrompt(config.projectRoot);
       if (agents) {
-        add(promptId(config, "agents"), "Codex AGENTS.md (" + (config.projectId ?? "unknown") + ")", agents.content);
+        add(
+          promptId(config, "agents"),
+          "Codex AGENTS.md (" + (config.projectId ?? "unknown") + ")",
+          agents.content,
+          config.scope,
+          config.projectId
+        );
       }
     }
   }
@@ -529,13 +544,25 @@ const collectPrompts = (
   for (const project of projects.filter((item) => item.kind === "local" && !configuredProjectIds.has(item.directoryId))) {
     const agents = readAgentsPrompt(project.path);
     if (agents) {
-      add("codex:project:" + project.directoryId + ":agents", "Codex AGENTS.md (" + project.directoryId + ")", agents.content);
+      add(
+        "codex:project:" + project.directoryId + ":agents",
+        "Codex AGENTS.md (" + project.directoryId + ")",
+        agents.content,
+        "project",
+        project.directoryId
+      );
     }
   }
 
   for (const plugin of plugins.filter((item) => item.enabled)) {
     for (const [index, content] of plugin.defaultPrompts.entries()) {
-      add(`codex-plugin:${plugin.id}:prompt:${index}`, `${plugin.name} prompt ${index + 1}`, content);
+      add(
+        `codex-plugin:${plugin.id}:prompt:${index}`,
+        `${plugin.name} prompt ${index + 1}`,
+        content,
+        plugin.scope,
+        plugin.projectId
+      );
     }
   }
   return [...prompts.values()];
@@ -723,10 +750,11 @@ export const discoverCodexImport = async (
     ...context.prompts.map((prompt) => ({
       type: "prompt" as const,
       provider: "codex" as const,
-      scope: prompt.promptId.includes(":project:") ? "project" as const : "global" as const,
+      scope: prompt.scope ?? "global",
       originPath: context.source.sourceHome,
       logicalId: prompt.promptId,
       contentHash: hashImportValue(prompt.content),
+      ...(prompt.projectId ? { projectId: prompt.projectId } : {}),
     })),
     ...context.skills.map((skill) => ({
       type: "skill" as const,
@@ -779,14 +807,20 @@ export const resolveCodexSelectedImports = async (
     const input: ImportCandidateInput = {
       type: "prompt",
       provider: "codex",
-      scope: prompt.promptId.includes(":project:") ? "project" : "global",
+      scope: prompt.scope ?? "global",
       originPath: context.source.sourceHome,
       logicalId: prompt.promptId,
       contentHash: hashImportValue(prompt.content),
+      ...(prompt.projectId ? { projectId: prompt.projectId } : {}),
     };
     const candidate = selectionForInput(input, selected);
     if (candidate) {
-      actions.push({ candidate, scope: input.scope, promptInput: prompt });
+      actions.push({
+        candidate,
+        scope: input.scope,
+        ...(prompt.projectId ? { projectId: prompt.projectId } : {}),
+        promptInput: prompt,
+      });
     }
   }
   for (const skill of context.skills.filter((item) => !item.plugin)) {

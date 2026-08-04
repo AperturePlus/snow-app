@@ -160,6 +160,8 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
            content TEXT NOT NULL DEFAULT '',
            is_active INTEGER NOT NULL DEFAULT 0,
            sort_order INTEGER NOT NULL DEFAULT 0,
+           scope TEXT NOT NULL DEFAULT 'global',
+           project_id TEXT,
            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
          );
@@ -498,7 +500,7 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
     // columns and the sub-agent project_id rebuild (see migrations.rs).
     migrations::run_post_schema_migrations(connection)?;
 
-    connection.pragma_update(None, "user_version", 24)?;
+    connection.pragma_update(None, "user_version", 25)?;
 
     Ok(())
 }

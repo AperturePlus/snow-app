@@ -230,14 +230,22 @@ const addPrompt = (
   prompts: Map<string, SystemPromptItemInput>,
   id: string,
   name: string,
-  content: string | null
+  content: string | null,
+  scope: "global" | "project",
+  projectId?: string,
+  isActive = true
 ): void => {
   if (!content) {
     return;
   }
   const prompt = createPrompt(id, name, content, prompts.size);
   if (prompt) {
-    prompts.set(id, prompt);
+    prompts.set(id, {
+      ...prompt,
+      isActive,
+      scope,
+      ...(scope === "project" && projectId ? { projectId } : {}),
+    });
   }
 };
 
@@ -285,11 +293,18 @@ const collectPrompts = (
 ): { prompts: SystemPromptItemInput[]; instructionPaths: string[] } => {
   const prompts = new Map<string, SystemPromptItemInput>();
   const instructionPaths: string[] = [];
-  const addFile = (id: string, name: string, path: string): void => {
+  const addFile = (
+    id: string,
+    name: string,
+    path: string,
+    scope: "global" | "project",
+    projectId?: string,
+    isActive = true
+  ): void => {
     const content = readText(path, warnings);
     if (content) {
       instructionPaths.push(path);
-      addPrompt(prompts, id, name, content);
+      addPrompt(prompts, id, name, content, scope, projectId, isActive);
     }
   };
   const addDirectoryPrompts = (source: ConfigSource, kind: "agent" | "command", root: string): void => {
@@ -297,7 +312,7 @@ const collectPrompts = (
       const id = source.scope === "global"
         ? `${SOURCE}:global:${kind}:${safeSegment(path)}`
         : `${SOURCE}:project:${source.projectId}:${kind}:${safeSegment(path)}`;
-      addFile(id, `OpenCode ${kind}`, path);
+      addFile(id, `OpenCode ${kind}`, path, source.scope, source.projectId, false);
     }
   };
 
@@ -311,20 +326,38 @@ const collectPrompts = (
         addFile(
           `${idPrefix}:instruction:${index}:${pathIndex}`,
           "OpenCode instruction",
-          path
+          path,
+          source.scope,
+          source.projectId
         );
       });
     });
     const commands = isRecord(source.values.command) ? source.values.command : {};
     for (const [name, command] of Object.entries(commands)) {
       if (isRecord(command) && typeof command.template === "string") {
-        addPrompt(prompts, `${idPrefix}:command:${safeSegment(name)}`, `OpenCode command ${name}`, command.template);
+        addPrompt(
+          prompts,
+          `${idPrefix}:command:${safeSegment(name)}`,
+          `OpenCode command ${name}`,
+          command.template,
+          source.scope,
+          source.projectId,
+          false
+        );
       }
     }
     const agents = isRecord(source.values.agent) ? source.values.agent : {};
     for (const [name, agent] of Object.entries(agents)) {
       if (isRecord(agent) && typeof agent.prompt === "string") {
-        addPrompt(prompts, `${idPrefix}:agent:${safeSegment(name)}`, `OpenCode agent ${name}`, agent.prompt);
+        addPrompt(
+          prompts,
+          `${idPrefix}:agent:${safeSegment(name)}`,
+          `OpenCode agent ${name}`,
+          agent.prompt,
+          source.scope,
+          source.projectId,
+          false
+        );
       }
     }
     addDirectoryPrompts(source, "agent", join(source.root, "agent"));
@@ -333,7 +366,7 @@ const collectPrompts = (
     addDirectoryPrompts(source, "command", join(source.root, "commands"));
   }
   for (const path of walkFiles(join(configHome, "instructions"), (file) => file.endsWith(".md"))) {
-    addFile(`${SOURCE}:global:instruction:${safeSegment(path)}`, "OpenCode instruction", path);
+    addFile(`${SOURCE}:global:instruction:${safeSegment(path)}`, "OpenCode instruction", path, "global");
   }
   return { prompts: [...prompts.values()], instructionPaths };
 };
@@ -432,10 +465,11 @@ export const discoverOpenCodeImport = async (
           ? "agent" as const
           : "prompt" as const,
       provider: SOURCE,
-      scope: prompt.promptId.includes(":project:") ? "project" as const : "global" as const,
+      scope: prompt.scope ?? "global",
       originPath: context.source.sourceHome,
       logicalId: prompt.promptId,
       contentHash: hashImportValue(prompt.content),
+      ...(prompt.projectId ? { projectId: prompt.projectId } : {}),
     })),
     ...context.skills.map((skill) => ({
       type: "skill" as const,
@@ -493,14 +527,20 @@ export const resolveOpenCodeSelectedImports = async (
     const input: ImportCandidateInput = {
       type,
       provider: SOURCE,
-      scope: prompt.promptId.includes(":project:") ? "project" : "global",
+      scope: prompt.scope ?? "global",
       originPath: context.source.sourceHome,
       logicalId: prompt.promptId,
       contentHash: hashImportValue(prompt.content),
+      ...(prompt.projectId ? { projectId: prompt.projectId } : {}),
     };
     const candidate = selectionForInput(input, selected);
     if (candidate) {
-      actions.push({ candidate, scope: input.scope, promptInput: prompt });
+      actions.push({
+        candidate,
+        scope: input.scope,
+        ...(prompt.projectId ? { projectId: prompt.projectId } : {}),
+        promptInput: prompt,
+      });
     }
   }
   for (const skill of context.skills) {

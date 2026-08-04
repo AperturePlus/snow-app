@@ -369,10 +369,14 @@ export type SystemPromptItemInput = {
   content: string;
   isActive: boolean;
   sortOrder: number;
+  scope?: "global" | "project";
+  projectId?: string;
 };
 
-export type SystemPromptItemRecord = SystemPromptItemInput & {
+export type SystemPromptItemRecord = Omit<SystemPromptItemInput, "scope"> & {
   id: string;
+  scope: "global" | "project";
+  projectId?: string;
   updatedAt: string;
 };
 

@@ -232,7 +232,7 @@ const addSkillComponents = (
 
 const addMarkdownComponents = (
   components: PluginRuntimeComponent[],
-  plugin: Pick<PluginInput, "pluginId" | "name" | "scope" | "state">,
+  plugin: Pick<PluginInput, "pluginId" | "name" | "scope" | "projectId" | "state">,
   type: "command" | "agent",
   root: string
 ): void => {
@@ -262,8 +262,11 @@ const addMarkdownComponents = (
         promptId: targetId,
         name: `${plugin.name} ${type} ${basename(path, ".md")}`,
         content,
-        isActive: plugin.state === "enabled",
+        // Commands and agents are templates, not ambient system instructions.
+        isActive: false,
         sortOrder: components.length,
+        scope: plugin.scope,
+        ...(plugin.scope === "project" && plugin.projectId ? { projectId: plugin.projectId } : {}),
       },
     });
   }
@@ -1054,7 +1057,9 @@ export const installPluginFromMarketplace = async (
     definition.input.state = existing?.state === "disabled" || (!existing && !entry.defaultEnabled) ? "disabled" : "enabled";
     for (const runtime of definition.runtime) {
       if (runtime.mcpInput) runtime.mcpInput.enabled = definition.input.state === "enabled";
-      if (runtime.promptInput) runtime.promptInput.isActive = definition.input.state === "enabled";
+      if (runtime.promptInput && runtime.component.componentType === "prompt") {
+        runtime.promptInput.isActive = definition.input.state === "enabled";
+      }
     }
     const result = await commitPluginImports(native, [definition]);
     if (result.itemResults.some((item) => item.status === "skipped")) {
@@ -1109,6 +1114,8 @@ const promptRecordToInput = (record: SystemPromptItemRecord, isActive: boolean):
   content: record.content,
   isActive,
   sortOrder: record.sortOrder,
+  scope: record.scope,
+  ...(record.scope === "project" && record.projectId ? { projectId: record.projectId } : {}),
 });
 
 const copyPluginSkill = (source: string, target: string): DirectoryCommit => {
@@ -1244,7 +1251,7 @@ export const setManagedPluginEnabled = async (
       if (!current) throw new Error(`Plugin Skill component is missing: ${component.logicalId}`);
       actions.push(() => native.setSkillEnabled(plugin.projectId, component.targetId, enabled));
       rollback.push(() => native.setSkillEnabled(plugin.projectId, component.targetId, current.enabled));
-    } else {
+    } else if (component.componentType === "prompt") {
       const current = prompts.find((item) => item.promptId === component.targetId);
       if (!current) throw new Error(`Plugin prompt component is missing: ${component.logicalId}`);
       actions.push(() => native.upsertSystemPrompt(promptRecordToInput(current, enabled)));
@@ -1315,7 +1322,9 @@ export const updateManagedPlugin = async (native: NativeBridge, pluginId: string
   definition.input.state = existing.state === "disabled" ? "disabled" : "enabled";
   for (const runtime of definition.runtime) {
     if (runtime.mcpInput) runtime.mcpInput.enabled = definition.input.state === "enabled";
-    if (runtime.promptInput) runtime.promptInput.isActive = definition.input.state === "enabled";
+    if (runtime.promptInput && runtime.component.componentType === "prompt") {
+      runtime.promptInput.isActive = definition.input.state === "enabled";
+    }
   }
   const result = await commitPluginImports(native, [definition]);
   if (result.itemResults.some((item) => item.status === "skipped")) throw new Error(result.warnings[0] ?? "Plugin update failed");

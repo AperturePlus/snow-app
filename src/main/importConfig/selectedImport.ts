@@ -111,7 +111,9 @@ const promptRecordsEqual = (
   left.name === right.name &&
   left.content === right.content &&
   left.isActive === right.isActive &&
-  left.sortOrder === right.sortOrder;
+  left.sortOrder === right.sortOrder &&
+  left.scope === (right.scope ?? "global") &&
+  left.projectId === ((right.scope ?? "global") === "project" ? right.projectId : undefined);
 
 type Mutation =
   | {
