@@ -81,7 +81,11 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
       null;
 
     try {
-      config = await window.snow.getSubAgentConfig(agentId);
+      // 项目级子代理优先：先查当前项目（dirId）下的配置，未命中再回退全局。
+      config = dirId
+        ? ((await window.snow.getSubAgentConfig(agentId, dirId)) ??
+          (await window.snow.getSubAgentConfig(agentId)))
+        : await window.snow.getSubAgentConfig(agentId);
       if (!config) {
         return JSON.stringify({
           success: false,
@@ -607,7 +611,10 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
               allowedTools,
               // These booleans carry only the parent conversation's Rust
               // write-gate state; they do not enable Plan Mode for the sub-agent.
-              ctx.planModeRef.current,
+              // Read from the parent session's own ref so a background parent
+              // keeps its gate even after the user switches conversations.
+              ctx.sessionsRefData.current.get(parentConversationId)?.planMode ??
+                ctx.planModeRef.current,
               planApprovedSessionKeysRef.current.has(parentConversationId)
             );
           } catch (err) {

@@ -224,6 +224,19 @@ export type ConversationSessionRef = {
   planMode: boolean;
   /** Whether Goal Mode was active when this session was last used. */
   goalMode: boolean;
+  /** Goal Mode token budget in effect for this session (per-conversation
+   *  override when set, otherwise the global default at session creation). */
+  goalModeTokenBudget: number;
+};
+
+/** Global Plan/Goal Mode defaults loaded from persisted settings. These are
+ *  the values new/never-configured conversations inherit. They are only
+ *  mutated by explicit user toggles — never by conversation switches — so
+ *  each conversation's mode stays fully isolated. */
+export type GlobalModeDefaults = {
+  planMode: boolean;
+  goalMode: boolean;
+  goalModeTokenBudget: number;
 };
 
 /** Per-session pause controller stored in pauseControllerRef. When `paused`
@@ -375,6 +388,9 @@ export type ConversationContextValue = {
   yoloModeRef: RefValue<boolean>;
   planModeRef: RefValue<boolean>;
   goalModeRef: RefValue<boolean>;
+  /** Global Plan/Goal Mode defaults (persisted settings). New and
+   *  never-configured conversations inherit these; switches never write them. */
+  globalModeDefaultsRef: RefValue<GlobalModeDefaults>;
   alwaysApprovedToolsRef: RefValue<Set<string>>;
   /** Per-conversation Plan Mode approval keys. Cleared only when Plan Mode is
    *  genuinely turned off (user toggle, Goal Mode mutual exclusion, new chat)
