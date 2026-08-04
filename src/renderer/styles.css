@@ -341,6 +341,7 @@ input {
   gap: 8px;
   padding: 0 12px;
   overflow: visible;
+  min-width: 0;
 }
 
 .top-bar-right-actions {
@@ -349,6 +350,24 @@ input {
   gap: 4px;
   flex-shrink: 0;
   overflow: visible;
+}
+
+/* 窄窗口 TopBar 紧凑模式：按优先级隐藏次要元素，避免标题/项目标签
+   被过度压缩截断。窗口断点为近似值（实际可用宽度还受侧栏/右面板影响）。 */
+@media (max-width: 920px) {
+  .header-subtitle {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .top-bar-branch-label {
+    display: none;
+  }
+  .top-bar-main {
+    gap: 6px;
+    padding: 0 10px;
+  }
 }
 
 .top-bar-plus-menu {
@@ -12553,6 +12572,10 @@ input {
   min-width: 0;
   padding: 0 2px;
   margin-bottom: 2px;
+  /* 容器查询基准：以输入区可用宽度判定，极窄时隐藏次要指标。
+     不能放在 .stream-metrics 自身（inline-flex + size containment
+     会让宽度坍缩为 padding，导致所有指标被误隐藏）。 */
+  container-type: inline-size;
 }
 
 .stream-metrics {
@@ -12679,6 +12702,41 @@ input {
   height: 10px;
   background: var(--border-color);
   flex-shrink: 0;
+}
+
+/* 极窄容器分级隐藏次要指标（tok/s → TTFT → 运行时长），保留步骤/文件/
+   tokens 等核心信息，避免胶囊条被截断成横向滚动。分隔线跟随其后的指标
+   一起隐藏，防止孤立竖线。Electron 37 (Chromium 130+) 支持 @container。 */
+@container (max-width: 560px) {
+  .stream-metrics-sep:has(+ .stream-metrics-tps) {
+    display: none;
+  }
+  .stream-metrics-tps {
+    display: none;
+  }
+}
+
+@container (max-width: 460px) {
+  .stream-metrics-sep:has(+ .stream-metrics-ttft) {
+    display: none;
+  }
+  .stream-metrics-ttft {
+    display: none;
+  }
+}
+
+@container (max-width: 360px) {
+  .stream-metrics-sep:has(+ .stream-metrics-elapsed) {
+    display: none;
+  }
+  .stream-metrics-elapsed {
+    display: none;
+  }
+  /* 任务进度再放不下时并入文件进度：隐藏任务步数与其后的分隔点。 */
+  .stream-metrics-task-progress,
+  .stream-metrics-work-dot {
+    display: none;
+  }
 }
 
 .stream-metrics-pause-btn {
@@ -16933,6 +16991,9 @@ input {
   justify-content: space-between;
   gap: 8px;
   padding: 8px 12px;
+  /* 面板极窄时分支选择器与操作按钮换行排布，避免溢出裁切。 */
+  flex-wrap: wrap;
+  row-gap: 6px;
 }
 
 .git-control-actions {
@@ -20413,6 +20474,36 @@ input {
 .context-menu-item:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.context-menu-item.disabled,
+.context-menu-item:disabled {
+  color: var(--text-muted);
+  cursor: default;
+  opacity: 0.55;
+}
+
+.context-menu-item.disabled:hover,
+.context-menu-item:disabled:hover {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.context-menu-item.danger {
+  color: var(--danger-color, #e5534b);
+}
+
+.context-menu-item.danger:hover {
+  background: color-mix(
+    in srgb,
+    var(--danger-color, #e5534b) 14%,
+    transparent
+  );
+  color: var(--danger-color, #e5534b);
+}
+
+.context-menu-item.danger svg {
+  color: var(--danger-color, #e5534b);
 }
 
 .context-menu-item svg {
