@@ -128,6 +128,16 @@ Listed in registration order:
 > write (known fields are type-checked one by one, e.g.
 > `codebase.embedding.dimensions` must be a number) so an agent cannot corrupt
 > nested fields; unknown fields are allowed through for forward compatibility.
+>
+> **Project-scoped settings**: passing `projectId` to the `settings` scope's
+> `mcpServers` / `sensitiveCommands` reads/writes **project-level** config
+> (app database, takes effect immediately, same source as the UI project
+> settings): `mcpServers` is a full replace (value is
+> `{name: {type,url,command,args,env,headers,enabled,timeoutMs}}`);
+> `sensitiveCommands` is a full replace (value is an array of
+> `{commandId, pattern, description, enabled}`; a commandId matching a global
+> rule becomes an enabled override, others become project custom rules);
+> all other keys reject `projectId` with a clear error.
 
 File-backed scopes:
 

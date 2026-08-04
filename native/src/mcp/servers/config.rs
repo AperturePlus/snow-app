@@ -853,16 +853,39 @@ impl ConfigService {
             let mut keys = Vec::new();
             for key_spec in scope.keys {
                 let configured = config_root.contains_key(key_spec.key);
-                let display = match config_root.get(key_spec.key) {
-                    Some(value) if key_spec.sensitive => Self::mask_value(value),
-                    Some(value) => value.clone(),
-                    None => Value::Null,
+                // 项目级视图：settings.mcpServers / settings.sensitiveCommands
+                // 显示项目级（应用数据库）配置，其余键保持全局文件值。
+                let display = if let Some(pid) = &project_id {
+                    if scope.scope == "settings" && key_spec.key == "mcpServers" {
+                        self.list_project_mcp_servers(pid)?
+                    } else if scope.scope == "settings"
+                        && key_spec.key == "sensitiveCommands"
+                    {
+                        self.list_project_sensitive_commands(pid)?
+                    } else {
+                        match config_root.get(key_spec.key) {
+                            Some(value) if key_spec.sensitive => {
+                                Self::mask_value(value)
+                            }
+                            Some(value) => value.clone(),
+                            None => Value::Null,
+                        }
+                    }
+                } else {
+                    match config_root.get(key_spec.key) {
+                        Some(value) if key_spec.sensitive => {
+                            Self::mask_value(value)
+                        }
+                        Some(value) => value.clone(),
+                        None => Value::Null,
+                    }
                 };
                 keys.push(json!({
                     "key": key_spec.key,
                     "type": type_name(key_spec.value_type),
                     "sensitive": key_spec.sensitive,
                     "configured": configured,
+                    "projectId": project_id,
                     "value": display,
                 }));
             }
@@ -896,6 +919,33 @@ impl ConfigService {
         if scope_name == SCOPE_HOOKS {
             return self.get_db_hook(key_name, project_id);
         }
+        // 项目级 settings：仅 mcpServers / sensitiveCommands 支持 projectId。
+        if scope_name == "settings" {
+            if let Some(pid) = &project_id {
+                if key_name == "mcpServers" {
+                    return Ok(json!({
+                        "scope": "settings",
+                        "key": "mcpServers",
+                        "projectId": pid,
+                        "value": self.list_project_mcp_servers(pid)?,
+                    }));
+                }
+                if key_name == "sensitiveCommands" {
+                    return Ok(json!({
+                        "scope": "settings",
+                        "key": "sensitiveCommands",
+                        "projectId": pid,
+                        "value": self.list_project_sensitive_commands(pid)?,
+                    }));
+                }
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!(
+                        "Key \"{key_name}\" does not support projectId; only settings.mcpServers and settings.sensitiveCommands are project-scoped"
+                    ),
+                ));
+            }
+        }
 
         let scope = Self::find_scope(scope_name).ok_or_else(|| invalid_scope_error(scope_name))?;
         let key_spec = Self::find_key(scope, key_name).ok_or_else(|| invalid_key_error(scope, key_name))?;
@@ -926,6 +976,23 @@ impl ConfigService {
         }
         if scope_name == SCOPE_HOOKS {
             return self.set_db_hook(key_name, &value, project_id);
+        }
+        // 项目级 settings：仅 mcpServers / sensitiveCommands 支持 projectId（全量替换）。
+        if scope_name == "settings" {
+            if let Some(pid) = &project_id {
+                if key_name == "mcpServers" {
+                    return self.set_project_mcp_servers(pid, &value);
+                }
+                if key_name == "sensitiveCommands" {
+                    return self.set_project_sensitive_commands(pid, &value);
+                }
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!(
+                        "Key \"{key_name}\" does not support projectId; only settings.mcpServers and settings.sensitiveCommands are project-scoped"
+                    ),
+                ));
+            }
         }
 
         let scope = Self::find_scope(scope_name).ok_or_else(|| invalid_scope_error(scope_name))?;
@@ -974,6 +1041,23 @@ impl ConfigService {
         if scope_name == SCOPE_HOOKS {
             return self.delete_db_hook(key_name, project_id);
         }
+        // 项目级 settings：仅 mcpServers / sensitiveCommands 支持 projectId（清空）。
+        if scope_name == "settings" {
+            if let Some(pid) = &project_id {
+                if key_name == "mcpServers" {
+                    return self.clear_project_mcp_servers(pid);
+                }
+                if key_name == "sensitiveCommands" {
+                    return self.clear_project_sensitive_commands(pid);
+                }
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!(
+                        "Key \"{key_name}\" does not support projectId; only settings.mcpServers and settings.sensitiveCommands are project-scoped"
+                    ),
+                ));
+            }
+        }
 
         let scope = Self::find_scope(scope_name).ok_or_else(|| invalid_scope_error(scope_name))?;
         // 仅校验键存在（白名单），无需保留绑定。
@@ -1008,6 +1092,386 @@ impl ConfigService {
             "scope": scope.scope,
             "key": key_name,
             "deleted": true,
+        }))
+    }
+
+    // ---------------------------------------------------------------------
+    // Project-scoped mcpServers / sensitiveCommands
+    //
+    // 项目级配置存储在应用数据库（与 UI 同源）：project_mcp_server_configs /
+    // project_sensitive_command_configs。传入 projectId 时，settings scope 的
+    // mcpServers 与 sensitiveCommands 读写走项目级表（全量替换语义）；
+    // 其余键不支持项目级（保持全局文件语义）。
+    // ---------------------------------------------------------------------
+
+    /// 组装项目级 MCP 服务器为 {name: config} 对象（与全局 settings.json 形态一致）。
+    fn list_project_mcp_servers(
+        &self,
+        project_id: &str,
+    ) -> napi::Result<Value> {
+        use crate::storage::services::project_mcp_server_configs as store;
+        let db_path = db_path_or_error(&self.db_path)?;
+        let servers = store::list_project_mcp_server_configs(db_path, project_id)
+            .map_err(|error| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to list project MCP servers: {error}"),
+                )
+            })?;
+        let mut map = serde_json::Map::new();
+        for server in &servers {
+            map.insert(
+                server.name.clone(),
+                json!({
+                    "type": server.transport_type,
+                    "url": server.url,
+                    "command": server.command,
+                    "args": serde_json::from_str::<Value>(&server.args_json).unwrap_or(json!([])),
+                    "env": serde_json::from_str::<Value>(&server.env_json).unwrap_or(json!({})),
+                    "headers": serde_json::from_str::<Value>(&server.headers_json).unwrap_or(json!({})),
+                    "enabled": server.enabled,
+                    "timeoutMs": server.timeout_ms,
+                    "serverId": server.server_id,
+                    "source": server.source,
+                }),
+            );
+        }
+        Ok(Value::Object(map))
+    }
+
+    /// 全量替换项目级 MCP 服务器：清空现有项目级条目后逐条 upsert。
+    fn set_project_mcp_servers(
+        &self,
+        project_id: &str,
+        value: &Value,
+    ) -> napi::Result<Value> {
+        use crate::storage::services::project_mcp_server_configs as store;
+        let db_path = db_path_or_error(&self.db_path)?;
+        let existing = store::list_project_mcp_server_configs(db_path, project_id)
+            .map_err(|error| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to list project MCP servers: {error}"),
+                )
+            })?;
+        for server in &existing {
+            store::delete_project_mcp_server_config(
+                db_path,
+                project_id,
+                &server.server_id,
+            )
+            .map_err(|error| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to clear project MCP servers: {error}"),
+                )
+            })?;
+        }
+        let mut updated = 0usize;
+        if let Value::Object(servers) = value {
+            for (index, (name, entry)) in servers.iter().enumerate() {
+                let Value::Object(server) = entry else {
+                    continue;
+                };
+                let input = crate::storage::McpServerConfigInput {
+                    server_id: format!("project:{name}"),
+                    name: name.clone(),
+                    transport_type: server
+                        .get("type")
+                        .and_then(Value::as_str)
+                        .unwrap_or("stdio")
+                        .to_string(),
+                    url: server
+                        .get("url")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                    command: server
+                        .get("command")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                    args_json: serde_json::to_string(
+                        server.get("args").unwrap_or(&json!([])),
+                    )
+                    .unwrap_or_else(|_| "[]".to_string()),
+                    env_json: serde_json::to_string(
+                        server.get("env").unwrap_or(&json!({})),
+                    )
+                    .unwrap_or_else(|_| "{}".to_string()),
+                    headers_json: serde_json::to_string(
+                        server.get("headers").unwrap_or(&json!({})),
+                    )
+                    .unwrap_or_else(|_| "{}".to_string()),
+                    enabled: server
+                        .get("enabled")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(true),
+                    timeout_ms: server
+                        .get("timeoutMs")
+                        .and_then(Value::as_i64)
+                        .map(|value| value as i32),
+                    sort_order: index as i32,
+                    source: "snow-cli".to_string(),
+                };
+                store::upsert_project_mcp_server_config(db_path, project_id, &input)
+                    .map_err(|error| {
+                        Error::new(
+                            Status::GenericFailure,
+                            format!(
+                                "Failed to upsert project MCP server {name}: {error}"
+                            ),
+                        )
+                    })?;
+                updated += 1;
+            }
+        }
+        Ok(json!({
+            "scope": "settings",
+            "key": "mcpServers",
+            "projectId": project_id,
+            "updated": updated,
+        }))
+    }
+
+    /// 清空项目级 MCP 服务器。
+    fn clear_project_mcp_servers(
+        &self,
+        project_id: &str,
+    ) -> napi::Result<Value> {
+        use crate::storage::services::project_mcp_server_configs as store;
+        let db_path = db_path_or_error(&self.db_path)?;
+        let existing = store::list_project_mcp_server_configs(db_path, project_id)
+            .map_err(|error| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to list project MCP servers: {error}"),
+                )
+            })?;
+        let deleted = existing.len();
+        for server in &existing {
+            store::delete_project_mcp_server_config(
+                db_path,
+                project_id,
+                &server.server_id,
+            )
+            .map_err(|error| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to delete project MCP server: {error}"),
+                )
+            })?;
+        }
+        Ok(json!({
+            "scope": "settings",
+            "key": "mcpServers",
+            "projectId": project_id,
+            "deleted": deleted,
+        }))
+    }
+
+    /// 列出项目级敏感命令（DB 合并全局视图）。
+    fn list_project_sensitive_commands(
+        &self,
+        project_id: &str,
+    ) -> napi::Result<Value> {
+        use crate::storage::services::project_sensitive_command_configs as store;
+        let db_path = db_path_or_error(&self.db_path)?;
+        let records =
+            store::list_project_sensitive_command_configs(db_path, project_id)
+                .map_err(|error| {
+                    Error::new(
+                        Status::GenericFailure,
+                        format!("Failed to list project sensitive commands: {error}"),
+                    )
+                })?;
+        let items: Vec<Value> = records
+            .iter()
+            .map(|record| {
+                json!({
+                    "commandId": record.command_id,
+                    "pattern": record.pattern,
+                    "description": record.description,
+                    "enabled": record.enabled,
+                    "inherited": record.inherited,
+                    "globalEnabled": record.global_enabled,
+                    "isPreset": record.is_preset,
+                    "source": record.source,
+                })
+            })
+            .collect();
+        Ok(Value::Array(items))
+    }
+
+    /// 全量替换项目级敏感命令：清空自定义规则后，按传入数组逐条写入。
+    /// 匹配全局规则的条目走 enabled 覆盖（set_project_sensitive_command_enabled），
+    /// 其余作为项目自定义规则写入。
+    fn set_project_sensitive_commands(
+        &self,
+        project_id: &str,
+        value: &Value,
+    ) -> napi::Result<Value> {
+        use crate::storage::services::project_sensitive_command_configs as store;
+        let db_path = db_path_or_error(&self.db_path)?;
+
+        // 1. 清空现有项目自定义规则（inherited 的全局规则由服务端保护不可删，
+        //    仅通过 enabled 覆盖表达；见下方 global 分支）。
+        let existing =
+            store::list_project_sensitive_command_configs(db_path, project_id)
+                .map_err(|error| {
+                    Error::new(
+                        Status::GenericFailure,
+                        format!("Failed to list project sensitive commands: {error}"),
+                    )
+                })?;
+        for record in &existing {
+            if record.inherited {
+                continue;
+            }
+            store::delete_project_sensitive_command_config(
+                db_path,
+                project_id,
+                &record.command_id,
+            )
+            .map_err(|error| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to clear project sensitive commands: {error}"),
+                )
+            })?;
+        }
+
+        // 2. 全局规则集合（判断某 command_id 是否匹配全局 preset）。
+        let global =
+            crate::storage::services::sensitive_command_configs::list_sensitive_command_configs(
+                db_path,
+            )
+            .map_err(|error| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to list global sensitive commands: {error}"),
+                )
+            })?;
+        let global_ids: std::collections::HashSet<String> = global
+            .iter()
+            .map(|record| record.command_id.clone())
+            .collect();
+
+        // 3. 逐条写入。
+        let mut updated = 0usize;
+        if let Some(items) = value.as_array() {
+            for (index, item) in items.iter().enumerate() {
+                let Some(entry) = item.as_object() else {
+                    continue;
+                };
+                let command_id = entry
+                    .get("commandId")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if command_id.is_empty() {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        "sensitiveCommands[..].commandId is required for project-scoped write".to_string(),
+                    ));
+                }
+                let enabled = entry
+                    .get("enabled")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true);
+                if global_ids.contains(command_id) {
+                    // 匹配全局规则 → enabled 覆盖。
+                    store::set_project_sensitive_command_enabled(
+                        db_path,
+                        project_id,
+                        command_id,
+                        enabled,
+                    )
+                    .map_err(|error| {
+                        Error::new(
+                            Status::GenericFailure,
+                            format!(
+                                "Failed to override project sensitive command {command_id}: {error}"
+                            ),
+                        )
+                    })?;
+                } else {
+                    let input = crate::storage::ProjectSensitiveCommandConfigInput {
+                        command_id: command_id.to_string(),
+                        pattern: entry
+                            .get("pattern")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        description: entry
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        enabled,
+                        sort_order: index as i32,
+                    };
+                    store::upsert_project_sensitive_command_config(
+                        db_path,
+                        project_id,
+                        &input,
+                    )
+                    .map_err(|error| {
+                        Error::new(
+                            Status::GenericFailure,
+                            format!(
+                                "Failed to upsert project sensitive command {command_id}: {error}"
+                            ),
+                        )
+                    })?;
+                }
+                updated += 1;
+            }
+        }
+        Ok(json!({
+            "scope": "settings",
+            "key": "sensitiveCommands",
+            "projectId": project_id,
+            "updated": updated,
+        }))
+    }
+
+    /// 清空项目级敏感命令（自定义规则 + enabled 覆盖）。
+    fn clear_project_sensitive_commands(
+        &self,
+        project_id: &str,
+    ) -> napi::Result<Value> {
+        use crate::storage::services::project_sensitive_command_configs as store;
+        let db_path = db_path_or_error(&self.db_path)?;
+        let existing =
+            store::list_project_sensitive_command_configs(db_path, project_id)
+                .map_err(|error| {
+                    Error::new(
+                        Status::GenericFailure,
+                        format!("Failed to list project sensitive commands: {error}"),
+                    )
+                })?;
+        let deleted = existing.iter().filter(|record| !record.inherited).count();
+        for record in &existing {
+            if record.inherited {
+                continue;
+            }
+            store::delete_project_sensitive_command_config(
+                db_path,
+                project_id,
+                &record.command_id,
+            )
+            .map_err(|error| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to delete project sensitive command: {error}"),
+                )
+            })?;
+        }
+        Ok(json!({
+            "scope": "settings",
+            "key": "sensitiveCommands",
+            "projectId": project_id,
+            "deleted": deleted,
         }))
     }
 
@@ -1770,7 +2234,7 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_GET.to_string(),
-                description: "Read the value of a configuration key. Sensitive keys (apiKey, visionApiKey) are always returned masked (e.g. sk-****abcd); this tool never exposes plaintext secrets. Returns null when the key is not configured. DB-backed scopes: subAgents (key=agentId) and hooks (key=hookType) read directly from the app database; pass optional `projectId` to read a project-scoped config (omitted = global). Read-only logs scope: key is a log file name (e.g. 2026-08-03-error.log) or a level shortcut (error/warn/info/debug for today's file); optional `limit` controls returned tail lines (default 200, max 2000).".to_string(),
+                description: "Read the value of a configuration key. Sensitive keys (apiKey, visionApiKey) are always returned masked (e.g. sk-****abcd); this tool never exposes plaintext secrets. Returns null when the key is not configured. DB-backed scopes: subAgents (key=agentId) and hooks (key=hookType) read directly from the app database; pass optional `projectId` to read a project-scoped config (omitted = global). Read-only logs scope: key is a log file name (e.g. 2026-08-03-error.log) or a level shortcut (error/warn/info/debug for today's file); optional `limit` controls returned tail lines (default 200, max 2000). Project-scoped settings: pass `projectId` to read settings.mcpServers / settings.sensitiveCommands from the project-scoped app database (other keys reject projectId).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -1801,7 +2265,7 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_SET.to_string(),
-                description: "Write a value for a configuration key. Only whitelisted scopes/keys are accepted; the value is type-checked, the target file is backed up to ~/.snow/.config-backups before the write, and the file is replaced atomically. Special case: writing `mcpServers` in the `settings` scope also syncs the servers into the app database (same diff semantics as the UI 'Sync Snow CLI MCP settings' action), so MCP changes take effect immediately without manual sync. Other file-based scopes (snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy) are file-based and may require an app restart or UI re-save. DB-backed scopes write directly to the app database and take effect immediately: subAgents (key=agentId, value={name, description, systemPrompt, toolsJson, configProfile}; toolsJson accepts a JSON string or an array of tool names; built-in agent_general cannot be modified) and hooks (key=hookType, value={rules:[{description, matcher?, hooks:[{type: command|prompt|context, command?, prompt?, content?, timeout?, enabled?}]}]}). Pass optional `projectId` to write a project-scoped config (omitted = global).".to_string(),
+                description: "Write a value for a configuration key. Only whitelisted scopes/keys are accepted; the value is type-checked, the target file is backed up to ~/.snow/.config-backups before the write, and the file is replaced atomically. Special case: writing `mcpServers` in the `settings` scope also syncs the servers into the app database (same diff semantics as the UI 'Sync Snow CLI MCP settings' action), so MCP changes take effect immediately without manual sync. Other file-based scopes (snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy) are file-based and may require an app restart or UI re-save. DB-backed scopes write directly to the app database and take effect immediately: subAgents (key=agentId, value={name, description, systemPrompt, toolsJson, configProfile}; toolsJson accepts a JSON string or an array of tool names; built-in agent_general cannot be modified) and hooks (key=hookType, value={rules:[{description, matcher?, hooks:[{type: command|prompt|context, command?, prompt?, content?, timeout?, enabled?}]}]}). Pass optional `projectId` to write a project-scoped config (omitted = global). Project-scoped settings: projectId + settings.mcpServers performs a full replace of the project MCP servers ({name: {type,url,command,args,env,headers,enabled,timeoutMs}}); projectId + settings.sensitiveCommands replaces the project sensitive-command overrides (array of {commandId, pattern, description, enabled}; commandId matching a global rule becomes an enabled override, others become project custom rules).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -1829,7 +2293,7 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_DELETE.to_string(),
-                description: "Delete a configuration key (e.g. clear an apiKey). The target file is backed up before the write and replaced atomically. Returns deleted=false when the key was not configured. DB-backed scopes delete from the app database: subAgents (key=agentId; built-in agent_general cannot be deleted) and hooks (key=hookType). Pass optional `projectId` to delete a project-scoped config (omitted = global).".to_string(),
+                description: "Delete a configuration key (e.g. clear an apiKey). The target file is backed up before the write and replaced atomically. Returns deleted=false when the key was not configured. DB-backed scopes delete from the app database: subAgents (key=agentId; built-in agent_general cannot be deleted) and hooks (key=hookType). Pass optional `projectId` to delete a project-scoped config (omitted = global). Project-scoped settings: projectId + settings.mcpServers clears all project MCP servers; projectId + settings.sensitiveCommands clears all project sensitive-command overrides.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
