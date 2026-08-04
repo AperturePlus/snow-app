@@ -9,6 +9,7 @@ import {
   ChevronRight,
   ChevronLeft,
   SmilePlus,
+  ListChecks,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -27,6 +28,7 @@ type ChatItemMenuProps = {
   onSetEmoji: (emoji: string) => void | Promise<void>;
   onDelete: () => void;
   onExport: (format: ExportFormat) => void;
+  onEnterMultiSelect?: () => void;
   onOpenChange?: (isOpen: boolean) => void;
 };
 
@@ -38,6 +40,7 @@ export function ChatItemMenu({
   onSetEmoji,
   onDelete,
   onExport,
+  onEnterMultiSelect,
   onOpenChange,
 }: ChatItemMenuProps): React.JSX.Element {
   const { t } = useI18n();
@@ -131,6 +134,11 @@ export function ChatItemMenu({
 
   const handleRename = (): void => {
     onRename();
+    setIsOpen(false);
+  };
+
+  const handleMultiSelect = (): void => {
+    onEnterMultiSelect?.();
     setIsOpen(false);
   };
 
@@ -319,6 +327,19 @@ export function ChatItemMenu({
                       })}
                     </span>
                     <ChevronRight size={11} className="chat-item-menu-sub-arrow" />
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-item-menu-item"
+                    onClick={handleMultiSelect}
+                    role="menuitem"
+                  >
+                    <ListChecks size={13} />
+                    <span>
+                      {t("sidebar.chatActionMultiSelect", {
+                        defaultValue: "Multi-select",
+                      })}
+                    </span>
                   </button>
                   <button
                     type="button"

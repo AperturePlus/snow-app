@@ -1694,6 +1694,132 @@ input {
   text-align: center;
   opacity: 0.6;
 }
+
+/* ===== Chat multi-select ===== */
+.chat-multi-select-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.chat-multi-select-exit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.chat-multi-select-exit-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.chat-multi-select-exit-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.chat-multi-select-count {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.chat-multi-select-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.chat-multi-select-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.chat-multi-select-action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.chat-multi-select-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.chat-multi-select-action-btn.danger {
+  color: var(--danger, #e5484d);
+}
+
+.chat-multi-select-action-btn.danger:hover {
+  background: rgba(229, 72, 77, 0.1);
+}
+
+.chat-batch-confirm {
+  padding: 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.chat-batch-confirm-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 8px;
+}
+
+.chat-item-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1.5px solid var(--border-color);
+  background: transparent;
+  color: var(--on-solid);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.chat-item-checkbox:hover {
+  border-color: var(--accent-color);
+}
+
+.chat-item-checkbox.checked {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+.chat-item.selected {
+  background: color-mix(in srgb, var(--accent-color) 10%, transparent);
+}
+
+.chat-item.selected:hover {
+  background: color-mix(in srgb, var(--accent-color) 16%, transparent);
+}
 .workspace-directory-card {
   display: flex;
   flex-direction: column;
