@@ -473,6 +473,7 @@ pub struct ThemePalette {
     pub accent_blue: String,
     pub accent_blue_bg: String,
     pub accent_blue_text: String,
+    pub accent_color: String,
     pub on_solid: String,
     pub selection_bg: String,
     pub focus_ring: String,
@@ -514,6 +515,7 @@ impl ThemePalette {
         fill!(accent_blue);
         fill!(accent_blue_bg);
         fill!(accent_blue_text);
+        fill!(accent_color);
         fill!(on_solid);
         fill!(selection_bg);
         fill!(focus_ring);
