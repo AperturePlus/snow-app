@@ -11,3 +11,6 @@ export type * from "./memo";
 export type * from "./updater";
 export type * from "./scheduledTask";
 export type * from "./personalization";
+export type * from "./codex";
+export type * from "./importConfig";
+export type * from "./plugins";

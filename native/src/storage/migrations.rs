@@ -71,6 +71,7 @@ pub fn run_pre_schema_migrations(connection: &Connection) -> rusqlite::Result<()
 /// already have via `CREATE TABLE`).
 pub fn run_post_schema_migrations(connection: &Connection) -> rusqlite::Result<()> {
     migrate_chat_conversations_api_profile(connection)?;
+    migrate_plugins_runtime(connection)?;
     migrate_chat_conversations_modes(connection)?;
     migrate_sub_agent_configs_project_id(connection)?;
     Ok(())
@@ -166,11 +167,35 @@ fn migrate_chat_conversations_api_profile(connection: &Connection) -> rusqlite::
     Ok(())
 }
 
+/// Adds the `runtime_json` column to the `plugins` table for databases that
+/// were created with an earlier plugin schema.
+///
+/// The column stores the serialized plugin runtime declaration (entry,
+/// permissions, timeout). Idempotent: no-op when the column is already
+/// present (fresh databases get it from `CREATE TABLE` in `create_schema`).
+fn migrate_plugins_runtime(connection: &Connection) -> rusqlite::Result<()> {
+    let mut statement = connection.prepare("PRAGMA table_info(plugins)")?;
+    let mut columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+    let has_runtime_column = columns.try_fold(false, |found, column| {
+        Ok::<bool, rusqlite::Error>(found || column? == "runtime_json")
+    })?;
+
+    if !has_runtime_column {
+        connection.execute(
+            "ALTER TABLE plugins ADD COLUMN runtime_json TEXT NOT NULL DEFAULT 'null'",
+            [],
+        )?;
+    }
+
+    Ok(())
+}
+
 /// Adds the per-conversation Plan/Goal Mode override columns to
 /// `chat_conversations` for databases created by older app versions.
 ///
-/// NULL means "not configured for this conversation — follow the global
-/// default"; values are 0/1 booleans and an integer token budget.
+/// The mode flags are 0/1 booleans and the token budget is an integer.
+/// Existing rows keep NULL flags; reads treat NULL as disabled
+/// (synonymous with 0) so legacy conversations open with both modes off.
 ///
 /// Idempotent: no-op when the columns are already present (fresh databases
 /// get them from the `CREATE TABLE` statement in `create_schema`).

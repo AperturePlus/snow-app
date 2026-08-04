@@ -6,7 +6,9 @@ use crate::storage::{
     ChatConversationRecord, ChatMessagePage, ChatMessageRecord, CodebaseProjectScopeSettings,
     ConversationSearchResult,
     CustomHeaderSchemeInput, CustomHeaderSchemeRecord, HookConfigInput, HookConfigRecord,
+    ImportResourceInput, ImportResourceRecord, ImportResourceRelease, ImportResourceReleaseInput,
     McpServerConfigInput, McpServerConfigRecord, ProjectMcpServerConfigRecord,
+    PluginInput, PluginMarketplaceInput, PluginMarketplaceRecord, PluginRecord,
     ProjectSensitiveCommandConfigInput, ProjectSensitiveCommandConfigRecord,
     SensitiveCommandConfigInput, SensitiveCommandConfigRecord, SensitiveCommandMatchResult,
     SubAgentConfigInput, SubAgentConfigRecord, SystemPromptItemInput, SystemPromptItemRecord,
@@ -474,11 +476,15 @@ pub async fn set_goal_mode_token_budget(budget: i64) -> napi::Result<()> {
 
 #[napi(object)]
 pub struct ConversationModesResult {
-    /// Whether Plan Mode is explicitly enabled (true), disabled (false) or
-    /// never configured for this conversation (null → follow global default).
+    /// Whether Plan Mode is enabled (true) or disabled (false) for this
+    /// conversation. Legacy rows with a NULL flag are read as disabled;
+    /// null is only returned when the conversation row does not exist
+    /// (follow the global default).
     pub plan_mode: Option<bool>,
-    /// Whether Goal Mode is explicitly enabled (true), disabled (false) or
-    /// never configured for this conversation (null → follow global default).
+    /// Whether Goal Mode is enabled (true) or disabled (false) for this
+    /// conversation. Legacy rows with a NULL flag are read as disabled;
+    /// null is only returned when the conversation row does not exist
+    /// (follow the global default).
     pub goal_mode: Option<bool>,
     /// Per-conversation Goal Mode token budget override (null → follow the
     /// global default budget).
@@ -825,6 +831,78 @@ pub async fn delete_project_mcp_server_config(
     })
     .await
     .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn list_import_resources() -> napi::Result<Vec<ImportResourceRecord>> {
+    tokio::task::spawn_blocking(crate::storage::list_import_resources)
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn upsert_import_resources(items: Vec<ImportResourceInput>) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::upsert_import_resources(items))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn release_import_resource(
+    input: ImportResourceReleaseInput,
+) -> napi::Result<ImportResourceRelease> {
+    tokio::task::spawn_blocking(move || crate::storage::release_import_resource(input))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn list_plugins() -> napi::Result<Vec<PluginRecord>> {
+    tokio::task::spawn_blocking(crate::storage::list_plugins)
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn upsert_plugins(items: Vec<PluginInput>) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::upsert_plugins(items))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn set_plugin_state(plugin_id: String, state: String) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::set_plugin_state(plugin_id, state))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn delete_plugin(plugin_id: String) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::delete_plugin(plugin_id))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn list_plugin_marketplaces() -> napi::Result<Vec<PluginMarketplaceRecord>> {
+    tokio::task::spawn_blocking(crate::storage::list_plugin_marketplaces)
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn upsert_plugin_marketplace(item: PluginMarketplaceInput) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::upsert_plugin_marketplace(item))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
+pub async fn delete_plugin_marketplace(marketplace_id: String) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::delete_plugin_marketplace(marketplace_id))
+        .await
+        .map_err(map_spawn_error)?
 }
 
 #[napi]

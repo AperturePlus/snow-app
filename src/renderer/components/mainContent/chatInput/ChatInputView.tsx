@@ -1945,7 +1945,7 @@ export const ChatInputView = ({
                 isLoading={isLoadingApiConfig}
               />
               <div className="input-action-buttons">
-                {isStreaming || isAborting ? (
+                {(isStreaming || isAborting) && (
                   <button
                     className={`abort-btn ${isAborting ? "is-aborting" : ""}`}
                     aria-label={
@@ -1964,8 +1964,6 @@ export const ChatInputView = ({
                       <Square size={14} fill="currentColor" />
                     )}
                   </button>
-                ) : (
-                  <span className="abort-btn-placeholder" aria-hidden="true" />
                 )}
                 <button
                   className="send-btn"

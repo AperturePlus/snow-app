@@ -1,3 +1,24 @@
+import type {
+  ImportResourceInput,
+  ImportResourceRecord,
+  ImportResourceRelease,
+  ImportResourceReleaseInput,
+} from "../../shared/importResources";
+import type {
+  PluginInput,
+  PluginMarketplaceInput,
+  PluginMarketplaceRecord,
+  PluginRecord,
+} from "../../shared/plugins";
+
+export type { ImportResourceInput, ImportResourceRecord, ImportResourceRelease, ImportResourceReleaseInput };
+export type {
+  PluginInput,
+  PluginMarketplaceInput,
+  PluginMarketplaceRecord,
+  PluginRecord,
+};
+
 export type AppStorageInfo = {
   directoryPath: string;
   databasePath: string;
@@ -1075,6 +1096,16 @@ export type NativeBridge = {
     projectId: string,
     serverId: string
   ) => Promise<void>;
+  listImportResources: () => Promise<ImportResourceRecord[]>;
+  upsertImportResources: (items: ImportResourceInput[]) => Promise<void>;
+  releaseImportResource: (input: ImportResourceReleaseInput) => Promise<ImportResourceRelease>;
+  listPlugins: () => Promise<PluginRecord[]>;
+  upsertPlugins: (items: PluginInput[]) => Promise<void>;
+  setPluginState: (pluginId: string, state: PluginInput["state"]) => Promise<void>;
+  deletePlugin: (pluginId: string) => Promise<void>;
+  listPluginMarketplaces: () => Promise<PluginMarketplaceRecord[]>;
+  upsertPluginMarketplace: (item: PluginMarketplaceInput) => Promise<void>;
+  deletePluginMarketplace: (marketplaceId: string) => Promise<void>;
   listHookConfigs: (
     scope: HookScope,
     projectId?: string
