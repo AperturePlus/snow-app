@@ -968,17 +968,18 @@ export const resolveCodexSelectedImports = async (
   selected: SelectedImportCandidate[],
   // Reuse a previously built context (e.g. from discoverAllImportContexts)
   // to avoid re-scanning every Codex directory twice per commit.
-  context: CodexImportContext = await buildCodexContext(native)
+  context?: CodexImportContext
 ): Promise<{ actions: ResolvedImportAction[]; warnings: string[] }> => {
+  const ctx = context ?? (await buildCodexContext(native));
   const actions: ResolvedImportAction[] = [];
-  for (const server of context.mcpServers.filter(
+  for (const server of ctx.mcpServers.filter(
     (item) => item.input.source === CODEX_MCP_SOURCE
   )) {
     const input: ImportCandidateInput = {
       type: "mcp",
       provider: "codex",
       scope: server.scope,
-      originPath: context.source.sourceHome,
+      originPath: ctx.source.sourceHome,
       logicalId: server.input.name,
       contentHash: hashImportValue({
         transportType: server.input.transportType,
@@ -1000,14 +1001,14 @@ export const resolveCodexSelectedImports = async (
       });
     }
   }
-  for (const prompt of context.prompts.filter((item) =>
+  for (const prompt of ctx.prompts.filter((item) =>
     item.promptId.startsWith("codex:")
   )) {
     const input: ImportCandidateInput = {
       type: "prompt",
       provider: "codex",
       scope: prompt.scope ?? "global",
-      originPath: context.source.sourceHome,
+      originPath: ctx.source.sourceHome,
       logicalId: prompt.promptId,
       contentHash: hashImportValue(prompt.content),
       ...(prompt.projectId ? { projectId: prompt.projectId } : {}),
@@ -1022,7 +1023,7 @@ export const resolveCodexSelectedImports = async (
       });
     }
   }
-  for (const skill of context.skills.filter((item) => !item.plugin)) {
+  for (const skill of ctx.skills.filter((item) => !item.plugin)) {
     const input: ImportCandidateInput = {
       type: "skill",
       provider: "codex",
@@ -1051,7 +1052,7 @@ export const resolveCodexSelectedImports = async (
       });
     }
   }
-  return { actions, warnings: context.source.warnings };
+  return { actions, warnings: ctx.source.warnings };
 };
 
 export const previewCodexImport = async (

@@ -8,7 +8,7 @@ const MAX_FILES = 5_000;
 const MAX_BYTES = 64 * 1024 * 1024;
 const MAX_DEPTH = 20;
 const TIMEOUT_MS = 10_000;
-const CACHE_TTL_MS = 2_000;
+const CACHE_TTL_MS = 30_000;
 const MAX_CACHE_ENTRIES = 128;
 const cache = new Map();
 
