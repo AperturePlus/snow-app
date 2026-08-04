@@ -160,10 +160,12 @@ const ChatContentBody = ({
   // Once its run ends the sub-agent conversation becomes read-only: the
   // input box disappears and only a status notice remains. While the run is
   // live the input stays visible so the user can insert pending messages.
+  // Only the three terminal statuses count — any other value (including
+  // unknown statuses) keeps the input visible instead of locking the
+  // conversation aggressively.
   const isSubAgentFinished =
     isSubAgentConversation &&
-    subAgentRunStatus !== "" &&
-    subAgentRunStatus !== "running";
+    ["completed", "failed", "cancelled"].includes(subAgentRunStatus);
   const subAgentParentConversationId =
     activeConversationMeta?.parentConversationId ||
     liveSubAgentEvent?.parentConversationId ||

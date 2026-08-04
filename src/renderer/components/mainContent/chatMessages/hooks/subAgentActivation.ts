@@ -824,11 +824,9 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
       ctx.updateSessionField(subConvId, "isAborting", false);
       ctx.removeStreamingId(subConvId);
 
-      // Persist and broadcast the terminal status immediately — before the
-      // completion hook, which may be slow — so the input box and the send
-      // guards flip as soon as the run loop has ended.
-      await window.snow.updateSubAgentSessionStatus(subConvId, "completed", "");
-
+      // Broadcast the terminal status FIRST — immediately after the flag, so
+      // the UI hides the input box as soon as possible. Persisting to the DB
+      // and running the (possibly slow) completion hook happen afterwards.
       ctx.setSubAgentSessionEvent({
         parentConversationId,
         conversationId: subConversationId,
@@ -838,6 +836,9 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         timestamp: Date.now(),
         toolCallInteractionId,
       });
+
+      // Persist the terminal status so it survives an app restart.
+      await window.snow.updateSubAgentSessionStatus(subConvId, "completed", "");
 
       // Flush user messages queued while the sub-agent was busy (inserting
       // messages mid-run is allowed). A finished sub-agent conversation no
@@ -906,10 +907,8 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         ctx.updateSessionField(subConversationId, "isAborting", false);
         ctx.removeStreamingId(subConversationId);
 
-        await window.snow
-          .updateSubAgentSessionStatus(subConversationId, "failed", "")
-          .catch(() => {});
-
+        // Same ordering as the success path: broadcast the failed status
+        // first so the UI hides the input box immediately.
         ctx.setSubAgentSessionEvent({
           parentConversationId,
           conversationId: subConversationId,
@@ -919,6 +918,10 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
           timestamp: Date.now(),
           toolCallInteractionId,
         });
+
+        await window.snow
+          .updateSubAgentSessionStatus(subConversationId, "failed", "")
+          .catch(() => {});
 
         // Same rationale as the success path: queued insertions must not be
         // lost when the failed sub-agent conversation becomes read-only.

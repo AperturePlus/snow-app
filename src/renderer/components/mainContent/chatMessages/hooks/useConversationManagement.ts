@@ -254,7 +254,7 @@ export const useConversationManagement = (
                 // input box stays hidden and sends are rejected.
                 const isTerminatedSubAgent =
                   conversationRecord?.conversationType === "sub_agent" &&
-                  conversationRecord.subAgentStatus !== "" &&
+                  (conversationRecord.subAgentStatus ?? "") !== "" &&
                   conversationRecord.subAgentStatus !== "running";
                 ctx.sessionsRefData.current.set(trimmedId, {
                   streamId: null,
