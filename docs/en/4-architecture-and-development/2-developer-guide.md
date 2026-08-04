@@ -1,7 +1,7 @@
 # Developer Guide
 
 > For contributors: environment setup, common commands, directory responsibilities, the full implementation chain for new features, and coding conventions.
-> See also: [Architecture Overview](1-architecture-overview.md), [Data Storage Locations](4-data-storage-locations.md).
+> See also: [Architecture Overview](1-architecture-overview.md), [Data Storage Locations](../3-reference/4-data-storage-locations.md).
 
 ## 1. Requirements
 
@@ -134,6 +134,60 @@ auto-waits) → rusqlite.
 | Missing translation | The three i18n files must stay structurally identical; missing keys show `undefined` at runtime |
 | CRLF warnings | Git CRLF→LF notices on Windows are normal (repo is LF-normalized) |
 | DB migration failure | Migrations must be idempotent; verify on a backup DB before committing |
+| Standalone script calling `callMcpTool` fails with `Create threadsafe function ... failed` | Positions 7–12 of `callMcpTool` (onChunk, onBrowserCommand, onUserQuestion, onAppControl, onRemoteWorkspaceCommand, onTerminalCommand) are all **required** `ThreadsafeFunction`s; passing `undefined` fails with `InvalidArg` — see the detailed section below |
+
+### callMcpTool callbacks (standalone scripts / e2e verification)
+
+`native.callMcpTool(toolFullName, argsJson, ...)` is the MCP tool entry point
+exposed by the native binding. Its signature has 15 parameters, and the
+**6 callback parameters are all required** `ThreadsafeFunction`s (the Rust
+types are not `Option`) — the JS side **must pass a function for each of
+them**. Passing `undefined`/`null` throws synchronously during argument
+conversion:
+
+```
+Error: Create threadsafe function in ThreadsafeFunction::create failed
+code: 'InvalidArg'
+```
+
+| Position | Parameter | Type | Notes |
+| --- | --- | --- | --- |
+| 1 | `toolFullName` | string | Full tool name, e.g. `config-list` |
+| 2 | `argsJson` | string | JSON string of the arguments |
+| 3–6 | projectId / checkpointIds / checkpointWorkDir / sensitiveAuthorizationToken | optional | `undefined` is fine |
+| 7 | `onChunk` | function | Streaming chunk callback (`BashStreamChunk`) |
+| 8 | `onBrowserCommand` | async function | Browser command forwarding |
+| 9 | `onUserQuestion` | async function | User-question interaction |
+| 10 | `onAppControl` | async function | App-control commands |
+| 11 | `onRemoteWorkspaceCommand` | async function | Remote (SSH) command forwarding |
+| 12 | `onTerminalCommand` | async function | **Terminal PTY command forwarding (newest callback, most commonly forgotten)** |
+| 13–15 | subAgentAllowedTools / planMode / planApproved | optional | `undefined` is fine |
+
+Placeholder pattern for standalone Node scripts (see `scripts/e2e-verify-config.cjs`):
+
+```js
+const noop = () => undefined;
+const asyncNoop = async () => "";
+const result = await native.callMcpTool(
+  "config-list",
+  JSON.stringify({ scope: "imagegen" }),
+  undefined, undefined, undefined, undefined, // projectId / checkpointIds / checkpointWorkDir / sensitiveAuthorizationToken
+  noop,      // onChunk
+  asyncNoop, // onBrowserCommand
+  asyncNoop, // onUserQuestion
+  asyncNoop, // onAppControl
+  asyncNoop, // onRemoteWorkspaceCommand
+  asyncNoop, // onTerminalCommand ← required, 6 callbacks in total
+  undefined, undefined, undefined             // subAgentAllowedTools / planMode / planApproved
+);
+// Resolves to a Promise<string> — the tool result as a JSON string
+```
+
+> If any callback is `undefined`, napi-rs tries to create a
+> `ThreadsafeFunction` from it and returns `InvalidArg` — this is an
+> argument-validation error, not a tool-logic error. The app renderer
+> (`nativeBridge`) always passes 6 real callbacks, so it is unaffected; only
+> hand-written standalone scripts need to be careful.
 
 ## 7. Commit Conventions
 

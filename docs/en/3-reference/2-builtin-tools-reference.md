@@ -23,8 +23,9 @@ Listed in registration order:
 | `codebase` | Codebase semantic search (embedding index) |
 | `codelens` | Code diagnostics and symbol location |
 | `app-control` | App control (memos / modes / settings pages / scheduled tasks / projects) |
-| `config` | Read/write global config (files: settings/snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy; database: subAgents/hooks; delegated: skills) |
+| `config` | Read/write global config (files: settings/snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy; database: subAgents/hooks/imagegen; delegated: skills; read-only: logs) |
 | `skills` | Skill loading and execution |
+| `imagegen` | AI image generation & editing (OpenAI / Gemini dual channels; **hidden on demand when neither channel is configured**) |
 
 ## 3. Tool Details
 
@@ -118,7 +119,7 @@ Listed in registration order:
 
 | Full tool name | Purpose | Key parameters |
 | --- | --- | --- |
-| `config-list` | List manageable scopes (settings/snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy/subAgents/hooks/skills) and their keys; pass `scope` to inspect a single scope with current values (sensitive keys masked) | `scope`, `projectId` |
+| `config-list` | List manageable scopes (settings/snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy/subAgents/hooks/skills/logs/imagegen) and their keys; pass `scope` to inspect a single scope with current values (sensitive keys masked) | `scope`, `projectId` |
 | `config-get` | Read a key's value; sensitive keys (`apiKey`, `visionApiKey`, custom-header schemes, system-prompt prompts) are always masked; `subAgents`/`hooks` scopes read directly from the app database | `scope`, `key`, `projectId` |
 | `config-set` | Write a key (whitelist + type check + auto backup + atomic write); `settings.mcpServers` auto-syncs to the app database and takes effect immediately; `subAgents`/`hooks` scopes write directly to the app database and take effect immediately | `scope`, `key`, `value`, `projectId` |
 | `config-delete` | Delete a key; `subAgents`/`hooks` scopes delete database records directly | `scope`, `key`, `projectId` |
@@ -161,6 +162,7 @@ Database-backed scopes (write to the app SQLite database, same source as the UI 
 | --- | --- | --- | --- |
 | `subAgents` | `agentId` | `{name, description?, systemPrompt?, toolsJson?, configProfile?}` | Create/update a sub-agent; `toolsJson` accepts a JSON string or an array of tool names; the built-in `agent_general` cannot be modified/deleted; omit `projectId` for global, provide it for project-scoped |
 | `hooks` | `hookType` | `{rules: [{description, matcher?, hooks: [{type, command?, prompt?, content?, timeout?, enabled?}]}]}` | Configure lifecycle hooks; omit `projectId` for global, provide it for project-scoped (project overrides global) |
+| `imagegen` | `openai` / `gemini` (omit key for all) | `{enabled, baseUrl?, apiKey?, model?, defaultSize?, defaultQuality?, outputFormat?, webSearch?, defaultStream?}` | Image-generation dual-channel settings (app database `system_settings` table, same source as the settings panel); `config-set` merges partial updates (omitted fields keep their previous values); `apiKey` is always returned masked (e.g. `sk-e****7890`); `config-delete` hides the generation tool from the AI tool list again |
 
 Delegated scope (reuses the skill-management service SkillsConfigService; storage semantics identical to the UI):
 
@@ -186,6 +188,45 @@ Read-only log scope (lets the agent self-diagnose app anomalies without a human 
 > The former `skills-config-*` tools (list/setEnabled/installGithub/uninstall)
 > have been removed; skill management now uses the `config` server's `skills`
 > scope exclusively (see above).
+
+### imagegen
+
+| Full tool name | Purpose | Key parameters |
+| --- | --- | --- |
+| `imagegen-generate` | Text-to-image / image-to-image editing (OpenAI-compatible + Gemini Nano Banana dual channels, independent from the conversation API config; **hidden from the AI tool list when neither channel is configured**) | see the 18-parameter table below |
+
+`imagegen-generate` full parameters:
+
+| Param | Type | Description |
+| --- | --- | --- |
+| `prompt` | string (required) | Generation description, or the edit instruction when reference images are provided |
+| `images` | array | Reference images `[{data, mimeType}]` (base64 without the `data:` prefix) for editing; max 14 images, ≤20MB each; OpenAI → `/images/edits`, Gemini → `inlineData` parts |
+| `model` | string | Override the configured model; OpenAI: `gpt-image-1`/`gpt-image-2`/`dall-e-3`; Gemini: `gemini-3.1-flash-image` (Nano Banana 2)/`gemini-3.1-flash-lite-image` (Lite)/`gemini-3-pro-image` (Pro)/`gemini-2.5-flash-image` (legacy) |
+| `provider` | enum | `auto` (default, derived from config) / `openai` / `gemini`, backend override |
+| `size` | string | OpenAI: `1024x1024`, `1024x1536`, `1536x1024`, etc.; Gemini: `1K`/`2K`/`4K` (imageSize) or `16:9`, `1:1`, `9:16`, etc. (aspectRatio) |
+| `quality` | enum | `low` / `medium` / `high` / `auto`; OpenAI gpt-image models only |
+| `outputFormat` | enum | OpenAI: `png` (default) / `jpeg` / `webp`; ignored for dall-e and Gemini |
+| `outputCompression` | number | OpenAI JPEG/WebP compression 0-100 |
+| `n` | number | Images per request (default 1, max 4) |
+| `personGeneration` | enum | Gemini: `dont_allow` (default) / `allow_all` / `allow_adult` |
+| `webSearch` | boolean | Gemini Google Search grounding, defaults to the setting |
+| `stream` | boolean | Streaming preview (OpenAI `partial_images` SSE / Gemini `streamGenerateContent`), defaults to the setting; ignored for dall-e and image edits |
+| `inputFidelity` | enum | OpenAI edit fidelity: `low` / `high` / `auto` (default); not supported by `gpt-image-2` (always high) |
+| `background` | enum | OpenAI: `opaque` (default) / `transparent` / `auto`; transparency needs model support (`gpt-image-2` does not support it) |
+| `moderation` | enum | OpenAI: `auto` (default) / `low` (less restrictive filtering) |
+| `seed` | number | Deterministic seed for reproducible results |
+| `thinkingLevel` | enum | Gemini 3.1 Flash Image: `minimal` (default, faster) / `high` (better quality, slower) |
+| `imageSearch` | boolean | Gemini 3.1 Flash Image: Google Image Search grounding (requires displaying search suggestions) |
+
+> **Configuration & exposure rules**: a channel is usable only when
+> `enabled` + `apiKey` + `model` are all present; both channels can be enabled
+> at once and the AI picks one per request (OpenAI is the default when both are
+> enabled; pass `provider: "gemini"` to switch); when neither is configured,
+> `imagegen-generate` is hidden from the model tool list.
+> GUI configuration: [2-guides/9-image-generation](../2-guides/9-image-generation.md);
+> the `config` tool's `imagegen` scope reads/writes the same settings (apiKey masked).
+> **Imagen deprecated**: `imagen-*` models shut down 2026-08-17 — use the Nano
+> Banana family.
 
 ## 4. Special Notes
 

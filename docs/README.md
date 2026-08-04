@@ -19,6 +19,10 @@
 | [2-使用指南/6-浏览器自动化](zh-CN/2-使用指南/6-浏览器自动化.md) | [2-guides/6-browser-automation](en/2-guides/6-browser-automation.md) | 浏览器自动化 / Browser automation |
 | [2-使用指南/7-代码库索引与代码诊断](zh-CN/2-使用指南/7-代码库索引与代码诊断.md) | [2-guides/7-codebase-index-and-diagnostics](en/2-guides/7-codebase-index-and-diagnostics.md) | 代码库索引与代码诊断 / Codebase index & diagnostics |
 | [2-使用指南/8-第三方配置导入](zh-CN/2-使用指南/8-第三方配置导入.md) | [2-guides/8-third-party-configuration-import](en/2-guides/8-third-party-configuration-import.md) | 第三方配置导入 / Import third-party configuration |
+| [2-使用指南/9-图像生成](zh-CN/2-使用指南/9-图像生成.md) | [2-guides/9-image-generation](en/2-guides/9-image-generation.md) | 图像生成与编辑 / Image generation |
+| [2-使用指南/10-使用聊天与AI助手](zh-CN/2-使用指南/10-使用聊天与AI助手.md) | [2-guides/10-using-chat-and-ai](en/2-guides/10-using-chat-and-ai.md) | 聊天与 AI 助手使用 / Using chat & AI assistant |
+| [2-使用指南/11-终端与SSH远程管理](zh-CN/2-使用指南/11-终端与SSH远程管理.md) | [2-guides/11-terminal-and-ssh](en/2-guides/11-terminal-and-ssh.md) | 终端与 SSH 远程管理 / Terminal & SSH |
+| [2-使用指南/12-Git面板与代码浏览](zh-CN/2-使用指南/12-Git面板与代码浏览.md) | [2-guides/12-git-and-code-browsing](en/2-guides/12-git-and-code-browsing.md) | Git 面板与代码浏览 / Git panel & code browsing |
 | [3-参考手册/1-settings.json配置参考](zh-CN/3-参考手册/1-settings.json配置参考.md) | [3-reference/1-settings-json-reference](en/3-reference/1-settings-json-reference.md) | settings.json 字段参考 / settings.json reference |
 | [3-参考手册/2-内置工具参考](zh-CN/3-参考手册/2-内置工具参考.md) | [3-reference/2-builtin-tools-reference](en/3-reference/2-builtin-tools-reference.md) | 内置工具参考 / Built-in tools reference |
 | [3-参考手册/4-数据存储位置](zh-CN/3-参考手册/4-数据存储位置.md) | [3-reference/4-data-storage-locations](en/3-reference/4-data-storage-locations.md) | 数据存储位置 / Data storage locations |

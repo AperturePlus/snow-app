@@ -3,15 +3,17 @@ name: snow-app-docs
 description: >-
   Guides the agent to read the built-in Snow App documentation
   (~/.snow/docs) and then help the user configure MCP servers, skills,
-  sub-agents, hooks, API keys/models, proxy & network, project-scoped
-  settings, or look up settings.json fields and built-in tools. Use this
-  skill whenever the user asks to configure, inspect or troubleshoot any
-  of these areas. Covers the config built-in service (config-list/get/set/
-  delete; scopes: settings/snowcfg/proxy/app/custom-headers/system-prompt/
-  theme/language/permissions/lsp-config/buddy/subAgents/hooks/skills/logs),
-  including project-scoped mcpServers/sensitiveCommands/subAgents/hooks/
-  skills via `projectId`, the read-only logs scope for diagnostics, and the
-  app-control-openSettings shortcut.
+  sub-agents, hooks, API keys/models, image generation, proxy & network,
+  project-scoped settings, or look up settings.json fields and built-in
+  tools. Use this skill whenever the user asks to configure, inspect or
+  troubleshoot any of these areas. Covers the config built-in service
+  (config-list/get/set/delete; scopes: settings/snowcfg/proxy/app/
+  custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy/
+  subAgents/hooks/skills/logs/imagegen), including project-scoped
+  mcpServers/sensitiveCommands/subAgents/hooks/skills via `projectId`, the
+  read-only logs scope for diagnostics, the imagegen dual-channel settings
+  (keys: openai/gemini, apiKey masked), and the app-control-openSettings
+  shortcut (e.g. page=imagegen-settings).
 enabled: true
 allowed_tools:
   - config-list
@@ -30,7 +32,7 @@ allowed_tools:
 # Snow App 文档阅读与配置指导（Docs & Configuration Guide）
 
 当用户请求**配置 MCP 服务器、安装与管理 Skills、配置 Hooks 与子代理、
-配置 API 密钥与模型、配置代理与网络、项目级设置**，或询问
+配置 API 密钥与模型、配置图像生成、配置代理与网络、项目级设置**，或询问
 **settings.json 字段 / 内置工具 / 日志诊断**时，先阅读应用内置文档，
 再按文档步骤动手配置，而不是凭记忆操作。
 
@@ -49,6 +51,10 @@ allowed_tools:
 | 配置 MCP 服务器 | `2-使用指南/1-配置MCP服务器.md`（en: `2-guides/1-configure-mcp.md`） | `3-参考手册/1-settings.json配置参考.md` |
 | 安装与管理 Skills | `2-使用指南/2-安装与管理Skills.md`（en: `2-guides/2-install-and-manage-skills.md`） | — |
 | 配置 API 密钥与模型 | `2-使用指南/3-配置API密钥与模型.md`（en: `2-guides/3-configure-api-keys.md`） | `3-参考手册/1-settings.json配置参考.md` |
+| 配置图像生成 | `2-使用指南/9-图像生成.md`（en: `2-guides/9-image-generation.md`） | `3-参考手册/2-内置工具参考.md`（imagegen 章节与 config 的 imagegen scope） |
+| 使用聊天与 AI 助手（界面/对话/命令/回滚/压缩） | `2-使用指南/10-使用聊天与AI助手.md`（en: `2-guides/10-using-chat-and-ai.md`） | — |
+| 终端与 SSH 远程管理 | `2-使用指南/11-终端与SSH远程管理.md`（en: `2-guides/11-terminal-and-ssh.md`） | — |
+| Git 面板与代码浏览 | `2-使用指南/12-Git面板与代码浏览.md`（en: `2-guides/12-git-and-code-browsing.md`） | — |
 | 配置代理与网络 | `2-使用指南/4-配置代理与网络.md`（en: `2-guides/4-configure-proxy.md`） | — |
 | 配置 Hooks 与子代理 | `2-使用指南/5-配置Hooks与子代理.md`（en: `2-guides/5-configure-hooks-and-subagents.md`） | — |
 | 浏览器自动化 | `2-使用指南/6-浏览器自动化.md`（en: `2-guides/6-browser-automation.md`） | — |
@@ -99,6 +105,18 @@ allowed_tools:
   `project`，项目安装需带 `projectId`），用
   `config-delete scope=skills key=<skillId>` 卸载（**仅限 GitHub 安装的技能**，
   手动放置或应用自带的技能需删除目录）。
+- **图像生成（双渠道）**：用 `config-list scope=imagegen` 查看 OpenAI /
+  Gemini 两渠道状态（enabled/model/configured）；用 `config-set
+  scope=imagegen value={openai: {enabled, apiKey, model, baseUrl?,
+  defaultSize?, defaultQuality?, outputFormat?, webSearch?, defaultStream?}}`
+  写入（**部分更新自动合并**，未提供的字段保留原值，也可只写 `gemini`
+  渠道）；`config-get scope=imagegen key=openai`（省略 key 返回全部）读取；
+  `config-delete scope=imagegen` 清空。写入应用数据库 `system_settings` 表
+  （code=`imagegen_settings`）**立即生效**，与设置面板同源；图形界面为
+  **设置 → 图像生成**（`app-control-openSettings page=imagegen-settings`）。
+  注意：渠道需 `enabled`+`apiKey`+`model` 三者齐备才可用，两渠道均未配置
+  时 `imagegen-generate` 工具对模型隐藏；`apiKey` 读取一律脱敏
+  （如 `sk-e****7890`），**不要索要或展示明文密钥**。
 - **日志诊断（只读）**：应用异常时用 `config-list scope=logs` 列出
   `~/.snow/log` 下的日志文件（含最近 error 文件摘要），用 `config-get
   scope=logs key=<文件名>` 或级别简写（`error`/`warn`/`info`/`debug`，读取
@@ -113,8 +131,9 @@ allowed_tools:
   （如 `sk-****abcd`），**不要向用户索要或试图获取明文密钥**；每次写入前
   自动备份到 `~/.snow/.config-backups/`，写入为原子替换——误写可恢复备份。
 - **打开设置页**：用 `app-control-openSettings`，`page` 参数取值见文档
-  （如 `mcp-settings`、`api-settings`、`proxy-browser-settings`、
-  `sub-agent-settings`、`hooks-settings`、`theme-settings`、`system-logs`）。
+  （如 `mcp-settings`、`api-settings`、`imagegen-settings`、
+  `proxy-browser-settings`、`sub-agent-settings`、`hooks-settings`、
+  `theme-settings`、`system-logs`）。
 - **编辑配置文件**：需要读写 `~/.snow/` 下的 JSON 时使用 filesystem 工具，
   注意 **Windows 路径中的反斜杠必须写成 `\\`**（JSON 转义），否则
   `\f`/`\n`/`\v` 会被解析为转义序列导致配置失效。
