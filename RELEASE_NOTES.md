@@ -1,5 +1,50 @@
 # Release Notes
 
+## v0.1.17 (unreleased)
+
+## New Features
+
+- **Image-to-Image Editing with Reference Images**: Attached images are always
+  used as references for image-to-image editing (OpenAI `/images/edits`
+  multipart / Gemini `inlineData`). When the main model does not support
+  vision, the textification pass (`api/vision.rs`) injects a
+  `[Reference image #N for imagegen-generate: {"path": ..., "mimeType": ...}]`
+  block per image — a small relative path under the upload/ directory instead
+  of a huge base64 blob — plus an explicit guidance line telling the model to
+  edit the attached images rather than regenerate from the description alone.
+  `imagegen-generate` resolves `path` references itself (restricted to the
+  upload/ directory, traversal rejected; server limit 14 images / ≤20MB each,
+  tool description guides the model to ≤5). Reference thumbnails on the
+  generation card show real images for both inline base64 and `path`
+  references (read from disk via a new `images:resolve-upload-image` IPC
+  channel, cached per session).
+- **Imagegen Model Capability Validation & 400 Protection**: `imagegen-generate`
+  now validates model capabilities before sending the request, so the most
+  common provider 400 errors are prevented or self-healed: `dall-e-3` is
+  text-to-image only (reference images are rejected with a clear
+  switch-model hint) and always generates exactly 1 image (`n>1` is clamped);
+  `imagen-*` models are text-to-image only as well. Upstream 400 responses are
+  annotated with a concrete fix hint (image count / image input / size /
+  quality), letting the agent retry correctly in one step, and the tool's
+  `model` parameter description now documents the capability rules up front.
+- **Max Concurrent Generations**: A global `maxConcurrentImages` setting
+  (1–8, default 4, in Settings → Image generation and the `imagegen` config
+  scope) caps how many generation requests run in parallel when the agent
+  requests several images at once; the rest wait in a queue and a new one
+  starts as soon as one finishes.
+- **Per-Conversation Input Draft Persistence**: Draft text (including image
+  chips) is saved per conversation and restored when switching back or
+  creating a new chat, so input is never lost while the chat view reloads.
+
+## Improvements
+
+- **Image Generation Settings Panel (aligned with the API settings panel)**:
+  channel rows no longer show redundant provider icons, the provider dropdown
+  uses the shared `CustomSelect` component, and the inline enable toggle
+  refuses to enable a channel that has no API key or model (with a
+  localized hint) — matching the backend rule that only fully configured
+  channels expose the generation tool to the agent.
+
 ## v0.1.16
 
 ## New Features
@@ -15,20 +60,6 @@
   least one channel is configured and enabled. A DB-backed `imagegen` config
   scope handles channel persistence with legacy format migration, and
   streaming preview images survive conversation reloads.
-- **Image-to-Image Editing with Reference Images**: Attached images are always
-  used as references for image-to-image editing (OpenAI `/images/edits`
-  multipart / Gemini `inlineData`). When the main model does not support
-  vision, the textification pass (`api/vision.rs`) injects a
-  `[Reference image #N for imagegen-generate: {"path": ..., "mimeType": ...}]`
-  block per image — a small relative path under the upload/ directory instead
-  of a huge base64 blob — plus an explicit guidance line telling the model to
-  edit the attached images rather than regenerate from the description alone.
-  `imagegen-generate` resolves `path` references itself (restricted to the
-  upload/ directory, traversal rejected; server limit 14 images / ≤20MB each,
-  tool description guides the model to ≤5). Reference thumbnails on the
-  generation card show real images for both inline base64 and `path`
-  references (read from disk via a new `images:resolve-upload-image` IPC
-  channel, cached per session).
 - **Image Generation Settings Panel**: A graphical multi-channel management
   panel with table + modal editing, inline enable toggles (instant save),
   model capability linked dropdowns (Gemini size × aspect ratio combos like

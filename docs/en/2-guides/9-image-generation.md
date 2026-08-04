@@ -28,8 +28,8 @@ enabled simultaneously, via the **Add channel** button:
 
 | Field | Description |
 | --- | --- |
-| Enabled | Channel switch; a disabled channel is unusable |
-| Channel name | Custom display name; leave empty to fall back to the protocol name (OpenAI-compatible / Google Gemini). Click the **✎ pencil button** on the channel list to rename inline (Enter to save / Esc to cancel) |
+| Enabled | Channel switch; a disabled channel is unusable. **Cannot be enabled without an API key and a model** (a hint asks you to complete the configuration first) — only fully configured channels expose the generation tool to the agent |
+| Channel name | Custom display name (used in the list and by the agent); leave empty to fall back to the protocol name (OpenAI-compatible / Google Gemini). Edit it in the channel editor dialog |
 | API Key | Provider key (OpenAI `sk-...` / Gemini `AIza...`) |
 | Base URL | Endpoint; leave empty for the official default (OpenAI `https://api.openai.com/v1`, Gemini `https://generativelanguage.googleapis.com/v1beta`) |
 | Model | Image model; **required** — a channel without a model is treated as unconfigured (no built-in default) |
@@ -70,7 +70,7 @@ Selecting a model shows its **capability tags**:
 | `gpt-image-2` / `gpt-image-1.5` | 4K, streaming, image-to-image |
 | `gpt-image-1` | 2K, streaming, image-to-image, fidelity control; **the only model that outputs transparent backgrounds** (pair with `outputFormat="png"`) |
 | `gpt-image-1-mini` | Fast, streaming |
-| `dall-e-3` | Text-to-image only |
+| `dall-e-3` | Text-to-image only; **exactly 1 image per request** (`n>1` is clamped to 1) |
 
 ### Gemini channel (Nano Banana family)
 
@@ -85,6 +85,16 @@ Selecting a model shows its **capability tags**:
 > channel automatically filters the available options based on the selected
 > model and shows “Current model supports: …” below it, so you never pick a
 > size the model cannot produce.
+>
+> **Automatic model-capability validation (400 protection)**: before sending a
+> request, the server validates the combination against the model's
+> capabilities and intercepts unsupported ones locally with a fix hint,
+> instead of handing the raw 400 back to the agent — `dall-e-3` and `imagen-*`
+> are text-to-image only (reference images are rejected locally with a hint to
+> switch to `gpt-image-1/2` or a Nano Banana model), and `dall-e-3`'s `n` is
+> clamped to 1. If a provider 400 still comes back, the error message carries a
+> concrete fix hint (image count / image input / size / quality) so the agent
+> can retry correctly in one step.
 >
 > **Imagen deprecated**: `imagen-*` models are shut down on **2026-08-17** —
 > migrate to the Nano Banana family above.
@@ -190,7 +200,7 @@ automatically:
 | `quality` | enum | `low` / `medium` / `high` / `auto`; Gemini only accepts `low`/`medium`/`high` (`auto` is ignored, i.e. the provider default quality is used) |
 | `outputFormat` | enum | OpenAI: `png` / `jpeg` / `webp` |
 | `outputCompression` | number | OpenAI JPEG/WebP compression 0-100 |
-| `n` | number | Images per request (default 1, max 4) |
+| `n` | number | Images per request (default 1, max 4); **`dall-e-3` is always 1** (clamped automatically) |
 | `personGeneration` | enum | Gemini: `dont_allow` (default) / `allow_all` / `allow_adult` |
 | `webSearch` | boolean | Gemini Google Search grounding |
 | `stream` | boolean | Streaming preview (defaults to the setting) |
@@ -228,6 +238,7 @@ app database, takes effect immediately):
 | --- | --- |
 | The AI cannot see the generation tool | Neither channel is configured (`enabled` + `apiKey` + `model` all required); it appears automatically once configured |
 | 401/403 errors | Check the channel API key & Base URL; the key may be expired |
+| 400 errors | Model-capability validation is built in (`dall-e-3`/`imagen` image-to-image, image count, size and quality are intercepted or clamped before the request is sent); if a 400 still comes back, the error message carries a fix hint and the agent usually retries successfully on its own. Manual checks: `n` above the model's limit, a size/quality outside the model's supported set, or image-to-image on a text-to-image-only model |
 | Channel enabled but unusable | Confirm the model is filled in — an empty model means unconfigured |
 | Image-to-image not working | Make sure a reference image is attached and the prompt is an edit instruction |
 | Slow generation | Disable streaming preview; use `low` quality or a Lite model |

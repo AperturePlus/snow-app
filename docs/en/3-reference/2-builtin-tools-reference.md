@@ -201,13 +201,13 @@ Read-only log scope (lets the agent self-diagnose app anomalies without a human 
 | --- | --- | --- |
 | `prompt` | string (required) | Generation description, or the edit instruction when reference images are provided |
 | `images` | array | Reference images `[{data, mimeType}]` (base64 without the `data:` prefix; data URLs with the prefix are also accepted) or `[{path, mimeType}]` (a relative path under the upload/ directory from a `[Reference image #N for imagegen-generate: ...]` block in text-only-main-model messages; the server reads the file itself, so no need to copy large base64 strings) for editing; `path` is **restricted to the upload/ directory** (absolute paths and `..` traversal are rejected); server-side limit is **14 images**, ≤20MB each (the tool description guides the AI to ≤5 per call to stay compatible with stricter provider limits); OpenAI → `/images/edits`, Gemini → `inlineData` parts |
-| `model` | string | Override the configured model; OpenAI: `gpt-image-1`/`gpt-image-2`/`dall-e-3`; Gemini: `gemini-3.1-flash-image` (Nano Banana 2)/`gemini-3.1-flash-lite-image` (Lite)/`gemini-3-pro-image` (Pro)/`gemini-2.5-flash-image` (legacy) |
+| `model` | string | Override the configured model; OpenAI: `gpt-image-1`/`gpt-image-2`/`dall-e-3`; Gemini: `gemini-3.1-flash-image` (Nano Banana 2)/`gemini-3.1-flash-lite-image` (Lite)/`gemini-3-pro-image` (Pro)/`gemini-2.5-flash-image` (legacy). **Capability rules (a 400 is returned for unsupported requests)**: `dall-e-3` is text-to-image only (no reference images) and always generates exactly 1 image; `imagen-*` models are text-to-image only too |
 | `provider` | enum | `auto` (default, derived from config) / `openai` / `gemini`, backend override |
 | `size` | string | OpenAI: `1024x1024`, `1024x1536`, `1536x1024`, etc.; Gemini: `1K`/`2K`/`4K` (imageSize) or `16:9`, `1:1`, `9:16`, etc. (aspectRatio) |
 | `quality` | enum | `low` / `medium` / `high` / `auto`; OpenAI gpt-image models only, Gemini accepts `low`/`medium`/`high` only (`auto` is ignored) |
 | `outputFormat` | enum | OpenAI: `png` (default) / `jpeg` / `webp`; ignored for dall-e and Gemini |
 | `outputCompression` | number | OpenAI JPEG/WebP compression 0-100 |
-| `n` | number | Images per request (default 1, max 4) |
+| `n` | number | Images per request (default 1, max 4); `dall-e-3` is always 1 (clamped automatically) |
 | `personGeneration` | enum | Gemini: `dont_allow` (default) / `allow_all` / `allow_adult` |
 | `webSearch` | boolean | Gemini Google Search grounding, defaults to the setting |
 | `stream` | boolean | Streaming preview (OpenAI `partial_images` SSE / Gemini `streamGenerateContent`), defaults to the setting; ignored for dall-e and image edits |
@@ -223,7 +223,11 @@ Read-only log scope (lets the agent self-diagnose app anomalies without a human 
 > be enabled at once and the AI picks one per request (when unspecified, the
 > first usable channel in order is used; pass `provider` to pick explicitly);
 > when none is configured, `imagegen-generate` is hidden from the model tool
-> list. When the agent requests several images at once they run in parallel,
+> list. Unsupported model capabilities are validated **before** the request is
+> sent (`dall-e-3`/`imagen-*` reference images are rejected locally with a
+> switch-model hint; `dall-e-3` `n` is clamped to 1), and any provider 400 that
+> still occurs is annotated with a concrete fix hint (image count / image
+> input / size / quality). When the agent requests several images at once they run in parallel,
 > bounded by **Max concurrent generations** in the settings (1–8, default 4);
 > excess requests queue up and start as one finishes.
 > GUI configuration: [2-guides/9-image-generation](../2-guides/9-image-generation.md);

@@ -109,6 +109,7 @@ Type `/` to open the command panel:
 | Manual model pick | Temporarily override the model for this message |
 | Thinking strength | Adjust reasoning effort (e.g. `minimal`/`high`); thinking blocks are expandable |
 | Multi-line input | `Shift+Enter` for a newline, `Enter` to send |
+| Auto-saved drafts | Draft text (including image chips) is **saved per conversation**: switching chats, starting a new chat, or waiting for history to load never loses it — it is restored automatically when you come back, and cleared after a successful send |
 
 ## 4. AI Replies & Message Actions
 
