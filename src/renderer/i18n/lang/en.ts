@@ -211,6 +211,8 @@ export const en = {
     "Also delete the {{count}} image(s) generated in this conversation (removed from the image library)",
   "sidebar.chatDeleteImagesOptionBatch":
     "Also delete the {{count}} image(s) generated in the selected conversations (removed from the image library)",
+  "sidebar.chatDeleteImagesNote":
+    "Uncheck to keep generated images in the image library.",
   "sidebar.chatActionMultiSelect": "Multi-select",
   "sidebar.chatMultiSelectCount": "{{count}} selected",
   "sidebar.chatMultiSelectAll": "Select all",
@@ -739,7 +741,7 @@ export const en = {
     "Custom name shown in the list and used by the agent (leave empty to use the default).",
   "settings.imagegenSearchPlaceholder": "Search channels, models, or base URLs",
   "settings.imagegenSearchEmpty": "No channels match your search.",
-  "settings.imagegenChannelCount": "{count} channels · {enabled} enabled",
+  "settings.imagegenChannelCount": "{{count}} channels · {{enabled}} enabled",
   "settings.imagegenDefaultEndpoint": "Provider default",
   "settings.imagegenToggleHint": "Click to enable or disable this channel",
   "settings.imagegenToggleMissingModel":
@@ -770,7 +772,7 @@ export const en = {
   "settings.imageLibraryDescription":
     "Manage AI-generated images (stored on disk; deleting one also removes it from conversations)",
   "settings.imageLibraryRefresh": "Refresh",
-  "settings.imageLibraryCount": "{count} image(s)",
+  "settings.imageLibraryCount": "{{count}} image(s)",
   "settings.imageLibraryFilterAll": "All",
   "settings.imageLibraryFilterLandscape": "Landscape",
   "settings.imageLibraryFilterSquare": "Square",

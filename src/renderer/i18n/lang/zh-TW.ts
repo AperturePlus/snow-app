@@ -205,6 +205,7 @@ export const zhTW = {
     "同時刪除該對話生成的 {{count}} 張圖片（從圖片庫移除）",
   "sidebar.chatDeleteImagesOptionBatch":
     "同時刪除所選對話生成的 {{count}} 張圖片（從圖片庫移除）",
+  "sidebar.chatDeleteImagesNote": "不勾選則生成的圖片保留在圖片庫中。",
   "sidebar.chatActionMultiSelect": "多選",
   "sidebar.chatMultiSelectCount": "已選 {{count}} 項",
   "sidebar.chatMultiSelectAll": "全選",
@@ -713,7 +714,7 @@ export const zhTW = {
     "渠道自訂名稱，顯示於列表中並供 AI 引用（留空使用預設名）。",
   "settings.imagegenSearchPlaceholder": "搜尋渠道名稱、模型或 Base URL",
   "settings.imagegenSearchEmpty": "沒有符合的渠道。",
-  "settings.imagegenChannelCount": "{count} 個渠道 · {enabled} 個已啟用",
+  "settings.imagegenChannelCount": "{{count}} 個渠道 · {{enabled}} 個已啟用",
   "settings.imagegenDefaultEndpoint": "官方預設",
   "settings.imagegenToggleHint": "按一下啟用或停用該渠道",
   "settings.imagegenToggleMissingModel":
@@ -742,7 +743,7 @@ export const zhTW = {
   "settings.imageLibraryDescription":
     "管理 AI 生成的圖片（自動落盤儲存，刪除會同步移除會話中的對應圖片）",
   "settings.imageLibraryRefresh": "重新整理",
-  "settings.imageLibraryCount": "{count} 張圖片",
+  "settings.imageLibraryCount": "{{count}} 張圖片",
   "settings.imageLibraryFilterAll": "全部",
   "settings.imageLibraryFilterLandscape": "橫圖",
   "settings.imageLibraryFilterSquare": "方圖",

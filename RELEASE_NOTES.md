@@ -48,13 +48,27 @@
   rewrites the referencing chat messages** (both `content` and `raw_json`) so
   conversations stay consistent. Historical base64 images keep rendering
   unchanged; if persistence fails the inline base64 fallback still works.
-  When deleting a conversation, the confirmation dialog now shows an
-  **"also delete generated images"** checkbox (single and batch delete alike)
-  — ticking it cascade-deletes every library image referenced by those
-  conversations (files + index rows) before the conversation goes away.
+  When deleting a conversation, a dedicated **delete-confirmation modal**
+  (single and batch delete alike) shows an **"also delete generated images"**
+  checkbox when the selected conversations reference library images — ticking
+  it cascade-deletes every library image referenced by those conversations
+  (files + index rows) before the conversation goes away, while the note
+  "uncheck to keep generated images in the image library" makes the default
+  keep-behavior explicit.
 
 ## Improvements
 
+- **Unified Delete-Confirmation Modal**: Conversation deletion now uses a
+  dedicated modal (`ChatDeleteConfirmModal`) shared by single and batch
+  delete — the inline confirmation view inside the item context menu and the
+  batch-confirm bar were removed. When opened, the modal queries how many
+  library images the selected conversations reference and, if any, shows an
+  **"also delete generated images"** checkbox (default unchecked, with an
+  explicit "uncheck to keep images in the library" note). Confirming runs a
+  single unified path: optional cascade image deletion first, then
+  conversation deletion (single delete keeps the sub-agent cascade abort /
+  draft cleanup; batch stays one native transaction). Deleting is guarded by
+  an in-flight state so the dialog cannot be dismissed or double-submitted.
 - **Unified Gallery Layout for Parallel Image Generations**: Images from a
   single `imagegen-generate` call now share one row width — the gallery grid
   sizes its columns to the batch so it reads as one cohesive block that fills
@@ -75,6 +89,10 @@
 
 ## Bug Fixes
 
+- **i18n Placeholder Syntax**: `settings.imagegenChannelCount` and
+  `settings.imageLibraryCount` used the single-brace `{count}` placeholder
+  format, so the channel count and image-library count rendered literally
+  instead of interpolated; both now use the `{{count}}` syntax.
 - Remove temperature parameter
 - Anthropic thinking.effort is discarded after being read
 

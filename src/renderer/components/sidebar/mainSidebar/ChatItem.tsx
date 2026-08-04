@@ -295,7 +295,6 @@ export function ChatItem({
           onKeyDown={(event) => event.stopPropagation()}
         >
           <ChatItemMenu
-            conversationId={conversation.conversationId}
             isPinned={isPinned}
             emoji={conversation.emoji}
             onPin={onPin}

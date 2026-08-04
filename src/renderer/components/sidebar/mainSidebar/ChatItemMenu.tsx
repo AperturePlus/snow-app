@@ -4,7 +4,6 @@ import {
   PinOff,
   Pencil,
   Trash2,
-  AlertTriangle,
   Download,
   ChevronRight,
   ChevronLeft,
@@ -21,7 +20,6 @@ import { EmojiPicker } from "./EmojiPicker";
 export type ExportFormat = "markdown" | "html" | "json" | "csv";
 
 type ChatItemMenuProps = {
-  conversationId: string;
   isPinned: boolean;
   emoji: string;
   onPin: () => void;
@@ -38,7 +36,6 @@ type ChatItemMenuProps = {
 };
 
 export function ChatItemMenu({
-  conversationId,
   isPinned,
   emoji,
   onPin,
@@ -53,13 +50,8 @@ export function ChatItemMenu({
 }: ChatItemMenuProps): React.JSX.Element {
   const { t } = useI18n();
   const [isButtonOpen, setIsButtonOpen] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
-  // 删除会话确认：该会话引用的图库图片数（null = 未查询），
-  // 以及用户是否选择级联删除图片
-  const [imagesCount, setImagesCount] = useState<number | null>(null);
-  const [deleteImages, setDeleteImages] = useState(false);
   // 右键锚点存在时菜单即为打开状态
   const isOpen = isButtonOpen || contextMenuAnchor !== null;
   const containerRef = useRef<HTMLSpanElement>(null);
@@ -114,7 +106,6 @@ export function ChatItemMenu({
     const closeMenu = (): void => {
       setIsButtonOpen(false);
       onContextMenuCloseRef.current?.();
-      setShowConfirm(false);
       setShowExport(false);
       setShowEmoji(false);
     };
@@ -187,7 +178,6 @@ export function ChatItemMenu({
     // 点击 … 按钮切换按钮菜单；若右键菜单正打开则先清空锚点
     setIsButtonOpen((prev) => !prev);
     onContextMenuCloseRef.current?.();
-    setShowConfirm(false);
     setShowExport(false);
     setShowEmoji(false);
   };
@@ -210,44 +200,14 @@ export function ChatItemMenu({
   };
 
   const handleDeleteClick = (): void => {
-    setShowConfirm(true);
-    setShowExport(false);
-    setShowEmoji(false);
-    // 打开确认框时查询该会话引用的图库图片数
-    setImagesCount(null);
-    setDeleteImages(false);
-    void window.snow
-      .countConversationImages([conversationId])
-      .then((count) => setImagesCount(count))
-      .catch(() => setImagesCount(0));
-  };
-
-  const handleDeleteConfirm = (): void => {
-    // 用户选择不保留图片时，先级联删除图库图片（物理 + 索引），
-    // 再执行会话删除；删除失败不阻断会话删除
-    if (deleteImages && (imagesCount ?? 0) > 0) {
-      void window.snow
-        .deleteConversationImages([conversationId])
-        .catch((error) => {
-          console.error(
-            "[chat] cascade delete conversation images failed:",
-            error
-          );
-        });
-    }
+    // 删除确认统一由父级 ChatDeleteConfirmModal 弹窗处理
     onDelete();
     setIsButtonOpen(false);
     onContextMenuCloseRef.current?.();
-    setShowConfirm(false);
-  };
-
-  const handleDeleteCancel = (): void => {
-    setShowConfirm(false);
   };
 
   const handleExportClick = (): void => {
     setShowExport((prev) => !prev);
-    setShowConfirm(false);
     setShowEmoji(false);
   };
 
@@ -260,7 +220,6 @@ export function ChatItemMenu({
 
   const handleEmojiClick = (): void => {
     setShowEmoji((prev) => !prev);
-    setShowConfirm(false);
     setShowExport(false);
   };
 
@@ -269,7 +228,6 @@ export function ChatItemMenu({
     setIsButtonOpen(false);
     onContextMenuCloseRef.current?.();
     setShowEmoji(false);
-    setShowConfirm(false);
     setShowExport(false);
   };
 
@@ -278,7 +236,6 @@ export function ChatItemMenu({
     setIsButtonOpen(false);
     onContextMenuCloseRef.current?.();
     setShowEmoji(false);
-    setShowConfirm(false);
     setShowExport(false);
   };
 
@@ -312,163 +269,108 @@ export function ChatItemMenu({
               }
               role="menu"
             >
-              {showConfirm ? (
-                <>
-                  <div className="chat-item-menu-confirm">
-                    <AlertTriangle
-                      size={13}
-                      className="chat-item-menu-confirm-icon"
-                    />
-                    <span className="chat-item-menu-confirm-text">
-                      {t("sidebar.chatDeleteConfirm", {
-                        defaultValue:
-                          "Are you sure you want to delete this conversation?",
-                      })}
-                    </span>
-                  </div>
-                  {imagesCount !== null && imagesCount > 0 ? (
-                    <label className="chat-item-menu-delete-images">
-                      <input
-                        type="checkbox"
-                        checked={deleteImages}
-                        onChange={(event) =>
-                          setDeleteImages(event.target.checked)
-                        }
-                      />
-                      <span>
-                        {t("sidebar.chatDeleteImagesOption", {
-                          defaultValue:
-                            "Also delete the {{count}} image(s) generated in this conversation",
-                          values: { count: imagesCount },
-                        })}
-                      </span>
-                    </label>
-                  ) : null}
-                  <div className="chat-item-menu-confirm-actions">
-                    <button
-                      type="button"
-                      className="chat-item-menu-confirm-btn cancel"
-                      onClick={handleDeleteCancel}
-                    >
-                      {t("common.cancel", { defaultValue: "Cancel" })}
-                    </button>
-                    <button
-                      type="button"
-                      className="chat-item-menu-confirm-btn delete"
-                      onClick={handleDeleteConfirm}
-                    >
-                      {t("sidebar.chatActionDelete", {
-                        defaultValue: "Delete",
-                      })}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
+              <>
+                <button
+                  type="button"
+                  className="chat-item-menu-item"
+                  onClick={handlePin}
+                  role="menuitem"
+                >
+                  {isPinned ? <PinOff size={13} /> : <Pin size={13} />}
+                  <span>
+                    {isPinned
+                      ? t("sidebar.chatActionUnpin", {
+                          defaultValue: "Unpin",
+                        })
+                      : t("sidebar.chatActionPin", { defaultValue: "Pin" })}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="chat-item-menu-item"
+                  onClick={handleRename}
+                  role="menuitem"
+                >
+                  <Pencil size={13} />
+                  <span>
+                    {t("sidebar.chatActionRename", {
+                      defaultValue: "Rename",
+                    })}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  ref={emojiTriggerRef}
+                  className={`chat-item-menu-item${showEmoji ? " active" : ""}`}
+                  onClick={handleEmojiClick}
+                  role="menuitem"
+                  aria-expanded={showEmoji}
+                  aria-haspopup="menu"
+                >
+                  {emoji ? (
+                    <span className="chat-item-menu-emoji">{emoji}</span>
+                  ) : (
+                    <SmilePlus size={13} />
+                  )}
+                  <span>
+                    {t("sidebar.chatActionIcon", { defaultValue: "Icon" })}
+                  </span>
+                  <ChevronRight
+                    size={11}
+                    className="chat-item-menu-sub-arrow"
+                  />
+                </button>
+                <button
+                  type="button"
+                  ref={exportTriggerRef}
+                  className={`chat-item-menu-item${
+                    showExport ? " active" : ""
+                  }`}
+                  onClick={handleExportClick}
+                  role="menuitem"
+                  aria-expanded={showExport}
+                  aria-haspopup="menu"
+                >
+                  <Download size={13} />
+                  <span>
+                    {t("sidebar.chatActionExport", {
+                      defaultValue: "Export",
+                    })}
+                  </span>
+                  <ChevronRight
+                    size={11}
+                    className="chat-item-menu-sub-arrow"
+                  />
+                </button>
+                {onEnterMultiSelect ? (
                   <button
                     type="button"
                     className="chat-item-menu-item"
-                    onClick={handlePin}
+                    onClick={handleMultiSelect}
                     role="menuitem"
                   >
-                    {isPinned ? <PinOff size={13} /> : <Pin size={13} />}
+                    <ListChecks size={13} />
                     <span>
-                      {isPinned
-                        ? t("sidebar.chatActionUnpin", {
-                            defaultValue: "Unpin",
-                          })
-                        : t("sidebar.chatActionPin", { defaultValue: "Pin" })}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className="chat-item-menu-item"
-                    onClick={handleRename}
-                    role="menuitem"
-                  >
-                    <Pencil size={13} />
-                    <span>
-                      {t("sidebar.chatActionRename", {
-                        defaultValue: "Rename",
+                      {t("sidebar.chatActionMultiSelect", {
+                        defaultValue: "Multi-select",
                       })}
                     </span>
                   </button>
-                  <button
-                    type="button"
-                    ref={emojiTriggerRef}
-                    className={`chat-item-menu-item${
-                      showEmoji ? " active" : ""
-                    }`}
-                    onClick={handleEmojiClick}
-                    role="menuitem"
-                    aria-expanded={showEmoji}
-                    aria-haspopup="menu"
-                  >
-                    {emoji ? (
-                      <span className="chat-item-menu-emoji">{emoji}</span>
-                    ) : (
-                      <SmilePlus size={13} />
-                    )}
-                    <span>
-                      {t("sidebar.chatActionIcon", { defaultValue: "Icon" })}
-                    </span>
-                    <ChevronRight
-                      size={11}
-                      className="chat-item-menu-sub-arrow"
-                    />
-                  </button>
-                  <button
-                    type="button"
-                    ref={exportTriggerRef}
-                    className={`chat-item-menu-item${
-                      showExport ? " active" : ""
-                    }`}
-                    onClick={handleExportClick}
-                    role="menuitem"
-                    aria-expanded={showExport}
-                    aria-haspopup="menu"
-                  >
-                    <Download size={13} />
-                    <span>
-                      {t("sidebar.chatActionExport", {
-                        defaultValue: "Export",
-                      })}
-                    </span>
-                    <ChevronRight
-                      size={11}
-                      className="chat-item-menu-sub-arrow"
-                    />
-                  </button>
-                  {onEnterMultiSelect ? (
-                    <button
-                      type="button"
-                      className="chat-item-menu-item"
-                      onClick={handleMultiSelect}
-                      role="menuitem"
-                    >
-                      <ListChecks size={13} />
-                      <span>
-                        {t("sidebar.chatActionMultiSelect", {
-                          defaultValue: "Multi-select",
-                        })}
-                      </span>
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="chat-item-menu-item danger"
-                    onClick={handleDeleteClick}
-                    role="menuitem"
-                  >
-                    <Trash2 size={13} />
-                    <span>
-                      {t("sidebar.chatActionDelete", {
-                        defaultValue: "Delete",
-                      })}
-                    </span>
-                  </button>
-                </>
-              )}
+                ) : null}
+                <button
+                  type="button"
+                  className="chat-item-menu-item danger"
+                  onClick={handleDeleteClick}
+                  role="menuitem"
+                >
+                  <Trash2 size={13} />
+                  <span>
+                    {t("sidebar.chatActionDelete", {
+                      defaultValue: "Delete",
+                    })}
+                  </span>
+                </button>
+              </>
             </div>,
             document.body
           )

@@ -26260,3 +26260,50 @@ body.ctrl-held [data-path] {
   accent-color: var(--accent-red);
   cursor: pointer;
 }
+
+/* 删除会话确认弹窗（ChatDeleteConfirmModal） */
+.chat-delete-confirm-modal .chat-delete-confirm-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.chat-delete-confirm-modal .chat-delete-confirm-option input[type="checkbox"] {
+  flex-shrink: 0;
+  margin: 2px 0 0;
+  accent-color: var(--accent-red);
+  cursor: pointer;
+}
+
+.chat-delete-confirm-modal .chat-delete-confirm-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 8px 2px 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
+.chat-delete-confirm-modal .chat-delete-confirm-note svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--accent-red);
+}
+
+.chat-delete-confirm-modal .chat-delete-confirm-btn {
+  background: var(--accent-red);
+  color: var(--on-solid);
+}
+
+.chat-delete-confirm-modal .chat-delete-confirm-btn:hover {
+  filter: brightness(1.1);
+}
