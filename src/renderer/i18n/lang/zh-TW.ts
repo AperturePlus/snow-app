@@ -1588,6 +1588,8 @@ export const zhTW = {
   "projectCodebase.configHint": "嵌入、重排序和分塊參數請在設定頁中設定。",
   "projectCodebase.gitignoreMissing":
     "目前專案根目錄下未偵測到 .gitignore 檔案。為避免大規模嵌入無關檔案（如 node_modules、建置產物等），請先在專案根目錄建立 .gitignore 後再啟用程式碼庫索引。",
+  "projectCodebase.remoteUnsupported":
+    "遠端（SSH）工作目錄無法使用程式碼庫功能，請切換到本機專案目錄後再試。",
   "projectCodebase.embedding.title": "向量索引",
   "projectCodebase.embedding.description":
     "將專案程式碼檔案分塊後嵌入到向量資料庫，支援語意搜尋。",

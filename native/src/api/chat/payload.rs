@@ -289,7 +289,7 @@ fn normalize_message_role(role: &str) -> &str {
     }
 }
 
-fn build_chat_reasoning_effort(config_json: &str) -> Option<String> {
+pub(crate) fn build_chat_reasoning_effort(config_json: &str) -> Option<String> {
     let parsed = serde_json::from_str::<Value>(config_json).ok()?;
     let chat_thinking = parsed.get("snowcfg")?.get("chatThinking")?.as_object()?;
     let enabled = chat_thinking

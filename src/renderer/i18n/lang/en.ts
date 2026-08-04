@@ -1707,6 +1707,8 @@ export const en = {
     "Embedding, reranking and chunking parameters are configured in Settings.",
   "projectCodebase.gitignoreMissing":
     "No .gitignore file detected in the project root. To avoid embedding large amounts of irrelevant files (such as node_modules, build artifacts, etc.), please create a .gitignore in the project root before enabling codebase indexing.",
+  "projectCodebase.remoteUnsupported":
+    "Codebase features are not available for remote (SSH) workspaces. Please switch to a local project directory and try again.",
   "projectCodebase.embedding.title": "Vector Index",
   "projectCodebase.embedding.description":
     "Chunk project code files and embed them into a vector database for semantic search.",

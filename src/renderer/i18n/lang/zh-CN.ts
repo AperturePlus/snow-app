@@ -1614,6 +1614,8 @@ export const zhCN = {
   "projectCodebase.configHint": "嵌入、重排序和分块参数请在设置页中配置。",
   "projectCodebase.gitignoreMissing":
     "当前项目根目录下未检测到 .gitignore 文件。为避免大规模嵌入无关文件（如 node_modules、构建产物等），请先在项目根目录创建 .gitignore 后再启用代码库索引。",
+  "projectCodebase.remoteUnsupported":
+    "远程（SSH）工作目录无法使用代码库功能，请切换到本地项目目录后再试。",
   "projectCodebase.embedding.title": "向量索引",
   "projectCodebase.embedding.description":
     "将项目代码文件分块后嵌入到向量数据库，支持语义搜索。",

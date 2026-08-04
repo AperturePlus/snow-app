@@ -173,6 +173,8 @@ export const systemApi = {
     ipcRenderer.invoke("codebase:set-project-reranking", projectId, enabled),
   checkProjectHasGitignore: (projectId: string): Promise<boolean> =>
     ipcRenderer.invoke("codebase:check-project-gitignore", projectId),
+  checkProjectIsRemote: (projectId: string): Promise<boolean> =>
+    ipcRenderer.invoke("codebase:check-project-remote", projectId),
   startCodebaseEmbedding: (
     projectId: string,
     sessionId: string

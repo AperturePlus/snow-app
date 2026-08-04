@@ -734,6 +734,12 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to check project .gitignore"
           )
         ),
+      checkProjectIsRemote: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to check project remote workspace"
+          )
+        ),
       startCodebaseEmbedding: () =>
         Promise.reject(
           new Error(

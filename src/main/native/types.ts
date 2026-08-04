@@ -961,6 +961,7 @@ export type NativeBridge = {
     enabled: boolean
   ) => Promise<void>;
   checkProjectHasGitignore: (projectId: string) => Promise<boolean>;
+  checkProjectIsRemote: (projectId: string) => Promise<boolean>;
   startCodebaseEmbedding: (
     projectId: string,
     sessionId: string,

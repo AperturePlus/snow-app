@@ -807,6 +807,30 @@ pub fn check_project_has_gitignore(project_id: String) -> Result<bool> {
     Ok(gitignore_path.exists())
 }
 
+/// Returns whether the project belongs to a remote (SSH) workspace directory.
+/// Remote workspaces have no local filesystem to index, so codebase features
+/// are unavailable for them.
+pub fn check_project_is_remote(project_id: String) -> Result<bool> {
+    let database_path = ensure_database_file()?;
+    let normalized_project_id = project_id.trim().to_string();
+    if normalized_project_id.is_empty() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Project id is required".to_string(),
+        ));
+    }
+
+    let Some(kind) = services::workspace_directories::get_workspace_directory_kind(
+        &database_path,
+        &normalized_project_id,
+    )?
+    else {
+        return Ok(false);
+    };
+
+    Ok(kind == "ssh")
+}
+
 pub fn list_api_configs() -> Result<Vec<ApiConfigRecord>> {
     let database_path = ensure_database_file()?;
     services::api_configs::list_api_configs(&database_path)

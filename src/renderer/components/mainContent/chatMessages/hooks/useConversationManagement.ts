@@ -82,6 +82,19 @@ export const useConversationManagement = (
       // intent so the UI follows the active conversation normally.
       ctx.setNewChatRequested(false);
 
+      // The pending-messages panel mirrors the *active* conversation's
+      // pending queue. When switching sessions the displayed queue must be
+      // reloaded from the target conversation's pendingQueue entry so the
+      // previously active conversation's pending messages do not leak into
+      // the newly selected one (each conversation keeps its own queue in
+      // pendingQueueRef, but activePendingMessages is a single shared state).
+      const targetPendingQueue = ctx.pendingQueueRef.current.get(trimmedId);
+      ctx.setActivePendingMessages(
+        targetPendingQueue
+          ? targetPendingQueue.map((item) => item.text)
+          : []
+      );
+
       // Restore Plan/Goal Mode from the target session's stored state.
       const targetRef = ctx.sessionsRefData.current.get(trimmedId);
       const targetPlanMode = targetRef?.planMode ?? false;
@@ -330,6 +343,8 @@ export const useConversationManagement = (
       ctx.setPlanModeState,
       ctx.goalModeRef,
       ctx.setGoalModeState,
+      ctx.pendingQueueRef,
+      ctx.setActivePendingMessages,
     ]
   );
 
@@ -464,6 +479,17 @@ export const useConversationManagement = (
     }
 
     ctx.setActiveId(undefined);
+
+    // A new chat uses the PENDING_SESSION_KEY. Reload the pending panel from
+    // that key's queue so messages belonging to the previously active
+    // conversation do not bleed into the empty greeting view.
+    const pendingSessionQueue =
+      ctx.pendingQueueRef.current.get(PENDING_SESSION_KEY);
+    ctx.setActivePendingMessages(
+      pendingSessionQueue
+        ? pendingSessionQueue.map((item) => item.text)
+        : []
+    );
   }, [
     ctx.setActiveId,
     ctx.setNewChatRequested,
@@ -472,6 +498,8 @@ export const useConversationManagement = (
     ctx.goalModeRef,
     ctx.setGoalModeState,
     ctx.planApprovedSessionKeysRef,
+    ctx.pendingQueueRef,
+    ctx.setActivePendingMessages,
   ]);
 
   const handleAbort = useCallback((): void => {
