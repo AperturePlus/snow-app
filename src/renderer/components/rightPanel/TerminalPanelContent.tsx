@@ -11,6 +11,7 @@ import { useTerminalMcpInstance } from "./terminal/useTerminalMcpInstance";
 export type TerminalPanelContentProps = {
   tabId: string;
   cwd: string;
+  shellPath?: string;
   isActive: boolean;
   onTitleChange?: (title: string) => void;
   /** 点击终端内的链接时回调（用于打开内置浏览器 tab）。 */
@@ -84,12 +85,14 @@ const DEFAULT_FONT_FAMILY =
 export const TerminalPanelContent = ({
   tabId,
   cwd,
+  shellPath: shellPathProp,
   isActive,
   onTitleChange,
   onOpenLink,
   onProcessExit,
 }: TerminalPanelContentProps): React.JSX.Element => {
   const settings = useTerminalSettings();
+  const shellPath = shellPathProp ?? settings.shellPath;
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -144,9 +147,6 @@ export const TerminalPanelContent = ({
   // Register this terminal tab with the MCP controller so that
   // terminal-send/read/resize/wait commands can reach it.
   useTerminalMcpInstance(tabId, cwd, isActive, termRef, ptyIdRef);
-
-  // Only shellPath triggers PTY recreation; font settings update live.
-  const { shellPath } = settings;
 
   useEffect(() => {
     if (!containerRef.current) {

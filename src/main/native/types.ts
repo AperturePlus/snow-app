@@ -369,10 +369,14 @@ export type SystemPromptItemInput = {
   content: string;
   isActive: boolean;
   sortOrder: number;
+  scope?: "global" | "project";
+  projectId?: string;
 };
 
-export type SystemPromptItemRecord = SystemPromptItemInput & {
+export type SystemPromptItemRecord = Omit<SystemPromptItemInput, "scope"> & {
   id: string;
+  scope: "global" | "project";
+  projectId?: string;
   updatedAt: string;
 };
 
@@ -445,6 +449,19 @@ export type McpServerConfigInput = {
   timeoutMs?: number;
   sortOrder: number;
   source: string;
+};
+
+export type ProjectMcpServerImportInput = {
+  projectId: string;
+  input: McpServerConfigInput;
+};
+
+export type ImportDatabaseTransactionInput = {
+  mcpServers: McpServerConfigInput[];
+  projectMcpServers: ProjectMcpServerImportInput[];
+  systemPrompts: SystemPromptItemInput[];
+  plugins: PluginInput[];
+  importResources: ImportResourceInput[];
 };
 
 export type HookScope = "global" | "project";
@@ -1113,6 +1130,7 @@ export type NativeBridge = {
   ) => Promise<void>;
   listImportResources: () => Promise<ImportResourceRecord[]>;
   upsertImportResources: (items: ImportResourceInput[]) => Promise<void>;
+  commitImportTransaction: (input: ImportDatabaseTransactionInput) => Promise<void>;
   releaseImportResource: (input: ImportResourceReleaseInput) => Promise<ImportResourceRelease>;
   listPlugins: () => Promise<PluginRecord[]>;
   upsertPlugins: (items: PluginInput[]) => Promise<void>;

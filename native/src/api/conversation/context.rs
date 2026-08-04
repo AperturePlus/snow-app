@@ -79,7 +79,11 @@ pub fn prepare_context_request(
     // (e.g. Anthropic demotes the built-in prompt to a user message when
     // user prompts are present, matching Snow CLI PR #127).
     let user_system_prompts =
-        resolve_active_system_prompt_contents(request.database_path, request.system_prompt_ids_json);
+        resolve_active_system_prompt_contents(
+            request.database_path,
+            request.system_prompt_ids_json,
+            request.directory_id,
+        );
 
     // Inject the built-in system prompt as the first message.
     let working_directory = request

@@ -333,6 +333,10 @@ export const loadNativeBridge = (): NativeBridge => {
         Promise.reject(
           new Error("Rust native bridge is required to write import resources")
         ),
+      commitImportTransaction: () =>
+        Promise.reject(
+          new Error("Rust native bridge is required to commit imported resources")
+        ),
       releaseImportResource: () =>
         Promise.reject(
           new Error("Rust native bridge is required to release import resources")

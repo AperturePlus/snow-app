@@ -3469,6 +3469,81 @@ input {
   flex-shrink: 0;
 }
 
+.plugin-marketplace-install-review {
+  width: min(820px, 94vw);
+  max-height: 86vh;
+}
+
+.plugin-marketplace-install-review .confirm-dialog-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.plugin-marketplace-install-review-content,
+.plugin-marketplace-install-mcps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.plugin-marketplace-install-sources,
+.plugin-marketplace-install-mcp-details {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.plugin-marketplace-install-sources > div,
+.plugin-marketplace-install-mcp-details > div {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.plugin-marketplace-install-sources dt,
+.plugin-marketplace-install-mcp-details dt {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.plugin-marketplace-install-sources dd,
+.plugin-marketplace-install-mcp-details dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.plugin-marketplace-install-sources code,
+.plugin-marketplace-install-mcp-details code {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+.plugin-marketplace-install-mcp {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-tertiary);
+}
+
+.plugin-marketplace-install-mcp-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.plugin-marketplace-install-empty {
+  margin: 0;
+  color: var(--text-tertiary);
+}
+
 .plugins-marketplace-installed,
 .plugins-marketplace-unsupported {
   display: inline-flex;
@@ -3516,6 +3591,8 @@ input {
   .plugins-marketplace-install-button,
   .plugins-marketplace-installed,
   .plugins-marketplace-unsupported { justify-self: flex-start; }
+  .plugin-marketplace-install-sources > div,
+  .plugin-marketplace-install-mcp-details > div { grid-template-columns: 1fr; gap: 2px; }
 }
 
 .import-settings-candidates {
@@ -3637,6 +3714,11 @@ input {
 }
 
 .import-candidate-status-conflict {
+  border-color: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+}
+
+.import-candidate-status-repair {
   border-color: var(--accent-amber-bg);
   color: var(--accent-amber-text);
 }
@@ -10185,6 +10267,333 @@ input {
   cursor: not-allowed;
 }
 
+/* Terminal Tool Call (terminal-open/send/read/resize/wait/close/focus/list) */
+.tool-call-terminal-body {
+  gap: 10px;
+}
+
+.tool-call-terminal-displayname {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tool-call-terminal-displayname-icon {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.tool-call-terminal-displayname code {
+  min-width: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool-call-terminal-meta-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+
+.tool-call-terminal-meta-badge svg {
+  color: var(--accent-blue-text);
+}
+
+.tool-call-terminal-success-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-green-bg);
+  color: var(--accent-green-text);
+  font-size: 10.5px;
+  flex-shrink: 0;
+}
+
+.tool-call-terminal-args {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-call-terminal-arg-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.tool-call-terminal-arg-label {
+  flex-shrink: 0;
+  min-width: 70px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.tool-call-terminal-arg-value {
+  min-width: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  word-break: break-all;
+  user-select: text;
+}
+
+.tool-call-terminal-input-pre {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.tool-call-terminal-input-pre code {
+  min-width: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: inherit;
+  word-break: inherit;
+}
+
+.tool-call-terminal-prompt {
+  flex-shrink: 0;
+  color: var(--accent-green-text);
+  user-select: none;
+}
+
+.tool-call-terminal-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tool-call-terminal-result-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tool-call-terminal-result-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-green-bg);
+  color: var(--accent-green-text);
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+.tool-call-terminal-result-empty {
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+}
+
+.tool-call-terminal-wait-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+.tool-call-terminal-wait-idle {
+  background: var(--accent-green-bg);
+  color: var(--accent-green-text);
+}
+
+.tool-call-terminal-wait-timeout {
+  background: var(--accent-orange-bg, rgba(232, 151, 58, 0.12));
+  color: var(--accent-orange-text, #e8973a);
+}
+
+.tool-call-terminal-elapsed {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+.tool-call-terminal-output-pre {
+  max-height: 320px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  overflow: auto;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre;
+  user-select: text;
+}
+
+.tool-call-terminal-tab-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-call-terminal-tab-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  font-size: 11px;
+}
+
+.tool-call-terminal-tab-active {
+  border-color: color-mix(
+    in srgb,
+    var(--accent-blue-text) 40%,
+    var(--border-light)
+  );
+  background: color-mix(
+    in srgb,
+    var(--accent-blue-text) 6%,
+    var(--bg-primary)
+  );
+}
+
+.tool-call-terminal-tab-id {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.tool-call-terminal-tab-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-call-terminal-tab-cwd {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.tool-call-terminal-tab-active-badge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-blue-bg, rgba(59, 130, 246, 0.12));
+  color: var(--accent-blue-text);
+  font-size: 10px;
+}
+
+.tool-call-terminal-pending {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+}
+
+.tool-call-terminal-pending-running {
+  background: color-mix(
+    in srgb,
+    var(--accent-blue-text) 6%,
+    var(--bg-tertiary)
+  );
+  color: var(--text-secondary);
+}
+
+.tool-call-terminal-loading-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.tool-call-terminal-loading-dots i {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent-blue-text);
+  animation: tool-call-bash-cursor-blink 1.2s ease-in-out infinite;
+}
+
+.tool-call-terminal-loading-dots i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.tool-call-terminal-loading-dots i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+.tool-call-terminal-countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+}
+
+.tool-call-terminal-countdown-urgent {
+  color: var(--accent-red-text);
+  background: var(--accent-red-bg);
+  animation: tool-call-bash-countdown-pulse 0.8s ease-in-out infinite;
+}
+
+@media (max-width: 520px) {
+  .tool-call-terminal-tab-cwd {
+    display: none;
+  }
+}
+
 /* Grep Tool Call */
 .tool-call-grep-body {
   gap: 10px;
@@ -12814,10 +13223,16 @@ input {
 
 .stream-metrics-additions {
   color: var(--accent-green-text);
+  /* 固定宽度："+0" ~ "+9999"，4ch 覆盖常见范围，避免数字增长撑宽按钮
+     连带分隔符与右侧指标水平抖动。tabular-nums 保证等宽填充。 */
+  min-width: 4ch;
+  text-align: right;
 }
 
 .stream-metrics-deletions {
   color: var(--accent-red-text);
+  min-width: 4ch;
+  text-align: right;
 }
 
 .stream-metrics-metric {
@@ -12844,18 +13259,23 @@ input {
 }
 
 .stream-metrics-elapsed .stream-metrics-value {
-  min-width: 5ch;
+  /* formatDuration 最大输出 "59m59s"，6ch 覆盖其全部形态，
+     数字递增只在盒子内右对齐变化，不再撑宽。 */
+  min-width: 6ch;
 }
 
 .stream-metrics-ttft .stream-metrics-value {
-  min-width: 3ch;
-}
-
-.stream-metrics-tokens .stream-metrics-value {
+  /* formatTtft 输出 "--"、"<1s"、"59s"、"1m0s" 等，4ch 覆盖常见形态。 */
   min-width: 4ch;
 }
 
+.stream-metrics-tokens .stream-metrics-value {
+  /* formatTokenCount 在 1k 后输出 "1.0k".."99.9k"，5ch 覆盖到 ~100k。 */
+  min-width: 5ch;
+}
+
 .stream-metrics-tps .stream-metrics-value {
+  /* formatTokPerSec 输出 "--"、"0.0".."99.9"、"100".."9999"，4ch 覆盖。 */
   min-width: 4ch;
 }
 

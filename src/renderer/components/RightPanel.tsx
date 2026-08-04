@@ -182,9 +182,9 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
     );
 
     const handleOpenTerminalTab = useCallback(
-      (cwd: string, requestedTabId?: string): string => {
+      (cwd: string, requestedTabId?: string, shellPath?: string): string => {
         const tabId = requestedTabId ?? `terminal-${Date.now()}`;
-        const terminalData: TerminalTabData = { cwd };
+        const terminalData: TerminalTabData = { cwd, shellPath };
         setTabs((prev) => [
           ...prev,
           {
@@ -761,7 +761,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       ]
     );
 
-    useTerminalMcpCommandBridge(terminalMcpCallbacks);
+    useTerminalMcpCommandBridge(terminalMcpCallbacks, activeDirectory);
 
     const tabListRef = useRef<HTMLDivElement>(null);
 
@@ -812,6 +812,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             <TerminalPanelContent
               tabId={tab.id}
               cwd={(tab.data as TerminalTabData).cwd}
+              shellPath={(tab.data as TerminalTabData).shellPath}
               isActive={activeTabId === tab.id}
               onTitleChange={(title) =>
                 handleTerminalTitleChange(tab.id, title)

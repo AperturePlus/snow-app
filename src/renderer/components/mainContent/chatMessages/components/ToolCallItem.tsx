@@ -14,6 +14,7 @@ import {
   CodeLensToolCall,
   WebSearchToolCall,
   BrowserToolCall,
+  TerminalToolCall,
 } from "../toolCalls";
 import { ToolCallNode } from "../toolCalls/shared/ToolCallNode";
 import { useI18n } from "../../../../i18n";
@@ -115,6 +116,10 @@ export const ToolCallItem = memo(
 
     if (toolCall.name.startsWith("browser-")) {
       return <BrowserToolCall toolCall={toolCall} />;
+    }
+
+    if (toolCall.name.startsWith("terminal-")) {
+      return <TerminalToolCall toolCall={toolCall} />;
     }
 
     const effectiveStatus = hasResultError(toolCall.result)
