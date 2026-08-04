@@ -1213,6 +1213,9 @@ export type NativeBridge = {
   listSubAgentConversations: (
     parentConversationId: string
   ) => Promise<ChatConversationRecord[]>;
+  listSubAgentConversationsByParents: (
+    parentConversationIds: string[]
+  ) => Promise<Record<string, ChatConversationRecord[]>>;
   createSubAgentSession: (
     conversationId: string,
     parentConversationId: string,
@@ -1242,6 +1245,7 @@ export type NativeBridge = {
     profileName: string
   ) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
+  deleteConversations: (conversationIds: string[]) => Promise<void>;
   appendToolMessage: (conversationId: string, content: string) => Promise<void>;
   listChatMessages: (conversationId: string) => Promise<ChatMessageRecord[]>;
   listUserMessages: (

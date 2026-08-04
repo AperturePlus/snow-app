@@ -70,6 +70,12 @@ export type ToolCallInfo = {
   result?: string;
   streamingStdout?: string;
   streamingStderr?: string;
+  /** 生图工具（imagegen-generate）流式预览图，按 index 排序。 */
+  streamingImages?: Array<{
+    index: number;
+    mimeType: string;
+    data: string;
+  }>;
   userQuestion?: UserQuestionState;
   authorizationId?: string;
   authorizationConversationId?: string;

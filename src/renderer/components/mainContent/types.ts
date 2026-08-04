@@ -1,6 +1,7 @@
 export type MainContentView =
   | "chat"
   | "api-settings"
+  | "imagegen-settings"
   | "proxy-browser-settings"
   | "codebase-settings"
   | "system-prompt-settings"

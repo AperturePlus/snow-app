@@ -560,21 +560,83 @@ export function createToolExecutor(
                             currentMessage.toolCalls,
                             toolCall,
                             ["pending", "running"],
-                            (currentToolCall) => ({
-                              ...currentToolCall,
-                              streamingStdout:
-                                chunk.stream === "stdout"
-                                  ? `${currentToolCall.streamingStdout ?? ""}${
-                                      chunk.data
-                                    }`
-                                  : currentToolCall.streamingStdout,
-                              streamingStderr:
+                            (currentToolCall) => {
+                              if (
+                                chunk.stream === "stdout" ||
                                 chunk.stream === "stderr"
-                                  ? `${currentToolCall.streamingStderr ?? ""}${
-                                      chunk.data
-                                    }`
-                                  : currentToolCall.streamingStderr,
-                            })
+                              ) {
+                                return {
+                                  ...currentToolCall,
+                                  streamingStdout:
+                                    chunk.stream === "stdout"
+                                      ? `${currentToolCall.streamingStdout ?? ""}${
+                                          chunk.data
+                                        }`
+                                      : currentToolCall.streamingStdout,
+                                  streamingStderr:
+                                    chunk.stream === "stderr"
+                                      ? `${currentToolCall.streamingStderr ?? ""}${
+                                          chunk.data
+                                        }`
+                                      : currentToolCall.streamingStderr,
+                                };
+                              }
+
+                              // 生图工具的流式预览：chunk.data 为
+                              // {"type":"partial_image","index":N,"mimeType":"...","data":"<base64>"}
+                              if (chunk.stream === "imagegen") {
+                                try {
+                                  const parsed: unknown = JSON.parse(
+                                    chunk.data
+                                  );
+                                  if (
+                                    typeof parsed === "object" &&
+                                    parsed !== null &&
+                                    !Array.isArray(parsed) &&
+                                    (parsed as Record<string, unknown>)
+                                      .type === "partial_image" &&
+                                    typeof (
+                                      parsed as Record<string, unknown>
+                                    ).data === "string" &&
+                                    typeof (
+                                      parsed as Record<string, unknown>
+                                    ).mimeType === "string" &&
+                                    typeof (
+                                      parsed as Record<string, unknown>
+                                    ).index === "number"
+                                  ) {
+                                    const record = parsed as Record<
+                                      string,
+                                      unknown
+                                    >;
+                                    const incoming = {
+                                      index: record.index as number,
+                                      mimeType: record.mimeType as string,
+                                      data: record.data as string,
+                                    };
+                                    const existing =
+                                      currentToolCall.streamingImages ?? [];
+                                    const next = [
+                                      ...existing.filter(
+                                        (image) =>
+                                          image.index !== incoming.index
+                                      ),
+                                      incoming,
+                                    ].sort(
+                                      (a, b) => a.index - b.index
+                                    );
+                                    return {
+                                      ...currentToolCall,
+                                      streamingImages: next,
+                                    };
+                                  }
+                                } catch {
+                                  // 忽略无法解析的流式数据
+                                }
+                              }
+
+                              return currentToolCall;
+                            }
                           ),
                         };
                       })

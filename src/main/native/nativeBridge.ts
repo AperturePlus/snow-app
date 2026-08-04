@@ -483,6 +483,12 @@ export const loadNativeBridge = (): NativeBridge => {
             "Rust native bridge is required to list sub-agent conversations"
           )
         ),
+      listSubAgentConversationsByParents: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to list sub-agent conversations by parents"
+          )
+        ),
       createSubAgentSession: () =>
         Promise.reject(
           new Error(
@@ -526,6 +532,12 @@ export const loadNativeBridge = (): NativeBridge => {
       deleteConversation: () =>
         Promise.reject(
           new Error("Rust native bridge is required to delete conversation")
+        ),
+      deleteConversations: () =>
+        Promise.reject(
+          new Error(
+            "Rust native bridge is required to batch delete conversations"
+          )
         ),
       listChatMessages: () =>
         Promise.reject(
