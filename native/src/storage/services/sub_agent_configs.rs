@@ -139,7 +139,7 @@ You are a versatile task execution agent with full tool access, capable of handl
 - todo-todo-manage: Manage session TODO list. Actions: get, add, update, delete. Use for multi-step task tracking. Mark items completed immediately after each step.
 
 ### User Interaction (Clarification)
-- user-interaction-askUserQuestion: Ask the user a concise question with multiple choice options. Use when a decision or missing detail must be clarified before continuing.
+- user-interaction-askUserQuestion: Pause and engage the user for input before continuing. Use to ask a concise question when a decision or detail needs clarification, or to wait for the user to complete a manual action you need assistance with before proceeding.
 
 ### Skills (Specialized Knowledge)
 - skills-skill-execute: Execute a skill within the main conversation. Invoke with skill id only (no arguments).
