@@ -12462,7 +12462,7 @@ input {
   }
 }
 
-/* 放大照片：白色卡纸装裱，始终水平 + 垂直居中 */
+/* 放大照片：直接展示无装裱框，始终水平 + 垂直居中 */
 .tool-call-imagegen-lightbox img {
   display: block;
   width: auto;
@@ -12470,10 +12470,24 @@ input {
   max-width: min(92vw, 1500px);
   max-height: 86vh;
   object-fit: contain;
-  padding: 10px;
   border-radius: var(--radius-md);
-  background: #fdfdfd;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* 灯箱加载中占位：图片数据尚未解析完成时显示（避免破图图标闪烁） */
+.tool-call-imagegen-lightbox-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-width: 220px;
+  min-height: 160px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  user-select: none;
 }
 
 .tool-call-imagegen-lightbox-toolbar {

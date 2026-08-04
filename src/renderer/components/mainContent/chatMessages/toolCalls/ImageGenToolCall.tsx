@@ -552,6 +552,51 @@ export const ImageGenToolCall = ({
       ? resolvedLibrary[lightbox.path] ?? ""
       : `data:${lightbox.mimeType};base64,${lightbox.data}`
     : "";
+
+  // 灯箱打开时若图片数据尚未解析（path 引用），立即兜底解析，
+  // 避免 src 为空导致破图图标闪烁
+  useEffect(() => {
+    if (!lightbox?.path) {
+      return;
+    }
+    const targetPath = lightbox.path;
+    if (resolvedLibrary[targetPath]) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const dataUrl = await window.snow.resolveLibraryImage(targetPath);
+        if (!cancelled && dataUrl) {
+          setResolvedLibrary((prev) => ({ ...prev, [targetPath]: dataUrl }));
+        }
+      } catch (error) {
+        console.warn(
+          "[imagegen] resolveLibraryImage failed for lightbox",
+          targetPath,
+          error
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [lightbox?.path, resolvedLibrary]);
+
+  // Esc 关闭灯箱
+  useEffect(() => {
+    if (!lightbox) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setLightbox(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [lightbox]);
+
   const lightboxElement = lightbox
     ? createPortal(
         <div
@@ -559,11 +604,26 @@ export const ImageGenToolCall = ({
           onClick={() => setLightbox(null)}
           role="presentation"
         >
-          <img
-            src={lightboxSrc}
-            alt={t("toolCall.imagegen.generatedImage")}
-            onClick={(event) => event.stopPropagation()}
-          />
+          {lightboxSrc ? (
+            <img
+              src={lightboxSrc}
+              alt={t("toolCall.imagegen.generatedImage")}
+              draggable={false}
+              onClick={(event) => event.stopPropagation()}
+            />
+          ) : (
+            <div
+              className="tool-call-imagegen-lightbox-loading"
+              role="status"
+            >
+              <Loader2
+                className="tool-call-icon-spinning"
+                size={28}
+                aria-hidden="true"
+              />
+              <span>{t("common.loading")}</span>
+            </div>
+          )}
           <div
             className="tool-call-imagegen-lightbox-toolbar"
             onClick={(event) => event.stopPropagation()}

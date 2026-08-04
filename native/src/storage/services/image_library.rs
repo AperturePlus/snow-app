@@ -268,6 +268,15 @@ pub fn list_images(database_path: &Path) -> Result<Vec<ImageLibraryRecord>> {
         .map_err(|error| database::database_error(database_path, "list image library", error))
 }
 
+/// 将图库相对路径（image/...）解析为根目录下的绝对路径。
+/// 根目录本身即 image 目录，物理文件直接位于根目录下（persist 时
+/// 按 `root/日期/文件名` 落盘），因此 `image/` 仅是逻辑前缀，需先去掉再拼接。
+fn library_file_path(root: &Path, relative_path: &str) -> PathBuf {
+    let normalized = relative_path.trim().replace('\\', "/");
+    let inner = normalized.strip_prefix("image/").unwrap_or(&normalized);
+    root.join(inner)
+}
+
 /// 读取图库文件并返回 data URL（白名单校验：仅 image/ 前缀 + 防穿越）。
 pub fn read_image_file(relative_path: &str) -> Result<Option<String>> {
     let normalized = relative_path.trim().replace('\\', "/");
@@ -275,7 +284,7 @@ pub fn read_image_file(relative_path: &str) -> Result<Option<String>> {
         return Ok(None);
     }
     let root = image_library_root()?;
-    let file_path = root.join(&normalized);
+    let file_path = library_file_path(&root, &normalized);
     // 二次校验：绝对路径必须落在 image 根目录内
     let Ok(canonical_root) = root.canonicalize() else {
         return Ok(None);
@@ -343,8 +352,7 @@ pub fn delete_image(database_path: &Path, id: &str) -> Result<()> {
 
     // 3) 物理删除文件（索引已删，失败仅产生孤儿文件，不阻断）
     let root = image_library_root()?;
-    let normalized = relative_path.replace('\\', "/");
-    let file_path = root.join(&normalized);
+    let file_path = library_file_path(&root, &relative_path);
     if let Ok(canonical_root) = root.canonicalize() {
         if let Ok(canonical_file) = file_path.canonicalize() {
             if canonical_file.starts_with(&canonical_root) {
@@ -525,8 +533,7 @@ pub fn delete_conversation_images(
     // 物理删除文件（失败仅产生孤儿文件，不阻断会话删除）
     let root = image_library_root()?;
     for path in &removed_files {
-        let normalized = path.replace('\\', "/");
-        let file_path = root.join(&normalized);
+        let file_path = library_file_path(&root, path);
         if let Ok(canonical_root) = root.canonicalize() {
             if let Ok(canonical_file) = file_path.canonicalize() {
                 if canonical_file.starts_with(&canonical_root) {
