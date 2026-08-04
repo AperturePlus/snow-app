@@ -6,6 +6,7 @@ import {
   FileEdit,
   FileText,
   FileX,
+  FolderOpen,
   Plus,
   Terminal as TerminalIcon,
   Undo2,
@@ -118,13 +119,25 @@ export const GitFileList = ({
     y: number;
     file: GitFileStatus;
   } | null>(null);
+  // section 标题（变更 / 已暂存的变更）右键菜单：全部暂存 / 全部取消暂存。
+  const [headerContextMenu, setHeaderContextMenu] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   /** 将文件相对路径拼成仓库绝对路径（兼容 Windows 反斜杠与 SSH 仓库）。 */
   const resolveRepoPath = (dirPath: string): string => {
-    const base = repoPath.replace(/[\\/]+$/, "");
-    const sep = base.includes("\\") ? "\\" : "/";
-    const dir = dirPath.replace(/[\\/]+$/, "");
+    const base = repoPath.replace(/[\\\\/]+$/, "");
+    const sep = base.includes("\\\\") ? "\\\\" : "/";
+    const dir = dirPath.replace(/[\\\\/]+$/, "");
     return dir ? `${base}${sep}${dir}` : base;
+  };
+
+  /** 将文件相对路径拼成仓库内的绝对文件路径（保持仓库分隔符风格）。 */
+  const resolveRepoFilePath = (filePath: string): string => {
+    const base = repoPath.replace(/[\\\\/]+$/, "");
+    const sep = base.includes("\\\\") ? "\\\\" : "/";
+    return `${base}${sep}${filePath}`;
   };
 
   /** 与行内按钮一致的多选语义：右键文件在选中集内时操作应用到全部选中。 */
@@ -140,11 +153,14 @@ export const GitFileList = ({
 
   const buildMenuItems = (file: GitFileStatus): ContextMenuItem[] => {
     const items: ContextMenuItem[] = [];
-    if (onOpenFile && file.status !== "D") {
+    // 已删除（D）文件在磁盘上不存在，查看类操作不可用。
+    const isDeleted = file.status === "D";
+    if (onOpenFile) {
       items.push({
         id: "open",
         label: t("git.openFile"),
         icon: <FileText size={13} strokeWidth={1.8} />,
+        disabled: isDeleted,
         onClick: () => {
           setContextMenu(null);
           onOpenFile(file);
@@ -152,7 +168,24 @@ export const GitFileList = ({
       });
     }
     items.push({
+      id: "reveal",
+      label: t("git.revealInExplorer", {
+        defaultValue: "Show in Explorer",
+      }),
+      icon: <FolderOpen size={13} strokeWidth={1.8} />,
+      disabled: isDeleted,
+      onClick: () => {
+        setContextMenu(null);
+        void window.snow
+          .showItemInFolder(resolveRepoFilePath(file.path))
+          .catch(() => {
+            // 打开文件管理器失败时静默忽略。
+          });
+      },
+    });
+    items.push({
       id: "stage-toggle",
+      separator: true,
       label: isStaged ? t("git.unstageFile") : t("git.stageFile"),
       icon: isStaged ? (
         <FileMinus size={13} strokeWidth={1.8} />
@@ -169,6 +202,7 @@ export const GitFileList = ({
         id: "discard",
         label: t("git.discardFile"),
         icon: <Undo2 size={13} strokeWidth={1.8} />,
+        danger: true,
         onClick: () => {
           setContextMenu(null);
           onDiscard(getTargetFiles(file));
@@ -178,6 +212,7 @@ export const GitFileList = ({
     if (onOpenTerminal) {
       items.push({
         id: "open-terminal",
+        separator: true,
         label: t("git.openInTerminal", {
           defaultValue: "Open in Terminal",
         }),
@@ -186,16 +221,20 @@ export const GitFileList = ({
           setContextMenu(null);
           const lastSep = Math.max(
             file.path.lastIndexOf("/"),
-            file.path.lastIndexOf("\\")
+            file.path.lastIndexOf("\\\\")
           );
-          const dirPath = lastSep === -1 ? "" : file.path.slice(0, lastSep + 1);
+          const dirPath =
+            lastSep === -1 ? "" : file.path.slice(0, lastSep + 1);
           onOpenTerminal(resolveRepoPath(dirPath));
         },
       });
     }
     items.push({
-      id: "copy-path",
-      label: t("git.copyPath", { defaultValue: "Copy Path" }),
+      id: "copy-relative",
+      separator: true,
+      label: t("git.copyRelativePath", {
+        defaultValue: "Copy Relative Path",
+      }),
       icon: <Copy size={13} strokeWidth={1.8} />,
       onClick: () => {
         setContextMenu(null);
@@ -204,6 +243,48 @@ export const GitFileList = ({
         });
       },
     });
+    items.push({
+      id: "copy-absolute",
+      label: t("git.copyAbsolutePath", {
+        defaultValue: "Copy Absolute Path",
+      }),
+      icon: <Copy size={13} strokeWidth={1.8} />,
+      onClick: () => {
+        setContextMenu(null);
+        void window.snow
+          .writeClipboardText(resolveRepoFilePath(file.path))
+          .catch(() => {
+            // 剪贴板写入失败时静默忽略。
+          });
+      },
+    });
+    return items;
+  };
+
+  /** section 标题右键菜单：全部暂存 / 全部取消暂存（与标题栏按钮一致）。 */
+  const buildHeaderMenuItems = (): ContextMenuItem[] => {
+    const items: ContextMenuItem[] = [];
+    if (isStaged) {
+      items.push({
+        id: "unstage-all",
+        label: t("git.unstageAll"),
+        icon: <FileMinus size={13} strokeWidth={1.8} />,
+        onClick: () => {
+          setHeaderContextMenu(null);
+          onUnstageAll?.();
+        },
+      });
+    } else {
+      items.push({
+        id: "stage-all",
+        label: t("git.stageAll"),
+        icon: <Plus size={13} strokeWidth={1.8} />,
+        onClick: () => {
+          setHeaderContextMenu(null);
+          onStageAll?.();
+        },
+      });
+    }
     return items;
   };
 
@@ -247,6 +328,13 @@ export const GitFileList = ({
         <div
           className="git-file-list-title"
           onClick={toggleCollapse}
+          onContextMenu={(e) => {
+            if (headerCount === 0) {
+              return;
+            }
+            e.preventDefault();
+            setHeaderContextMenu({ x: e.clientX, y: e.clientY });
+          }}
           role="button"
           tabIndex={0}
           onKeyDown={(e) => {
@@ -405,6 +493,14 @@ export const GitFileList = ({
           y={contextMenu.y}
           items={buildMenuItems(contextMenu.file)}
           onClose={() => setContextMenu(null)}
+        />
+      )}
+      {headerContextMenu && (
+        <ContextMenu
+          x={headerContextMenu.x}
+          y={headerContextMenu.y}
+          items={buildHeaderMenuItems()}
+          onClose={() => setHeaderContextMenu(null)}
         />
       )}
     </div>

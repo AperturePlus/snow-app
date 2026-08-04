@@ -6,6 +6,7 @@ import {
   nativeImage,
   screen,
   session,
+  shell,
 } from "electron";
 import type { NativeBridge } from "../../native/types";
 import { markCloseConfirmed } from "../../app/mainWindow";
@@ -145,6 +146,16 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
       throw new Error("Clipboard text must be a string");
     }
     clipboard.writeText(text);
+  });
+
+  // ===== Shell (file manager reveal) =====
+  // 在系统文件管理器中显示文件（Windows 资源管理器 / macOS Finder / Linux
+  // 文件管理器），文件会高亮选中；传入目录时直接打开该目录。
+  ipcMain.handle("shell:show-item-in-folder", (_event, path: unknown) => {
+    if (typeof path !== "string" || !path.trim()) {
+      throw new Error("A valid path is required");
+    }
+    shell.showItemInFolder(path);
   });
 
   // ===== Browser (embedded webview) =====
