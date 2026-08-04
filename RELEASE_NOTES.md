@@ -45,6 +45,11 @@
   localized hint) — matching the backend rule that only fully configured
   channels expose the generation tool to the agent.
 
+## Bug Fixes
+
+- Remove temperature parameter
+- Anthropic thinking.effort is discarded after being read
+
 ## v0.1.16
 
 ## New Features
