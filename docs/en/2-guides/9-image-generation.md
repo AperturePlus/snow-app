@@ -1,8 +1,8 @@
 # 9-Image Generation
 
 Snow App ships built-in **image generation & editing** (tool `imagegen-generate`)
-with **two channels**: **OpenAI-compatible** (gpt-image / dall-e) and
-**Google Gemini** (Nano Banana family). Both channels can be enabled at the
+with **multiple channels**: **OpenAI-compatible** (gpt-image / dall-e) and
+**Google Gemini** (Nano Banana family). Channels can be enabled at the
 same time and are picked per request. Image generation uses its **own
 configuration, independent from the conversation API**, and has **no built-in
 default model** — you must configure at least one usable channel in
@@ -68,7 +68,7 @@ Selecting a model shows its **capability tags**:
 | Model | Notes |
 | --- | --- |
 | `gpt-image-2` / `gpt-image-1.5` | 4K, streaming, image-to-image |
-| `gpt-image-1` | 2K, streaming, image-to-image, fidelity control |
+| `gpt-image-1` | 2K, streaming, image-to-image, fidelity control; **the only model that outputs transparent backgrounds** (pair with `outputFormat="png"`) |
 | `gpt-image-1-mini` | Fast, streaming |
 | `dall-e-3` | Text-to-image only |
 
@@ -140,6 +140,30 @@ automatically:
   disk by the main process and also render as **real thumbnails** (a brief
   placeholder icon while loading, or permanently if the file is missing — the
   image-to-image call itself is unaffected);
+
+  **What the AI actually receives** (full content injected into the textified
+  message when the main model does not support vision):
+
+  ```text
+  [The user attached 2 reference image(s). When the user asks to generate or
+  edit an image based on them, call the imagegen-generate tool and pass the
+  corresponding JSON object(s) below in its "images" parameter (image-to-image)
+  — do NOT generate from the text description alone.]
+  [Image #1]
+  [Image description: <text description produced by the vision model>]
+  [Reference image #1 for imagegen-generate: {"path":"upload/2026-08-05/a1b2c3.png","mimeType":"image/png"}]
+  [Image #2]
+  [Image description: <text description produced by the vision model>]
+  [Reference image #2 for imagegen-generate: {"path":"upload/2026-08-05/d4e5f6.jpg","mimeType":"image/jpeg"}]
+  ```
+
+  Details: the guidance line (“do NOT generate from the description alone”) is
+  injected **once per message that has images**; reference block numbers match
+  the `[Image #N]` placeholders one-to-one; only **user messages** get the
+  blocks (tool-result screenshots do not); the rare non-persisted inline images
+  fall back to `{"data":"<base64>","mimeType":"..."}`; reference blocks in
+  historical messages are kept, so later turns can still reference previously
+  uploaded images (e.g. “turn the image from earlier into anime style”);
 - **Multiple images**: ask for several variants in one request (the `n`
   parameter caps a single call at 4). When the AI fires several generation
   calls at once they run **in parallel**, bounded by **Max concurrent
@@ -159,7 +183,7 @@ automatically:
 | Param | Type | Description |
 | --- | --- | --- |
 | `prompt` | string (required) | Generation description, or the edit instruction with reference images |
-| `images` | array | Reference images `[{data, mimeType}]` or `[{path, mimeType}]` for image-to-image editing; `path` is a relative path under the upload/ directory (from `[Reference image #N ...]` blocks in textified messages; the server reads the file itself); max 14 images, ≤20MB each |
+| `images` | array | Reference images `[{data, mimeType}]` or `[{path, mimeType}]` for image-to-image editing; `path` is a relative path under the upload/ directory (from `[Reference image #N ...]` blocks in textified messages; the server reads the file itself); **server-side limit is 14 images**, ≤20MB each (the tool description guides the AI to ≤5 per call to stay compatible with stricter provider limits) |
 | `model` | string | Override the configured model |
 | `provider` | enum | `auto` (default) / `openai` / `gemini`, backend override |
 | `size` | string | OpenAI: a resolution like `1024x1024` or `auto`; Gemini: `1K`/`2K`/`4K` (imageSize) or an aspect ratio like `16:9` (aspectRatio), combinable as `16:9@2K` to set both |
@@ -171,13 +195,13 @@ automatically:
 | `webSearch` | boolean | Gemini Google Search grounding |
 | `stream` | boolean | Streaming preview (defaults to the setting) |
 | `inputFidelity` | enum | OpenAI edits: `low` / `high` / `auto` (not supported by gpt-image-2) |
-| `background` | enum | OpenAI: `opaque` (default) / `transparent` / `auto`; falls back to `opaque` automatically when the model lacks transparency support (e.g. gpt-image-2) |
+| `background` | enum | OpenAI: `opaque` (default) / `transparent` / `auto`; falls back to `opaque` automatically when the model lacks transparency support (e.g. gpt-image-2). For a transparent background (sticker / cutout / desktop pet) pick **`gpt-image-1`** with `outputFormat="png"` — it is the only model that actually outputs transparency; gpt-image-2 silently downgrades the request and dall-e-3 / Gemini ignore the parameter entirely |
 | `moderation` | enum | OpenAI: `auto` (default) / `low` (less filtering) |
 | `seed` | number | Deterministic seed for reproducible results |
 | `thinkingLevel` | enum | Gemini 3.1 Flash Image: `minimal` (default) / `high` |
 | `imageSearch` | boolean | Gemini 3.1 Flash Image: Google Image Search grounding |
 
-> When both channels are enabled, the `provider` parameter wins; otherwise the
+> When multiple channels are enabled, the `provider` parameter wins; otherwise the
 > provider is derived from the configuration. OpenAI edits use `/images/edits`
 > (multipart), Gemini edits use `inlineData` multimodal prompts; the Gemini
 > Nano Banana family uses the Interactions API.

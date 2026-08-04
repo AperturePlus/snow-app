@@ -156,6 +156,33 @@ export const useChatConversation = (
   const pendingQueueRef = useRef<
     ConversationContextValue["pendingQueueRef"]["current"]
   >(new Map());
+  // Per-conversation input drafts. Stored in a ref (no re-render on every
+  // keystroke). ChatInput saves on change and unmount, restores on mount,
+  // and clears after a successful send. New-chat drafts (conversationId
+  // undefined) live under PENDING_SESSION_KEY and are cleared on send.
+  const inputDraftsRef = useRef<Record<string, string>>({});
+  const inputDraftKeyFor = useCallback(
+    (conversationId: string | undefined): string =>
+      conversationId ?? PENDING_SESSION_KEY,
+    []
+  );
+  const saveInputDraft = useCallback(
+    (conversationId: string | undefined, content: string): void => {
+      inputDraftsRef.current[inputDraftKeyFor(conversationId)] = content;
+    },
+    [inputDraftKeyFor]
+  );
+  const getInputDraft = useCallback(
+    (conversationId: string | undefined): string | undefined =>
+      inputDraftsRef.current[inputDraftKeyFor(conversationId)],
+    [inputDraftKeyFor]
+  );
+  const clearInputDraft = useCallback(
+    (conversationId: string | undefined): void => {
+      delete inputDraftsRef.current[inputDraftKeyFor(conversationId)];
+    },
+    [inputDraftKeyFor]
+  );
   const handleSendMessageRef = useRef<
     (message: string, options: ChatInputSendOptions) => void
   >(() => {});
@@ -308,6 +335,7 @@ export const useChatConversation = (
     sessionsRef,
     newChatRequestedRef,
     pendingQueueRef,
+    inputDraftsRef,
     handleSendMessageRef,
     performCompactionRef,
     yoloModeRef,
@@ -371,6 +399,9 @@ export const useChatConversation = (
   ctx.migrateSession = sessionApi.migrateSession;
   ctx.addStreamingId = sessionApi.addStreamingId;
   ctx.removeStreamingId = sessionApi.removeStreamingId;
+  ctx.saveInputDraft = saveInputDraft;
+  ctx.getInputDraft = getInputDraft;
+  ctx.clearInputDraft = clearInputDraft;
   ctx.notifyAiComplete = sessionApi.notifyAiComplete;
   ctx.notifySensitiveCommandIntercepted =
     sessionApi.notifySensitiveCommandIntercepted;
@@ -544,6 +575,9 @@ export const useChatConversation = (
       rollbackApi.clearDraftToRestore();
       setAutoSendToken(0);
     },
+    saveInputDraft,
+    getInputDraft,
+    clearInputDraft,
     buildFromContent: (content: string) => {
       conversationManagementApi.handleNewChat();
       setDraftToRestore(content);

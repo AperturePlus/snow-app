@@ -15,6 +15,20 @@
   least one channel is configured and enabled. A DB-backed `imagegen` config
   scope handles channel persistence with legacy format migration, and
   streaming preview images survive conversation reloads.
+- **Image-to-Image Editing with Reference Images**: Attached images are always
+  used as references for image-to-image editing (OpenAI `/images/edits`
+  multipart / Gemini `inlineData`). When the main model does not support
+  vision, the textification pass (`api/vision.rs`) injects a
+  `[Reference image #N for imagegen-generate: {"path": ..., "mimeType": ...}]`
+  block per image — a small relative path under the upload/ directory instead
+  of a huge base64 blob — plus an explicit guidance line telling the model to
+  edit the attached images rather than regenerate from the description alone.
+  `imagegen-generate` resolves `path` references itself (restricted to the
+  upload/ directory, traversal rejected; server limit 14 images / ≤20MB each,
+  tool description guides the model to ≤5). Reference thumbnails on the
+  generation card show real images for both inline base64 and `path`
+  references (read from disk via a new `images:resolve-upload-image` IPC
+  channel, cached per session).
 - **Image Generation Settings Panel**: A graphical multi-channel management
   panel with table + modal editing, inline enable toggles (instant save),
   model capability linked dropdowns (Gemini size × aspect ratio combos like

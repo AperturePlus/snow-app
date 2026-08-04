@@ -422,6 +422,12 @@ export type ConversationContextValue = {
    *  that cannot read the latest React state directly. */
   newChatRequestedRef: RefValue<boolean>;
   pendingQueueRef: RefValue<Map<string, PendingQueueItem[]>>;
+  /** 按会话保存的输入草稿（conversationId -> 序列化 segments 字符串，含
+   *  文本/图片 chip 等）。切换会话或新建会话时 ChatInput 会因
+   *  isLoadingInitialHistory 卸载，草稿存这里避免输入丢失；用 ref 存储
+   *  避免每次输入触发全局重渲染。key 归一化：conversationId 为空时使用
+   *  PENDING_SESSION_KEY（新会话草稿，发送成功后清除）。 */
+  inputDraftsRef: RefValue<Record<string, string>>;
   handleSendMessageRef: RefValue<
     (message: string, options: ChatInputSendOptions) => void
   >;
@@ -513,6 +519,11 @@ export type ConversationContextValue = {
   addStreamingId: (id: string) => void;
   removeStreamingId: (id: string) => void;
 
+  // Input draft persistence (per-conversation, survives ChatInput unmount)
+  saveInputDraft: (conversationId: string | undefined, content: string) => void;
+  getInputDraft: (conversationId: string | undefined) => string | undefined;
+  clearInputDraft: (conversationId: string | undefined) => void;
+
   // 通知系统：AI 流程结束 / 敏感命令拦截 / 用户交互确认时触发系统通知
   notifyAiComplete: (conversationTitle?: string) => void;
   notifySensitiveCommandIntercepted: (toolName: string) => void;
@@ -601,6 +612,11 @@ export type UseChatConversationResult = {
   draftToRestore: string | null;
   autoSendToken: number;
   clearDraftToRestore: () => void;
+  /** 保存/读取/清除某会话的输入草稿（含图片 chip）。详见
+   *  ConversationContextValue.inputDraftsRef 的注释。 */
+  saveInputDraft: (conversationId: string | undefined, content: string) => void;
+  getInputDraft: (conversationId: string | undefined) => string | undefined;
+  clearInputDraft: (conversationId: string | undefined) => void;
   buildFromContent: (content: string) => void;
   handleRollback: (messageId: string) => void;
   rollbackPreview: RollbackPreview | null;

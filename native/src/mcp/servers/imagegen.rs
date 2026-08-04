@@ -194,6 +194,27 @@ impl ImageGenService {
         // 图生图（edits / inlineData 参考图）暂不支持流式预览
         let stream_enabled = stream_enabled && images.is_empty();
 
+        // --- 7.5 Model capability guards (avoid provider 400 errors) ---
+        // dall-e-3 仅支持文生图（OpenAI /images/edits 端点不接受 dall-e-3）
+        // 且每次只能生成 1 张；imagen 系列纯文生图，不接受参考图输入。
+        // 发送请求前先校验，命中率极高的 400（"n must be 1 for dall-e-3"、
+        // "image input is not supported" 等）直接在本地拦截并给出修复建议。
+        let model_lower = model.to_ascii_lowercase();
+        let is_dall_e_3 = model_lower.starts_with("dall-e-3");
+        let is_imagen = model_lower.starts_with("imagen");
+        if !images.is_empty() && (is_dall_e_3 || is_imagen) {
+            let hint = if is_dall_e_3 {
+                "dall-e-3 only supports text-to-image. Use gpt-image-1 / gpt-image-2 (OpenAI) or a Gemini Nano Banana model (gemini-3.1-flash-image / gemini-3-pro-image / gemini-3.1-flash-lite-image) for image-to-image editing, or drop the reference images and generate from text only."
+            } else {
+                "imagen models are text-to-image only. Use a Gemini Nano Banana model (gemini-3.1-flash-image / gemini-3-pro-image / gemini-3.1-flash-lite-image) for image-to-image editing, or drop the reference images and generate from text only."
+            };
+            return Err(Error::from_reason(format!(
+                "Model \"{model}\" does not support image-to-image (reference images). {hint}"
+            )));
+        }
+        // dall-e-3 每次只能生成 1 张：n>1 自动收敛为 1，避免 400。
+        let n = if is_dall_e_3 { n.min(1) } else { n };
+
         let seed = args.get("seed").and_then(Value::as_u64);
         let input_fidelity = args
             .get("inputFidelity")
@@ -859,7 +880,7 @@ impl McpService for ImageGenService {
                     },
                     "model": {
                         "type": "string",
-                        "description": "Image model to override the one configured in Settings -> Image generation. OpenAI: gpt-image-1, gpt-image-2, dall-e-3. Gemini (recommended Nano Banana family): gemini-3.1-flash-image (Nano Banana 2, default pick), gemini-3.1-flash-lite-image (Nano Banana 2 Lite, fastest/cheapest, 1K only), gemini-3-pro-image (Nano Banana Pro, up to 14 reference images + 4K + interleaved text), gemini-2.5-flash-image (legacy). NOTE: Imagen models are deprecated and shut down 2026-08-17. Omit to use the configured model. TRANSPARENT BACKGROUND: only gpt-image-1 can output transparent PNGs; gpt-image-2 and dall-e-3 cannot (transparent falls back to opaque), Gemini is always opaque — pick gpt-image-1 whenever the user asks for a transparent background / cutout / sticker / desktop pet.",
+                        "description": "Image model to override the one configured in Settings -> Image generation. OpenAI: gpt-image-1, gpt-image-2, dall-e-3. Gemini (recommended Nano Banana family): gemini-3.1-flash-image (Nano Banana 2, default pick), gemini-3.1-flash-lite-image (Nano Banana 2 Lite, fastest/cheapest, 1K only), gemini-3-pro-image (Nano Banana Pro, up to 14 reference images + 4K + interleaved text), gemini-2.5-flash-image (legacy). NOTE: Imagen models are deprecated and shut down 2026-08-17. CAPABILITY RULES (sending unsupported requests yields a 400): dall-e-3 is text-to-image ONLY (no reference images) and always generates exactly 1 image (n>1 is clamped to 1); imagen models are text-to-image only too; gpt-image / Nano Banana / gemini-2.5-flash-image accept reference images. Omit to use the configured model. TRANSPARENT BACKGROUND: only gpt-image-1 can output transparent PNGs; gpt-image-2 and dall-e-3 cannot (transparent falls back to opaque), Gemini is always opaque — pick gpt-image-1 whenever the user asks for a transparent background / cutout / sticker / desktop pet.",
                     },
                     "provider": {
                         "type": "string",
@@ -1688,7 +1709,47 @@ fn api_error(prefix: &str, status: u16, response_body: &Value) -> Error {
     if !error_type.is_empty() {
         detail.push_str(&format!(" (type: {error_type})"));
     }
+    // 400 错误附加常见修复提示，帮助 agent 一步自愈（而不是反复触发同一错误）。
+    if status == 400 {
+        if let Some(hint) = hint_for_api_400(message) {
+            detail.push_str(&format!(" {hint}"));
+        }
+    }
     generic_error(detail)
+}
+
+/// 常见 400 错误的修复提示（命中关键词时给出具体建议）。
+fn hint_for_api_400(message: &str) -> Option<&'static str> {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("number of images")
+        || (lower.contains("n must be") && lower.contains("1"))
+    {
+        return Some(
+            "Possible cause: this model does not support generating multiple images per request (n>1). Retry with n=1.",
+        );
+    }
+    if (lower.contains("image") || lower.contains("multimodal"))
+        && (lower.contains("not supported")
+            || lower.contains("does not support")
+            || lower.contains("input"))
+    {
+        return Some(
+            "Possible cause: this model does not support image inputs (image-to-image). Retry without reference images, or use gpt-image-1/gpt-image-2 / a Gemini Nano Banana model for editing.",
+        );
+    }
+    if lower.contains("size") && (lower.contains("invalid") || lower.contains("not supported"))
+    {
+        return Some(
+            "Possible cause: the requested size / aspect ratio is not supported by this model. Retry with a supported size (e.g. 1024x1024 for OpenAI, 1K/2K/4K or a 12-ratio preset for Gemini).",
+        );
+    }
+    if lower.contains("quality") && (lower.contains("invalid") || lower.contains("not supported"))
+    {
+        return Some(
+            "Possible cause: the requested quality value is not supported by this model. Retry with quality=\"auto\" or omit quality.",
+        );
+    }
+    None
 }
 
 fn build_result(

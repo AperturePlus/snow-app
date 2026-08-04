@@ -53,8 +53,9 @@ const SCOPE_SKILLS: &str = "skills";
 /// 读取今天的对应文件）；config-list 返回日志文件清单与错误摘要。
 const SCOPE_LOGS: &str = "logs";
 /// 图像生成设置域（DB-backed，SQLite system_settings 表）：让 agent 查看/配置
-/// 生图双渠道（openai / gemini）的启用状态与模型；apiKey 读取时脱敏。
-/// key = "openai" | "gemini"（缺省返回全部渠道）。
+/// 生图多渠道（channels 数组）的启用状态与模型；apiKey 读取时脱敏。
+/// key = 渠道 id / 名称 / 协议类型（openai|gemini），或全局键 maxConcurrentImages
+/// （缺省返回完整设置）。
 const SCOPE_IMAGEGEN: &str = "imagegen";
 /// 日志目录名（~/.snow/log）。
 const LOG_DIR_NAME: &str = "log";
@@ -2670,7 +2671,7 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_SET.to_string(),
-                description: "Write a value for a configuration key. Only whitelisted scopes/keys are accepted; the value is type-checked, the target file is backed up to ~/.snow/.config-backups before the write, and the file is replaced atomically. Special case: writing `mcpServers` in the `settings` scope also syncs the servers into the app database (same diff semantics as the UI 'Sync Snow CLI MCP settings' action), so MCP changes take effect immediately without manual sync. Other file-based scopes (snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy) are file-based and may require an app restart or UI re-save. DB-backed scopes write directly to the app database and take effect immediately: subAgents (key=agentId, value={name, description, systemPrompt, toolsJson, configProfile}; toolsJson accepts a JSON string or an array of tool names; built-in agent_general cannot be modified) and hooks (key=hookType, value={rules:[{description, matcher?, hooks:[{type: command|prompt|context, command?, prompt?, content?, timeout?, enabled?}]}]}); imagegen (value = {channels:[...]} full replace, or {<channelId>: {...}} per-channel merge where omitted fields keep their previous values and maxConcurrentImages is preserved unless explicitly provided, or {maxConcurrentImages: N} on its own; values are clamped to 1-8). Pass optional `projectId` to write a project-scoped config (omitted = global). Project-scoped settings: projectId + settings.mcpServers performs a full replace of the project MCP servers ({name: {type,url,command,args,env,headers,enabled,timeoutMs}}); projectId + settings.sensitiveCommands replaces the project sensitive-command overrides (array of {commandId, pattern, description, enabled}; commandId matching a global rule becomes an enabled override, others become project custom rules).".to_string(),
+                description: "Write a value for a configuration key (whitelisted scopes only; type-checked; auto-backup to ~/.snow/.config-backups; atomic write).\nRULES:\n- settings.mcpServers: syncs into the app database on write and takes effect immediately (same diff semantics as the UI sync action).\n- Other file-backed scopes (snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy): changes may need an app restart or a UI re-save.\n- DB-backed scopes (take effect immediately): subAgents (key=agentId, value={name, description?, systemPrompt?, toolsJson?, configProfile?}; an explicit toolsJson tool list requires projectId, see the guidance from config-list scope=subAgents); hooks (key=hookType, value={rules:[...]}, see the guidance from config-list scope=hooks); imagegen (value={channels:[...]} full replace, {<channelId>: {...}} per-channel merge keeping omitted fields, or {maxConcurrentImages: N} alone, clamped to 1-8).\n- Project-scoped: pass projectId for settings.mcpServers (full replace of {name: {type,url,command,args,env,headers,enabled,timeoutMs}}) or settings.sensitiveCommands (full replace of [{commandId, pattern, description, enabled}]); other scopes ignore projectId.".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {

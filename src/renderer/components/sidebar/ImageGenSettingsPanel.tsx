@@ -1,10 +1,8 @@
 import {
-  Gem,
   Loader2,
   Pencil,
   Plus,
   Search,
-  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -505,9 +503,19 @@ export function ImageGenSettingsPanel({
     });
   };
 
-  /** 渠道行内启用/禁用（立即保存）。 */
+  /** 渠道行内启用/禁用（立即保存）。未配置密钥或模型的渠道不允许启用：
+   * 后端只在渠道同时具备 API key 与模型时才向 agent 暴露生图工具。 */
   const toggleEnabled = async (channel: ImageGenChannelValue) => {
     if (isSaving) {
+      return;
+    }
+    if (!channel.enabled && (!channel.model.trim() || !channel.apiKey.trim())) {
+      setError(
+        t("settings.imagegenToggleMissingModel", {
+          defaultValue:
+            "Configure an API key and a model for this channel before enabling it — the image generation tool only becomes available when a channel has both.",
+        })
+      );
       return;
     }
     const next = channels.map((item) =>
@@ -773,11 +781,24 @@ export function ImageGenSettingsPanel({
             <span className="api-settings-field-label">
               {t("settings.imagegenProvider", { defaultValue: "Provider" })}
             </span>
-            <select
+            <CustomSelect
               value={draft.provider}
-              onChange={(event) => {
-                const provider = event.target.value as ImageGenProvider;
-                updateDraft("provider", provider);
+              options={[
+                {
+                  value: "openai",
+                  label: t("settings.imagegenProviderOpenai", {
+                    defaultValue: "OpenAI-compatible",
+                  }),
+                },
+                {
+                  value: "gemini",
+                  label: t("settings.imagegenProviderGemini", {
+                    defaultValue: "Google Gemini (Imagen)",
+                  }),
+                },
+              ]}
+              onChange={(provider) => {
+                updateDraft("provider", provider as ImageGenProvider);
                 // 切换服务商时清空对目标不适用且已条件隐藏的字段，
                 // 避免残留值在隐藏状态下继续生效而用户无法管理：
                 // Gemini 不使用 defaultQuality/outputFormat；
@@ -790,18 +811,8 @@ export function ImageGenSettingsPanel({
                 }
               }}
               disabled={draftSaving}
-            >
-              <option value="openai">
-                {t("settings.imagegenProviderOpenai", {
-                  defaultValue: "OpenAI-compatible",
-                })}
-              </option>
-              <option value="gemini">
-                {t("settings.imagegenProviderGemini", {
-                  defaultValue: "Google Gemini (Imagen)",
-                })}
-              </option>
-            </select>
+              portal
+            />
           </label>
 
           <label className="api-settings-field">
@@ -1334,31 +1345,8 @@ export function ImageGenSettingsPanel({
                   return (
                     <tr key={channel.id}>
                       <td className="cell-name">
-                        <span className="imagegen-table-name">
-                          <span
-                            className={`imagegen-table-icon${
-                              isGemini ? " gemini" : ""
-                            }`}
-                          >
-                            {isGemini ? (
-                              <Gem
-                                size={13}
-                                strokeWidth={1.9}
-                                aria-hidden="true"
-                              />
-                            ) : (
-                              <Sparkles
-                                size={13}
-                                strokeWidth={1.9}
-                                aria-hidden="true"
-                              />
-                            )}
-                          </span>
-                          <span className="imagegen-table-copy">
-                            <strong>{channelLabel(channel)}</strong>
-                            <small>{channel.id}</small>
-                          </span>
-                        </span>
+                        <strong>{channelLabel(channel)}</strong>
+                        <small className="profile-name-hint">{channel.id}</small>
                       </td>
                       <td className="cell-url">
                         {channel.baseUrl.trim() ||

@@ -35,6 +35,10 @@ Snow App 通过 **API 档案（Profile）** 管理模型服务商的接入信息
 当主模型不支持视觉时，关闭 **Supports vision** 开关，可单独配置
 `visionBaseUrl`、`visionApiKey`、`visionRequestMethod`、`visionModel`，
 使图像理解请求走独立的服务端点与密钥。
+图片会被文本化为文字描述供主模型理解；同时每条**用户消息**中的图片会
+附带 `[Reference image #N ...]` 引用（仅含 upload 目录相对路径），
+**图生图时仍使用原始图片**，不会被降级为文生图（见
+[9-图像生成](9-图像生成.md)）。
 
 ### 可选配置
 

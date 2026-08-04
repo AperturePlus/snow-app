@@ -194,3 +194,51 @@ const result = await native.callMcpTool(
 - Conventional Commits: `feat:` / `fix:` / `docs:` / `refactor:` / `chore:`
 - Syncing upstream: `git fetch upstream && git merge upstream/main`, resolve conflicts locally
 - Never commit: `out/`, `release/`, `node_modules/`, `.tmp-*.cjs`, user data dirs
+
+## Appendix: Vision Textification & Image-to-Image Reference Mechanism
+
+When the main model does not support vision ("Supports vision" off plus a
+separately configured vision model), `textify_images_in_messages` in
+`native/src/api/vision.rs` replaces `@@image:...@@` tags with text descriptions
+from the vision model (cached per-image by hash to avoid repeated vision calls
+across turns). **User messages** additionally get image-to-image guidance
+injected during textification:
+
+```text
+[The user attached N reference image(s). When the user asks to generate or edit
+an image based on them, call the imagegen-generate tool and pass the
+corresponding JSON object(s) below in its "images" parameter (image-to-image)
+— do NOT generate from the text description alone.]
+[Image #1]
+[Image description: <text description produced by the vision model>]
+[Reference image #1 for imagegen-generate: {"path":"upload/2026-08-05/a1b2c3.png","mimeType":"image/png"}]
+```
+
+Design points & conventions:
+
+- **Why `path` instead of base64**: context is scarce for text-only models — a
+  ~1MB image expands to ~340k tokens of base64. The reference block carries
+  only a relative path (a few dozen bytes); `imagegen-generate` reads the file
+  itself via `load_reference_image_from_path` in `mcp/servers/imagegen.rs`.
+- **Security boundary**: `path` accepts only relative paths with an `upload/`
+  prefix; `..` traversal and absolute paths are rejected. The renderer
+  thumbnail IPC `images:resolve-upload-image`
+  (`src/main/ipc/handlers/imageHandlers.ts`) applies the same double check
+  (prefix match + prefix re-check after normalize).
+- **User messages only**: tool results (e.g. browser screenshots) are textified
+  without reference blocks to avoid context bloat; `ChatImage.source`
+  (`api/conversation/images.rs`) records the on-disk relative path, and
+  non-persisted data-URL images fall back to inline
+  `{"data":"<base64>","mimeType":"..."}`.
+- **Numbering**: reference block numbers match the `[Image #N]` placeholders
+  one-to-one; the guidance line is injected once per message with images.
+- **History**: reference blocks replay with the context, so later turns can
+  still reference previously uploaded images.
+- **Limits**: server `MAX_IMAGES = 14` (Gemini 3 Pro Image official cap),
+  ≤20MB each; the tool description guides the model to ≤5 per call to stay
+  compatible with stricter OpenAI edits limits.
+- **Files touched**: `api/conversation/images.rs` (`source` field),
+  `api/vision.rs` (reference-block injection),
+  `mcp/servers/imagegen.rs` (`path` resolution),
+  `src/main/ipc/handlers/imageHandlers.ts` (thumbnail IPC),
+  `ImageGenToolCall.tsx` (thumbnail rendering + in-process cache).
