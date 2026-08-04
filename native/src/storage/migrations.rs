@@ -193,8 +193,9 @@ fn migrate_plugins_runtime(connection: &Connection) -> rusqlite::Result<()> {
 /// Adds the per-conversation Plan/Goal Mode override columns to
 /// `chat_conversations` for databases created by older app versions.
 ///
-/// NULL means "not configured for this conversation — follow the global
-/// default"; values are 0/1 booleans and an integer token budget.
+/// The mode flags are 0/1 booleans and the token budget is an integer.
+/// Existing rows keep NULL flags; reads treat NULL as disabled
+/// (synonymous with 0) so legacy conversations open with both modes off.
 ///
 /// Idempotent: no-op when the columns are already present (fresh databases
 /// get them from the `CREATE TABLE` statement in `create_schema`).

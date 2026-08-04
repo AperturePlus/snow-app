@@ -476,11 +476,15 @@ pub async fn set_goal_mode_token_budget(budget: i64) -> napi::Result<()> {
 
 #[napi(object)]
 pub struct ConversationModesResult {
-    /// Whether Plan Mode is explicitly enabled (true), disabled (false) or
-    /// never configured for this conversation (null → follow global default).
+    /// Whether Plan Mode is enabled (true) or disabled (false) for this
+    /// conversation. Legacy rows with a NULL flag are read as disabled;
+    /// null is only returned when the conversation row does not exist
+    /// (follow the global default).
     pub plan_mode: Option<bool>,
-    /// Whether Goal Mode is explicitly enabled (true), disabled (false) or
-    /// never configured for this conversation (null → follow global default).
+    /// Whether Goal Mode is enabled (true) or disabled (false) for this
+    /// conversation. Legacy rows with a NULL flag are read as disabled;
+    /// null is only returned when the conversation row does not exist
+    /// (follow the global default).
     pub goal_mode: Option<bool>,
     /// Per-conversation Goal Mode token budget override (null → follow the
     /// global default budget).

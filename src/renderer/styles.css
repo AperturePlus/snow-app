@@ -14401,17 +14401,13 @@ input {
   gap: 4px;
 }
 
-.abort-btn,
-.abort-btn-placeholder {
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-}
-
 .abort-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
   border: none;
   border-radius: 50%;
   background: #e5484d;
@@ -14866,14 +14862,6 @@ input {
   color: var(--text-tertiary);
 }
 
-<<<<<<< HEAD
-||||||| d2de97e
-/* ===== Model Selector ===== */
-.model-selector {
-  position: relative;
-}
-
-=======
 .api-profile-dropdown-divider {
   height: 1px;
   margin: 4px 0;
@@ -14896,30 +14884,26 @@ input {
   opacity: 0.8;
 }
 
-/* ===== Model Selector ===== */
-.model-selector {
-  position: relative;
-}
-
->>>>>>> 105ea74479f78159d69a8be08a8a0f36c2b58a19
 /* ===== Token Usage Ring ===== */
 .token-usage-ring-wrapper {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
   cursor: default;
-  padding: 2px;
 }
 
 .token-usage-ring {
   display: block;
-  flex-shrink: 0;
+  transform: rotate(-90deg);
 }
 
 .token-usage-ring-bg {
   stroke: var(--border-light);
-  opacity: 0.5;
+  opacity: 0.6;
 }
 
 .token-usage-ring-input {
@@ -14938,18 +14922,30 @@ input {
 }
 
 .token-usage-ring-text {
-  font-size: 10px;
-  color: var(--text-tertiary);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  font-weight: 600;
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
   line-height: 1;
   white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+.token-usage-ring-text.is-compact {
+  font-size: 7px;
 }
 
 .token-usage-tooltip {
   position: absolute;
-  bottom: calc(100% + 6px);
-  right: 0;
-  min-width: 160px;
+  bottom: calc(100% + 8px);
+  right: -4px;
+  min-width: 172px;
   padding: 8px 10px;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
@@ -14960,6 +14956,39 @@ input {
   line-height: 1.5;
   color: var(--text-secondary);
   pointer-events: none;
+  animation: token-usage-tooltip-in 0.14s ease-out;
+}
+
+.token-usage-tooltip::before,
+.token-usage-tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  border-style: solid;
+  border-color: transparent;
+}
+
+.token-usage-tooltip::before {
+  right: 10px;
+  border-width: 6px;
+  border-top-color: var(--border-light);
+}
+
+.token-usage-tooltip::after {
+  right: 11px;
+  border-width: 5px;
+  border-top-color: var(--bg-secondary);
+}
+
+@keyframes token-usage-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .token-usage-tooltip-row {

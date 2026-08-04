@@ -355,11 +355,12 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
             directory_id TEXT NOT NULL DEFAULT '',
              forked_from_conversation_id TEXT NOT NULL DEFAULT '',
              fork_message_count INTEGER NOT NULL DEFAULT 0,
-             emoji TEXT NOT NULL DEFAULT '',
-             -- Per-conversation Plan/Goal Mode overrides (NULL = unset,
-             -- fall back to the global default). NULL allows distinguishing
-             -- 'never configured' from 'explicitly disabled'.
-             plan_mode INTEGER,
+              emoji TEXT NOT NULL DEFAULT '',
+              -- Per-conversation Plan/Goal Mode overrides. NULL flags are
+              -- legacy/unset rows and are read as disabled (synonymous
+              -- with 0); a NULL goal_mode_token_budget falls back to the
+              -- global default budget.
+              plan_mode INTEGER,
              goal_mode INTEGER,
              goal_mode_token_budget INTEGER,
             created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
