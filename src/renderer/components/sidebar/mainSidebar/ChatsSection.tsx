@@ -127,6 +127,17 @@ export function ChatsSection({
       return false;
     }
   });
+  // 时间分组（运行中/今天/昨天/近7天/更早）收起状态（localStorage 持久化）
+  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<
+    Record<string, boolean>
+  >(() => {
+    try {
+      const raw = localStorage.getItem("chats-time-groups-collapsed");
+      return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    } catch {
+      return {};
+    }
+  });
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const sectionListRef = useRef<HTMLDivElement | null>(null);
   // 始终持有最新 conversations，供子代理加载 effect 读取。
@@ -476,7 +487,7 @@ export function ChatsSection({
     setShowBatchConfirm(false);
 
     try {
-      // 收集所有待删会话 ID（含子代理级联）以及需要中止的流 ID
+      // 收集所有受影响会话 ID（含子代理级联），用于中止流/清空聊天区
       const targetIds = new Set<string>();
       for (const convId of selectedIds) {
         targetIds.add(convId);
@@ -490,10 +501,9 @@ export function ChatsSection({
         abortConversation(targetId);
       }
 
-      // 逐条删除：Rust 侧无批量删除接口，串行调用避免数据库锁竞争
-      for (const convId of selectedIds) {
-        await window.snow.deleteConversation(convId);
-      }
+      // 单次批量删除：native 单事务完成（选中父会话时子代理随级联删除），
+      // 避免逐条 IPC + 逐条事务（N+1）
+      await window.snow.deleteConversations([...selectedIds]);
 
       // 删除的会话不再需要保留输入草稿
       for (const targetId of targetIds) {
@@ -529,30 +539,18 @@ export function ChatsSection({
     let cancelled = false;
 
     const loadSubAgents = async (): Promise<void> => {
-      const entries = await Promise.all(
-        current.map(async (conv) => {
-          try {
-            const subAgents = await window.snow.listSubAgentConversations(
-              conv.conversationId
-            );
-            return [conv.conversationId, subAgents] as const;
-          } catch {
-            return [
-              conv.conversationId,
-              [] as ChatConversationRecord[],
-            ] as const;
-          }
-        })
-      );
-
-      if (!cancelled) {
-        const map: SubAgentMap = {};
-        for (const [id, subs] of entries) {
-          if (subs.length > 0) {
-            map[id] = subs;
-          }
+      // 单次批量查询所有父会话的子代理，避免逐条 IPC（N+1）
+      try {
+        const map = await window.snow.listSubAgentConversationsByParents(
+          current.map((conv) => conv.conversationId)
+        );
+        if (!cancelled) {
+          setSubAgentMap(map);
         }
-        setSubAgentMap(map);
+      } catch {
+        if (!cancelled) {
+          setSubAgentMap({});
+        }
       }
     };
 
@@ -680,6 +678,22 @@ export function ChatsSection({
       default:
         return "";
     }
+  };
+
+  /** 收起/展开时间分组并持久化到 localStorage */
+  const toggleGroupCollapsed = (key: TimeGroupKey): void => {
+    setCollapsedGroupKeys((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        localStorage.setItem(
+          "chats-time-groups-collapsed",
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
   };
 
   return (
@@ -839,12 +853,34 @@ export function ChatsSection({
           </span>
         ) : (
           <>
-            {timeGroups.map((group) => (
-              <div key={group.key}>
-                <div className="chat-time-group-header">
-                  {getGroupLabel(group.key)}
-                </div>
-                {group.conversations.map((conversation) => {
+            {timeGroups.map((group) => {
+              const isGroupCollapsed = collapsedGroupKeys[group.key] === true;
+              return (
+                <div key={group.key}>
+                  <button
+                    type="button"
+                    className="chat-time-group-header"
+                    onClick={() => toggleGroupCollapsed(group.key)}
+                    aria-expanded={!isGroupCollapsed}
+                    title={t("sidebar.chatToggleCollapse", {
+                      defaultValue: "Collapse/expand chats",
+                    })}
+                  >
+                    <ChevronRight
+                      size={12}
+                      className={
+                        isGroupCollapsed
+                          ? ""
+                          : "chat-time-group-chevron--open"
+                      }
+                    />
+                    <span>{getGroupLabel(group.key)}</span>
+                    <span className="chat-time-group-count">
+                      {group.conversations.length}
+                    </span>
+                  </button>
+                  {!isGroupCollapsed &&
+                    group.conversations.map((conversation) => {
                   const subAgentConversations =
                     subAgentMap[conversation.conversationId] ?? [];
                   const isSubAgentPanelExpanded =
@@ -927,8 +963,9 @@ export function ChatsSection({
                     </Fragment>
                   );
                 })}
-              </div>
-            ))}
+                </div>
+              );
+            })}
             {hasMore ? (
               <div
                 className={`chat-load-more ${

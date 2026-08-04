@@ -191,9 +191,71 @@ const result = await native.callMcpTool(
 
 ## 7. Commit Conventions
 
-- Conventional Commits: `feat:` / `fix:` / `docs:` / `refactor:` / `chore:`
-- Syncing upstream: `git fetch upstream && git merge upstream/main`, resolve conflicts locally
-- Never commit: `out/`, `release/`, `node_modules/`, `.tmp-*.cjs`, user data dirs
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/),
+keeping the same style as the repository history: `type(scope): summary - extra detail`.
+
+### 7.1 Message Format
+
+A commit message consists of a **header** and an optional **body**:
+
+```text
+<type>(<scope>): <summary>
+
+<body>
+```
+
+- **Header**: one line, at most 72 characters; `type` and `scope` are lowercase,
+  `summary` is written in Chinese (keep technical terms like `N+1`, `IPC`,
+  `localStorage` in English as-is).
+- **Body**: multiple lines, explaining *why* the change was made and its impact;
+  use `-` bullets when needed. Write a body only for complex changes or breaking
+  behavior — simple changes need just the header.
+
+### 7.2 Types
+
+| type | Purpose | Example |
+| --- | --- | --- |
+| `feat` | New feature | `feat(chat): 输入草稿按会话持久化 - 切换会话不丢失输入` |
+| `fix` | Bug fix | `fix(imagegen): 模型能力校验 - 不支持多图的模型禁用参考图` |
+| `refactor` | Refactor, behavior unchanged | `refactor(sidebar): 批量删除改用批量 API - 消除 N+1` |
+| `docs` | Documentation only | `docs: 补充 Git 提交信息规范说明` |
+| `chore` | Build/deps/misc | `chore: 排除 e2e-verify-config.cjs 出版本控制` |
+| `perf` | Performance improvement | `perf(chat): 子代理查询合并为单条 SQL - 避免 N+1` |
+| `test` | Tests | `test(storage): 批量删除级联删除用例` |
+| `style` | Styling/formatting (no logic change) | `style: 统一导入排序` |
+
+### 7.3 Scope (optional)
+
+`scope` names the affected module, lowercase and short, e.g. `chat`, `sidebar`,
+`imagegen`, `storage`, `ipc`, `native`, `docs`. Omit it when the change is not
+module-specific.
+
+### 7.4 Summary Style
+
+- Start with a verb describing *what was done*, not *what it is*;
+- One commit does one thing — keep the summary aligned with the diff, no mixed changes;
+- Append motivation with ` - ` when needed, e.g.
+  `feat(chat): 输入草稿按会话持久化 - 切换会话不丢失输入`.
+
+### 7.5 Body Example
+
+```text
+fix(sidebar): 修复右键会话菜单不显示
+
+根因：关闭菜单的 document 级 contextmenu 监听用三点按钮容器判断
+目标是否在组件内，右键发生在会话行其他区域时被误判为外部点击，
+同一事件循环内菜单刚打开就被关闭（React 批处理后锚点被清空）。
+
+修复：改用 closest('.chat-item') 比较所在会话行，同一行内右键
+不关闭菜单，其它区域右键正常切换。
+```
+
+### 7.6 Before Committing
+
+- `npm run check:ts` (`tsc --noEmit`) must pass;
+- Never commit: `out/`, `release/`, `node_modules/`, `.tmp-*.cjs`, user data dirs;
+- Syncing upstream: `git fetch upstream && git merge upstream/main`, resolve conflicts locally;
+- One commit contains only logically related changes; do not mix unfinished feature files into the same commit.
 
 ## Appendix: Vision Textification & Image-to-Image Reference Mechanism
 

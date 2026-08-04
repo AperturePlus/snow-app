@@ -135,14 +135,25 @@ export function ChatItemMenu({
       closeMenu();
     };
 
-    // 其它区域右键时关闭本菜单（目标行会自行打开自己的菜单）
+    // 其它区域右键时关闭本菜单（目标行会自行打开自己的菜单）。
+    // 注意：右键发生在同一会话行内任意位置（而非仅三点按钮）时，
+    // 需要让本行自行重新定位菜单，因此用 closest(".chat-item") 比较
+    // 所在行，而不能只用 containerRef（它只包裹三点按钮）。
     const handleGlobalContextMenu = (event: MouseEvent): void => {
       const target = event.target as Node;
+
+      const isSameChatItem =
+        target instanceof Element &&
+        containerRef.current instanceof Element &&
+        containerRef.current.closest(".chat-item") !== null &&
+        containerRef.current.closest(".chat-item") ===
+          target.closest(".chat-item");
 
       if (
         (containerRef.current && containerRef.current.contains(target)) ||
         (menuRef.current && menuRef.current.contains(target)) ||
-        (exportPanelRef.current && exportPanelRef.current.contains(target))
+        (exportPanelRef.current && exportPanelRef.current.contains(target)) ||
+        isSameChatItem
       ) {
         return;
       }

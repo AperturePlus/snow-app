@@ -1334,33 +1334,6 @@ input {
   background: color-mix(in srgb, var(--accent, #3b82f6) 20%, transparent);
 }
 
-/* 多选工具栏（section-header 内） */
-.chats-select-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-  min-width: 0;
-  flex: 1;
-}
-
-.chats-select-count {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--accent, #3b82f6);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.chats-select-actions {
-  flex-shrink: 0;
-}
-
-.chats-select-mode-btn:hover {
-  color: var(--accent, #3b82f6);
-}
-
 .section-toggle-btn.danger {
   color: var(--accent-red-text, #ef4444);
 }
@@ -1375,29 +1348,6 @@ input {
   cursor: default;
 }
 
-/* 多选确认条（复用 chat-item-menu-confirm 基础样式） */
-.chats-select-confirm {
-  margin: 0 0 4px;
-  padding: 6px 8px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm, 6px);
-  background: var(--bg-tertiary, rgba(255, 255, 255, 0.03));
-}
-
-.chats-select-confirm .chat-item-menu-confirm-actions {
-  padding: 0;
-  flex-shrink: 0;
-  align-self: flex-start;
-}
-
-.chats-select-confirm .chat-item-menu-confirm-btn {
-  min-width: 56px;
-}
-
-.sub-agent-list-item.selection-mode {
-  cursor: pointer;
-}
-
 /* ============================================================
  * 会话/置顶区域收起（与项目区域一致的折叠交互）
  * ============================================================ */
@@ -1407,31 +1357,6 @@ input {
 .sidebar-section.chats-section.collapsed {
   flex: 0 0 auto;
   min-height: 0;
-}
-
-/* ============================================================
- * 极窄侧边栏适配：section-header 作为 container，
- * 过窄时工具栏按钮只保留图标、隐藏文字标签与计数
- * ============================================================ */
-
-.section-header {
-  container-type: inline-size;
-}
-
-.chats-select-btn-label {
-  white-space: nowrap;
-}
-
-@container (max-width: 200px) {
-  .chats-select-btn-label {
-    display: none;
-  }
-}
-
-@container (max-width: 120px) {
-  .chats-select-count {
-    display: none;
-  }
 }
 
 /* ============================================================
@@ -1783,6 +1708,10 @@ input {
 }
 
 .chat-time-group-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
   padding: 8px 8px 2px;
   font-size: 10.5px;
   font-weight: 600;
@@ -1790,6 +1719,30 @@ input {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   user-select: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.chat-time-group-header:hover {
+  color: var(--text-secondary);
+}
+
+.chat-time-group-header > svg {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.chat-time-group-chevron--open {
+  transform: rotate(90deg);
+}
+
+.chat-time-group-count {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0.65;
 }
 
 .chat-item-time {

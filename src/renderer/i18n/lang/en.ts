@@ -217,11 +217,6 @@ export const en = {
   "sidebar.chatMultiSelectExit": "Exit",
   "sidebar.chatRenamePlaceholder": "Enter new name",
   "sidebar.chatActionError": "Operation failed",
-  "sidebar.chatSelectMode": "Multi-select",
-  "sidebar.chatSelectAll": "Select all",
-  "sidebar.chatSelectedCount": "{{count}} selected",
-  "sidebar.chatBatchDeleteConfirm":
-    "Delete {{count}} selected conversation(s)? Sub-agent conversations of selected chats will also be deleted.",
   "sidebar.chatToggleCollapse": "Collapse/expand chats",
   "sidebar.subAgent": "Sub-agent",
   "sidebar.emojiPickerLabel": "Select an emoji",
