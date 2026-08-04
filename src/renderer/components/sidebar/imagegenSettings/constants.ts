@@ -25,9 +25,20 @@ export const DEFAULT_IMAGE_GEN_CHANNEL: ImageGenChannelValue = {
   defaultStream: false,
 };
 
+/** 最大并发生成数默认值（旧数据缺失该字段时回退）。 */
+export const DEFAULT_IMAGE_GEN_MAX_CONCURRENT = 4;
+
+/** 最大并发生成数允许范围（下限 1 保证串行兜底；上限 8 兼顾服务商
+ *  限流与内存占用——每张图的 base64 结果体积很大）。 */
+export const IMAGE_GEN_MAX_CONCURRENT_RANGE: { min: number; max: number } = {
+  min: 1,
+  max: 8,
+};
+
 /** 生图设置默认值：无渠道（未配置时不暴露生图工具）。 */
 export const DEFAULT_IMAGE_GEN_SETTINGS: ImageGenSettingsValue = {
   channels: [],
+  maxConcurrentImages: DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
 };
 
 /** OpenAI 兼容端点官方默认地址（baseUrl 留空时使用）。 */

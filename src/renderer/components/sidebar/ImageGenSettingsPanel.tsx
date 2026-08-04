@@ -28,9 +28,11 @@ import type { Model } from "../../../preload";
 import {
   DEFAULT_GEMINI_BASE_URL,
   DEFAULT_IMAGE_GEN_CHANNEL,
+  DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
   DEFAULT_OPENAI_BASE_URL,
   GEMINI_MODEL_EXAMPLES,
   GEMINI_ASPECT_RATIOS,
+  IMAGE_GEN_MAX_CONCURRENT_RANGE,
   IMAGE_GEN_SETTING_CODE,
   IMAGE_GEN_SETTING_NAME,
   OPENAI_MODEL_EXAMPLES,
@@ -374,6 +376,12 @@ export function ImageGenSettingsPanel({
 }: ImageGenSettingsPanelProps): React.JSX.Element {
   const { t } = useI18n();
   const [channels, setChannels] = useState<ImageGenChannelValue[]>([]);
+  /** 同一批次生图请求的最大并发数（1-8，立即保存）。 */
+  const [maxConcurrent, setMaxConcurrent] = useState(
+    DEFAULT_IMAGE_GEN_MAX_CONCURRENT
+  );
+  /** persistChannels 闭包内读取最新并发数（避免 state 过期）。 */
+  const maxConcurrentRef = useRef(DEFAULT_IMAGE_GEN_MAX_CONCURRENT);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState("");
@@ -411,6 +419,8 @@ export function ImageGenSettingsPanel({
       );
       const settings = readImageGenSettingsJson(raw);
       setChannels(settings.channels);
+      setMaxConcurrent(settings.maxConcurrentImages);
+      maxConcurrentRef.current = settings.maxConcurrentImages;
     } catch (e) {
       setError(
         e instanceof Error
@@ -439,7 +449,10 @@ export function ImageGenSettingsPanel({
       await window.snow.setSystemSetting(
         IMAGE_GEN_SETTING_NAME,
         IMAGE_GEN_SETTING_CODE,
-        toImageGenSettingsJson({ channels: next })
+        toImageGenSettingsJson({
+          channels: next,
+          maxConcurrentImages: maxConcurrentRef.current,
+        })
       );
       setChannels(next);
       if (successMessage) {
@@ -458,6 +471,18 @@ export function ImageGenSettingsPanel({
     } finally {
       setIsSaving(false);
     }
+  };
+
+  /** 更新最大并发生成数（收敛到允许范围后立即保存）。 */
+  const updateMaxConcurrent = async (rawValue: number) => {
+    if (isSaving) {
+      return;
+    }
+    const { min, max } = IMAGE_GEN_MAX_CONCURRENT_RANGE;
+    const next = Math.min(max, Math.max(min, Math.round(rawValue)));
+    setMaxConcurrent(next);
+    maxConcurrentRef.current = next;
+    await persistChannels(channels);
   };
 
   /** 渠道显示名（name 留空回退协议默认名）。 */
@@ -750,9 +775,20 @@ export function ImageGenSettingsPanel({
             </span>
             <select
               value={draft.provider}
-              onChange={(event) =>
-                updateDraft("provider", event.target.value as ImageGenProvider)
-              }
+              onChange={(event) => {
+                const provider = event.target.value as ImageGenProvider;
+                updateDraft("provider", provider);
+                // 切换服务商时清空对目标不适用且已条件隐藏的字段，
+                // 避免残留值在隐藏状态下继续生效而用户无法管理：
+                // Gemini 不使用 defaultQuality/outputFormat；
+                // OpenAI 不使用 webSearch。
+                if (provider === "gemini") {
+                  updateDraft("defaultQuality", "");
+                  updateDraft("outputFormat", "");
+                } else {
+                  updateDraft("webSearch", false);
+                }
+              }}
               disabled={draftSaving}
             >
               <option value="openai">
@@ -886,11 +922,7 @@ export function ImageGenSettingsPanel({
               })}
             </h4>
             <div className="api-settings-form-grid">
-              <label
-                className={`api-settings-field${
-                  isGemini ? "" : " imagegen-field-wide"
-                }`}
-              >
+              <label className="api-settings-field imagegen-field-wide">
                 <span className="api-settings-field-label">
                   {t("settings.imagegenDefaultSize", {
                     defaultValue: "Default size",
@@ -967,72 +999,64 @@ export function ImageGenSettingsPanel({
                 </small>
               </label>
 
-              <label className="api-settings-field">
-                <span className="api-settings-field-label">
-                  {t("settings.imagegenDefaultQuality", {
-                    defaultValue: "Default quality",
-                  })}
-                </span>
-                <CustomSelect
-                  value={draft.defaultQuality}
-                  options={
-                    isGemini
-                      ? [
-                          {
-                            value: "",
-                            label: t("settings.imagegenQualityAuto", {
-                              defaultValue: "Auto",
-                            }),
-                          },
-                          { value: "low", label: "low" },
-                          { value: "medium", label: "medium" },
-                          { value: "high", label: "high" },
-                        ]
-                      : openaiStandardCaps(draft.model).quality.map((value) => ({
-                          value,
-                          label:
-                            value === ""
-                              ? t("settings.imagegenQualityAuto", {
-                                  defaultValue: "Auto",
-                                })
-                              : value,
-                        }))
-                  }
-                  onChange={(value) => updateDraft("defaultQuality", value)}
-                  disabled={draftSaving}
-                  portal
-                />
-              </label>
+              {/* 默认质量仅 OpenAI 生效（Gemini 仅接受 low/medium/high，面板
+                  默认值 "auto" 会被忽略），Gemini 渠道不显示。 */}
+              {!isGemini ? (
+                <label className="api-settings-field">
+                  <span className="api-settings-field-label">
+                    {t("settings.imagegenDefaultQuality", {
+                      defaultValue: "Default quality",
+                    })}
+                  </span>
+                  <CustomSelect
+                    value={draft.defaultQuality}
+                    options={openaiStandardCaps(draft.model).quality.map(
+                      (value) => ({
+                        value,
+                        label:
+                          value === ""
+                            ? t("settings.imagegenQualityAuto", {
+                                defaultValue: "Auto",
+                              })
+                            : value,
+                      })
+                    )}
+                    onChange={(value) =>
+                      updateDraft("defaultQuality", value)
+                    }
+                    disabled={draftSaving}
+                    portal
+                  />
+                </label>
+              ) : null}
 
-              <label className="api-settings-field">
-                <span className="api-settings-field-label">
-                  {t("settings.imagegenOutputFormat", {
-                    defaultValue: "Output format",
-                  })}
-                </span>
-                <CustomSelect
-                  value={draft.outputFormat}
-                  options={[
-                    {
-                      value: "",
-                      label: t("settings.imagegenFormatDefault", {
-                        defaultValue: "Default (png)",
-                      }),
-                    },
-                    { value: "png", label: "png" },
-                    { value: "jpeg", label: "jpeg" },
-                    { value: "webp", label: "webp" },
-                  ]}
-                  onChange={(value) => updateDraft("outputFormat", value)}
-                  disabled={draftSaving}
-                  portal
-                />
-                <small className="api-settings-field-hint">
-                  {t("settings.imagegenFormatHint", {
-                    defaultValue: "OpenAI only; ignored for Gemini",
-                  })}
-                </small>
-              </label>
+              {/* 输出格式仅 OpenAI 生效（Gemini 忽略），Gemini 渠道不显示。 */}
+              {!isGemini ? (
+                <label className="api-settings-field">
+                  <span className="api-settings-field-label">
+                    {t("settings.imagegenOutputFormat", {
+                      defaultValue: "Output format",
+                    })}
+                  </span>
+                  <CustomSelect
+                    value={draft.outputFormat}
+                    options={[
+                      {
+                        value: "",
+                        label: t("settings.imagegenFormatDefault", {
+                          defaultValue: "Default (png)",
+                        }),
+                      },
+                      { value: "png", label: "png" },
+                      { value: "jpeg", label: "jpeg" },
+                      { value: "webp", label: "webp" },
+                    ]}
+                    onChange={(value) => updateDraft("outputFormat", value)}
+                    disabled={draftSaving}
+                    portal
+                  />
+                </label>
+              ) : null}
             </div>
           </section>
 
@@ -1080,19 +1104,42 @@ export function ImageGenSettingsPanel({
                   <small>
                     {t("settings.imagegenStreamingHint", {
                       defaultValue:
-                        "Show intermediate preview images while generating",
+                        "Streaming: show intermediate preview images while generating; Non-streaming: show images once generation finishes (OpenAI gpt-image / Gemini Imagen)",
                     })}
                   </small>
                 </span>
-                <label className="toggle-switch">
-                  <input
-                    type="checkbox"
-                    checked={draft.defaultStream}
-                    onChange={updateDraftEvent("defaultStream")}
+                <div
+                  className="imagegen-stream-segmented"
+                  role="group"
+                  aria-label={t("settings.imagegenStreaming", {
+                    defaultValue: "Streaming preview",
+                  })}
+                >
+                  <button
+                    type="button"
+                    className={`imagegen-stream-segmented-btn${
+                      draft.defaultStream ? " active" : ""
+                    }`}
+                    onClick={() => updateDraft("defaultStream", true)}
                     disabled={draftSaving}
-                  />
-                  <span className="toggle-switch-slider" />
-                </label>
+                  >
+                    {t("settings.imagegenStreamModeOn", {
+                      defaultValue: "Streaming",
+                    })}
+                  </button>
+                  <button
+                    type="button"
+                    className={`imagegen-stream-segmented-btn${
+                      !draft.defaultStream ? " active" : ""
+                    }`}
+                    onClick={() => updateDraft("defaultStream", false)}
+                    disabled={draftSaving}
+                  >
+                    {t("settings.imagegenStreamModeOff", {
+                      defaultValue: "Non-streaming",
+                    })}
+                  </button>
+                </div>
               </div>
             </div>
           </section>
@@ -1132,6 +1179,63 @@ export function ImageGenSettingsPanel({
             <X size={15} strokeWidth={1.8} />
           </button>
         ) : null}
+      </div>
+
+      {/* 最大并发生成数：全局设置（1-8，立即保存） */}
+      <div className="imagegen-concurrency">
+        <label className="api-settings-field imagegen-concurrency-field">
+          <span className="api-settings-field-label">
+            {t("settings.imagegenMaxConcurrent", {
+              defaultValue: "Max concurrent generations",
+            })}
+          </span>
+          <div className="imagegen-concurrency-control">
+            <button
+              type="button"
+              className="icon-btn ghost"
+              onClick={() => void updateMaxConcurrent(maxConcurrent - 1)}
+              disabled={isBusy || maxConcurrent <= IMAGE_GEN_MAX_CONCURRENT_RANGE.min}
+              aria-label={t("settings.imagegenMaxConcurrentDecrease", {
+                defaultValue: "Decrease max concurrent generations",
+              })}
+            >
+              −
+            </button>
+            <input
+              type="number"
+              min={IMAGE_GEN_MAX_CONCURRENT_RANGE.min}
+              max={IMAGE_GEN_MAX_CONCURRENT_RANGE.max}
+              value={maxConcurrent}
+              onChange={(event) => {
+                const parsed = Number(event.target.value);
+                if (Number.isFinite(parsed)) {
+                  void updateMaxConcurrent(parsed);
+                }
+              }}
+              disabled={isBusy}
+              aria-label={t("settings.imagegenMaxConcurrent", {
+                defaultValue: "Max concurrent generations",
+              })}
+            />
+            <button
+              type="button"
+              className="icon-btn ghost"
+              onClick={() => void updateMaxConcurrent(maxConcurrent + 1)}
+              disabled={isBusy || maxConcurrent >= IMAGE_GEN_MAX_CONCURRENT_RANGE.max}
+              aria-label={t("settings.imagegenMaxConcurrentIncrease", {
+                defaultValue: "Increase max concurrent generations",
+              })}
+            >
+              +
+            </button>
+          </div>
+          <small className="api-settings-field-hint">
+            {t("settings.imagegenMaxConcurrentHint", {
+              defaultValue:
+                "When the agent requests several images at once, at most this many are generated in parallel; the rest wait in the queue. Lower it if your provider rate-limits image requests.",
+            })}
+          </small>
+        </label>
       </div>
 
       {/* 操作区：与 API 设置页一致 */}

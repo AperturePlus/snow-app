@@ -1,4 +1,8 @@
-import { DEFAULT_IMAGE_GEN_CHANNEL } from "./constants";
+import {
+  DEFAULT_IMAGE_GEN_CHANNEL,
+  DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
+  IMAGE_GEN_MAX_CONCURRENT_RANGE,
+} from "./constants";
 import type {
   ImageGenChannelValue,
   ImageGenProvider,
@@ -14,6 +18,15 @@ const toBoolean = (value: unknown, fallback: boolean): boolean =>
 
 const toText = (value: unknown, fallback: string): string =>
   typeof value === "string" ? value : fallback;
+
+/** 解析最大并发生成数：非法/缺失回退默认值，超出范围时收敛到边界。 */
+const toConcurrentCount = (value: unknown): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_IMAGE_GEN_MAX_CONCURRENT;
+  }
+  const { min, max } = IMAGE_GEN_MAX_CONCURRENT_RANGE;
+  return Math.min(max, Math.max(min, Math.round(value)));
+};
 
 const readProvider = (
   value: unknown,
@@ -83,12 +96,18 @@ export const readImageGenSettingsJson = (
   raw: string | null
 ): ImageGenSettingsValue => {
   if (!raw) {
-    return { channels: [] };
+    return {
+      channels: [],
+      maxConcurrentImages: DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
+    };
   }
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!isRecord(parsed)) {
-      return { channels: [] };
+      return {
+        channels: [],
+        maxConcurrentImages: DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
+      };
     }
 
     // 新版多渠道格式：{ channels: [...] }
@@ -100,7 +119,10 @@ export const readImageGenSettingsJson = (
         }
         return channel;
       });
-      return { channels };
+      return {
+        channels,
+        maxConcurrentImages: toConcurrentCount(parsed.maxConcurrentImages),
+      };
     }
 
     // 旧版双渠道格式：{ openai: {...}, gemini: {...} }
@@ -112,7 +134,10 @@ export const readImageGenSettingsJson = (
       if (parsed.gemini) {
         channels.push(migrateLegacyChannel("gemini", parsed.gemini));
       }
-      return { channels };
+      return {
+        channels,
+        maxConcurrentImages: DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
+      };
     }
 
     // 旧版单渠道格式迁移：顶层 provider/baseUrl/apiKey/model/...
@@ -126,9 +151,15 @@ export const readImageGenSettingsJson = (
       ...parsed,
       enabled: true,
     });
-    return { channels: [legacy] };
+    return {
+      channels: [legacy],
+      maxConcurrentImages: DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
+    };
   } catch {
-    return { channels: [] };
+    return {
+      channels: [],
+      maxConcurrentImages: DEFAULT_IMAGE_GEN_MAX_CONCURRENT,
+    };
   }
 };
 
@@ -137,9 +168,10 @@ export const toImageGenForm = (
   settings: ImageGenSettingsValue
 ): ImageGenSettingsForm => ({
   channels: settings.channels.map((channel) => ({ ...channel })),
+  maxConcurrentImages: settings.maxConcurrentImages,
 });
 
-/** 表单 -> 存储 JSON 字符串（channels 数组格式）。 */
+/** 表单 -> 存储 JSON 字符串（channels 数组 + 最大并发生成数）。 */
 export const toImageGenSettingsJson = (
   form: ImageGenSettingsForm
 ): string =>
@@ -158,4 +190,5 @@ export const toImageGenSettingsJson = (
       webSearch: channel.webSearch,
       defaultStream: channel.defaultStream,
     })),
+    maxConcurrentImages: toConcurrentCount(form.maxConcurrentImages),
   });

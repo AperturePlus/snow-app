@@ -11,9 +11,10 @@ description: >-
   custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy/
   subAgents/hooks/skills/logs/imagegen), including project-scoped
   mcpServers/sensitiveCommands/subAgents/hooks/skills via `projectId`, the
-  read-only logs scope for diagnostics, the imagegen dual-channel settings
-  (keys: openai/gemini, apiKey masked), and the app-control-openSettings
-  shortcut (e.g. page=imagegen-settings).
+  read-only logs scope for diagnostics, the imagegen multi-channel settings
+  (channels keyed by id/name/provider type, plus the top-level
+  maxConcurrentImages concurrency cap, apiKey masked), and the
+  app-control-openSettings shortcut (e.g. page=imagegen-settings).
 enabled: true
 allowed_tools:
   - config-list
@@ -66,6 +67,12 @@ allowed_tools:
 
 ## 2. 按文档执行配置（Then apply the configuration）
 
+**通用流程**：任何配置任务，先 `config-list scope=<域>` 查看现状——DB 型域
+（subAgents / hooks / imagegen）的响应会附带 **guidance 使用规则引导**（如
+创建子代理的关键规则、hook 退出码约定），再按本文与文档步骤执行；需要
+`projectId` 时（项目级配置），在 `~/.snow/projects/index.json` 中按项目路径
+查 `projectId`（即 directoryId），或直接问用户从界面获取。
+
 通读对应文档后按步骤执行：
 
 - **MCP 服务器（全局）**：用 `config-set` 写 `settings` 域的 `mcpServers` 键
@@ -86,11 +93,18 @@ allowed_tools:
   （proxy-config.json）、`app`（active-profile.json）、`custom-headers`、
   `system-prompt`、`theme`、`language`、`permissions`、`lsp-config`、`buddy`。
   文件型配置写后**可能需要重启应用或 UI 重存生效**。
-- **子代理**：`config-list scope=subAgents` 查看；`config-set scope=subAgents
-  key=<agentId> value={name, description, systemPrompt, toolsJson,
-  configProfile}` 创建/更新（toolsJson 接受 JSON 字符串或工具名数组；内置
-  `agent_general` 不可修改）；`config-delete scope=subAgents key=<agentId>`
-  删除；传 `projectId` 为项目级。写入应用数据库**立即生效**。
+- **子代理**：先 `config-list scope=subAgents` 查看现有代理与响应中的
+  **创建规则 guidance**；`config-set scope=subAgents key=<agentId> value={name,
+  description, systemPrompt, toolsJson, configProfile}` 创建/更新；
+  `config-delete scope=subAgents key=<agentId>` 删除；写入应用数据库**立即生效**。
+  关键规则：
+  - `toolsJson` 接受 JSON 字符串或工具名数组；**显式工具名列表必须传
+    `projectId`（项目级）**——全局代理只能用 `"*"`（全部工具）或空列表；
+    每个工具名必须是该项目已启用的工具全名
+  - `configProfile` 必须是已存在的 API 配置档名，留空 = 跟随全局生效配置
+  - `systemPrompt` 必须**完全自包含**（子代理无会话历史：使命/原则/流程/工具用法/输出格式）
+  - 项目级代理激活时优先于同名全局代理；内置 `agent_general` 不可修改/删除
+  - 详细规则见文档 `2-使用指南/5-配置Hooks与子代理.md` 第 2 节
 - **Hooks**：`config-list scope=hooks` 查看；`config-set scope=hooks
   key=<hookType> value={rules:[{description, matcher?, hooks:[{type,
   command?|prompt?|content?, timeout?, enabled?}]}]}` 配置；传 `projectId`
@@ -105,17 +119,19 @@ allowed_tools:
   `project`，项目安装需带 `projectId`），用
   `config-delete scope=skills key=<skillId>` 卸载（**仅限 GitHub 安装的技能**，
   手动放置或应用自带的技能需删除目录）。
-- **图像生成（双渠道）**：用 `config-list scope=imagegen` 查看 OpenAI /
-  Gemini 两渠道状态（enabled/model/configured）；用 `config-set
-  scope=imagegen value={openai: {enabled, apiKey, model, baseUrl?,
-  defaultSize?, defaultQuality?, outputFormat?, webSearch?, defaultStream?}}`
-  写入（**部分更新自动合并**，未提供的字段保留原值，也可只写 `gemini`
-  渠道）；`config-get scope=imagegen key=openai`（省略 key 返回全部）读取；
-  `config-delete scope=imagegen` 清空。写入应用数据库 `system_settings` 表
-  （code=`imagegen_settings`）**立即生效**，与设置面板同源；图形界面为
-  **设置 → 图像生成**（`app-control-openSettings page=imagegen-settings`）。
-  注意：渠道需 `enabled`+`apiKey`+`model` 三者齐备才可用，两渠道均未配置
-  时 `imagegen-generate` 工具对模型隐藏；`apiKey` 读取一律脱敏
+- **图像生成（多渠道）**：用 `config-list scope=imagegen` 查看各渠道状态
+  （enabled/model/configured）与全局 `maxConcurrentImages`（最大并发生成数
+  1-8，默认 4，AI 一次请求多张时最多同时生成的张数）；写入用 `config-set
+  scope=imagegen value={channels:[...]}` 全量替换，或 `{<channelId>: {...}}`
+  按渠道合并（**未提供的字段保留原值**，`maxConcurrentImages` 也会保留除非
+  显式提供），或 `{maxConcurrentImages: 6}` 单独调整并发数（自动收敛 1-8）；
+  `config-get scope=imagegen key=<channelId|openai|gemini|maxConcurrentImages>`
+  读取（省略 key 返回完整设置）；`config-delete scope=imagegen` 清空。写入
+  应用数据库 `system_settings` 表（code=`imagegen_settings`）**立即生效**，
+  与设置面板同源；图形界面为**设置 → 图像生成**
+  （`app-control-openSettings page=imagegen-settings`）。注意：渠道需
+  `enabled`+`apiKey`+`model` 三者齐备才可用，所有渠道均未配置时
+  `imagegen-generate` 工具对模型隐藏；`apiKey` 读取一律脱敏
   （如 `sk-e****7890`），**不要索要或展示明文密钥**。
 - **日志诊断（只读）**：应用异常时用 `config-list scope=logs` 列出
   `~/.snow/log` 下的日志文件（含最近 error 文件摘要），用 `config-get

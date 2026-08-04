@@ -61,7 +61,34 @@ Some advanced parameters can be configured in the Runtime area of the UI (such a
 
 > **Tip**: after editing `config.json` directly, restart the app for the changes to take effect.
 
-## 5. FAQ
+## 5. AI / CLI Configuration (config tool)
+
+Snow App ships a built-in `config` tool; AI agents can read/write the same
+config that the UI uses:
+
+| Tool | Purpose |
+| --- | --- |
+| `config-list scope=snowcfg` | List the current API config and all keys |
+| `config-get scope=snowcfg key=baseUrl` | Read a single key (`apiKey` is always masked, e.g. `sk-****abcd`) |
+| `config-set scope=snowcfg key=baseUrl value="..."` | Write a single key (whitelist + type check + auto backup + atomic write) |
+| `config-set scope=app key=activeProfile value="openai"` | Switch the active profile (writes `active-profile.json`) |
+
+Example (update several fields at once):
+
+```jsonc
+config-set scope=snowcfg value={
+  "advancedModel": "gpt-4o",
+  "maxTokens": 8192,
+  "showThinking": true
+}
+```
+
+> **Effect**: `snowcfg`/`app` are file-backed — changes take effect after an
+> app restart or a UI re-save; `apiKey`/`visionApiKey` are always masked — never
+> ask for or display plaintext keys; every write is backed up automatically to
+> `~/.snow/.config-backups/`.
+
+## 6. FAQ
 
 | Symptom | Cause & fix |
 | --- | --- |

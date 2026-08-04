@@ -28,6 +28,12 @@ export type ImageGenChannelValue = {
 /** 生图设置：任意多个独立渠道（数组顺序即优先级），可同时启用。 */
 export type ImageGenSettingsValue = {
   channels: ImageGenChannelValue[];
+  /**
+   * 同一批次生图请求的最大并发数（1-8）。AI 一次请求多张图片时，
+   * 最多同时发起该数量的生成请求，其余排队（完成一张补一张）。
+   * 旧数据缺失该字段时回退默认值（4）。
+   */
+  maxConcurrentImages: number;
 };
 
 /** 设置表单（与存储值同构）。 */

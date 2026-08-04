@@ -49,6 +49,26 @@ as a card in the conversation (see "Tool Call Visualization" below).
 > system prompts and thinking strength are also adjustable nearby. See
 > [3-configure-api-keys](3-configure-api-keys.md).
 
+### 2.1 Managing Sessions
+
+Every session in the sidebar list exposes an action menu via the **"⋯"
+button** (shown on hover at the end of the row) or by **right-clicking the
+session row**:
+
+| Action | Description |
+| --- | --- |
+| Pin / Unpin | Pin the session to the "Pinned" group at the top of the list |
+| Rename | Change the display name; you can also **double-click the title** to edit inline |
+| Icon | Set an Emoji icon for the session |
+| Export | Export as Markdown / HTML / JSON / CSV |
+| Multi-select | Enter multi-select mode to batch-select sessions |
+| Delete | Delete the session (requires confirmation) |
+
+> **Right-click menu**: right-clicking a session row opens the exact same
+> menu as the "⋯" button at the **cursor position**. Right-click is not
+> intercepted while renaming or in multi-select mode, so the system menu
+> (e.g. copy/paste in the input) is preserved.
+
 ## 3. Input Box Features
 
 ### 3.1 Slash Commands (`/`)
@@ -75,7 +95,12 @@ Type `/` to open the command panel:
 - **Paste images** directly (clipboard or drag & drop): thumbnails appear as
   chips in the input box (hover to preview, click to zoom); the AI understands
   them with a vision model, and they can also be used for **image-to-image
-  editing** (see [9-image-generation](9-image-generation.md)).
+  editing** (see [9-image-generation](9-image-generation.md)). When the main
+  model does not support vision, images are first textified by a separate
+  vision model and each one gets a `[Reference image #N ...]` block (just a
+  relative path under the upload/ directory) — the AI reads the **original
+  image** by reference for image-to-image, so it is never downgraded to
+  text-to-image.
 
 ### 3.3 Other
 

@@ -70,7 +70,32 @@ token、流式空闲超时、重试次数与延迟），其余参数可直接编
 
 > **提示**：直接编辑 `config.json` 后需重启应用使改动生效。
 
-## 5. 常见问题
+## 5. AI / 命令行配置（config 工具）
+
+Snow App 内置 `config` 工具，AI Agent 可读写与 UI 同源的配置：
+
+| 工具 | 用途 |
+| --- | --- |
+| `config-list scope=snowcfg` | 查看当前 API 配置与全部键 |
+| `config-get scope=snowcfg key=baseUrl` | 读取单个键（`apiKey` 自动脱敏，如 `sk-****abcd`） |
+| `config-set scope=snowcfg key=baseUrl value="..."` | 写入单个键（白名单 + 类型校验 + 自动备份 + 原子写） |
+| `config-set scope=app key=activeProfile value="openai"` | 切换生效档案（写 `active-profile.json`） |
+
+示例（一次更新多个字段）：
+
+```jsonc
+config-set scope=snowcfg value={
+  "advancedModel": "gpt-4o",
+  "maxTokens": 8192,
+  "showThinking": true
+}
+```
+
+> **生效方式**：`snowcfg`/`app` 为文件型配置，写入后**需重启应用或重新保存
+> UI 设置**生效；`apiKey`/`visionApiKey` 读取一律脱敏，**不要向用户索要或
+> 展示明文密钥**；每次写入自动备份到 `~/.snow/.config-backups/`。
+
+## 6. 常见问题
 
 | 症状 | 原因与处理 |
 | --- | --- |

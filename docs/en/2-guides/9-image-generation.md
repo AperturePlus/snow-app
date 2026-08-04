@@ -12,7 +12,7 @@ default model** — you must configure at least one usable channel in
 
 | Entry | Description |
 | --- | --- |
-| Settings → Image generation (settings page id: `imagegen-settings`) | GUI: two channel cards |
+| Settings → Image generation (settings page id: `imagegen-settings`) | GUI: channel table with add/edit/delete |
 | App database `system_settings` table (code: `imagegen_settings`) | Storage (same source as the UI) |
 | `imagegen` scope of the `config` tool | AI agents can read/write the same settings via config tools |
 
@@ -20,11 +20,11 @@ default model** — you must configure at least one usable channel in
 > is hidden from the AI's tool list; configuring any channel makes it visible
 > again immediately (no restart needed).
 
-## 2. GUI Configuration (Dual Channels)
+## 2. GUI Configuration (Multiple Channels)
 
-Open **Settings → Image generation**: you will see two cards —
-**OpenAI-compatible channel** and **Google Gemini channel (Nano Banana)** —
-both can be enabled independently:
+Open **Settings → Image generation**: channels are managed as a **table** —
+you can create any number of OpenAI-compatible / Gemini channels, mixed and
+enabled simultaneously, via the **Add channel** button:
 
 | Field | Description |
 | --- | --- |
@@ -36,10 +36,11 @@ both can be enabled independently:
 | Default size | **OpenAI**: linked ratio × tier presets (12 ratios × 1K/2K/4K recommended resolutions, or `auto`), or type any resolution directly; **Gemini**: two independent presets — aspect ratio + image size, stored combined as `16:9@2K` |
 | Aspect ratio | Gemini: `1:1`, `5:4`, `4:3`, `3:2`, `16:9`, `2:1`, `21:9`, `4:5`, `3:4`, `2:3`, `1:2`, `9:16` (12 ratios) |
 | Image size | Gemini: `512px` / `1K` / `2K` / `4K` (**case-sensitive**); the options **adapt to the selected model** (see the model table below) |
-| Default quality | `low` / `medium` / `high` / `auto` |
-| Output format | OpenAI: `png` / `jpeg` / `webp` |
+| Default quality | **OpenAI channels only**: `low` / `medium` / `high` / `auto`; hidden for Gemini channels (Gemini only accepts `low`/`medium`/`high` — the panel's `auto` default would be ignored) |
+| Output format | **OpenAI channels only**: `png` / `jpeg` / `webp`; ignored for Gemini |
+| Max concurrent generations | Global setting (1–8, default 4): when the agent requests several images at once, at most this many are generated **in parallel**; the rest queue up and a new one starts as soon as one finishes. Lower it if your provider rate-limits image requests |
 | Gemini web search | Grounds generation with live Google Search results |
-| Default streaming | Shows intermediate previews while generating; overridable via the `stream` tool parameter |
+| Streaming / Non-streaming | Pick the default mode under Advanced: **Streaming** shows intermediate previews while generating; **Non-streaming** shows images once generation finishes; overridable via the `stream` tool parameter |
 
 **Model dropdown**: focusing the model input pulls the model list from the
 channel's Base URL and filters image models (OpenAI matches `gpt-image`/`dall-e`,
@@ -120,10 +121,36 @@ automatically:
   astronaut helmet, cyberpunk city background”;
 - **Image-to-image / edit**: **attach a reference image** in the chat, then give
   an edit instruction, e.g. “replace the background with Tokyo at night”,
-  “make it photorealistic”;
-- **Multiple images**: ask for several variants in one request (max 4);
-- **Streaming preview**: with streaming enabled, intermediate previews appear
-  in real time while generating;
+  “make it photorealistic”. Whether or not the main model supports vision, the
+  **original image is always passed to the generation service** as a reference,
+  so the request is a true image-to-image edit (OpenAI `/images/edits` /
+  Gemini `inlineData`):
+  - **Main model supports vision**: the image is sent as a multimodal block;
+    the AI fills the `images` parameter from the image data;
+  - **Main model does NOT support vision** (images are first textified by a
+    separate vision model): the textified message includes a
+    `[Reference image #N for imagegen-generate: {"path": "...", "mimeType":
+    "..."}]` reference block per image — just a relative path under the
+    upload/ directory (a few dozen bytes, no context bloat). The AI copies
+    the reference into the `images` parameter and the server **reads the
+    original file itself**, so it never falls back to text-to-image from the
+    description alone.
+  The “N reference image(s)” area on the generation card shows the reference
+  thumbnails: inline base64 renders directly; `path` references are read from
+  disk by the main process and also render as **real thumbnails** (a brief
+  placeholder icon while loading, or permanently if the file is missing — the
+  image-to-image call itself is unaffected);
+- **Multiple images**: ask for several variants in one request (the `n`
+  parameter caps a single call at 4). When the AI fires several generation
+  calls at once they run **in parallel**, bounded by **Max concurrent
+  generations** in the settings (1–8, default 4); the rest queue up and a
+  new one starts as soon as one finishes, and each card shows its own
+  progress in real time;
+- **Streaming / Non-streaming**: in streaming mode, intermediate previews
+  appear in real time while generating; in non-streaming mode, images are shown
+  once generation finishes. The default mode is set in the channel's
+  **Advanced** options (a streaming/non-streaming picker); the `stream` tool
+  parameter overrides it per request;
 - **Channel selection**: the AI picks a usable channel per request (OpenAI is
   the default when both are enabled); you can ask explicitly, e.g. “use Gemini”.
 
@@ -132,11 +159,11 @@ automatically:
 | Param | Type | Description |
 | --- | --- | --- |
 | `prompt` | string (required) | Generation description, or the edit instruction with reference images |
-| `images` | array | Reference images `[{data, mimeType}]` for image-to-image editing; max 14 images, ≤20MB each |
+| `images` | array | Reference images `[{data, mimeType}]` or `[{path, mimeType}]` for image-to-image editing; `path` is a relative path under the upload/ directory (from `[Reference image #N ...]` blocks in textified messages; the server reads the file itself); max 14 images, ≤20MB each |
 | `model` | string | Override the configured model |
 | `provider` | enum | `auto` (default) / `openai` / `gemini`, backend override |
 | `size` | string | OpenAI: a resolution like `1024x1024` or `auto`; Gemini: `1K`/`2K`/`4K` (imageSize) or an aspect ratio like `16:9` (aspectRatio), combinable as `16:9@2K` to set both |
-| `quality` | enum | `low` / `medium` / `high` / `auto` |
+| `quality` | enum | `low` / `medium` / `high` / `auto`; Gemini only accepts `low`/`medium`/`high` (`auto` is ignored, i.e. the provider default quality is used) |
 | `outputFormat` | enum | OpenAI: `png` / `jpeg` / `webp` |
 | `outputCompression` | number | OpenAI JPEG/WebP compression 0-100 |
 | `n` | number | Images per request (default 1, max 4) |
@@ -144,7 +171,7 @@ automatically:
 | `webSearch` | boolean | Gemini Google Search grounding |
 | `stream` | boolean | Streaming preview (defaults to the setting) |
 | `inputFidelity` | enum | OpenAI edits: `low` / `high` / `auto` (not supported by gpt-image-2) |
-| `background` | enum | OpenAI: `opaque` (default) / `transparent` / `auto` |
+| `background` | enum | OpenAI: `opaque` (default) / `transparent` / `auto`; falls back to `opaque` automatically when the model lacks transparency support (e.g. gpt-image-2) |
 | `moderation` | enum | OpenAI: `auto` (default) / `low` (less filtering) |
 | `seed` | number | Deterministic seed for reproducible results |
 | `thinkingLevel` | enum | Gemini 3.1 Flash Image: `minimal` (default) / `high` |
@@ -162,9 +189,9 @@ app database, takes effect immediately):
 
 | Operation | Example |
 | --- | --- |
-| List channel state | `config-list` + `scope: "imagegen"` → enabled / model / configured per channel |
-| Read config | `config-get` + `scope: "imagegen"` + `key: "openai"` (omit `key` for all) |
-| Write config | `config-set` + `scope: "imagegen"` + `value: {openai: {...}}` (partial updates merge) |
+| List channel state | `config-list` + `scope: "imagegen"` → enabled / model / configured per channel, plus the global `maxConcurrentImages` |
+| Read config | `config-get` + `scope: "imagegen"` + `key: "openai"` (omit `key` for the full settings); read the concurrency cap with `key: "maxConcurrentImages"` |
+| Write config | `config-set` + `scope: "imagegen"` + `value: {openai: {...}}` (partial updates merge; omitted fields keep their previous values); adjust the concurrency cap alone with `value: {maxConcurrentImages: 6}` (clamped to 1–8) |
 | Clear config | `config-delete` + `scope: "imagegen"` (hides the generation tool again) |
 
 > **Key safety**: `apiKey` values are always returned masked (e.g.
@@ -180,6 +207,7 @@ app database, takes effect immediately):
 | Channel enabled but unusable | Confirm the model is filled in — an empty model means unconfigured |
 | Image-to-image not working | Make sure a reference image is attached and the prompt is an edit instruction |
 | Slow generation | Disable streaming preview; use `low` quality or a Lite model |
+| How do I control concurrency for many images at once | Settings → Image generation → **Max concurrent generations** (1–8, default 4); excess requests queue automatically and start as one finishes; lower it if the provider returns 429 rate-limit errors |
 | Imagen model errors | Imagen is deprecated (shut down 2026-08-17); use the Nano Banana family |
 
 ## 7. References

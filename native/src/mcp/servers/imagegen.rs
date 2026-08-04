@@ -17,6 +17,7 @@
 //!   3. a clear error telling the agent to configure the settings or pass the
 //!      missing argument.
 
+use std::path::Path;
 use std::time::Duration;
 
 use futures::StreamExt;
@@ -183,7 +184,13 @@ impl ImageGenService {
 
         // --- 7. Image-to-image: reference images from the conversation ---
         // images: [{ "data": "<base64>", "mimeType": "image/png" }]
-        let images = parse_reference_images(args)?;
+        //         或 [{ "path": "upload/2026-07-25/hash.png", "mimeType": "image/png" }]
+        // （path 为相对数据库文件所在目录的磁盘路径，服务端读取文件后转
+        //   base64；来自纯文本主模型消息中的 [Reference image #N for
+        //   imagegen-generate: ...] 引用块，避免把大段 base64 塞进对话上下文）
+        let storage_info = crate::storage::initialize_app_storage()?;
+        let database_path = std::path::PathBuf::from(storage_info.database_path);
+        let images = parse_reference_images(args, &database_path)?;
         // 图生图（edits / inlineData 参考图）暂不支持流式预览
         let stream_enabled = stream_enabled && images.is_empty();
 
@@ -268,72 +275,94 @@ impl ImageGenService {
         // --- Image-to-image: POST /images/edits (multipart) ---
         if !images.is_empty() {
             let endpoint = format!("{base_url}/images/edits");
-            let mut form = reqwest::multipart::Form::new()
-                .text("model", model.to_string())
-                .text("prompt", prompt.to_string())
-                .text("n", n.to_string());
-            for (index, image) in images.iter().enumerate() {
-                let bytes = decode_base64(&image.data)?;
-                let file_name = format!("image-{}.{}", index + 1, ext_for_mime(&image.mime_type));
-                let part = reqwest::multipart::Part::bytes(bytes)
-                    .file_name(file_name)
-                    .mime_str(&image.mime_type)
-                    .map_err(|error| {
-                        generic_error(format!("Failed to build multipart part: {error}"))
-                    })?;
-                form = form.part("image[]", part);
-            }
-            if let Some(value) = size {
-                form = form.text("size", value.clone());
-            }
-            if let Some(value) = quality {
-                form = form.text("quality", value.clone());
-            }
-            if let Some(value) = output_format {
-                form = form.text("output_format", value.clone());
-            }
-            if let Some(value) = args.get("outputCompression").and_then(Value::as_u64) {
-                form = form.text("output_compression", value.clamp(0, 100).to_string());
-            }
-            if let Some(value) = input_fidelity {
-                // gpt-image-2 不允许设置 input_fidelity（自动高保真）
-                if !is_gpt_image_2 && matches!(value, "low" | "high" | "auto") {
-                    form = form.text("input_fidelity", value.to_string());
-                }
-            }
-            if let Some(value) = background {
-                if matches!(value, "opaque" | "transparent" | "auto") {
-                    form = form.text("background", value.to_string());
-                }
-            }
-            if let Some(value) = moderation {
-                if matches!(value, "auto" | "low") {
-                    form = form.text("moderation", value.to_string());
-                }
-            }
+            let build_form =
+                |background: Option<&str>| -> napi::Result<reqwest::multipart::Form> {
+                    let mut form = reqwest::multipart::Form::new()
+                        .text("model", model.to_string())
+                        .text("prompt", prompt.to_string())
+                        .text("n", n.to_string());
+                    for (index, image) in images.iter().enumerate() {
+                        let bytes = decode_base64(&image.data)?;
+                        let file_name = format!(
+                            "image-{}.{}",
+                            index + 1,
+                            ext_for_mime(&image.mime_type)
+                        );
+                        let part = reqwest::multipart::Part::bytes(bytes)
+                            .file_name(file_name)
+                            .mime_str(&image.mime_type)
+                            .map_err(|error| {
+                                generic_error(format!("Failed to build multipart part: {error}"))
+                            })?;
+                        form = form.part("image[]", part);
+                    }
+                    if let Some(value) = size {
+                        form = form.text("size", value.clone());
+                    }
+                    if let Some(value) = quality {
+                        form = form.text("quality", value.clone());
+                    }
+                    if let Some(value) = output_format {
+                        form = form.text("output_format", value.clone());
+                    }
+                    if let Some(value) = args.get("outputCompression").and_then(Value::as_u64) {
+                        form = form.text("output_compression", value.clamp(0, 100).to_string());
+                    }
+                    if let Some(value) = input_fidelity {
+                        // gpt-image-2 不允许设置 input_fidelity（自动高保真）
+                        if !is_gpt_image_2 && matches!(value, "low" | "high" | "auto") {
+                            form = form.text("input_fidelity", value.to_string());
+                        }
+                    }
+                    if let Some(value) = sanitize_background(model, background) {
+                        form = form.text("background", value.to_string());
+                    }
+                    if let Some(value) = moderation {
+                        if matches!(value, "auto" | "low") {
+                            form = form.text("moderation", value.to_string());
+                        }
+                    }
+                    Ok(form)
+                };
 
             let client = build_client().await?;
-            let response = client
-                .post(&endpoint)
-                .bearer_auth(api_key)
-                .multipart(form)
-                .send()
-                .await
-                .map_err(|error| {
-                    generic_error(format!("Image edit request failed: {error}"))
-                })?;
-            let status = response.status();
-            if !status.is_success() {
+            // 部分模型/代理不支持透明背景（400 "Transparent background is not
+            // supported"）：去掉 background 参数后重试一次
+            let mut attempt = 0;
+            let mut current_background = background;
+            let response = loop {
+                let form = build_form(current_background)?;
+                let response = client
+                    .post(&endpoint)
+                    .bearer_auth(api_key)
+                    .multipart(form)
+                    .send()
+                    .await
+                    .map_err(|error| {
+                        generic_error(format!("Image edit request failed: {error}"))
+                    })?;
+                let status = response.status();
+                if status.is_success() {
+                    break response;
+                }
                 let response_body: Value = response
                     .json()
                     .await
                     .unwrap_or_else(|_| json!({}));
+                if attempt == 0
+                    && current_background.is_some()
+                    && is_transparent_unsupported_error(&response_body)
+                {
+                    current_background = None;
+                    attempt += 1;
+                    continue;
+                }
                 return Err(api_error(
                     "Image edit failed",
                     status.as_u16(),
                     &response_body,
                 ));
-            }
+            };
 
             let response_body: Value = response
                 .json()
@@ -384,10 +413,8 @@ impl ImageGenService {
         if let Some(value) = seed {
             body["seed"] = json!(value);
         }
-        if let Some(value) = background {
-            if matches!(value, "opaque" | "transparent" | "auto") {
-                body["background"] = json!(value);
-            }
+        if let Some(value) = sanitize_background(model, background) {
+            body["background"] = json!(value);
         }
         if let Some(value) = moderation {
             if matches!(value, "auto" | "low") {
@@ -417,27 +444,43 @@ impl ImageGenService {
         }
 
         let client = build_client().await?;
-        let response = client
-            .post(&endpoint)
-            .bearer_auth(api_key)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|error| {
-                generic_error(format!("Image generation request failed: {error}"))
-            })?;
-        let status = response.status();
-        if !status.is_success() {
+        // 部分模型/代理不支持透明背景（400 "Transparent background is not
+        // supported"）：去掉 background 参数后重试一次
+        let mut attempt = 0;
+        let response = loop {
+            let response = client
+                .post(&endpoint)
+                .bearer_auth(api_key)
+                .json(&body)
+                .send()
+                .await
+                .map_err(|error| {
+                    generic_error(format!("Image generation request failed: {error}"))
+                })?;
+            let status = response.status();
+            if status.is_success() {
+                break response;
+            }
             let response_body: Value = response
                 .json()
                 .await
                 .unwrap_or_else(|_| json!({}));
+            if attempt == 0
+                && body.get("background").is_some()
+                && is_transparent_unsupported_error(&response_body)
+            {
+                if let Some(map) = body.as_object_mut() {
+                    map.remove("background");
+                }
+                attempt += 1;
+                continue;
+            }
             return Err(api_error(
                 "Image generation failed",
                 status.as_u16(),
                 &response_body,
             ));
-        }
+        };
 
         // --- Streaming path: consume the SSE stream and forward partials ---
         if stream_enabled && !is_dall_e {
@@ -792,7 +835,7 @@ impl McpService for ImageGenService {
         vec![McpTool {
             server_id: SERVER_ID.to_string(),
             name: TOOL_GENERATE.to_string(),
-            description: "Generate or edit image(s) using the INDEPENDENT image-generation configuration from Settings -> Image generation (separate from the conversation API; no built-in default model). TEXT-TO-IMAGE: pass only `prompt`. IMAGE-TO-IMAGE (edit / reference / restyle): pass `images` (base64 data extracted from the user's attached images, e.g. the @@image:...@@ tags in the conversation) plus an edit `prompt`; OpenAI uses POST /v1/images/edits, Gemini embeds inlineData parts. Supported backends: OpenAI-compatible (gpt-image / dall-e) and Google Gemini Imagen (optional Google Search grounding). Provider auto-detected from the configured base URL unless overridden. USE THIS when the user asks to create, draw, generate, render, edit, restyle, or vary an image. RENDERING TIP: after the tool returns, briefly mention the image(s) in your reply."
+            description: "Generate or edit image(s) using the INDEPENDENT image-generation configuration from Settings -> Image generation (separate from the conversation API; no built-in default model). TEXT-TO-IMAGE: pass only `prompt`. IMAGE-TO-IMAGE (edit / reference / restyle): pass `images` (reference images extracted from the user's attached images — either base64 from the @@image:...@@ tags, or the exact [Reference image #N for imagegen-generate: {...}] JSON blocks present in textified user messages when the main model is text-only) plus an edit `prompt`; the server resolves `path` references itself, so you NEVER need to copy huge base64 strings. OpenAI uses POST /v1/images/edits, Gemini embeds inlineData parts. Supported backends: OpenAI-compatible (gpt-image / dall-e) and Google Gemini Imagen (optional Google Search grounding). Provider auto-detected from the configured base URL unless overridden. USE THIS when the user asks to create, draw, generate, render, edit, restyle, or vary an image — ESPECIALLY when the user attached reference image(s): edit/vary THOSE images (image-to-image) instead of generating a new image from the text description alone. RENDERING TIP: after the tool returns, briefly mention the image(s) in your reply. TRANSPARENT BACKGROUND: when the user needs a transparent-background image (desktop pet, sticker, logo overlay, PNG cutout), pass background=\"transparent\" AND outputFormat=\"png\" AND prefer model gpt-image-1, the only model that can actually output transparency. gpt-image-2 CANNOT produce transparent backgrounds: requesting \"transparent\" there is silently downgraded to \"opaque\", so never expect transparency from gpt-image-2. dall-e-3 and Gemini ignore the background parameter entirely (always opaque). If the configured/available model cannot do transparency, tell the user and either switch to gpt-image-1 or generate with a plain solid background instead."
                 .to_string(),
             input_schema: json!({
                 "type": "object",
@@ -803,11 +846,12 @@ impl McpService for ImageGenService {
                     },
                     "images": {
                         "type": "array",
-                        "description": "Reference images for image-to-image editing: [{ \"data\": \"<base64>\", \"mimeType\": \"image/png\" }]. Extract base64 from the user's attached images in the conversation (the @@image:data:...@@ tags / multimodal image blocks). Max 5 images, ~20MB each. When provided: OpenAI -> /images/edits endpoint; Gemini -> inlineData parts (prompt-based editing).",
+                        "description": "Reference images for image-to-image editing: [{ \"data\": \"<base64>\", \"mimeType\": \"image/png\" }] or [{ \"path\": \"upload/2026-07-25/x.png\", \"mimeType\": \"image/png\" }]. For `data`, extract base64 from the user's attached images in the conversation (the @@image:data:...@@ tags / multimodal image blocks). For `path`, copy the exact JSON object from a [Reference image #N for imagegen-generate: ...] block in a textified user message (text-only main model): the server resolves it relative to the conversation's upload/ directory and reads the file itself, so do NOT paste raw base64 into the context. Max 5 images, ~20MB each. When provided: OpenAI -> /images/edits endpoint; Gemini -> inlineData parts (prompt-based editing).",
                         "items": {
                             "type": "object",
                             "properties": {
                                 "data": { "type": "string", "description": "Base64-encoded image data (without the data: prefix)" },
+                                "path": { "type": "string", "description": "Relative file path under the conversation's upload/ directory, e.g. upload/2026-07-25/hash.png (from [Reference image #N for imagegen-generate: ...] blocks)" },
                                 "mimeType": { "type": "string", "description": "Image MIME type, e.g. image/png, image/jpeg, image/webp" }
                             },
                             "required": ["data", "mimeType"]
@@ -815,7 +859,7 @@ impl McpService for ImageGenService {
                     },
                     "model": {
                         "type": "string",
-                        "description": "Image model to override the one configured in Settings -> Image generation. OpenAI: gpt-image-1, gpt-image-2, dall-e-3. Gemini (recommended Nano Banana family): gemini-3.1-flash-image (Nano Banana 2, default pick), gemini-3.1-flash-lite-image (Nano Banana 2 Lite, fastest/cheapest, 1K only), gemini-3-pro-image (Nano Banana Pro, up to 14 reference images + 4K + interleaved text), gemini-2.5-flash-image (legacy). NOTE: Imagen models are deprecated and shut down 2026-08-17. Omit to use the configured model."
+                        "description": "Image model to override the one configured in Settings -> Image generation. OpenAI: gpt-image-1, gpt-image-2, dall-e-3. Gemini (recommended Nano Banana family): gemini-3.1-flash-image (Nano Banana 2, default pick), gemini-3.1-flash-lite-image (Nano Banana 2 Lite, fastest/cheapest, 1K only), gemini-3-pro-image (Nano Banana Pro, up to 14 reference images + 4K + interleaved text), gemini-2.5-flash-image (legacy). NOTE: Imagen models are deprecated and shut down 2026-08-17. Omit to use the configured model. TRANSPARENT BACKGROUND: only gpt-image-1 can output transparent PNGs; gpt-image-2 and dall-e-3 cannot (transparent falls back to opaque), Gemini is always opaque — pick gpt-image-1 whenever the user asks for a transparent background / cutout / sticker / desktop pet.",
                     },
                     "provider": {
                         "type": "string",
@@ -870,7 +914,7 @@ impl McpService for ImageGenService {
                     },
                     "background": {
                         "type": "string",
-                        "description": "OpenAI only: output background — \"opaque\" (default), \"transparent\", or \"auto\". Transparent requires model support (gpt-image-2 does not support it). Ignored for Gemini.",
+                        "description": "OpenAI only: output background — \"opaque\" (default), \"transparent\", or \"auto\". Model support matrix: gpt-image-1 supports all three (transparent requires outputFormat=\"png\"); gpt-image-2 supports opaque/auto ONLY — \"transparent\" is automatically downgraded to \"opaque\" by the tool; dall-e-3 and Gemini ignore this parameter (always opaque). For true transparent PNG output (stickers, desktop pets, cutouts) use gpt-image-1 + background=\"transparent\" + outputFormat=\"png\".",
                         "enum": ["opaque", "transparent", "auto"]
                     },
                     "moderation": {
@@ -916,9 +960,18 @@ struct ReferenceImage {
     mime_type: String,
 }
 
-/// 解析 `images` 参数：`[{ "data": "<base64>", "mimeType": "image/png" }]`。
+/// 解析 `images` 参数。每个元素支持两种引用方式：
+/// - `{ "data": "<base64>", "mimeType": "image/png" }` —— 内联 base64
+///   （兼容 `data:image/png;base64,...` data URL 前缀，自动剥离）；
+/// - `{ "path": "upload/2026-07-25/hash.png", "mimeType": "image/png" }`
+///   —— 相对数据库文件所在目录的磁盘路径（来自纯文本主模型消息中的
+///   `[Reference image #N for imagegen-generate: ...]` 引用块），由服务端
+///   读取文件并转 base64，避免把大段 base64 塞进对话上下文。
 /// 最多 14 张（Gemini 3 Pro Image 官方上限），单张 base64 上限约 20MB。
-fn parse_reference_images(args: &Value) -> napi::Result<Vec<ReferenceImage>> {
+fn parse_reference_images(
+    args: &Value,
+    database_path: &Path,
+) -> napi::Result<Vec<ReferenceImage>> {
     const MAX_IMAGES: usize = 14;
     const MAX_BASE64_LEN: usize = 20 * 1024 * 1024; // 20MB base64
 
@@ -937,13 +990,34 @@ fn parse_reference_images(args: &Value) -> napi::Result<Vec<ReferenceImage>> {
 
     let mut images = Vec::with_capacity(items.len());
     for item in items {
+        // path 引用：服务端按 upload 相对路径读取文件（参考图引用块形式）
+        if let Some(path) = item.get("path").and_then(Value::as_str) {
+            let image = load_reference_image_from_path(path, item, database_path)?;
+            images.push(image);
+            continue;
+        }
+
         let Some(data) = item.get("data").and_then(Value::as_str) else {
             return Err(Error::new(
                 Status::InvalidArg,
-                "Each reference image must have a base64 `data` string".to_string(),
+                "Each reference image must have a base64 `data` string or a `path` string".to_string(),
             ));
         };
         let data = data.trim().to_string();
+        // 兼容 data URL 前缀：data:image/png;base64,<base64>
+        let (data, mime_type_from_url) = match data.strip_prefix("data:") {
+            Some(rest) => match rest.split_once(',') {
+                Some((metadata, payload)) => {
+                    let media = metadata.strip_suffix(";base64").unwrap_or("").trim();
+                    (
+                        payload.trim().to_string(),
+                        media.starts_with("image/").then(|| media.to_string()),
+                    )
+                }
+                None => (data, None),
+            },
+            None => (data, None),
+        };
         if data.is_empty() {
             return Err(Error::new(
                 Status::InvalidArg,
@@ -953,18 +1027,99 @@ fn parse_reference_images(args: &Value) -> napi::Result<Vec<ReferenceImage>> {
         if data.len() > MAX_BASE64_LEN {
             return Err(Error::new(
                 Status::InvalidArg,
-                format!("Reference image is too large (max ~{}MB)", MAX_BASE64_LEN / 1024 / 1024),
+                format!(
+                    "Reference image is too large (max ~{}MB)",
+                    MAX_BASE64_LEN / 1024 / 1024
+                ),
             ));
         }
         let mime_type = item
             .get("mimeType")
             .and_then(Value::as_str)
             .filter(|value| value.starts_with("image/"))
+            .or(mime_type_from_url.as_deref())
             .unwrap_or("image/png")
             .to_string();
         images.push(ReferenceImage { data, mime_type });
     }
     Ok(images)
+}
+
+/// 按磁盘相对路径读取参考图（`{ "path": ... }` 引用块形式）。
+///
+/// 仅允许 `upload/` 目录内的相对路径（相对数据库文件所在目录），拒绝绝对
+/// 路径与路径穿越（`..`），防止模型利用该参数读取 upload 目录以外的文件。
+fn load_reference_image_from_path(
+    path: &str,
+    item: &Value,
+    database_path: &Path,
+) -> napi::Result<ReferenceImage> {
+    const MAX_BASE64_LEN: usize = 20 * 1024 * 1024; // 20MB base64
+
+    let normalized = path.trim().replace('\\', "/");
+    if normalized.is_empty() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "Reference image `path` must not be empty".to_string(),
+        ));
+    }
+    if !normalized.starts_with("upload/") || normalized.contains("..") {
+        return Err(Error::new(
+            Status::InvalidArg,
+            format!(
+                "Invalid reference image path: \"{path}\". Only relative paths under the conversation's upload/ directory are allowed (e.g. upload/2026-07-25/hash.png)."
+            ),
+        ));
+    }
+
+    let file_path = database_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(&normalized);
+    let bytes = std::fs::read(&file_path).map_err(|_| {
+        Error::new(
+            Status::InvalidArg,
+            format!("Failed to read reference image file: \"{path}\""),
+        )
+    })?;
+    if bytes.is_empty() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            format!("Reference image file is empty: \"{path}\""),
+        ));
+    }
+    if bytes.len() > MAX_BASE64_LEN {
+        return Err(Error::new(
+            Status::InvalidArg,
+            format!(
+                "Reference image is too large (max ~{}MB)",
+                MAX_BASE64_LEN / 1024 / 1024
+            ),
+        ));
+    }
+
+    let mime_type = item
+        .get("mimeType")
+        .and_then(Value::as_str)
+        .filter(|value| value.starts_with("image/"))
+        .map(str::to_string)
+        .unwrap_or_else(|| mime_for_path(&normalized));
+    use base64::Engine;
+    let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(ReferenceImage { data, mime_type })
+}
+
+/// 按文件扩展名推断图片 MIME 类型（与 `images.rs` 的推断保持一致）。
+fn mime_for_path(path: &str) -> String {
+    match path.rsplit('.').next().unwrap_or("").to_ascii_lowercase().as_str() {
+        "png" => "image/png".to_string(),
+        "jpg" | "jpeg" => "image/jpeg".to_string(),
+        "gif" => "image/gif".to_string(),
+        "webp" => "image/webp".to_string(),
+        "bmp" => "image/bmp".to_string(),
+        "svg" => "image/svg+xml".to_string(),
+        _ => "image/png".to_string(),
+    }
 }
 
 fn decode_base64(data: &str) -> napi::Result<Vec<u8>> {
@@ -1589,6 +1744,33 @@ fn mime_for_format(format: &str) -> String {
         "webp" => "image/webp".to_string(),
         _ => "image/png".to_string(),
     }
+}
+
+/// 根据模型能力规整 `background` 参数：
+/// - 仅接受 opaque / transparent / auto，其余值直接丢弃
+/// - gpt-image-2 不支持透明背景，`transparent` 自动降级为 `opaque`（等同默认值）
+fn sanitize_background(model: &str, background: Option<&str>) -> Option<String> {
+    let value = background?;
+    if !matches!(value, "opaque" | "transparent" | "auto") {
+        return None;
+    }
+    if value == "transparent" && model.to_ascii_lowercase().contains("gpt-image-2") {
+        return Some("opaque".to_string());
+    }
+    Some(value.to_string())
+}
+
+/// 判断上游错误是否为“该模型不支持透明背景”（部分第三方/代理模型会拒绝
+/// `background=transparent` 并返回 400）。命中时由调用方去掉该参数重试一次。
+fn is_transparent_unsupported_error(response_body: &Value) -> bool {
+    let message = response_body
+        .get("error")
+        .and_then(|error| error.get("message"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    message.contains("transparent")
+        && (message.contains("background") || message.contains("not supported"))
 }
 
 fn generic_error(message: String) -> Error {

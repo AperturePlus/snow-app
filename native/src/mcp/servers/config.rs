@@ -1520,6 +1520,11 @@ impl ConfigService {
             "scope": SCOPE_SUB_AGENTS,
             "items": items,
             "count": items.len(),
+            "guidance": "CREATING A SUB-AGENT - config-set scope=subAgents key=<agentId> value={name, description?, systemPrompt?, toolsJson?, configProfile?}.
+\
+KEY RULES: (1) an explicit toolsJson tool-name list REQUIRES projectId (the agent becomes project-scoped); \"*\" or an empty list is allowed for global agents; (2) toolsJson accepts a JSON string or an array of tool names that must be enabled for the project; (3) configProfile = an existing API profile name, empty = follow the active global config; (4) project-scoped agents take priority over a same-id global agent at activation; (5) the built-in agent_general cannot be modified or deleted. The systemPrompt must be fully self-contained (no conversation history).
+\
+Full guide: ~/.snow/docs/zh-CN/2-使用指南/5-配置Hooks与子代理.md (en: en/2-guides/5-configure-hooks-and-subagents.md)",
         }))
     }
 
@@ -1738,6 +1743,11 @@ impl ConfigService {
             "projectId": project_id.unwrap_or_default(),
             "items": items,
             "count": items.len(),
+            "guidance": "CONFIGURING HOOKS - config-set scope=hooks key=<hookType> value={rules:[{description, matcher?, hooks:[{type, ...}]}]}.
+\
+KEY RULES: (1) hookType whitelist: onUserMessage, beforeToolCall, toolConfirmation, afterToolCall, onSubAgentComplete, beforeSubAgentStart, beforeCompress, onSessionStart, onStop; (2) command actions exit codes: 0 = pass (stdout injected as [Hook Context]), 1 = soft warning (a stdout of {\"decision\":{\"message\":\"...\"}} triggers the user decision UI), 2+ = abort; (3) prompt actions only for onSubAgentComplete/onStop, context actions only for onSessionStart/onUserMessage/beforeSubAgentStart; (4) pass projectId for a project-scoped hook (overrides the same-type global hook).
+\
+Full guide: ~/.snow/docs/zh-CN/2-使用指南/5-配置Hooks与子代理.md (en: en/2-guides/5-configure-hooks-and-subagents.md)",
         }))
     }
 
@@ -1965,7 +1975,11 @@ fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Result<Value> 
             Ok(json!({
                 "scope": SCOPE_IMAGEGEN,
                 "keys": entries,
-                "note": "Channels are independent; enable one or more at once. When none is configured the imagegen-generate tool is hidden from the model. Pass provider=<channelId|channelName|openai|gemini> to imagegen-generate to pick a channel.",
+                "maxConcurrentImages": settings
+                    .get("maxConcurrentImages")
+                    .cloned()
+                    .unwrap_or_else(|| json!(4)),
+                "note": "Channels are independent; enable one or more at once. When none is configured the imagegen-generate tool is hidden from the model. maxConcurrentImages (top-level global field, 1-8, default 4) caps how many generation requests run in parallel when the agent asks for several images at once; read/write it via config-get / config-set with key=maxConcurrentImages. Pass provider=<channelId|channelName|openai|gemini> to imagegen-generate to pick a channel.",
             }))
         }
         TOOL_GET => {
@@ -1978,6 +1992,17 @@ fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Result<Value> 
                 .filter(|value| !value.is_empty())
                 .map(str::to_string);
             match requested_key.as_deref() {
+                // 顶层全局字段：最大并发生成数（1-8，默认 4）
+                Some(key) if key.eq_ignore_ascii_case("maxConcurrentImages") => {
+                    Ok(json!({
+                        "scope": SCOPE_IMAGEGEN,
+                        "key": "maxConcurrentImages",
+                        "value": settings
+                            .get("maxConcurrentImages")
+                            .cloned()
+                            .unwrap_or_else(|| json!(4)),
+                    }))
+                }
                 Some(key) => {
                     let key_lower = key.to_lowercase();
                     let is_provider_type = key_lower == "openai" || key_lower == "gemini";
@@ -2044,6 +2069,15 @@ fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Result<Value> 
 
             // 先迁移存储为 channels 数组格式
             let mut settings = migrate_imagegen_channels(&load_imagegen_settings_value()?);
+            // 保留「最大并发生成数」（顶层全局字段，设置面板可调）：本次
+            // value 中显式提供时采用新值（规范化到 1-8 整数），否则沿用
+            // 现有存储值，避免 config-set 重建 {channels} 时把用户配置的
+            // 并发上限静默重置。
+            let max_concurrent_images = value
+                .get("maxConcurrentImages")
+                .cloned()
+                .or_else(|| settings.get("maxConcurrentImages").cloned())
+                .map(clamp_imagegen_max_concurrent);
             if let Some(channels_value) = value.get("channels") {
                 // 全量替换
                 if !channels_value.is_array() {
@@ -2053,6 +2087,9 @@ fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Result<Value> 
                     ));
                 }
                 settings = json!({ "channels": channels_value.clone() });
+                if let Some(max_concurrent_images) = max_concurrent_images {
+                    settings["maxConcurrentImages"] = max_concurrent_images;
+                }
             } else if let Some(value_map) = value.as_object() {
                 // 按渠道 id / 名称合并更新；不存在则追加为新渠道
                 let mut channels: Vec<Value> = settings
@@ -2112,6 +2149,9 @@ fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Result<Value> 
                     }
                 }
                 settings = json!({ "channels": channels });
+                if let Some(max_concurrent_images) = max_concurrent_images {
+                    settings["maxConcurrentImages"] = max_concurrent_images;
+                }
             }
 
             save_imagegen_settings_value(&settings)?;
@@ -2136,6 +2176,15 @@ fn execute_imagegen_scope(tool_name: &str, args: &Value) -> napi::Result<Value> 
             ),
         )),
     }
+}
+
+/// 规范化「最大并发生成数」：必须是有限数字，取整后收敛到 1-8 范围
+/// （与设置面板 IMAGE_GEN_MAX_CONCURRENT_RANGE 一致）；非法值回退默认 4。
+fn clamp_imagegen_max_concurrent(value: Value) -> Value {
+    let Some(number) = value.as_f64().filter(|n| n.is_finite()) else {
+        return json!(4);
+    };
+    json!(number.round().clamp(1.0, 8.0) as i64)
 }
 
 /// 将任意 imagegen 存储格式迁移为 { channels: [...] } 新格式：
@@ -2569,7 +2618,7 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_LIST.to_string(),
-                description: "List manageable configuration scopes and their keys. Scopes: settings (~/.snow/settings.json: mcpServers, codebase, sensitiveCommands, yoloMode, planMode, ...), snowcfg (~/.snow/config.json snowcfg object: baseUrl, apiKey, advancedModel, chatThinking, ...), proxy (~/.snow/proxy-config.json: enabled, host, port, searchEngine, browserPath, browserDebugPort), app (~/.snow/active-profile.json: activeProfile), custom-headers (~/.snow/custom-headers.json: active, schemes), system-prompt (~/.snow/system-prompt.json: active, prompts), theme (~/.snow/theme.json: theme, simpleMode, diffOpacity, toolIcons, customColors, ...), language (~/.snow/language.json: language), permissions (~/.snow/permissions.json: alwaysApprovedTools), lsp-config (~/.snow/lsp-config.json: schemaVersion, servers), buddy (~/.snow/buddy.json: version, companion, muted). DB-backed scopes: subAgents (sub-agent configs in the app database, key=agentId), hooks (lifecycle hook configs in the app database, key=hookType), imagegen (image generation channels in the app database, keys: channel ids/names, provider types openai|gemini). Pass `scope` to inspect a single scope with current values; sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts, imagegen apiKey) are masked. Pass `projectId` to scope subAgents/hooks listings to a specific project (omitted = global). Read-only scope: logs (lists app log files under ~/.snow/log for agent-driven diagnostics)."
+                description: "List configuration scopes and their keys; pass `scope` to inspect one scope (returns current values; sensitive keys masked).\nSCOPE REFERENCE:\n1. settings (~/.snow/settings.json): mcpServers, codebase, sensitiveCommands, yoloMode, planMode, goal, toolSearchEnabled, ...\n2. snowcfg (~/.snow/config.json): baseUrl, apiKey, advancedModel, basicModel, maxTokens, chatThinking, ...\n3. proxy (~/.snow/proxy-config.json): enabled, host, port, searchEngine, browserPath, browserDebugPort\n4. app (~/.snow/active-profile.json): activeProfile\n5. custom-headers (~/.snow/custom-headers.json): active, schemes (sensitive)\n6. system-prompt (~/.snow/system-prompt.json): active, prompts (sensitive)\n7. theme (~/.snow/theme.json): theme, simpleMode, diffOpacity, toolIcons, customColors, ...\n8. language (~/.snow/language.json): language\n9. permissions (~/.snow/permissions.json): alwaysApprovedTools\n10. lsp-config (~/.snow/lsp-config.json): schemaVersion, servers\n11. buddy (~/.snow/buddy.json): version, companion, muted\n12. subAgents (app DB): sub-agent configs, key=agentId; list returns items + CREATING guidance\n13. hooks (app DB): lifecycle hook configs, key=hookType; list returns items + CONFIGURING guidance\n14. imagegen (app DB): image generation channels + top-level maxConcurrentImages (1-8, default 4); list returns keys + note\n15. skills (delegated): skillId toggles / GitHub installs\n16. logs (read-only): log files under ~/.snow/log\nRULES: pass projectId to scope subAgents/hooks listings to a specific project (omitted = global); sensitive values (apiKey, visionApiKey, custom-header schemes, system-prompt prompts, imagegen apiKey) are always masked."
                     .to_string(),
                 input_schema: json!({
                     "type": "object",
@@ -2596,12 +2645,12 @@ impl McpService for ConfigService {
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs"],
+                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen"],
                             "description": "Config scope name."
                         },
                         "key": {
                             "type": "string",
-                            "description": "Key name within the scope (see config-list)."
+                            "description": "Key name within the scope (see config-list). For imagegen: a channel id/name or provider type (openai|gemini), or the global key maxConcurrentImages."
                         },
                         "projectId": {
                             "type": "string",
@@ -2621,18 +2670,18 @@ impl McpService for ConfigService {
             McpTool {
                 server_id: SERVER_ID.to_string(),
                 name: TOOL_SET.to_string(),
-                description: "Write a value for a configuration key. Only whitelisted scopes/keys are accepted; the value is type-checked, the target file is backed up to ~/.snow/.config-backups before the write, and the file is replaced atomically. Special case: writing `mcpServers` in the `settings` scope also syncs the servers into the app database (same diff semantics as the UI 'Sync Snow CLI MCP settings' action), so MCP changes take effect immediately without manual sync. Other file-based scopes (snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy) are file-based and may require an app restart or UI re-save. DB-backed scopes write directly to the app database and take effect immediately: subAgents (key=agentId, value={name, description, systemPrompt, toolsJson, configProfile}; toolsJson accepts a JSON string or an array of tool names; built-in agent_general cannot be modified) and hooks (key=hookType, value={rules:[{description, matcher?, hooks:[{type: command|prompt|context, command?, prompt?, content?, timeout?, enabled?}]}]}). Pass optional `projectId` to write a project-scoped config (omitted = global). Project-scoped settings: projectId + settings.mcpServers performs a full replace of the project MCP servers ({name: {type,url,command,args,env,headers,enabled,timeoutMs}}); projectId + settings.sensitiveCommands replaces the project sensitive-command overrides (array of {commandId, pattern, description, enabled}; commandId matching a global rule becomes an enabled override, others become project custom rules).".to_string(),
+                description: "Write a value for a configuration key. Only whitelisted scopes/keys are accepted; the value is type-checked, the target file is backed up to ~/.snow/.config-backups before the write, and the file is replaced atomically. Special case: writing `mcpServers` in the `settings` scope also syncs the servers into the app database (same diff semantics as the UI 'Sync Snow CLI MCP settings' action), so MCP changes take effect immediately without manual sync. Other file-based scopes (snowcfg/proxy/app/custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy) are file-based and may require an app restart or UI re-save. DB-backed scopes write directly to the app database and take effect immediately: subAgents (key=agentId, value={name, description, systemPrompt, toolsJson, configProfile}; toolsJson accepts a JSON string or an array of tool names; built-in agent_general cannot be modified) and hooks (key=hookType, value={rules:[{description, matcher?, hooks:[{type: command|prompt|context, command?, prompt?, content?, timeout?, enabled?}]}]}); imagegen (value = {channels:[...]} full replace, or {<channelId>: {...}} per-channel merge where omitted fields keep their previous values and maxConcurrentImages is preserved unless explicitly provided, or {maxConcurrentImages: N} on its own; values are clamped to 1-8). Pass optional `projectId` to write a project-scoped config (omitted = global). Project-scoped settings: projectId + settings.mcpServers performs a full replace of the project MCP servers ({name: {type,url,command,args,env,headers,enabled,timeoutMs}}); projectId + settings.sensitiveCommands replaces the project sensitive-command overrides (array of {commandId, pattern, description, enabled}; commandId matching a global rule becomes an enabled override, others become project custom rules).".to_string(),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs"],
+                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen"],
                             "description": "Config scope name."
                         },
                         "key": {
                             "type": "string",
-                            "description": "Key name within the scope (see config-list)."
+                            "description": "Key name within the scope (see config-list). For imagegen: a channel id/name or provider type (openai|gemini), or the global key maxConcurrentImages."
                         },
                         "value": {
                             "description": "New value; type must match the key schema (see config-list)."
@@ -2655,12 +2704,12 @@ impl McpService for ConfigService {
                     "properties": {
                         "scope": {
                             "type": "string",
-                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs"],
+                            "enum": ["settings", "snowcfg", "proxy", "app", "custom-headers", "system-prompt", "theme", "language", "permissions", "lsp-config", "buddy", "subAgents", "hooks", "skills", "logs", "imagegen"],
                             "description": "Config scope name."
                         },
                         "key": {
                             "type": "string",
-                            "description": "Key name within the scope (see config-list)."
+                            "description": "Key name within the scope (see config-list). For imagegen: a channel id/name or provider type (openai|gemini), or the global key maxConcurrentImages."
                         },
                         "projectId": {
                             "type": "string",

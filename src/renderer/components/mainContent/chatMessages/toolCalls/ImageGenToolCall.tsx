@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertCircle,
@@ -34,7 +34,12 @@ type ParsedImageGenArgs = {
   seed?: number;
   thinkingLevel?: string;
   imageSearch?: boolean;
-  images?: Array<{ data: string; mimeType: string }>;
+  images?: Array<{
+    data: string;
+    mimeType: string;
+    /** 纯文本主模型场景下的磁盘相对路径引用（upload/...），渲染端仅作占位展示 */
+    path?: string;
+  }>;
 };
 
 type GeneratedImage = {
@@ -123,15 +128,26 @@ const parseImageGenArgs = (args: string): ParsedImageGenArgs | null => {
       result.moderation = parsed.moderation;
     }
     if (Array.isArray(parsed.images)) {
-      const images: Array<{ data: string; mimeType: string }> = [];
+      const images: Array<{
+        data: string;
+        mimeType: string;
+        path?: string;
+      }> = [];
       for (const item of parsed.images) {
-        if (
-          isRecord(item) &&
-          typeof item.data === "string" &&
-          item.data.trim() !== "" &&
-          typeof item.mimeType === "string"
-        ) {
-          images.push({ data: item.data, mimeType: item.mimeType });
+        if (isRecord(item) && typeof item.mimeType === "string") {
+          if (typeof item.data === "string" && item.data.trim() !== "") {
+            // 内联 base64 参考图
+            images.push({ data: item.data, mimeType: item.mimeType });
+          } else if (typeof item.path === "string" && item.path.trim() !== "") {
+            // 磁盘相对路径引用（来自文本化消息的 [Reference image #N ...] 块），
+            // 服务端已按此路径读取原图完成图生图；渲染端无法直接访问该路径，
+            // 以占位图展示
+            images.push({
+              data: "",
+              mimeType: item.mimeType,
+              path: item.path.trim(),
+            });
+          }
         }
       }
       if (images.length > 0) {
@@ -216,6 +232,13 @@ const mimeToExtension = (mimeType: string): string => {
   return "png";
 };
 
+/**
+ * upload 相对路径 → data URL 的进程内缓存。
+ * path 引用（纯文本主模型场景的 [Reference image #N ...] 块）需要经主进程
+ * 读取文件，同一图片在历史消息中会反复渲染，缓存避免重复 IPC。
+ */
+const uploadImageCache = new Map<string, string>();
+
 /** 保存生成的图片（原生文件选择器优先，回退为浏览器下载）。 */
 const saveImageBlob = async (
   dataUrl: string,
@@ -279,6 +302,53 @@ export const ImageGenToolCall = ({
     () => parseImageGenResult(toolCall.result),
     [toolCall.result]
   );
+
+  // 收集 path 引用参考图（无内联 data 的项），挂载后经主进程读取真实缩略图
+  const referencePaths = useMemo(() => {
+    const paths: string[] = [];
+    for (const image of parsedArgs?.images ?? []) {
+      if (!image.data && image.path && !paths.includes(image.path)) {
+        paths.push(image.path);
+      }
+    }
+    return paths;
+  }, [parsedArgs]);
+
+  const [resolvedRefs, setResolvedRefs] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (referencePaths.length === 0) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const next: Record<string, string> = {};
+      for (const path of referencePaths) {
+        if (cancelled) {
+          return;
+        }
+        const cached = uploadImageCache.get(path);
+        if (cached) {
+          next[path] = cached;
+          continue;
+        }
+        const dataUrl = await window.snow.resolveUploadImage(path);
+        if (cancelled) {
+          return;
+        }
+        if (dataUrl) {
+          uploadImageCache.set(path, dataUrl);
+          next[path] = dataUrl;
+        }
+      }
+      if (!cancelled && Object.keys(next).length > 0) {
+        setResolvedRefs((prev) => ({ ...prev, ...next }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [referencePaths]);
 
   const hasError = parsedResult.type === "error";
   const effectiveStatus = hasError ? "error" : toolCall.status;
@@ -617,14 +687,32 @@ export const ImageGenToolCall = ({
                   })}
                 </span>
                 <div className="tool-call-imagegen-refs-grid">
-                  {parsedArgs.images.map((image, index) => (
-                    <img
-                      key={`${index}-${image.data.length}`}
-                      className="tool-call-imagegen-ref-thumb"
-                      src={`data:${image.mimeType};base64,${image.data}`}
-                      alt={`${t("toolCall.imagegen.refImage")} ${index + 1}`}
-                    />
-                  ))}
+                  {parsedArgs.images.map((image, index) => {
+                    const src = image.data
+                      ? `data:${image.mimeType};base64,${image.data}`
+                      : image.path
+                        ? resolvedRefs[image.path] ?? ""
+                        : "";
+                    return (
+                      <div
+                        key={`${index}-${image.path ?? image.data.length}`}
+                        className="tool-call-imagegen-ref-thumb"
+                        title={image.path ?? undefined}
+                      >
+                        {src ? (
+                          <img
+                            src={src}
+                            alt={`${t("toolCall.imagegen.refImage")} ${index + 1}`}
+                          />
+                        ) : (
+                          <span className="tool-call-imagegen-ref-placeholder">
+                            <ImageIcon size={14} aria-hidden="true" />
+                            {index + 1}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ) : null}
