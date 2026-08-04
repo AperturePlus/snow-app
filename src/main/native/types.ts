@@ -834,6 +834,21 @@ export type BrowserCommandResponse = {
   error?: string;
 };
 
+export type TerminalCommand = {
+  operation: string;
+  argsJson: string;
+};
+
+export type TerminalCommandRequest = TerminalCommand & {
+  commandId: string;
+};
+
+export type TerminalCommandResponse = {
+  commandId: string;
+  resultJson?: string;
+  error?: string;
+};
+
 export type UserQuestionCommand = {
   question: string;
   options: string[];
@@ -1295,6 +1310,7 @@ export type NativeBridge = {
     onRemoteWorkspaceCommand: (
       command: RemoteWorkspaceCommand
     ) => Promise<string>,
+    onTerminalCommand: (command: TerminalCommand) => Promise<string>,
     subAgentAllowedTools: string[] | undefined,
     planMode: boolean | undefined,
     planApproved: boolean | undefined

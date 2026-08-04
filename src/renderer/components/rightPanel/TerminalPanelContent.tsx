@@ -6,8 +6,10 @@ import { ClipboardPaste, Copy, Eraser, ListChecks } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTerminalSettings } from "./useTerminalSettings";
 import { ContextMenu, type ContextMenuItem } from "../common/ContextMenu";
+import { useTerminalMcpInstance } from "./terminal/useTerminalMcpInstance";
 
 export type TerminalPanelContentProps = {
+  tabId: string;
   cwd: string;
   isActive: boolean;
   onTitleChange?: (title: string) => void;
@@ -80,6 +82,7 @@ const DEFAULT_FONT_FAMILY =
   "'SF Mono', 'Menlo', 'Consolas', 'Liberation Mono', monospace";
 
 export const TerminalPanelContent = ({
+  tabId,
   cwd,
   isActive,
   onTitleChange,
@@ -137,6 +140,10 @@ export const TerminalPanelContent = ({
         // 剪贴板读取失败时静默忽略。
       });
   }, []);
+
+  // Register this terminal tab with the MCP controller so that
+  // terminal-send/read/resize/wait commands can reach it.
+  useTerminalMcpInstance(tabId, cwd, isActive, termRef, ptyIdRef);
 
   // Only shellPath triggers PTY recreation; font settings update live.
   const { shellPath } = settings;

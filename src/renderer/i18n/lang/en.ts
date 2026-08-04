@@ -184,6 +184,7 @@ export const en = {
   "scheduledTask.errorPromptRequired": "Prompt is required",
   "scheduledTask.errorInvalidSchedule": "Invalid schedule",
   "scheduledTask.errorCreateFailed": "Failed to create task",
+  "sidebar.chatTimeRunning": "Running",
   "sidebar.chatTimeToday": "Today",
   "sidebar.chatTimeYesterday": "Yesterday",
   "sidebar.chatTimeLast7Days": "Last 7 days",

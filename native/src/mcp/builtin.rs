@@ -14,6 +14,7 @@ use super::servers::filesystem::FilesystemService;
 use super::servers::grep::GrepService;
 use super::servers::config::ConfigService;
 use super::servers::sub_agents::SubAgentsService;
+use super::servers::terminal::TerminalService;
 use super::servers::todo::TodoService;
 use super::servers::user_interaction::UserInteractionService;
 use super::servers::websearch::WebSearchService;
@@ -38,6 +39,7 @@ fn builtin_services_in_order() -> Vec<Arc<dyn McpService>> {
         Arc::new(CodeLensService::new()),
         Arc::new(AppControlService::new()),
         Arc::new(ConfigService::new()),
+        Arc::new(TerminalService::new()),
         // NOTE: new services must be appended to the END of this list to keep
         // the tool order stable (prompt cache); never insert in the middle.
         //

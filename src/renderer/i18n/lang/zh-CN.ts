@@ -179,6 +179,7 @@ export const zhCN = {
   "scheduledTask.errorPromptRequired": "请填写提示词",
   "scheduledTask.errorInvalidSchedule": "计划无效",
   "scheduledTask.errorCreateFailed": "创建任务失败",
+  "sidebar.chatTimeRunning": "运行中",
   "sidebar.chatTimeToday": "今天",
   "sidebar.chatTimeYesterday": "昨天",
   "sidebar.chatTimeLast7Days": "近7天",
