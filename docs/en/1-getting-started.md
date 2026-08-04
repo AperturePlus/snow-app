@@ -50,6 +50,7 @@ Detailed steps for each configuration item can be found in the corresponding gui
 | Install & manage skills | [2-guides/2-install-and-manage-skills](2-guides/2-install-and-manage-skills.md) |
 | Configure API keys & models | [2-guides/3-configure-api-keys](2-guides/3-configure-api-keys.md) |
 | Configure proxy & network | [2-guides/4-configure-proxy](2-guides/4-configure-proxy.md) |
+| Configure hooks & sub-agents | [2-guides/5-configure-hooks-and-subagents](2-guides/5-configure-hooks-and-subagents.md) |
 
 ## 4. Next Steps
 

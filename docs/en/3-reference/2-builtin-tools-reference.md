@@ -92,7 +92,7 @@ Listed in registration order:
 
 | Full tool name | Purpose | Key parameters |
 | --- | --- | --- |
-| `codebase-search` | Codebase semantic search (embedding index based) | `pattern`, `path`, `fileGlob`, `maxResults` |
+| `codebase-search` | Codebase semantic search (embedding index based); **only exposed when the project has codebase indexing enabled and an index has been built** | `pattern`, `path`, `fileGlob`, `maxResults` |
 
 ### codelens
 
