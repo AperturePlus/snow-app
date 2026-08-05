@@ -798,6 +798,7 @@ export const zhTW = {
   "settings.apiBasicModel": "基礎模型",
   "settings.apiMaxContext": "最大上下文（tokens）",
   "settings.apiMaxTokens": "最大輸出 tokens",
+  "settings.apiMaxTokensHint": "留空則請求時不傳該參數。",
   "settings.apiSetActive": "啟用配置",
   "settings.apiSupportsVision": "支援視覺",
   "settings.apiVisionBaseUrl": "視覺 Base URL",

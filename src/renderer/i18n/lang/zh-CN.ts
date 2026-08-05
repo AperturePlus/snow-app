@@ -802,6 +802,7 @@ export const zhCN = {
   "settings.apiBasicModel": "基础模型",
   "settings.apiMaxContext": "最大上下文（tokens）",
   "settings.apiMaxTokens": "最大输出 tokens",
+  "settings.apiMaxTokensHint": "留空则请求时不传该参数。",
   "settings.apiSetActive": "启用配置",
   "settings.apiSupportsVision": "支持视觉",
   "settings.apiVisionBaseUrl": "视觉 Base URL",

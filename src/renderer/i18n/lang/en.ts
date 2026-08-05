@@ -830,6 +830,7 @@ export const en = {
   "settings.apiBasicModel": "Basic model",
   "settings.apiMaxContext": "Max context (tokens)",
   "settings.apiMaxTokens": "Max tokens",
+  "settings.apiMaxTokensHint": "Leave empty to omit this parameter from requests.",
   "settings.apiSetActive": "Enable profile",
   "settings.apiSupportsVision": "Supports vision",
   "settings.apiVisionBaseUrl": "Vision Base URL",
