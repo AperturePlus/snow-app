@@ -1,4 +1,6 @@
 import {
+  CircleDot,
+  Cloud,
   Copy,
   Eye,
   EyeOff,
@@ -6,6 +8,7 @@ import {
   GitCommitHorizontal,
   Hash,
   MessageSquareText,
+  Tag,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -238,28 +241,78 @@ function getCommitFileLabel(status: string): string {
   return status.charAt(0);
 }
 
+/** A single ref decoration attached to a commit row. */
+interface ParsedRef {
+  kind: "local" | "remote" | "tag";
+  /** Display name: branch name, `origin/xxx` for remotes, tag name. */
+  name: string;
+  /** True when the checked-out HEAD points at this commit. */
+  isHead: boolean;
+}
+
+const HEAD_ARROW = "HEAD -> ";
+const HEADS_PREFIX = "refs/heads/";
+const REMOTES_PREFIX = "refs/remotes/";
+const TAGS_PREFIX = "refs/tags/";
+
 /**
- * Detects the current local HEAD position from a commit's decoration string
- * (`%D`, e.g. "HEAD -> main, origin/main" when attached or "HEAD, tag: v1"
- * when detached). Returns `{ branch }` for a checked-out branch,
- * `{ branch: null }` for a detached HEAD, or `null` when the commit is not
- * the current HEAD.
+ * Parses a commit's decoration string (`%D` with `--decorate=full`, e.g.
+ * "HEAD -> refs/heads/main, refs/remotes/origin/main, refs/tags/v1") into
+ * typed refs so local branches, remote-tracking branches and tags can be
+ * badged distinctly. Short-form decorations (without the refs/ prefixes)
+ * are tolerated as a fallback and treated as local branches.
  */
-function parseHeadRef(refs: string): { branch: string | null } | null {
+function parseRefs(refs: string): ParsedRef[] {
+  const parsed: ParsedRef[] = [];
   if (!refs) {
-    return null;
+    return parsed;
   }
+
   for (const rawPart of refs.split(",")) {
     const part = rawPart.trim();
-    if (part === "HEAD") {
-      return { branch: null };
+    if (!part) {
+      continue;
     }
-    if (part.startsWith("HEAD -> ")) {
-      const branch = part.slice("HEAD -> ".length).trim();
-      return { branch: branch.length > 0 ? branch : null };
+
+    // Detached HEAD decorates as a bare "HEAD".
+    if (part === "HEAD") {
+      parsed.push({ kind: "local", name: "HEAD", isHead: true });
+      continue;
+    }
+
+    let body = part;
+    let isHead = false;
+    if (part.startsWith(HEAD_ARROW)) {
+      isHead = true;
+      body = part.slice(HEAD_ARROW.length).trim();
+    }
+
+    if (body.startsWith(HEADS_PREFIX)) {
+      parsed.push({
+        kind: "local",
+        name: body.slice(HEADS_PREFIX.length),
+        isHead,
+      });
+    } else if (body.startsWith(REMOTES_PREFIX)) {
+      parsed.push({
+        kind: "remote",
+        name: body.slice(REMOTES_PREFIX.length),
+        isHead: false,
+      });
+    } else if (body.startsWith(TAGS_PREFIX)) {
+      parsed.push({
+        kind: "tag",
+        name: body.slice(TAGS_PREFIX.length),
+        isHead: false,
+      });
+    } else if (body.startsWith("tag: ")) {
+      parsed.push({ kind: "tag", name: body.slice(5).trim(), isHead: false });
+    } else if (body) {
+      parsed.push({ kind: "local", name: body, isHead });
     }
   }
-  return null;
+
+  return parsed;
 }
 
 // --- Component ---
@@ -581,6 +634,42 @@ export const GitGraph = ({
     ];
   };
 
+  /** Renders one ref badge (local / remote / tag) with icon and tooltip. */
+  const renderRefBadge = (ref: ParsedRef) => {
+    const title =
+      ref.kind === "remote"
+        ? t("git.graphRemoteBranch", { defaultValue: "Remote branch" })
+        : ref.kind === "tag"
+          ? t("git.graphTag", { defaultValue: "Tag" })
+          : ref.name === "HEAD"
+            ? t("git.graphDetachedHead", { defaultValue: "Detached HEAD" })
+            : ref.isHead
+              ? t("git.graphCurrentBranch", { defaultValue: "Current branch" })
+              : t("git.graphLocalBranch", { defaultValue: "Local branch" });
+    const icon =
+      ref.kind === "remote" ? (
+        <Cloud size={10} strokeWidth={2} />
+      ) : ref.kind === "tag" ? (
+        <Tag size={10} strokeWidth={2} />
+      ) : ref.name === "HEAD" ? (
+        <GitCommitHorizontal size={10} strokeWidth={2} />
+      ) : ref.isHead ? (
+        <CircleDot size={10} strokeWidth={2} />
+      ) : (
+        <GitBranch size={10} strokeWidth={2} />
+      );
+    return (
+      <span
+        key={`${ref.kind}/${ref.name}`}
+        className={`git-graph-ref ${ref.kind}`}
+        title={title}
+      >
+        {icon}
+        {ref.name}
+      </span>
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="git-graph" ref={containerRef}>
@@ -610,8 +699,9 @@ export const GitGraph = ({
       {rows.map((row) => {
         const dotColor = LANE_COLORS[row.dotLane % LANE_COLORS.length];
         const isSelected = selectedHash === row.commit.hash;
-        // 当前本地 HEAD 所在提交：在圆点外加光环、在行内显示分支徽章。
-        const headRef = parseHeadRef(row.commit.refs);
+        // 当前本地 HEAD 所在提交：圆点外加光环突出本地位置。
+        const parsedRefs = parseRefs(row.commit.refs);
+        const isHead = parsedRefs.some((ref) => ref.isHead);
         // At a branch point (curve leaving the dot), the curve leads into
         // the target lane and only reaches it at the bottom of the row.
         // If that lane had no line coming from above, drawing its vertical
@@ -690,13 +780,13 @@ export const GitGraph = ({
                     />
                   );
                 })}
-                {headRef && (
+                {isHead && (
                   <circle
                     cx={row.dotLane * LANE_WIDTH + LANE_WIDTH / 2}
                     cy={ROW_HEIGHT / 2}
                     r={DOT_RADIUS + 3}
                     fill="none"
-                    stroke="var(--accent-green-text)"
+                    stroke="var(--accent-blue-text)"
                     strokeWidth={1.5}
                   />
                 )}
@@ -711,30 +801,14 @@ export const GitGraph = ({
               </svg>
               <div className="git-graph-info">
                 <span className="git-graph-hash">{row.commit.shortHash}</span>
-                {headRef && (
-                  <span
-                    className="git-graph-ref head"
-                    title={
-                      headRef.branch
-                        ? t("git.graphCurrentBranch", {
-                            defaultValue: "Current branch",
-                          })
-                        : t("git.graphDetachedHead", {
-                            defaultValue: "Detached HEAD",
-                          })
-                    }
-                  >
-                    {headRef.branch ? (
-                      <GitBranch size={10} strokeWidth={2} />
-                    ) : (
-                      <GitCommitHorizontal size={10} strokeWidth={2} />
-                    )}
-                    {headRef.branch ?? "HEAD"}
-                  </span>
-                )}
                 <span className="git-graph-message" title={row.commit.message}>
                   {row.commit.message}
                 </span>
+                {parsedRefs.length > 0 && (
+                  <span className="git-graph-refs">
+                    {parsedRefs.map(renderRefBadge)}
+                  </span>
+                )}
                 <span className="git-graph-meta">
                   <span className="git-graph-author">{row.commit.author}</span>
                   <span className="git-graph-date">
@@ -845,7 +919,9 @@ export const GitGraph = ({
                   {t("git.graphTooltipRefs")}
                 </span>
                 <span className="git-graph-tooltip-value">
-                  {hoveredCommit.refs}
+                  {parseRefs(hoveredCommit.refs)
+                    .map((ref) => ref.name)
+                    .join(", ")}
                 </span>
               </div>
             )}

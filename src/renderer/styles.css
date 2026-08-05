@@ -21478,7 +21478,17 @@ input {
   flex-shrink: 0;
 }
 
-/* 当前本地 HEAD 位置标记徽章（见 GitGraph.tsx 的 parseHeadRef）。 */
+/* 提交行上的引用徽章组（见 GitGraph.tsx 的 parseRefs）。 */
+.git-graph-refs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 20;
+  min-width: 0;
+  overflow: hidden;
+  padding-left: 4px;
+}
+
 .git-graph-ref {
   display: inline-flex;
   align-items: center;
@@ -21498,9 +21508,26 @@ input {
   flex-shrink: 0;
 }
 
-.git-graph-ref.head {
-  background: var(--accent-green-bg);
-  color: var(--accent-green-text);
+/* 本地分支（含当前 HEAD） */
+.git-graph-ref.local {
+  background: var(--accent-blue-bg);
+  color: var(--accent-blue-text);
+}
+
+/* 远端跟踪分支 */
+.git-graph-ref.remote {
+  background: rgba(168, 85, 247, 0.15);
+  color: #9333ea;
+}
+
+:root[data-theme="dark"] .git-graph-ref.remote {
+  color: #c084fc;
+}
+
+/* 标签 */
+.git-graph-ref.tag {
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
 }
 
 .git-graph-detail {
