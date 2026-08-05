@@ -2,6 +2,12 @@
 
 ## v0.1.18
 
+## Bug Fixes
+
+- Responses Request to resend the request repeatedly.
+
+## v0.1.18
+
 ## New Features
 
 - Added image generation feature
