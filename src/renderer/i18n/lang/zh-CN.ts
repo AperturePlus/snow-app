@@ -2260,6 +2260,8 @@ export const zhCN = {
   "git.graphTooltipDate": "日期",
   "git.graphTooltipRefs": "引用",
   "git.graphTooltipParents": "父提交",
+  "git.graphCurrentBranch": "当前分支",
+  "git.graphDetachedHead": "分离头指针",
   "git.collapseSection": "收起",
   "git.expandSection": "展开",
   "git.pushFailed": "推送失败",

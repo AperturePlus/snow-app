@@ -2233,6 +2233,8 @@ export const zhTW = {
   "git.graphTooltipDate": "日期",
   "git.graphTooltipRefs": "引用",
   "git.graphTooltipParents": "父提交",
+  "git.graphCurrentBranch": "目前分支",
+  "git.graphDetachedHead": "分離的 HEAD",
   "git.collapseSection": "收起",
   "git.expandSection": "展開",
   "git.pushFailed": "推送失敗",

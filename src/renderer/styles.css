@@ -18670,12 +18670,23 @@ input {
   overflow-y: auto;
 }
 
-.branch-dropdown-loading,
 .branch-dropdown-empty {
   padding: 10px 14px;
   font-size: 12px;
   color: var(--text-muted);
   text-align: center;
+}
+
+.branch-dropdown-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 88px;
+  max-height: 160px;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .branch-dropdown-group {
@@ -21467,51 +21478,29 @@ input {
   flex-shrink: 0;
 }
 
-.git-graph-refs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 20;
-  min-width: 0;
-  overflow: hidden;
-}
-
+/* 当前本地 HEAD 位置标记徽章（见 GitGraph.tsx 的 parseHeadRef）。 */
 .git-graph-ref {
   display: inline-flex;
   align-items: center;
+  gap: 3px;
   padding: 1px 6px;
   border-radius: var(--radius-sm);
   font-size: 10px;
   font-weight: 500;
-  background: var(--bg-active);
-  color: var(--text-secondary);
   white-space: nowrap;
+  flex-shrink: 0;
+  max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 120px;
+}
+
+.git-graph-ref svg {
+  flex-shrink: 0;
 }
 
 .git-graph-ref.head {
   background: var(--accent-green-bg);
   color: var(--accent-green-text);
-}
-
-.git-graph-ref.tag {
-  background: rgba(245, 158, 11, 0.15);
-  color: #b45309;
-}
-
-:root[data-theme="dark"] .git-graph-ref.tag {
-  color: #fbbf24;
-}
-
-.git-graph-ref.remote {
-  background: rgba(59, 130, 246, 0.15);
-  color: #2563eb;
-}
-
-:root[data-theme="dark"] .git-graph-ref.remote {
-  color: #60a5fa;
 }
 
 .git-graph-detail {

@@ -1,4 +1,12 @@
-import { Copy, Eye, EyeOff, Hash, MessageSquareText } from "lucide-react";
+import {
+  Copy,
+  Eye,
+  EyeOff,
+  GitBranch,
+  GitCommitHorizontal,
+  Hash,
+  MessageSquareText,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { GitCommitFile, GitLogEntry } from "../../../../preload";
@@ -228,6 +236,30 @@ function getCommitFileLabel(status: string): string {
   if (status.startsWith("C")) return "C";
   if (status.startsWith("M")) return "M";
   return status.charAt(0);
+}
+
+/**
+ * Detects the current local HEAD position from a commit's decoration string
+ * (`%D`, e.g. "HEAD -> main, origin/main" when attached or "HEAD, tag: v1"
+ * when detached). Returns `{ branch }` for a checked-out branch,
+ * `{ branch: null }` for a detached HEAD, or `null` when the commit is not
+ * the current HEAD.
+ */
+function parseHeadRef(refs: string): { branch: string | null } | null {
+  if (!refs) {
+    return null;
+  }
+  for (const rawPart of refs.split(",")) {
+    const part = rawPart.trim();
+    if (part === "HEAD") {
+      return { branch: null };
+    }
+    if (part.startsWith("HEAD -> ")) {
+      const branch = part.slice("HEAD -> ".length).trim();
+      return { branch: branch.length > 0 ? branch : null };
+    }
+  }
+  return null;
 }
 
 // --- Component ---
@@ -578,6 +610,8 @@ export const GitGraph = ({
       {rows.map((row) => {
         const dotColor = LANE_COLORS[row.dotLane % LANE_COLORS.length];
         const isSelected = selectedHash === row.commit.hash;
+        // 当前本地 HEAD 所在提交：在圆点外加光环、在行内显示分支徽章。
+        const headRef = parseHeadRef(row.commit.refs);
         // At a branch point (curve leaving the dot), the curve leads into
         // the target lane and only reaches it at the bottom of the row.
         // If that lane had no line coming from above, drawing its vertical
@@ -656,6 +690,16 @@ export const GitGraph = ({
                     />
                   );
                 })}
+                {headRef && (
+                  <circle
+                    cx={row.dotLane * LANE_WIDTH + LANE_WIDTH / 2}
+                    cy={ROW_HEIGHT / 2}
+                    r={DOT_RADIUS + 3}
+                    fill="none"
+                    stroke="var(--accent-green-text)"
+                    strokeWidth={1.5}
+                  />
+                )}
                 <circle
                   cx={row.dotLane * LANE_WIDTH + LANE_WIDTH / 2}
                   cy={ROW_HEIGHT / 2}
@@ -667,6 +711,27 @@ export const GitGraph = ({
               </svg>
               <div className="git-graph-info">
                 <span className="git-graph-hash">{row.commit.shortHash}</span>
+                {headRef && (
+                  <span
+                    className="git-graph-ref head"
+                    title={
+                      headRef.branch
+                        ? t("git.graphCurrentBranch", {
+                            defaultValue: "Current branch",
+                          })
+                        : t("git.graphDetachedHead", {
+                            defaultValue: "Detached HEAD",
+                          })
+                    }
+                  >
+                    {headRef.branch ? (
+                      <GitBranch size={10} strokeWidth={2} />
+                    ) : (
+                      <GitCommitHorizontal size={10} strokeWidth={2} />
+                    )}
+                    {headRef.branch ?? "HEAD"}
+                  </span>
+                )}
                 <span className="git-graph-message" title={row.commit.message}>
                   {row.commit.message}
                 </span>

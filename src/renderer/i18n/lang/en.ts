@@ -2386,6 +2386,8 @@ export const en = {
   "git.graphTooltipDate": "Date",
   "git.graphTooltipRefs": "Refs",
   "git.graphTooltipParents": "Parents",
+  "git.graphCurrentBranch": "Current branch",
+  "git.graphDetachedHead": "Detached HEAD",
   "git.collapseSection": "Collapse section",
   "git.expandSection": "Expand section",
   "git.pushFailed": "Push Failed",
