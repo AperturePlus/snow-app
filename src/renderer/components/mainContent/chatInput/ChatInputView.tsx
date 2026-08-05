@@ -58,13 +58,8 @@ import { ProjectSkillsPanel } from "./ProjectSkillsPanel";
 import { RoleEditorPanel } from "./RoleEditorPanel";
 import { StreamMetrics } from "./StreamMetrics";
 import { useChatConversationContext } from "../chatMessages";
-import { useTodoPanel } from "../chatMessages/hooks/useTodoPanel";
 import { directoryIdToPath } from "../chatMessages/utils/conversationHelpers";
-import {
-  collectConversationFileChanges,
-  countFileChangeLines,
-  countUniqueFiles,
-} from "../chatMessages/hooks/fileChangeTracking";
+import { collectConversationFileChanges } from "../chatMessages/hooks/fileChangeTracking";
 import { useConversationFileChanges } from "./useConversationFileChanges";
 import { CommandPanel, type CommandPanelHandle } from "./commands/CommandPanel";
 import { createChatCommands } from "./commands/commandRegistry";
@@ -149,33 +144,15 @@ export const ChatInputView = ({
     conversationDirectoryId,
     conversationVersion,
     fileChangeStats,
-    runTokenCount,
-    runStreamElapsedMs,
-    runTtftMs,
+    streamTokenCount,
+    streamElapsedMs,
+    streamTtftMs,
     baselineCheckpointId,
     streamStartedAt,
     isPaused,
     handlePause,
     handleResume,
   } = useChatConversationContext();
-  const { todos } = useTodoPanel(messages);
-  const taskProgress = useMemo(() => {
-    const rootTodos = todos.filter((todo) => !todo.parentId);
-    const steps = rootTodos.length > 0 ? rootTodos : todos;
-    if (steps.length === 0) {
-      return { current: 0, total: 0 };
-    }
-
-    const activeIndex = steps.findIndex((todo) => todo.status === "inProgress");
-    const pendingIndex = steps.findIndex((todo) => todo.status === "pending");
-    const currentIndex =
-      activeIndex >= 0
-        ? activeIndex
-        : pendingIndex >= 0
-          ? pendingIndex
-          : steps.length - 1;
-    return { current: currentIndex + 1, total: steps.length };
-  }, [todos]);
   const fallbackFileChanges = useMemo(() => {
     if (!activeConversationId) {
       return [];
@@ -193,13 +170,6 @@ export const ChatInputView = ({
     conversationVersion,
     fallbackChanges: fallbackFileChanges,
   });
-  const fileProgress = useMemo(
-    () => ({
-      count: countUniqueFiles(conversationFileChanges),
-      ...countFileChangeLines(conversationFileChanges),
-    }),
-    [conversationFileChanges]
-  );
   const isDraggingOverRef = useRef(false);
   const [isMentionOpen, setIsMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
@@ -340,9 +310,9 @@ export const ChatInputView = ({
     x: number;
     y: number;
   } | null>(null);
-  const textSnippetPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  );
+  const textSnippetPreviewTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const [textSnippetEditor, setTextSnippetEditor] = useState<{
     chip: HTMLElement;
     content: string;
@@ -1113,7 +1083,8 @@ export const ChatInputView = ({
         setTextSnippetEditor({
           chip,
           content: parsed.content ?? "",
-          summary: parsed.summary ?? buildTextSnippetSummary(parsed.content ?? ""),
+          summary:
+            parsed.summary ?? buildTextSnippetSummary(parsed.content ?? ""),
         });
       } catch {
         // Ignore malformed data
@@ -1305,17 +1276,11 @@ export const ChatInputView = ({
         {isStreaming ? (
           <div className="stream-metrics-bar">
             <StreamMetrics
-              tokenCount={runTokenCount}
-              elapsedMs={runStreamElapsedMs}
-              ttftMs={runTtftMs}
+              tokenCount={streamTokenCount}
+              elapsedMs={streamElapsedMs}
+              ttftMs={streamTtftMs}
               startedAt={streamStartedAt}
               isPaused={isPaused}
-              taskCurrent={taskProgress.current}
-              taskTotal={taskProgress.total}
-              changedFileCount={fileProgress.count}
-              additions={fileProgress.additions}
-              deletions={fileProgress.deletions}
-              onOpenFileChanges={() => setIsFileChangesOpen(true)}
               onPause={handlePause}
               onResume={handleResume}
             />
@@ -1526,7 +1491,9 @@ export const ChatInputView = ({
                 <button
                   className={`toolbar-btn model ${
                     modelError ? "model-error" : ""
-                  }${isStreaming || isSubAgentConversation ? " is-disabled" : ""}`}
+                  }${
+                    isStreaming || isSubAgentConversation ? " is-disabled" : ""
+                  }`}
                   aria-label={labels.selectModel}
                   aria-expanded={isModelMenuOpen}
                   onClick={handleToggleModelMenu}

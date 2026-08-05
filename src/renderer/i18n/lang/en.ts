@@ -2230,8 +2230,6 @@ export const en = {
   "chat.fileChanges.selectFile": "Select a file to view changes",
   "chat.streamMetrics.pause": "Pause",
   "chat.streamMetrics.resume": "Resume",
-  "chat.streamMetrics.step": "Step {{current}}/{{total}}",
-  "chat.streamMetrics.filesLabel": "file(s) changed",
   "chat.streamMetrics.elapsedTitle": "Elapsed time",
   "chat.streamMetrics.ttftTitle": "TTFT (time to first token)",
   "chatInput.pendingLabel": "Queued",

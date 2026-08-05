@@ -2106,8 +2106,6 @@ export const zhCN = {
   "chat.fileChanges.selectFile": "选择文件查看变更",
   "chat.streamMetrics.pause": "暂停",
   "chat.streamMetrics.resume": "继续",
-  "chat.streamMetrics.step": "第 {{current}}/{{total}} 步",
-  "chat.streamMetrics.filesLabel": "个文件已更改",
   "chat.streamMetrics.elapsedTitle": "运行时长",
   "chat.streamMetrics.ttftTitle": "TTFT（首 Token 延迟）",
   "chatInput.pendingLabel": "等待发送",

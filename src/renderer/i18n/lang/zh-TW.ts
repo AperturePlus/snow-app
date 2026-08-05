@@ -2080,8 +2080,6 @@ export const zhTW = {
   "chat.fileChanges.selectFile": "選擇檔案檢視變更",
   "chat.streamMetrics.pause": "暫停",
   "chat.streamMetrics.resume": "繼續",
-  "chat.streamMetrics.step": "第 {{current}}/{{total}} 步",
-  "chat.streamMetrics.filesLabel": "個檔案已變更",
   "chat.streamMetrics.elapsedTitle": "運行時長",
   "chat.streamMetrics.ttftTitle": "TTFT（首 Token 延遲）",
   "chatInput.pendingLabel": "等待傳送",
