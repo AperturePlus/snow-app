@@ -1,4 +1,5 @@
 import {
+  CircleCheck,
   Clock,
   Gauge,
   ImageIcon,
@@ -1199,7 +1200,7 @@ export function ImageGenSettingsPanel({
           <span className="settings-item-description">
             {t("settings.imagegenDescription", {
               defaultValue:
-                "Configure any number of independent channels, each with its own provider, base URL, API key and model. Channels can be enabled at the same time and the agent picks one per request. When no channel is configured, the image generation tool is hidden from the agent.",
+                "Configure independent OpenAI/Gemini channels; the agent picks one per request. Hidden when none configured.",
             })}
           </span>
         </div>
@@ -1230,7 +1231,7 @@ export function ImageGenSettingsPanel({
           </small>
         </div>
         <div className="api-settings-summary-card">
-          <Gauge size={15} strokeWidth={1.8} />
+          <CircleCheck size={15} strokeWidth={1.8} />
           <span>{enabledCount}</span>
           <small>
             {t("settings.imagegenEnabled", { defaultValue: "Enabled" })}
@@ -1297,7 +1298,13 @@ export function ImageGenSettingsPanel({
               {IMAGE_GEN_MAX_CONCURRENT_RANGE.max}
             </span>
           </div>
-          <small className="imagegen-concurrency-hint">
+          <small
+            className="imagegen-concurrency-hint"
+            title={t("settings.imagegenMaxConcurrentHint", {
+              defaultValue:
+                "When the agent requests several images at once, at most this many are generated in parallel; the rest wait in the queue. Lower it if your provider rate-limits image requests.",
+            })}
+          >
             {t("settings.imagegenMaxConcurrentHint", {
               defaultValue:
                 "When the agent requests several images at once, at most this many are generated in parallel; the rest wait in the queue. Lower it if your provider rate-limits image requests.",
@@ -1361,7 +1368,13 @@ export function ImageGenSettingsPanel({
               {IMAGE_GEN_TIMEOUT_RANGE.min}–{IMAGE_GEN_TIMEOUT_RANGE.max}
             </span>
           </div>
-          <small className="imagegen-concurrency-hint">
+          <small
+            className="imagegen-concurrency-hint"
+            title={t("settings.imagegenTimeoutHint", {
+              defaultValue:
+                "Max wait time per generation/edit request (including streaming). Complex prompts or 2K/4K output can take several minutes — raise this if requests time out.",
+            })}
+          >
             {t("settings.imagegenTimeoutHint", {
               defaultValue:
                 "Max wait time per generation/edit request (including streaming). Complex prompts or 2K/4K output can take several minutes — raise this if requests time out.",

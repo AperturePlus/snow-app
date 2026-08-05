@@ -641,7 +641,7 @@ export const zhCN = {
   "settings.apiSettings": "API 设置",
   "settings.imagegenSettings": "图像生成",
   "settings.imagegenDescription":
-    "OpenAI 与 Gemini 渠道可独立配置、同时启用，AI 每次调用时自行选择渠道。所有渠道都未配置时，生图工具不会暴露给 AI。",
+    "OpenAI 与 Gemini 渠道可独立配置、同时启用，AI 每次自行选择。未配置时隐藏生图工具。",
   "settings.closeImagegenSettings": "关闭图像生成设置",
   "settings.imagegenChannels": "渠道",
   "settings.imagegenChannelOpenai": "OpenAI 渠道",
@@ -762,6 +762,9 @@ export const zhCN = {
   "settings.imageLibraryDelete": "删除",
   "settings.imageLibraryDeleteConfirm":
     "确定删除这张图片吗？会话中的对应图片也会一并移除。",
+  "settings.imageLibrarySelectDir": "选择图片库存储目录",
+  "settings.imageLibraryChangeDir": "更改保存目录",
+  "settings.imageLibraryResetDir": "重置为默认目录",
   "settings.apiSettingsInfo": "配置服务商、模型和凭据。",
   "settings.apiTreeTitle": "API 配置",
   "settings.closeApiSettings": "关闭 API 设置",
@@ -1996,6 +1999,8 @@ export const zhCN = {
   "projectMcp.loadToolsFailed": "工具加载失败",
   "projectMcp.retryTools": "重试",
   "projectMcp.globalDisabled": "该服务已在全局设置中停用，请先在设置页启用。",
+  "projectMcp.serverErrorImagegenNotConfigured":
+    "未配置图像生成渠道，请在「设置 -> 图像生成」中配置至少一个渠道。",
   "projectCodebase.title": "项目代码库管理",
   "projectCodebase.description": "管理 {{project}} 的代码库索引",
   "projectCodebase.noProject": "请先选择项目，再打开项目代码库管理面板。",

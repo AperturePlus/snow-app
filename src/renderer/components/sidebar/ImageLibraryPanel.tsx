@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Download,
+  FolderCog,
   FolderOpen,
   Image as ImageIcon,
   Loader2,
@@ -62,6 +64,8 @@ export const ImageLibraryPanel = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [root, setRoot] = useState("");
+  const [customDir, setCustomDir] = useState("");
+  const [changingDir, setChangingDir] = useState(false);
   const [ratioFilter, setRatioFilter] = useState<RatioFilter>("all");
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
   const [modelFilter, setModelFilter] = useState("all");
@@ -74,12 +78,14 @@ export const ImageLibraryPanel = ({
     setLoading(true);
     setError("");
     try {
-      const [records, rootPath] = await Promise.all([
+      const [records, rootPath, savedDir] = await Promise.all([
         window.snow.listImageLibrary(),
         window.snow.getImageLibraryRoot().catch(() => ""),
+        window.snow.getImageLibraryDir().catch(() => ""),
       ]);
       setItems(records);
       setRoot(rootPath);
+      setCustomDir(savedDir);
     } catch (loadError) {
       setError(
         loadError instanceof Error ? loadError.message : String(loadError)
@@ -197,44 +203,118 @@ export const ImageLibraryPanel = ({
     );
   };
 
+  const handleChangeDir = async (): Promise<void> => {
+    const selected = await window.snow.selectImageDirectory(
+      t("settings.imageLibrarySelectDir")
+    );
+    if (!selected) return;
+    setChangingDir(true);
+    try {
+      await window.snow.setImageLibraryDir(selected);
+      setCustomDir(selected);
+      const newRoot = await window.snow.getImageLibraryRoot().catch(() => "");
+      setRoot(newRoot);
+      imageDataCache.clear();
+      setDataUrls({});
+    } finally {
+      setChangingDir(false);
+    }
+  };
+
+  const handleResetDir = async (): Promise<void> => {
+    setChangingDir(true);
+    try {
+      await window.snow.setImageLibraryDir("");
+      setCustomDir("");
+      const newRoot = await window.snow.getImageLibraryRoot().catch(() => "");
+      setRoot(newRoot);
+      imageDataCache.clear();
+      setDataUrls({});
+    } finally {
+      setChangingDir(false);
+    }
+  };
+
   const lightboxDataUrl = lightbox ? dataUrls[lightbox.relativePath] ?? "" : "";
+
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setLightbox(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [lightbox]);
 
   return (
     <div className="api-settings-page image-library-page">
-      <header className="page-header image-library-header">
-        <div className="image-library-title">
-          <h2>{t("settings.imageLibrary")}</h2>
-          <span className="image-library-subtitle">
+      <div className="api-settings-page-header">
+        <div className="api-settings-title-group">
+          <strong>{t("settings.imageLibrary")}</strong>
+          <span className="settings-item-description">
             {t("settings.imageLibraryDescription")}
           </span>
         </div>
         <div className="image-library-actions">
-          {root ? (
-            <span className="image-library-root" title={root}>
-              <FolderOpen size={11} aria-hidden="true" />
-              {root}
-            </span>
-          ) : null}
           <button
             type="button"
-            className="api-settings-form-btn"
+            className="icon-btn ghost"
             onClick={() => void load()}
             title={t("settings.imageLibraryRefresh")}
             aria-label={t("settings.imageLibraryRefresh")}
           >
-            <RefreshCw size={12} aria-hidden="true" />
+            <RefreshCw size={15} strokeWidth={1.8} />
           </button>
           <button
             type="button"
-            className="api-settings-form-btn image-library-close"
+            className="icon-btn ghost"
             onClick={onClose}
             aria-label={t("toolCall.imagegen.close")}
             title={t("toolCall.imagegen.close")}
           >
-            <X size={13} aria-hidden="true" />
+            <X size={15} strokeWidth={1.8} />
           </button>
         </div>
-      </header>
+      </div>
+
+      {root ? (
+        <div className="image-library-root-bar" title={root}>
+          {changingDir ? (
+            <Loader2
+              size={12}
+              className="tool-call-icon-spinning"
+              aria-hidden="true"
+            />
+          ) : (
+            <FolderOpen size={12} aria-hidden="true" />
+          )}
+          <span className="image-library-root-path">{root}</span>
+          <button
+            type="button"
+            className="image-library-root-action"
+            onClick={() => void handleChangeDir()}
+            disabled={changingDir}
+            title={t("settings.imageLibraryChangeDir")}
+            aria-label={t("settings.imageLibraryChangeDir")}
+          >
+            <FolderCog size={11} aria-hidden="true" />
+          </button>
+          {customDir ? (
+            <button
+              type="button"
+              className="image-library-root-action"
+              onClick={() => void handleResetDir()}
+              disabled={changingDir}
+              title={t("settings.imageLibraryResetDir")}
+              aria-label={t("settings.imageLibraryResetDir")}
+            >
+              <X size={11} aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="image-library-toolbar">
         <div className="image-library-filter-group">
@@ -411,45 +491,48 @@ export const ImageLibraryPanel = ({
         )}
       </div>
 
-      {lightbox && lightboxDataUrl ? (
-        <div
-          className="tool-call-imagegen-lightbox"
-          onClick={() => setLightbox(null)}
-          role="presentation"
-        >
-          <img
-            src={lightboxDataUrl}
-            alt={lightbox.prompt || lightbox.fileName}
-            onClick={(event) => event.stopPropagation()}
-          />
-          <div
-            className="tool-call-imagegen-lightbox-toolbar"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <span className="image-library-lightbox-meta">
-              {lightbox.model ? `${lightbox.model} · ` : ""}
-              {lightbox.provider ? `${lightbox.provider} · ` : ""}
-              {lightbox.createdAt}
-            </span>
-            <button
-              type="button"
-              className="tool-call-imagegen-download"
-              onClick={() => void handleDownload(lightbox)}
-            >
-              <Download size={13} aria-hidden="true" />
-              {t("toolCall.imagegen.download")}
-            </button>
-            <button
-              type="button"
-              className="tool-call-imagegen-lightbox-close"
+      {lightbox && lightboxDataUrl
+        ? createPortal(
+            <div
+              className="tool-call-imagegen-lightbox"
               onClick={() => setLightbox(null)}
-              aria-label={t("toolCall.imagegen.close")}
+              role="presentation"
             >
-              ✕
-            </button>
-          </div>
-        </div>
-      ) : null}
+              <img
+                src={lightboxDataUrl}
+                alt={lightbox.prompt || lightbox.fileName}
+                onClick={(event) => event.stopPropagation()}
+              />
+              <div
+                className="tool-call-imagegen-lightbox-toolbar"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <span className="image-library-lightbox-meta">
+                  {lightbox.model ? `${lightbox.model} · ` : ""}
+                  {lightbox.provider ? `${lightbox.provider} · ` : ""}
+                  {lightbox.createdAt}
+                </span>
+                <button
+                  type="button"
+                  className="tool-call-imagegen-download"
+                  onClick={() => void handleDownload(lightbox)}
+                >
+                  <Download size={13} aria-hidden="true" />
+                  {t("toolCall.imagegen.download")}
+                </button>
+                <button
+                  type="button"
+                  className="tool-call-imagegen-lightbox-close"
+                  onClick={() => setLightbox(null)}
+                  aria-label={t("toolCall.imagegen.close")}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 };

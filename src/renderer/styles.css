@@ -26048,20 +26048,48 @@ body.ctrl-held [data-path] {
   flex-shrink: 0;
 }
 
-.image-library-root {
-  display: inline-flex;
+.image-library-root-bar {
+  display: flex;
   align-items: center;
-  gap: 4px;
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 3px 8px;
+  gap: 6px;
+  padding: 6px 10px;
   border-radius: var(--radius-sm);
   background: var(--bg-tertiary);
   color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.image-library-root-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: 10.5px;
+}
+
+.image-library-root-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.image-library-root-action:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.image-library-root-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .image-library-close {
@@ -26161,8 +26189,7 @@ body.ctrl-held [data-path] {
 
 .image-library-card:hover,
 .image-library-card:focus-visible {
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
-  transform: translateY(-1px);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
 }
 
 .image-library-card img {

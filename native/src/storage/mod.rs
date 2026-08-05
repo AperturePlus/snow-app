@@ -1945,10 +1945,22 @@ impl From<services::image_library::ImageLibraryRecord> for ImageLibraryRecord {
     }
 }
 
-/// 图库根目录绝对路径（优先安装目录旁 `image/`，失败回退存储目录）。
+/// 图库根目录绝对路径（优先用户自定义路径，回退 `~/.snowapp/image`）。
 pub fn get_image_library_root() -> Result<String> {
     services::image_library::image_library_root()
         .map(|path| path.to_string_lossy().into_owned())
+}
+
+/// 读取图库自定义保存目录（空字符串表示使用默认目录）。
+pub fn get_image_library_dir() -> Result<String> {
+    let database_path = ensure_database_file()?;
+    services::system_settings::get_image_library_dir(&database_path)
+}
+
+/// 设置图库自定义保存目录（传入空字符串重置为默认目录）。
+pub fn set_image_library_dir(dir: String) -> Result<()> {
+    let database_path = ensure_database_file()?;
+    services::system_settings::set_image_library_dir(&database_path, &dir)
 }
 
 /// 列出图库全部图片（按创建时间倒序）。

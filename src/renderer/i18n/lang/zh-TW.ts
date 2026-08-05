@@ -637,7 +637,7 @@ export const zhTW = {
   "settings.apiSettings": "API 設定",
   "settings.imagegenSettings": "影像生成",
   "settings.imagegenDescription":
-    "OpenAI 與 Gemini 渠道可獨立設定、同時啟用，AI 每次呼叫時自行選擇渠道。所有渠道皆未設定時，生圖工具不會暴露給 AI。",
+    "OpenAI 與 Gemini 渠道可獨立設定、同時啟用，AI 每次自行選擇。未設定時隱藏生圖工具。",
   "settings.closeImagegenSettings": "關閉影像生成設定",
   "settings.imagegenChannels": "渠道",
   "settings.imagegenChannelOpenai": "OpenAI 渠道",
@@ -758,6 +758,9 @@ export const zhTW = {
   "settings.imageLibraryDelete": "刪除",
   "settings.imageLibraryDeleteConfirm":
     "確定刪除這張圖片嗎？會話中的對應圖片也會一併移除。",
+  "settings.imageLibrarySelectDir": "選擇圖片庫儲存目錄",
+  "settings.imageLibraryChangeDir": "更改儲存目錄",
+  "settings.imageLibraryResetDir": "重置為預設目錄",
   "settings.apiSettingsInfo": "配置服務商、模型和憑證。",
   "settings.apiTreeTitle": "API 配置",
   "settings.closeApiSettings": "關閉 API 設定",
@@ -1970,6 +1973,8 @@ export const zhTW = {
   "projectMcp.loadToolsFailed": "工具載入失敗",
   "projectMcp.retryTools": "重試",
   "projectMcp.globalDisabled": "此服務已在全域設定中停用，請先在設定頁啟用。",
+  "projectMcp.serverErrorImagegenNotConfigured":
+    "未配置圖像生成渠道，請在「設定 -> 圖像生成」中配置至少一個渠道。",
   "projectCodebase.title": "專案程式碼庫管理",
   "projectCodebase.description": "管理 {{project}} 的程式碼庫索引",
   "projectCodebase.noProject": "請先選擇專案，再開啟專案程式碼庫管理面板。",

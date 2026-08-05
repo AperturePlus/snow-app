@@ -659,7 +659,7 @@ export const en = {
   "settings.apiSettings": "API settings",
   "settings.imagegenSettings": "Image generation",
   "settings.imagegenDescription":
-    "Configure OpenAI and Gemini channels independently; both can be enabled at the same time and the agent picks one per request. When no channel is configured, the image generation tool is hidden from the agent.",
+    "Configure independent OpenAI/Gemini channels; the agent picks one per request. Hidden when none configured.",
   "settings.closeImagegenSettings": "Close image generation settings",
   "settings.imagegenChannels": "Channels",
   "settings.imagegenChannelOpenai": "OpenAI channel",
@@ -788,6 +788,9 @@ export const en = {
   "settings.imageLibraryDelete": "Delete",
   "settings.imageLibraryDeleteConfirm":
     "Delete this image? It will also be removed from the conversation.",
+  "settings.imageLibrarySelectDir": "Select image library directory",
+  "settings.imageLibraryChangeDir": "Change save directory",
+  "settings.imageLibraryResetDir": "Reset to default directory",
   "settings.apiSettingsInfo": "Configure providers, models, and credentials.",
   "settings.apiTreeTitle": "API configuration",
   "settings.closeApiSettings": "Close API settings",
@@ -2113,6 +2116,8 @@ export const en = {
   "projectMcp.retryTools": "Retry",
   "projectMcp.globalDisabled":
     "Disabled globally. Enable it in Settings before using it in this project.",
+  "projectMcp.serverErrorImagegenNotConfigured":
+    "No image generation channel configured. Configure at least one channel in Settings -> Image generation.",
   "projectCodebase.title": "Project Codebase",
   "projectCodebase.description": "Codebase indexing for {{project}}",
   "projectCodebase.noProject":
