@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { useI18n } from "../../i18n";
+import { ConfirmDialog } from "../common/ConfirmDialog";
 import type { ImageLibraryRecord } from "../../../preload";
 
 type RatioFilter = "all" | "landscape" | "square" | "portrait";
@@ -73,6 +74,8 @@ export const ImageLibraryPanel = ({
   const [dataUrls, setDataUrls] = useState<Record<string, string>>({});
   const [lightbox, setLightbox] = useState<ImageLibraryRecord | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingDeletion, setPendingDeletion] =
+    useState<ImageLibraryRecord | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -173,10 +176,18 @@ export const ImageLibraryPanel = ({
     });
   }, [items, ratioFilter, timeFilter, modelFilter, providerFilter]);
 
-  const handleDelete = async (record: ImageLibraryRecord): Promise<void> => {
-    if (!window.confirm(t("settings.imageLibraryDeleteConfirm"))) {
+  /** 请求删除图片（弹出确认对话框）。 */
+  const requestDelete = (record: ImageLibraryRecord): void => {
+    setPendingDeletion(record);
+  };
+
+  /** 确认删除图片。 */
+  const confirmDelete = async (): Promise<void> => {
+    const record = pendingDeletion;
+    if (!record) {
       return;
     }
+    setPendingDeletion(null);
     setDeletingId(record.id);
     try {
       await window.snow.deleteImageLibraryImage(record.id);
@@ -468,7 +479,7 @@ export const ImageLibraryPanel = ({
                     <button
                       type="button"
                       className="image-library-card-btn danger"
-                      onClick={() => void handleDelete(record)}
+                      onClick={() => requestDelete(record)}
                       disabled={deletingId === record.id}
                       title={t("settings.imageLibraryDelete")}
                       aria-label={t("settings.imageLibraryDelete")}
@@ -533,6 +544,24 @@ export const ImageLibraryPanel = ({
             document.body
           )
         : null}
+
+      <ConfirmDialog
+        open={pendingDeletion !== null}
+        title={t("settings.imageLibraryDeleteTitle", {
+          defaultValue: "Delete image",
+        })}
+        message={t("settings.imageLibraryDeleteConfirm", {
+          defaultValue:
+            "Delete this image? It will also be removed from the conversation.",
+        })}
+        confirmLabel={t("settings.imageLibraryDelete", {
+          defaultValue: "Delete",
+        })}
+        cancelLabel={t("settings.cancel", { defaultValue: "Cancel" })}
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => setPendingDeletion(null)}
+        variant="danger"
+      />
     </div>
   );
 };
