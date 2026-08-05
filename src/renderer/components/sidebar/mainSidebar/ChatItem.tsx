@@ -55,6 +55,10 @@ export function ChatItem({
   const [isEditing, setIsEditing] = useState(false);
   const [editingValue, setEditingValue] = useState("");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [contextMenuAnchor, setContextMenuAnchor] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
   const isSubmittingRef = useRef(false);
   const cancelledRef = useRef(false);
@@ -153,6 +157,16 @@ export function ChatItem({
     onSelect?.();
   };
 
+  // 右键 == 三点按钮菜单：在光标位置弹出同一份操作菜单
+  const handleContextMenu = (event: React.MouseEvent): void => {
+    // 编辑/多选模式下不拦截右键，保留系统菜单（输入框复制粘贴等）
+    if (isEditing || isMultiSelectMode) {
+      return;
+    }
+    event.preventDefault();
+    setContextMenuAnchor({ x: event.clientX, y: event.clientY });
+  };
+
   const handleToggleExpand = (event: React.MouseEvent): void => {
     event.stopPropagation();
     onToggleSubAgentPanel?.();
@@ -171,6 +185,7 @@ export function ChatItem({
       }`}
       key={conversation.conversationId}
       onClick={handleSelectClick}
+      onContextMenu={handleContextMenu}
       role="button"
       tabIndex={0}
       onKeyDown={(event) => {
@@ -204,9 +219,9 @@ export function ChatItem({
         <span
           className={`chat-item-icon${isStreaming ? " streaming" : ""}${
             isCompleted && !isStreaming ? " completed" : ""
-          }${isForked ? " forked" : ""}${hasSubAgents ? " has-sub-agents" : ""}${
-            hasEmoji ? " has-emoji" : ""
-          }`}
+          }${isForked ? " forked" : ""}${
+            hasSubAgents ? " has-sub-agents" : ""
+          }${hasEmoji ? " has-emoji" : ""}`}
           onClick={(event) => {
             // 图标不再承载交互，点击仅阻止选中会话；修改入口在右键菜单中
             event.stopPropagation();
@@ -289,6 +304,8 @@ export function ChatItem({
             onExport={onExport}
             onEnterMultiSelect={onEnterMultiSelect}
             onOpenChange={setIsMenuOpen}
+            contextMenuAnchor={contextMenuAnchor}
+            onContextMenuClose={() => setContextMenuAnchor(null)}
           />
         </span>
       )}

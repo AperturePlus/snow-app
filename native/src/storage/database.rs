@@ -498,6 +498,9 @@ CREATE INDEX IF NOT EXISTS idx_api_configs_active
     // module so the schema lives next to its CRUD functions.
     services::codebase_embed_sessions::ensure_sessions_table(connection)?;
 
+    // Ensure the image library table exists (generated images index).
+    services::image_library::ensure_image_library_table(connection)?;
+
     // Post-schema migrations run AFTER CREATE TABLE to add columns that
     // older databases lack but fresh databases already have. Each migration
     // is idempotent. Includes the local per-conversation Plan/Goal Mode

@@ -34,3 +34,4 @@ pub mod privacy_settings;
 pub mod request_logging_settings;
 pub mod memos;
 pub mod keyboard_shortcuts;
+pub mod image_library;

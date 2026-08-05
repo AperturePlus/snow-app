@@ -13,6 +13,7 @@ import {
   CodebaseToolCall,
   CodeLensToolCall,
   WebSearchToolCall,
+  ImageGenToolCall,
   BrowserToolCall,
   TerminalToolCall,
 } from "../toolCalls";
@@ -112,6 +113,10 @@ export const ToolCallItem = memo(
       toolCall.name === "websearch-websearch-fetch"
     ) {
       return <WebSearchToolCall toolCall={toolCall} />;
+    }
+
+    if (toolCall.name === "imagegen-generate") {
+      return <ImageGenToolCall toolCall={toolCall} />;
     }
 
     if (toolCall.name.startsWith("browser-")) {

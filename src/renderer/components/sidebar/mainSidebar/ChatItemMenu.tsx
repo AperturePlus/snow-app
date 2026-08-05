@@ -4,7 +4,6 @@ import {
   PinOff,
   Pencil,
   Trash2,
-  AlertTriangle,
   Download,
   ChevronRight,
   ChevronLeft,
@@ -30,6 +29,10 @@ type ChatItemMenuProps = {
   onExport: (format: ExportFormat) => void;
   onEnterMultiSelect?: () => void;
   onOpenChange?: (isOpen: boolean) => void;
+  /** 右键菜单锚点（光标位置）：非空时菜单以该点定位并保持打开 */
+  contextMenuAnchor?: { x: number; y: number } | null;
+  /** 右键菜单关闭回调（父组件用于清空锚点） */
+  onContextMenuClose?: () => void;
 };
 
 export function ChatItemMenu({
@@ -42,12 +45,15 @@ export function ChatItemMenu({
   onExport,
   onEnterMultiSelect,
   onOpenChange,
+  contextMenuAnchor = null,
+  onContextMenuClose,
 }: ChatItemMenuProps): React.JSX.Element {
   const { t } = useI18n();
-  const [isOpen, setIsOpen] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
+  const [isButtonOpen, setIsButtonOpen] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
+  // 右键锚点存在时菜单即为打开状态
+  const isOpen = isButtonOpen || contextMenuAnchor !== null;
   const containerRef = useRef<HTMLSpanElement>(null);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -56,6 +62,8 @@ export function ChatItemMenu({
   const emojiTriggerRef = useRef<HTMLButtonElement>(null);
   const onOpenChangeRef = useRef(onOpenChange);
   onOpenChangeRef.current = onOpenChange;
+  const onContextMenuCloseRef = useRef(onContextMenuClose);
+  onContextMenuCloseRef.current = onContextMenuClose;
 
   const showExportRef = useRef(showExport);
   showExportRef.current = showExport;
@@ -65,6 +73,7 @@ export function ChatItemMenu({
     placement: "auto-up-down",
     triggerRef,
     panelRef: menuRef,
+    anchorPoint: contextMenuAnchor,
     onReposition: () => {
       if (showExportRef.current) {
         updateExportPositionRef.current?.();
@@ -72,16 +81,14 @@ export function ChatItemMenu({
     },
   });
 
-  const {
-    position: exportPosition,
-    updatePosition: updateExportPosition,
-  } = useMenuPosition({
-    isOpen: isOpen && showExport,
-    placement: "auto-left-right",
-    triggerRef: exportTriggerRef,
-    panelRef: exportPanelRef,
-    observeRefs: [menuRef],
-  });
+  const { position: exportPosition, updatePosition: updateExportPosition } =
+    useMenuPosition({
+      isOpen: isOpen && showExport,
+      placement: "auto-left-right",
+      triggerRef: exportTriggerRef,
+      panelRef: exportPanelRef,
+      observeRefs: [menuRef],
+    });
 
   const updateExportPositionRef = useRef(updateExportPosition);
   updateExportPositionRef.current = updateExportPosition;
@@ -95,7 +102,21 @@ export function ChatItemMenu({
       return;
     }
 
+    // 关闭菜单：清空按钮态与右键锚点态
+    const closeMenu = (): void => {
+      setIsButtonOpen(false);
+      onContextMenuCloseRef.current?.();
+      setShowExport(false);
+      setShowEmoji(false);
+    };
+
     const handleClickOutside = (event: MouseEvent): void => {
+      // 右键按下不立即关闭：由 document 级 contextmenu 监听统一处理，
+      // 允许在同一行上连续右键时直接重新定位菜单，避免闪烁。
+      if (event.button === 2) {
+        return;
+      }
+
       const target = event.target as Node;
 
       if (
@@ -106,89 +127,115 @@ export function ChatItemMenu({
         return;
       }
 
-      setIsOpen(false);
-      setShowConfirm(false);
-      setShowExport(false);
-      setShowEmoji(false);
+      closeMenu();
+    };
+
+    // 其它区域右键时关闭本菜单（目标行会自行打开自己的菜单）。
+    // 注意：右键发生在同一会话行内任意位置（而非仅三点按钮）时，
+    // 需要让本行自行重新定位菜单，因此用 closest(".chat-item") 比较
+    // 所在行，而不能只用 containerRef（它只包裹三点按钮）。
+    const handleGlobalContextMenu = (event: MouseEvent): void => {
+      const target = event.target as Node;
+
+      const isSameChatItem =
+        target instanceof Element &&
+        containerRef.current instanceof Element &&
+        containerRef.current.closest(".chat-item") !== null &&
+        containerRef.current.closest(".chat-item") ===
+          target.closest(".chat-item");
+
+      if (
+        (containerRef.current && containerRef.current.contains(target)) ||
+        (menuRef.current && menuRef.current.contains(target)) ||
+        (exportPanelRef.current && exportPanelRef.current.contains(target)) ||
+        isSameChatItem
+      ) {
+        return;
+      }
+
+      closeMenu();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        closeMenu();
+      }
     };
 
     document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("contextmenu", handleGlobalContextMenu);
+    window.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("contextmenu", handleGlobalContextMenu);
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen]);
 
   const handleToggle = (event: React.SyntheticEvent): void => {
     event.stopPropagation();
     event.preventDefault();
-    setIsOpen((prev) => !prev);
-    setShowConfirm(false);
+    // 点击 … 按钮切换按钮菜单；若右键菜单正打开则先清空锚点
+    setIsButtonOpen((prev) => !prev);
+    onContextMenuCloseRef.current?.();
     setShowExport(false);
     setShowEmoji(false);
   };
 
   const handlePin = (): void => {
     onPin();
-    setIsOpen(false);
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
   };
 
   const handleRename = (): void => {
     onRename();
-    setIsOpen(false);
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
   };
 
   const handleMultiSelect = (): void => {
     onEnterMultiSelect?.();
-    setIsOpen(false);
+    setIsButtonOpen(false);
   };
 
   const handleDeleteClick = (): void => {
-    setShowConfirm(true);
-    setShowExport(false);
-    setShowEmoji(false);
-  };
-
-  const handleDeleteConfirm = (): void => {
+    // 删除确认统一由父级 ChatDeleteConfirmModal 弹窗处理
     onDelete();
-    setIsOpen(false);
-    setShowConfirm(false);
-  };
-
-  const handleDeleteCancel = (): void => {
-    setShowConfirm(false);
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
   };
 
   const handleExportClick = (): void => {
     setShowExport((prev) => !prev);
-    setShowConfirm(false);
     setShowEmoji(false);
   };
 
   const handleExportSelect = (format: ExportFormat): void => {
     onExport(format);
-    setIsOpen(false);
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
     setShowExport(false);
   };
 
   const handleEmojiClick = (): void => {
     setShowEmoji((prev) => !prev);
-    setShowConfirm(false);
     setShowExport(false);
   };
 
   const handleEmojiSelect = (emoji: string): void => {
     void onSetEmoji(emoji);
-    setIsOpen(false);
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
     setShowEmoji(false);
-    setShowConfirm(false);
     setShowExport(false);
   };
 
   // Escape / 焦点离开面板等场景：关闭整个菜单
   const handleEmojiClose = (): void => {
-    setIsOpen(false);
+    setIsButtonOpen(false);
+    onContextMenuCloseRef.current?.();
     setShowEmoji(false);
-    setShowConfirm(false);
     setShowExport(false);
   };
 
@@ -222,142 +269,108 @@ export function ChatItemMenu({
               }
               role="menu"
             >
-              {showConfirm ? (
-                <>
-                  <div className="chat-item-menu-confirm">
-                    <AlertTriangle
-                      size={13}
-                      className="chat-item-menu-confirm-icon"
-                    />
-                    <span className="chat-item-menu-confirm-text">
-                      {t("sidebar.chatDeleteConfirm", {
-                        defaultValue:
-                          "Are you sure you want to delete this conversation?",
-                      })}
-                    </span>
-                  </div>
-                  <div className="chat-item-menu-confirm-actions">
-                    <button
-                      type="button"
-                      className="chat-item-menu-confirm-btn cancel"
-                      onClick={handleDeleteCancel}
-                    >
-                      {t("common.cancel", { defaultValue: "Cancel" })}
-                    </button>
-                    <button
-                      type="button"
-                      className="chat-item-menu-confirm-btn delete"
-                      onClick={handleDeleteConfirm}
-                    >
-                      {t("sidebar.chatActionDelete", {
-                        defaultValue: "Delete",
-                      })}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
+              <>
+                <button
+                  type="button"
+                  className="chat-item-menu-item"
+                  onClick={handlePin}
+                  role="menuitem"
+                >
+                  {isPinned ? <PinOff size={13} /> : <Pin size={13} />}
+                  <span>
+                    {isPinned
+                      ? t("sidebar.chatActionUnpin", {
+                          defaultValue: "Unpin",
+                        })
+                      : t("sidebar.chatActionPin", { defaultValue: "Pin" })}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="chat-item-menu-item"
+                  onClick={handleRename}
+                  role="menuitem"
+                >
+                  <Pencil size={13} />
+                  <span>
+                    {t("sidebar.chatActionRename", {
+                      defaultValue: "Rename",
+                    })}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  ref={emojiTriggerRef}
+                  className={`chat-item-menu-item${showEmoji ? " active" : ""}`}
+                  onClick={handleEmojiClick}
+                  role="menuitem"
+                  aria-expanded={showEmoji}
+                  aria-haspopup="menu"
+                >
+                  {emoji ? (
+                    <span className="chat-item-menu-emoji">{emoji}</span>
+                  ) : (
+                    <SmilePlus size={13} />
+                  )}
+                  <span>
+                    {t("sidebar.chatActionIcon", { defaultValue: "Icon" })}
+                  </span>
+                  <ChevronRight
+                    size={11}
+                    className="chat-item-menu-sub-arrow"
+                  />
+                </button>
+                <button
+                  type="button"
+                  ref={exportTriggerRef}
+                  className={`chat-item-menu-item${
+                    showExport ? " active" : ""
+                  }`}
+                  onClick={handleExportClick}
+                  role="menuitem"
+                  aria-expanded={showExport}
+                  aria-haspopup="menu"
+                >
+                  <Download size={13} />
+                  <span>
+                    {t("sidebar.chatActionExport", {
+                      defaultValue: "Export",
+                    })}
+                  </span>
+                  <ChevronRight
+                    size={11}
+                    className="chat-item-menu-sub-arrow"
+                  />
+                </button>
+                {onEnterMultiSelect ? (
                   <button
                     type="button"
                     className="chat-item-menu-item"
-                    onClick={handlePin}
+                    onClick={handleMultiSelect}
                     role="menuitem"
                   >
-                    {isPinned ? <PinOff size={13} /> : <Pin size={13} />}
+                    <ListChecks size={13} />
                     <span>
-                      {isPinned
-                        ? t("sidebar.chatActionUnpin", {
-                            defaultValue: "Unpin",
-                          })
-                        : t("sidebar.chatActionPin", { defaultValue: "Pin" })}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className="chat-item-menu-item"
-                    onClick={handleRename}
-                    role="menuitem"
-                  >
-                    <Pencil size={13} />
-                    <span>
-                      {t("sidebar.chatActionRename", {
-                        defaultValue: "Rename",
+                      {t("sidebar.chatActionMultiSelect", {
+                        defaultValue: "Multi-select",
                       })}
                     </span>
                   </button>
-                  <button
-                    type="button"
-                    ref={emojiTriggerRef}
-                    className={`chat-item-menu-item${
-                      showEmoji ? " active" : ""
-                    }`}
-                    onClick={handleEmojiClick}
-                    role="menuitem"
-                    aria-expanded={showEmoji}
-                    aria-haspopup="menu"
-                  >
-                    {emoji ? (
-                      <span className="chat-item-menu-emoji">{emoji}</span>
-                    ) : (
-                      <SmilePlus size={13} />
-                    )}
-                    <span>
-                      {t("sidebar.chatActionIcon", { defaultValue: "Icon" })}
-                    </span>
-                    <ChevronRight
-                      size={11}
-                      className="chat-item-menu-sub-arrow"
-                    />
-                  </button>
-                  <button
-                    type="button"
-                    ref={exportTriggerRef}
-                    className={`chat-item-menu-item${
-                      showExport ? " active" : ""
-                    }`}
-                    onClick={handleExportClick}
-                    role="menuitem"
-                    aria-expanded={showExport}
-                    aria-haspopup="menu"
-                  >
-                    <Download size={13} />
-                    <span>
-                      {t("sidebar.chatActionExport", {
-                        defaultValue: "Export",
-                      })}
-                    </span>
-                    <ChevronRight size={11} className="chat-item-menu-sub-arrow" />
-                  </button>
-                  {onEnterMultiSelect ? (
-                    <button
-                      type="button"
-                      className="chat-item-menu-item"
-                      onClick={handleMultiSelect}
-                      role="menuitem"
-                    >
-                      <ListChecks size={13} />
-                      <span>
-                        {t("sidebar.chatActionMultiSelect", {
-                          defaultValue: "Multi-select",
-                        })}
-                      </span>
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="chat-item-menu-item danger"
-                    onClick={handleDeleteClick}
-                    role="menuitem"
-                  >
-                    <Trash2 size={13} />
-                    <span>
-                      {t("sidebar.chatActionDelete", {
-                        defaultValue: "Delete",
-                      })}
-                    </span>
-                  </button>
-                </>
-              )}
+                ) : null}
+                <button
+                  type="button"
+                  className="chat-item-menu-item danger"
+                  onClick={handleDeleteClick}
+                  role="menuitem"
+                >
+                  <Trash2 size={13} />
+                  <span>
+                    {t("sidebar.chatActionDelete", {
+                      defaultValue: "Delete",
+                    })}
+                  </span>
+                </button>
+              </>
             </div>,
             document.body
           )

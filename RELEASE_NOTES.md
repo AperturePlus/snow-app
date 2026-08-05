@@ -1,12 +1,100 @@
 # Release Notes
 
-## v0.1.17
+## v0.1.17 (unreleased)
+
+## New Features
+
+- **Image-to-Image Editing with Reference Images**: Attached images are always
+  used as references for image-to-image editing (OpenAI `/images/edits`
+  multipart / Gemini `inlineData`). When the main model does not support
+  vision, the textification pass (`api/vision.rs`) injects a
+  `[Reference image #N for imagegen-generate: {"path": ..., "mimeType": ...}]`
+  block per image — a small relative path under the upload/ directory instead
+  of a huge base64 blob — plus an explicit guidance line telling the model to
+  edit the attached images rather than regenerate from the description alone.
+  `imagegen-generate` resolves `path` references itself (restricted to the
+  upload/ directory, traversal rejected; server limit 14 images / ≤20MB each,
+  tool description guides the model to ≤5). Reference thumbnails on the
+  generation card show real images for both inline base64 and `path`
+  references (read from disk via a new `images:resolve-upload-image` IPC
+  channel, cached per session).
+- **Imagegen Model Capability Validation & 400 Protection**: `imagegen-generate`
+  now validates model capabilities before sending the request, so the most
+  common provider 400 errors are prevented or self-healed: `dall-e-3` is
+  text-to-image only (reference images are rejected with a clear
+  switch-model hint) and always generates exactly 1 image (`n>1` is clamped);
+  `imagen-*` models are text-to-image only as well. Upstream 400 responses are
+  annotated with a concrete fix hint (image count / image input / size /
+  quality), letting the agent retry correctly in one step, and the tool's
+  `model` parameter description now documents the capability rules up front.
+- **Max Concurrent Generations**: A global `maxConcurrentImages` setting
+  (1–8, default 4, in Settings → Image generation and the `imagegen` config
+  scope) caps how many generation requests run in parallel when the agent
+  requests several images at once; the rest wait in a queue and a new one
+  starts as soon as one finishes.
+- **Per-Conversation Input Draft Persistence**: Draft text (including image
+  chips) is saved per conversation and restored when switching back or
+  creating a new chat, so input is never lost while the chat view reloads.
+- **Image Library (Generated Image Management)**: Every generated image is
+  now persisted to an `image/` folder next to the app installation directory
+  (falls back to the storage directory when the install dir is read-only) and
+  indexed in a new `image_library` table (model / provider / prompt / mime /
+  size / dimensions / timestamp). Chat messages store the small `image/...`
+  path reference instead of the huge base64 blob, so the database stops
+  bloating. A new **Image library** panel (Settings sidebar) offers a
+  filterable grid (ratio landscape/square/portrait, time range, provider,
+  model) with click-to-zoom lightbox, per-image download, and delete —
+  deleting an image physically removes the file, its index row, **and
+  rewrites the referencing chat messages** (both `content` and `raw_json`) so
+  conversations stay consistent. Historical base64 images keep rendering
+  unchanged; if persistence fails the inline base64 fallback still works.
+  When deleting a conversation, a dedicated **delete-confirmation modal**
+  (single and batch delete alike) shows an **"also delete generated images"**
+  checkbox when the selected conversations reference library images — ticking
+  it cascade-deletes every library image referenced by those conversations
+  (files + index rows) before the conversation goes away, while the note
+  "uncheck to keep generated images in the image library" makes the default
+  keep-behavior explicit.
+
+## Improvements
+
+- **Unified Delete-Confirmation Modal**: Conversation deletion now uses a
+  dedicated modal (`ChatDeleteConfirmModal`) shared by single and batch
+  delete — the inline confirmation view inside the item context menu and the
+  batch-confirm bar were removed. When opened, the modal queries how many
+  library images the selected conversations reference and, if any, shows an
+  **"also delete generated images"** checkbox (default unchecked, with an
+  explicit "uncheck to keep images in the library" note). Confirming runs a
+  single unified path: optional cascade image deletion first, then
+  conversation deletion (single delete keeps the sub-agent cascade abort /
+  draft cleanup; batch stays one native transaction). Deleting is guarded by
+  an in-flight state so the dialog cannot be dismissed or double-submitted.
+- **Unified Gallery Layout for Parallel Image Generations**: Images from a
+  single `imagegen-generate` call now share one row width — the gallery grid
+  sizes its columns to the batch so it reads as one cohesive block that fills
+  the message width instead of ragged auto-fill columns: 2–4 images share a
+  single row, 5–6 use three columns over two rows, 7–8 use four columns over
+  two rows (no lone tail image). Card aspect ratio follows the real
+  generated-image ratio (median of the batch): ultra-wide images span the
+  full row and ultra-tall ones are height-capped so extreme aspect ratios
+  stay pleasant. The per-card frame and download/label chrome was removed in
+  favor of a clean image with a subtle index badge and click-to-zoom; the
+  download action now lives in the lightbox only.
+- **Image Generation Settings Panel (aligned with the API settings panel)**:
+  channel rows no longer show redundant provider icons, the provider dropdown
+  uses the shared `CustomSelect` component, and the inline enable toggle
+  refuses to enable a channel that has no API key or model (with a
+  localized hint) — matching the backend rule that only fully configured
+  channels expose the generation tool to the agent.
 
 ## Bug Fixes
 
+- **i18n Placeholder Syntax**: `settings.imagegenChannelCount` and
+  `settings.imageLibraryCount` used the single-brace `{count}` placeholder
+  format, so the channel count and image-library count rendered literally
+  instead of interpolated; both now use the `{{count}}` syntax.
 - Remove temperature parameter
 - Anthropic thinking.effort is discarded after being read
-
 
 ## v0.1.16
 

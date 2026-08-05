@@ -29,6 +29,7 @@ use super::servers::codebase::CodebaseService;
 use super::servers::codelens::CodeLensService;
 use super::servers::filesystem::FilesystemService;
 use super::servers::grep::GrepService;
+use super::servers::imagegen::ImageGenService;
 use super::servers::config::ConfigService;
 use super::servers::remote_workspace::{
     is_ssh_path, resolve_remote_project_workspace, resolve_remote_workspace_path,
@@ -96,6 +97,7 @@ pub const BUILTIN_SERVER_IDS: &[&str] = &[
     "filesystem",
     "sub-agents",
     "websearch",
+    "imagegen",
     "codebase",
     "codelens",
     "browser",
@@ -375,6 +377,20 @@ pub async fn collect_all_mcp_tools(
     // and (3) at least one embedded chunk in the vector table.
     let codebase_available = is_codebase_available(project_id).await?;
 
+    // Image generation tool is only exposed when at least one channel
+    // (OpenAI / Gemini) is configured and enabled in Settings -> Image
+    // generation; when both are unconfigured the tool disappears entirely.
+    let imagegen_configured = tokio::task::spawn_blocking(|| {
+        crate::mcp::servers::imagegen::is_imagegen_configured()
+    })
+    .await
+    .map_err(|error| {
+        Error::new(
+            Status::GenericFailure,
+            format!("Failed to check image generation configuration: {error}"),
+        )
+    })??;
+
     let mut tools = get_builtin_tools()
         .into_iter()
         .filter(|tool| {
@@ -386,6 +402,10 @@ pub async fn collect_all_mcp_tools(
             // Exclude codebase search tool unless the project has codebase
             // enabled and an existing index.
             if tool.server_id == "codebase" && !codebase_available {
+                return false;
+            }
+            // Exclude image generation when no channel is configured.
+            if tool.server_id == "imagegen" && !imagegen_configured {
                 return false;
             }
             tool_is_enabled(tool, scope.as_ref())
@@ -918,6 +938,10 @@ pub async fn call_mcp_tool(
         WebSearchService::new().execute_search(&args).await?
     } else if tool_full_name == "websearch-websearch-fetch" {
         WebSearchService::new().execute_fetch(&args).await?
+    } else if tool_full_name == "imagegen-generate" {
+        ImageGenService::new()
+            .execute_generate(&args, &on_chunk)
+            .await?
     } else if let Some(tool_name) = tool_full_name.strip_prefix("browser-") {
         BrowserService::new()
             .execute_async(tool_name, &args, &on_browser_command)

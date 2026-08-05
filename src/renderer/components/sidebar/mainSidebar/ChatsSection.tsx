@@ -1,9 +1,10 @@
 import {
+  AlertTriangle,
+  CheckSquare,
+  ChevronRight,
   Loader2,
   Trash2,
   X,
-  CheckSquare,
-  AlertTriangle,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 
@@ -15,7 +16,8 @@ import type {
   WorkspaceDirectoryRecord,
 } from "../../../../preload";
 import { ChatItem } from "./ChatItem";
-import type { ExportFormat } from "./ChatItemMenu";
+import { ChatItemMenu, type ExportFormat } from "./ChatItemMenu";
+import { ChatDeleteConfirmModal } from "./ChatDeleteConfirmModal";
 import { SubAgentListPanel } from "./SubAgentListPanel";
 import {
   groupConversationsByTime,
@@ -100,6 +102,7 @@ export function ChatsSection({
     abortConversation,
     streamingConversationIds,
     completedConversationIds,
+    clearInputDraft,
   } = useChatConversationContext();
   const [conversations, setConversations] = useState<ChatConversationRecord[]>(
     []
@@ -112,11 +115,32 @@ export function ChatsSection({
   const [expandedSubAgentConversationIds, setExpandedSubAgentConversationIds] =
     useState<Set<string>>(() => new Set());
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(
-    () => new Set()
-  );
-  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
-  const [showBatchConfirm, setShowBatchConfirm] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  // 删除会话确认弹窗（单选 + 批量共用）：待删除会话 id 与数量
+  const [pendingDelete, setPendingDelete] = useState<{
+    ids: string[];
+    count: number;
+  } | null>(null);
+  const [isDeleteConfirming, setIsDeleteConfirming] = useState(false);
+  // 会话区域收起/展开（localStorage 持久化，与项目区域一致）
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("chats-section-collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+  // 时间分组（运行中/今天/昨天/近7天/更早）收起状态（localStorage 持久化）
+  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<
+    Record<string, boolean>
+  >(() => {
+    try {
+      const raw = localStorage.getItem("chats-time-groups-collapsed");
+      return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    } catch {
+      return {};
+    }
+  });
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const sectionListRef = useRef<HTMLDivElement | null>(null);
   // 始终持有最新 conversations，供子代理加载 effect 读取。
@@ -354,34 +378,12 @@ export function ChatsSection({
     }
   };
 
-  const handleDelete = async (
-    conversation: ChatConversationRecord
-  ): Promise<void> => {
-    try {
-      // Rust 侧级联删除子代理会话：收集全部待删 ID，以便中止对应流，
-      // 并在当前正打开被删会话或其子代理时清空聊天区
-      const deleteTargetIds = [
-        conversation.conversationId,
-        ...(subAgentMap[conversation.conversationId] ?? []).map(
-          (sub) => sub.conversationId
-        ),
-      ];
-      for (const targetId of deleteTargetIds) {
-        abortConversation(targetId);
-      }
-
-      await window.snow.deleteConversation(conversation.conversationId);
-
-      if (
-        activeConversationId &&
-        deleteTargetIds.includes(activeConversationId)
-      ) {
-        handleNewChat();
-      }
-      refreshConversations();
-    } catch {
-      // Silent fail
-    }
+  const handleDelete = (conversation: ChatConversationRecord): void => {
+    // 打开删除确认弹窗（含图片级联选项）
+    setPendingDelete({
+      ids: [conversation.conversationId],
+      count: 1,
+    });
   };
 
   const handleExport = async (
@@ -405,12 +407,27 @@ export function ChatsSection({
   };
 
   const handleExitMultiSelect = (): void => {
-    if (isBatchDeleting) {
+    if (isDeleteConfirming) {
       return;
     }
     setIsMultiSelectMode(false);
     setSelectedIds(new Set());
-    setShowBatchConfirm(false);
+  };
+
+  /** 收起/展开会话区域；收起时退出多选模式并持久化到 localStorage */
+  const toggleCollapsed = (): void => {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("chats-section-collapsed", String(next));
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+    if (isMultiSelectMode) {
+      handleExitMultiSelect();
+    }
   };
 
   const handleToggleSelect = (conversationId: string): void => {
@@ -431,49 +448,84 @@ export function ChatsSection({
       .map((conv) => conv.conversationId);
     setSelectedIds(new Set(allIds));
   };
-
   const handleDeselectAll = (): void => {
     setSelectedIds(new Set());
   };
 
-  const handleBatchDelete = async (): Promise<void> => {
-    if (isBatchDeleting || selectedIds.size === 0) {
+  // 批量删除：打开确认弹窗（含图片级联选项）
+  const handleOpenBatchConfirm = (): void => {
+    if (selectedIds.size === 0) {
       return;
     }
+    setPendingDelete({
+      ids: [...selectedIds],
+      count: selectedIds.size,
+    });
+  };
 
-    setIsBatchDeleting(true);
-    setShowBatchConfirm(false);
+  // 删除确认弹窗确认：统一执行单选/批量删除。
+  // deleteImages=true 时先级联删除所选会话引用的图库图片（物理 + 索引）。
+  const handleDeleteConfirm = async (deleteImages: boolean): Promise<void> => {
+    if (!pendingDelete || isDeleteConfirming) {
+      return;
+    }
+    const { ids } = pendingDelete;
+    setIsDeleteConfirming(true);
 
     try {
-      // 收集所有待删会话 ID（含子代理级联）以及需要中止的流 ID
-      const targetIds = new Set<string>();
-      for (const convId of selectedIds) {
-        targetIds.add(convId);
-        const subs = subAgentMap[convId] ?? [];
-        for (const sub of subs) {
-          targetIds.add(sub.conversationId);
+      if (deleteImages) {
+        await window.snow.deleteConversationImages(ids);
+      }
+
+      if (ids.length === 1) {
+        // 单选：Rust 侧级联删除子代理会话，收集全部待删 ID 以便中止流
+        const deleteTargetIds = [
+          ids[0],
+          ...(subAgentMap[ids[0]] ?? []).map((sub) => sub.conversationId),
+        ];
+        for (const targetId of deleteTargetIds) {
+          abortConversation(targetId);
         }
+        await window.snow.deleteConversation(ids[0]);
+        for (const targetId of deleteTargetIds) {
+          clearInputDraft(targetId);
+        }
+        if (
+          activeConversationId &&
+          deleteTargetIds.includes(activeConversationId)
+        ) {
+          handleNewChat();
+        }
+      } else {
+        // 批量：native 单事务完成（选中父会话时子代理随级联删除）
+        const targetIds = new Set<string>();
+        for (const convId of ids) {
+          targetIds.add(convId);
+          const subs = subAgentMap[convId] ?? [];
+          for (const sub of subs) {
+            targetIds.add(sub.conversationId);
+          }
+        }
+        for (const targetId of targetIds) {
+          abortConversation(targetId);
+        }
+        await window.snow.deleteConversations(ids);
+        for (const targetId of targetIds) {
+          clearInputDraft(targetId);
+        }
+        if (activeConversationId && targetIds.has(activeConversationId)) {
+          handleNewChat();
+        }
+        setSelectedIds(new Set());
+        setIsMultiSelectMode(false);
       }
 
-      for (const targetId of targetIds) {
-        abortConversation(targetId);
-      }
-
-      // 逐条删除：Rust 侧无批量删除接口，串行调用避免数据库锁竞争
-      for (const convId of selectedIds) {
-        await window.snow.deleteConversation(convId);
-      }
-
-      if (activeConversationId && targetIds.has(activeConversationId)) {
-        handleNewChat();
-      }
       refreshConversations();
-      setSelectedIds(new Set());
-      setIsMultiSelectMode(false);
     } catch {
       // Silent fail
     } finally {
-      setIsBatchDeleting(false);
+      setIsDeleteConfirming(false);
+      setPendingDelete(null);
     }
   };
 
@@ -493,30 +545,18 @@ export function ChatsSection({
     let cancelled = false;
 
     const loadSubAgents = async (): Promise<void> => {
-      const entries = await Promise.all(
-        current.map(async (conv) => {
-          try {
-            const subAgents = await window.snow.listSubAgentConversations(
-              conv.conversationId
-            );
-            return [conv.conversationId, subAgents] as const;
-          } catch {
-            return [
-              conv.conversationId,
-              [] as ChatConversationRecord[],
-            ] as const;
-          }
-        })
-      );
-
-      if (!cancelled) {
-        const map: SubAgentMap = {};
-        for (const [id, subs] of entries) {
-          if (subs.length > 0) {
-            map[id] = subs;
-          }
+      // 单次批量查询所有父会话的子代理，避免逐条 IPC（N+1）
+      try {
+        const map = await window.snow.listSubAgentConversationsByParents(
+          current.map((conv) => conv.conversationId)
+        );
+        if (!cancelled) {
+          setSubAgentMap(map);
         }
-        setSubAgentMap(map);
+      } catch {
+        if (!cancelled) {
+          setSubAgentMap({});
+        }
       }
     };
 
@@ -646,15 +686,35 @@ export function ChatsSection({
     }
   };
 
+  /** 收起/展开时间分组并持久化到 localStorage */
+  const toggleGroupCollapsed = (key: TimeGroupKey): void => {
+    setCollapsedGroupKeys((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        localStorage.setItem(
+          "chats-time-groups-collapsed",
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  };
+
   return (
-    <div className="sidebar-section chats-section">
+    <div
+      className={`sidebar-section chats-section${
+        isCollapsed ? " collapsed" : ""
+      }`}
+    >
       {isMultiSelectMode ? (
         <div className="chat-multi-select-bar">
           <button
             type="button"
             className="chat-multi-select-exit-btn"
             onClick={handleExitMultiSelect}
-            disabled={isBatchDeleting}
+            disabled={isDeleteConfirming}
             title={t("sidebar.chatMultiSelectExit", { defaultValue: "Exit" })}
           >
             <X size={14} />
@@ -677,7 +737,7 @@ export function ChatsSection({
                   ? handleDeselectAll()
                   : handleSelectAll()
               }
-              disabled={isBatchDeleting}
+              disabled={isDeleteConfirming}
             >
               <CheckSquare size={13} />
               <span>
@@ -696,16 +756,16 @@ export function ChatsSection({
             <button
               type="button"
               className="chat-multi-select-action-btn danger"
-              onClick={() => setShowBatchConfirm(true)}
-              disabled={isBatchDeleting || selectedIds.size === 0}
+              onClick={handleOpenBatchConfirm}
+              disabled={isDeleteConfirming || selectedIds.size === 0}
             >
-              {isBatchDeleting ? (
+              {isDeleteConfirming ? (
                 <Loader2 size={13} className="spin" />
               ) : (
                 <Trash2 size={13} />
               )}
               <span>
-                {isBatchDeleting
+                {isDeleteConfirming
                   ? t("sidebar.chatMultiSelectDeleting", {
                       defaultValue: "Deleting...",
                     })
@@ -718,199 +778,212 @@ export function ChatsSection({
         </div>
       ) : (
         <div className="section-header">
-          <span className="section-title">
-            {t("sidebar.chats", { defaultValue: "Chats" })}
-          </span>
+          <button
+            type="button"
+            aria-expanded={!isCollapsed}
+            className="section-toggle-btn chats-section-toggle"
+            onClick={toggleCollapsed}
+            title={t("sidebar.chatToggleCollapse", {
+              defaultValue: "Collapse chats",
+            })}
+          >
+            <ChevronRight
+              className={isCollapsed ? "" : "section-toggle-chevron--open"}
+              size={12}
+            />
+            <span className="section-title">
+              {t("sidebar.chats", { defaultValue: "Chats" })}
+            </span>
+          </button>
         </div>
       )}
-      {isMultiSelectMode && showBatchConfirm ? (
-        <div className="chat-batch-confirm">
-          <div className="chat-batch-confirm-content">
-            <AlertTriangle
-              size={13}
-              className="chat-item-menu-confirm-icon"
-            />
-            <span className="chat-item-menu-confirm-text">
-              {t("sidebar.chatMultiSelectDeleteConfirm", {
-                defaultValue:
-                  "Delete {{count}} selected conversations?",
-                values: { count: selectedIds.size },
+      {!isCollapsed && (
+        <div className="section-list" ref={sectionListRef}>
+          {showLoading ? (
+            <span className="empty-text loading">
+              <Loader2 className="spin" size={13} />
+              {t("sidebar.loadingWorkspaceContent", {
+                defaultValue: "Loading workspace content...",
               })}
             </span>
-          </div>
-          <div className="chat-item-menu-confirm-actions">
-            <button
-              type="button"
-              className="chat-item-menu-confirm-btn cancel"
-              onClick={() => setShowBatchConfirm(false)}
-              disabled={isBatchDeleting}
-            >
-              {t("common.cancel", { defaultValue: "Cancel" })}
-            </button>
-            <button
-              type="button"
-              className="chat-item-menu-confirm-btn delete"
-              onClick={() => void handleBatchDelete()}
-              disabled={isBatchDeleting}
-            >
-              {isBatchDeleting ? (
-                <Loader2 size={12} className="spin" />
-              ) : (
-                t("sidebar.chatActionDelete", { defaultValue: "Delete" })
-              )}
-            </button>
-          </div>
-        </div>
-      ) : null}
-      <div className="section-list" ref={sectionListRef}>
-        {showLoading ? (
-          <span className="empty-text loading">
-            <Loader2 className="spin" size={13} />
-            {t("sidebar.loadingWorkspaceContent", {
-              defaultValue: "Loading workspace content...",
-            })}
-          </span>
-        ) : !directoryId ? (
-          <span className="empty-text">
-            {t("sidebar.noActiveDirectory", {
-              defaultValue: "No active directory",
-            })}
-          </span>
-        ) : error ? (
-          <span className="empty-text error">{error}</span>
-        ) : conversations.length === 0 ? (
-          <span className="empty-text">
-            {t("sidebar.noChats", { defaultValue: "No chats" })}
-          </span>
-        ) : (
-          <>
-            {timeGroups.map((group) => (
-              <div key={group.key}>
-                <div className="chat-time-group-header">
-                  {getGroupLabel(group.key)}
-                </div>
-                {group.conversations.map((conversation) => {
-                  const subAgentConversations =
-                    subAgentMap[conversation.conversationId] ?? [];
-                  const isSubAgentPanelExpanded =
-                    expandedSubAgentConversationIds.has(
-                      conversation.conversationId
-                    );
-                  return (
-                    <Fragment key={conversation.conversationId}>
-                      <ChatItem
-                        conversation={conversation}
-                        isActive={
-                          conversation.conversationId === activeConversationId
-                        }
-                        isStreaming={streamingConversationIds.has(
-                          conversation.conversationId
-                        )}
-                        isCompleted={completedConversationIds.has(
-                          conversation.conversationId
-                        )}
-                        subAgentConversations={subAgentConversations}
-                        isSubAgentExpanded={isSubAgentPanelExpanded}
-                        isMultiSelectMode={isMultiSelectMode}
-                        isSelected={selectedIds.has(
-                          conversation.conversationId
-                        )}
-                        onToggleSelect={() =>
-                          handleToggleSelect(conversation.conversationId)
-                        }
-                        onEnterMultiSelect={handleEnterMultiSelect}
-                        onToggleSubAgentPanel={() =>
-                          handleToggleSubAgentPanel(
-                            conversation.conversationId
-                          )
-                        }
-                        onPin={() => void handlePin(conversation)}
-                        onRename={(newTitle) =>
-                          handleRename(conversation, newTitle)
-                        }
-                        onSetEmoji={(emoji) =>
-                          handleSetEmoji(conversation, emoji)
-                        }
-                        onDelete={() => void handleDelete(conversation)}
-                        onExport={(format) =>
-                          handleExport(conversation, format)
-                        }
-                        onSelect={() =>
-                          void handleSelectConversation(
-                            conversation.conversationId,
-                            conversation.summary || conversation.title,
-                            {
-                              inputTokens: conversation.inputTokens,
-                              outputTokens: conversation.outputTokens,
-                              cacheCreationInputTokens:
-                                conversation.cacheCreationInputTokens,
-                              cacheReadInputTokens:
-                                conversation.cacheReadInputTokens,
-                            },
-                            conversation.directoryId
-                          )
+          ) : !directoryId ? (
+            <span className="empty-text">
+              {t("sidebar.noActiveDirectory", {
+                defaultValue: "No active directory",
+              })}
+            </span>
+          ) : error ? (
+            <span className="empty-text error">{error}</span>
+          ) : conversations.length === 0 ? (
+            <span className="empty-text">
+              {t("sidebar.noChats", { defaultValue: "No chats" })}
+            </span>
+          ) : (
+            <>
+              {timeGroups.map((group) => {
+                const isGroupCollapsed = collapsedGroupKeys[group.key] === true;
+                return (
+                  <div key={group.key}>
+                    <button
+                      type="button"
+                      className="chat-time-group-header"
+                      onClick={() => toggleGroupCollapsed(group.key)}
+                      aria-expanded={!isGroupCollapsed}
+                      title={t("sidebar.chatToggleCollapse", {
+                        defaultValue: "Collapse/expand chats",
+                      })}
+                    >
+                      <ChevronRight
+                        size={12}
+                        className={
+                          isGroupCollapsed
+                            ? ""
+                            : "chat-time-group-chevron--open"
                         }
                       />
-                      {/* 面板渲染在 ChatItem 外部，作为兄弟节点，
+                      <span>{getGroupLabel(group.key)}</span>
+                      <span className="chat-time-group-count">
+                        {group.conversations.length}
+                      </span>
+                    </button>
+                    {!isGroupCollapsed &&
+                      group.conversations.map((conversation) => {
+                        const subAgentConversations =
+                          subAgentMap[conversation.conversationId] ?? [];
+                        const isSubAgentPanelExpanded =
+                          expandedSubAgentConversationIds.has(
+                            conversation.conversationId
+                          );
+                        return (
+                          <Fragment key={conversation.conversationId}>
+                            <ChatItem
+                              conversation={conversation}
+                              isActive={
+                                conversation.conversationId ===
+                                activeConversationId
+                              }
+                              isStreaming={streamingConversationIds.has(
+                                conversation.conversationId
+                              )}
+                              isCompleted={completedConversationIds.has(
+                                conversation.conversationId
+                              )}
+                              subAgentConversations={subAgentConversations}
+                              isSubAgentExpanded={isSubAgentPanelExpanded}
+                              isMultiSelectMode={isMultiSelectMode}
+                              isSelected={selectedIds.has(
+                                conversation.conversationId
+                              )}
+                              onToggleSelect={() =>
+                                handleToggleSelect(conversation.conversationId)
+                              }
+                              onEnterMultiSelect={handleEnterMultiSelect}
+                              onToggleSubAgentPanel={() =>
+                                handleToggleSubAgentPanel(
+                                  conversation.conversationId
+                                )
+                              }
+                              onPin={() => void handlePin(conversation)}
+                              onRename={(newTitle) =>
+                                handleRename(conversation, newTitle)
+                              }
+                              onSetEmoji={(emoji) =>
+                                handleSetEmoji(conversation, emoji)
+                              }
+                              onDelete={() => void handleDelete(conversation)}
+                              onExport={(format) =>
+                                handleExport(conversation, format)
+                              }
+                              onSelect={() =>
+                                void handleSelectConversation(
+                                  conversation.conversationId,
+                                  conversation.summary || conversation.title,
+                                  {
+                                    inputTokens: conversation.inputTokens,
+                                    outputTokens: conversation.outputTokens,
+                                    cacheCreationInputTokens:
+                                      conversation.cacheCreationInputTokens,
+                                    cacheReadInputTokens:
+                                      conversation.cacheReadInputTokens,
+                                  },
+                                  conversation.directoryId
+                                )
+                              }
+                            />
+                            {/* 面板渲染在 ChatItem 外部，作为兄弟节点，
                           完全不继承父级会话项的背景色 */}
-                      {subAgentConversations.length > 0 &&
-                        isSubAgentPanelExpanded &&
-                        !isMultiSelectMode && (
-                          <SubAgentListPanel
-                            conversations={subAgentConversations}
-                            activeConversationId={activeConversationId}
-                            onSelect={(subConvId) =>
-                              void handleSelectConversation(
-                                subConvId,
-                                undefined,
-                                undefined,
-                                conversation.directoryId
-                              )
-                            }
-                          />
-                        )}
-                    </Fragment>
-                  );
-                })}
-              </div>
-            ))}
-            {hasMore ? (
-              <div
-                className={`chat-load-more ${
-                  isLoadingMore ? "is-loading" : ""
-                }`}
-                ref={loadMoreRef}
-                role={isLoadingMore ? "status" : undefined}
-                aria-live="polite"
-                aria-label={
-                  isLoadingMore
-                    ? t("sidebar.chatLoadingMore", {
-                        defaultValue: "Loading more chats...",
-                      })
-                    : undefined
-                }
-              >
-                {isLoadingMore ? (
-                  <>
-                    <Loader2 className="spin" size={14} aria-hidden="true" />
-                    <span>
-                      {t("sidebar.chatLoadingMore", {
-                        defaultValue: "Loading more chats...",
+                            {subAgentConversations.length > 0 &&
+                              isSubAgentPanelExpanded &&
+                              !isMultiSelectMode && (
+                                <SubAgentListPanel
+                                  conversations={subAgentConversations}
+                                  activeConversationId={activeConversationId}
+                                  onSelect={(subConvId) =>
+                                    void handleSelectConversation(
+                                      subConvId,
+                                      undefined,
+                                      undefined,
+                                      conversation.directoryId
+                                    )
+                                  }
+                                />
+                              )}
+                          </Fragment>
+                        );
                       })}
-                    </span>
-                  </>
-                ) : null}
-              </div>
-            ) : (
-              <div className="chat-all-loaded">
-                {t("sidebar.chatAllLoaded", {
-                  defaultValue: "All chats loaded",
-                })}
-              </div>
-            )}
-          </>
-        )}
-      </div>
+                  </div>
+                );
+              })}
+              {hasMore ? (
+                <div
+                  className={`chat-load-more ${
+                    isLoadingMore ? "is-loading" : ""
+                  }`}
+                  ref={loadMoreRef}
+                  role={isLoadingMore ? "status" : undefined}
+                  aria-live="polite"
+                  aria-label={
+                    isLoadingMore
+                      ? t("sidebar.chatLoadingMore", {
+                          defaultValue: "Loading more chats...",
+                        })
+                      : undefined
+                  }
+                >
+                  {isLoadingMore ? (
+                    <>
+                      <Loader2 className="spin" size={14} aria-hidden="true" />
+                      <span>
+                        {t("sidebar.chatLoadingMore", {
+                          defaultValue: "Loading more chats...",
+                        })}
+                      </span>
+                    </>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="chat-all-loaded">
+                  {t("sidebar.chatAllLoaded", {
+                    defaultValue: "All chats loaded",
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+      <ChatDeleteConfirmModal
+        open={pendingDelete !== null}
+        conversationIds={pendingDelete?.ids ?? []}
+        conversationCount={pendingDelete?.count ?? 0}
+        deleting={isDeleteConfirming}
+        onClose={() => {
+          if (!isDeleteConfirming) {
+            setPendingDelete(null);
+          }
+        }}
+        onConfirm={(deleteImages) => void handleDeleteConfirm(deleteImages)}
+      />
     </div>
   );
 }
