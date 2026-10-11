@@ -51,15 +51,25 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
         typeof message.toolResultsJson === "string"
           ? message.toolResultsJson
           : undefined;
+      const toolCallsJson =
+        typeof message.toolCallsJson === "string"
+          ? message.toolCallsJson
+          : undefined;
 
       return {
         role,
         content,
         ...(toolResultsJson ? { toolResultsJson } : {}),
+        ...(toolCallsJson ? { toolCallsJson } : {}),
       } as ResponsesApiMessage;
     })
     .filter((message): message is ResponsesApiMessage =>
-      Boolean(message && message.content.trim()),
+      Boolean(
+        message &&
+        (message.content.trim() ||
+          message.toolResultsJson ||
+          message.toolCallsJson),
+      ),
     );
 
   if (messages.length === 0) {
@@ -155,6 +165,11 @@ const normalizeResponsesApiRequest = (value: unknown): ResponsesApiRequest => {
     responsesFastMode:
       typeof source.responsesFastMode === "string"
         ? source.responsesFastMode
+        : undefined,
+    allowedToolsJson:
+      typeof source.allowedToolsJson === "string" &&
+      source.allowedToolsJson.trim()
+        ? source.allowedToolsJson
         : undefined,
   };
 };

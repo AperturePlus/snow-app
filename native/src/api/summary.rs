@@ -94,6 +94,7 @@ pub async fn generate_conversation_summary(
             tool_results_json: None,
             thinking: None,
             thinking_blocks_json: None,
+            tool_calls_json: None,
         }],
         model: Some(model.clone()),
         api_profile: None,
@@ -120,6 +121,7 @@ pub async fn generate_conversation_summary(
         remote_include_global_rules: None,
         execution_workspace_root: None,
         worktree_id: None,
+        allowed_tools_json: None,
     };
 
     // Race the request against the cancellation token: when the token fires we

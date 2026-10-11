@@ -1292,6 +1292,8 @@ export type ResponsesApiMessage = {
   role: "user" | "assistant" | "system" | "developer" | "tool";
   content: string;
   toolResultsJson?: string;
+  /** Serialized assistant tool calls, replayed by stateless tool loops. */
+  toolCallsJson?: string;
 };
 
 export type ResponsesApiRequest = {
@@ -1343,6 +1345,13 @@ export type ResponsesApiRequest = {
    */
   remoteRoleContent?: string;
   remoteIncludeGlobalRules?: boolean;
+  /**
+   * Request-scoped MCP tool whitelist (JSON array of full tool names). Unlike
+   * `subAgentToolsJson` this keeps normal (non sub-agent) semantics, and it
+   * keeps its tools even when `skipContext` is set — used by the desktop pet's
+   * stateless side channel (web search / file search / file read).
+   */
+  allowedToolsJson?: string;
 };
 
 export type TokenUsage = {

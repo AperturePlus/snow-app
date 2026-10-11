@@ -325,7 +325,6 @@ export function ApiSettingsTable({
                           type="checkbox"
                           checked={config.isActive}
                           onChange={() => onToggleActive(config)}
-                          disabled={config.isActive}
                         />
                         <span className="toggle-slider" />
                         <span>{activeStateLabel}</span>

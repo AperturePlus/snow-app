@@ -239,6 +239,11 @@ export const useChatConversation = (
     pendingWorktreeIdRef.current = worktreeId;
     setPendingWorktreeIdState(worktreeId);
   }, []);
+  // WorkTree 模式已开启但未绑定工作树时的内置提示：发送被拦截时置为文案，
+  // 由 ChatContent 用内置弹窗渲染，确认后清空。
+  const [worktreeModeNotice, setWorktreeModeNotice] = useState<string | null>(
+    null,
+  );
   const [pendingToolAuthorizations, setPendingToolAuthorizations] = useState<
     ConversationContextValue["pendingToolAuthorizations"]
   >([]);
@@ -714,6 +719,8 @@ export const useChatConversation = (
     goalModeTokenBudget,
     pendingWorktreeId,
     setPendingWorktreeId,
+    worktreeModeNotice,
+    setWorktreeModeNotice,
     pendingToolAuthorizations,
     activePendingMessages,
     compactionPreview,
@@ -1106,6 +1113,8 @@ export const useChatConversation = (
     isUpdatingWorktreeMode,
     pendingWorktreeId,
     setPendingWorktreeId,
+    worktreeModeNotice,
+    setWorktreeModeNotice,
     setWorktreeMode: toolAuthApi.setWorktreeMode,
     refreshWorktreeMode: toolAuthApi.refreshWorktreeMode,
     workflowMode,

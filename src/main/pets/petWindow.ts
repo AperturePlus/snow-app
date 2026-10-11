@@ -4,8 +4,9 @@
  * 宠物以独立的透明无边框置顶窗口呈现（与 Codex App 的呈现方式一致），
  * 加载渲染进程的 pet.html 页面绘制精灵图动画。主进程负责：
  * - 窗口生命周期（唤醒 / 收起 / 退出清理）
+ * - 形态切换（精灵 ↔ 聊天：双击宠物变形为小对话窗口，关闭后变回精灵）
+ * - 窗口移动（渲染层自绘拖拽，主进程按屏幕位移 setBounds，见下方 drag 段）
  * - 活动状态机（忙碌 / 等待 / 出错 / 完成 / 待机）并广播给宠物窗口
- * - 拖拽移动（基于主进程光标坐标，1:1 跟手，无 DPI/坐标漂移）
  * - 右键菜单（菜单项由主进程构建，见 showPetContextMenu）
  *
  * 位置策略：每次唤醒都出现在固定的默认位置（应用主窗口右下角），
@@ -18,6 +19,7 @@ import {
   Menu,
   screen,
   type MenuItemConstructorOptions,
+  type Rectangle,
   type WebContents,
 } from "electron";
 import { is } from "@electron-toolkit/utils";
@@ -29,6 +31,7 @@ import { safeSend } from "../utils/safeSend";
 import { getMainWindow } from "../app/mainWindow";
 import { isMacOS } from "../app/constants";
 import { tMain } from "../i18n/mainI18n";
+import { getPetChatContext, type PetChatContext } from "./petChat";
 import {
   loadPetSettings,
   savePetSettings,
@@ -54,16 +57,57 @@ const WAKE_EDGE_MARGIN = 24;
  * Windows 非客户区 system-context-menu 两条路径，只放行第一条。
  */
 const MENU_POPUP_GUARD_MS = 250;
+/** 聊天形态窗口尺寸（与宠物缩放无关，保证输入区可用）。 */
+const CHAT_WINDOW_WIDTH = 340;
+const CHAT_WINDOW_HEIGHT = 460;
+
+/** 宠物窗口形态：精灵（桌面宠物）/ 聊天（双击变形后的小对话窗口）。 */
+export type PetWindowMode = "sprite" | "chat";
+
+/** 宠物聊天窗口的界面文案（主进程按当前语言下发，宠物页面无 i18n 上下文）。 */
+export type PetChatLabels = {
+  placeholder: string;
+  send: string;
+  stop: string;
+  newChat: string;
+  close: string;
+  thinking: string;
+  error: string;
+  hintContext: string;
+  hintFree: string;
+  hintTitle: string;
+  /** 工具执行中的状态行文案（联网搜索 / 文件搜索 / 文件阅读） */
+  toolRunning: string;
+};
 
 /** 发送给宠物窗口 / 设置界面的完整配置。 */
 export type PetWindowConfig = {
   settings: PetSettings;
   manifest: PetManifestRecord | null;
+  mode: PetWindowMode;
+  chatContext: PetChatContext;
+  labels: PetChatLabels;
 };
+
+const buildChatLabels = (): PetChatLabels => ({
+  placeholder: tMain("pet.chat.placeholder"),
+  send: tMain("pet.chat.send"),
+  stop: tMain("pet.chat.stop"),
+  newChat: tMain("pet.chat.newChat"),
+  close: tMain("pet.chat.close"),
+  thinking: tMain("pet.chat.thinking"),
+  error: tMain("pet.chat.error"),
+  hintContext: tMain("pet.chat.hintContext"),
+  hintFree: tMain("pet.chat.hintFree"),
+  hintTitle: tMain("pet.chat.hintTitle"),
+  toolRunning: tMain("pet.chat.toolRunning"),
+});
 
 let petWindow: BrowserWindow | null = null;
 let currentConfig: PetWindowConfig | null = null;
 let currentState: PetActivityState = "idle";
+/** 当前窗口形态（精灵 / 聊天）。 */
+let currentMode: PetWindowMode = "sprite";
 /** 最近一次右键菜单弹出时间（去重同一次点击的两条触发路径）。 */
 let lastMenuPopupAt = 0;
 /**
@@ -86,6 +130,132 @@ const computeWindowSize = (
   width: Math.round(PET_FRAME_WIDTH * scale) + PET_WINDOW_PADDING * 2,
   height: Math.round(PET_FRAME_HEIGHT * scale) + PET_WINDOW_PADDING * 2,
 });
+
+/**
+ * 形态切换 / 尺寸变化时的落位：保持窗口「水平居中 + 底边对齐」的锚点，
+ * 并 clamp 到当前显示器工作区，避免变形后跑出屏幕。
+ */
+const anchorBounds = (
+  current: Rectangle,
+  width: number,
+  height: number,
+): Rectangle => {
+  const { workArea } = screen.getDisplayMatching(current);
+  const x = Math.round(current.x + current.width / 2 - width / 2);
+  const y = Math.round(current.y + current.height - height);
+  return {
+    x: Math.min(Math.max(x, workArea.x), workArea.x + workArea.width - width),
+    y: Math.min(Math.max(y, workArea.y), workArea.y + workArea.height - height),
+    width,
+    height,
+  };
+};
+
+/** 目标形态的窗口尺寸：聊天形态用固定尺寸，精灵形态跟随缩放设置。 */
+const resolveModeSize = (
+  mode: PetWindowMode,
+  settings: PetSettings,
+): { width: number; height: number } =>
+  mode === "chat"
+    ? { width: CHAT_WINDOW_WIDTH, height: CHAT_WINDOW_HEIGHT }
+    : computeWindowSize(settings.scale);
+
+/**
+ * 应用窗口 bounds。非 resizable 窗口在部分平台上直接 setBounds 不生效，
+ * 因此临时放开再收回（用户视角依旧不可缩放）。
+ */
+const applyPetWindowBounds = (bounds: Rectangle): void => {
+  if (!petWindow || petWindow.isDestroyed()) {
+    return;
+  }
+  if (petWindow.isMinimized()) {
+    petWindow.restore();
+  }
+  const wasResizable = petWindow.isResizable();
+  if (!wasResizable) {
+    petWindow.setResizable(true);
+  }
+  petWindow.setBounds(bounds);
+  if (!wasResizable) {
+    petWindow.setResizable(false);
+  }
+};
+
+const resizePetWindow = (mode: PetWindowMode, settings: PetSettings): void => {
+  if (!petWindow || petWindow.isDestroyed()) {
+    return;
+  }
+  const { width, height } = resolveModeSize(mode, settings);
+  applyPetWindowBounds(anchorBounds(petWindow.getBounds(), width, height));
+};
+
+/**
+ * 切换宠物窗口形态（精灵 ↔ 聊天）。由宠物窗口双击 / 关闭聊天触发，
+ * 变更后重新下发配置，页面据此切换渲染内容。
+ */
+export const setPetWindowMode = (
+  mode: PetWindowMode,
+  settings: PetSettings,
+): void => {
+  if (currentMode === mode) {
+    return;
+  }
+  currentMode = mode;
+  resizePetWindow(mode, settings);
+  if (mode === "chat") {
+    // 双击进入聊天后直接可输入：等 setBounds 落位完成再抢一次焦点，
+    // 渲染层的输入框聚焦才不会因为窗口尚未激活而失效。
+    setTimeout(() => {
+      if (petWindow && !petWindow.isDestroyed()) {
+        petWindow.focus();
+      }
+    }, 60);
+  }
+  if (currentConfig) {
+    currentConfig = { ...currentConfig, mode };
+  }
+  broadcastConfig();
+};
+
+/** 宠物聊天上下文变化（主窗口切换 / 关闭会话）时下发到宠物窗口。 */
+export const broadcastPetChatContext = (): void => {
+  if (currentConfig) {
+    currentConfig = { ...currentConfig, chatContext: getPetChatContext() };
+  }
+  broadcastConfig();
+};
+
+// ── 渲染层自绘拖拽 ───────────────────────────────────────────────────
+//
+// 宠物窗口不再使用 CSS `-webkit-app-region: drag`：Windows 上 drag 区域被
+// 系统当作标题栏（HTCAPTION），渲染层收不到鼠标事件，双击就无法识别。
+// 改为渲染层 pointer 捕获 + 这里按位移设置窗口位置，位移使用渲染层上报的
+// screenX/screenY 差值（与窗口起始 bounds 相加，不做逐步累加，无漂移）。
+
+/** 拖拽起始时的窗口 bounds（null 表示当前没有拖拽）。 */
+let dragOriginBounds: Rectangle | null = null;
+
+export const beginPetWindowDrag = (): void => {
+  if (!petWindow || petWindow.isDestroyed()) {
+    return;
+  }
+  dragOriginBounds = petWindow.getBounds();
+};
+
+export const movePetWindowDrag = (dx: number, dy: number): void => {
+  if (!petWindow || petWindow.isDestroyed() || !dragOriginBounds) {
+    return;
+  }
+  petWindow.setBounds({
+    ...dragOriginBounds,
+    x: Math.round(dragOriginBounds.x + dx),
+    y: Math.round(dragOriginBounds.y + dy),
+  });
+};
+
+export const endPetWindowDrag = (): void => {
+  dragOriginBounds = null;
+};
 
 /**
  * 唤醒位置：优先贴靠应用主窗口右下角（跟随主窗口所在显示器），
@@ -212,6 +382,8 @@ const destroyPetWindow = (): void => {
     petWindow.destroy();
   }
   petWindow = null;
+  // 窗口销毁后形态归零，下次唤醒回到精灵形态。
+  currentMode = "sprite";
 };
 
 /**
@@ -237,6 +409,27 @@ const closePet = async (native: NativeBridge): Promise<void> => {
 };
 
 /**
+ * 打开宠物设置页（右键菜单「宠物设置」）：聚焦主窗口并请求侧栏切到
+ * 「桌面宠物」设置视图。宠物窗口自身没有 Sidebar，复用主窗口既有的
+ * app-control:open-settings-broadcast 转发通道（与独立浏览器窗口同一路径）。
+ */
+const openPetSettings = (): void => {
+  const mainWindow = getMainWindow();
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  if (!mainWindow.isVisible()) {
+    mainWindow.show();
+  }
+  mainWindow.focus();
+  safeSend(
+    mainWindow.webContents,
+    "app-control:open-settings-broadcast",
+    "pets-settings",
+  );
+};
+
+/**
  * 弹出宠物右键菜单（菜单项在主进程构建，后续可继续扩充）。
  *
  * 触发有两条互补路径，同一次右键可能都命中，用时间窗去重：
@@ -256,6 +449,13 @@ export const showPetContextMenu = (native: NativeBridge): void => {
 
   const template: MenuItemConstructorOptions[] = [
     {
+      label: tMain("pet.settings"),
+      click: () => {
+        openPetSettings();
+      },
+    },
+    { type: "separator" },
+    {
       label: tMain("pet.close"),
       click: () => {
         void closePet(native);
@@ -271,7 +471,13 @@ export const showPetContextMenu = (native: NativeBridge): void => {
 export const refreshPetWindow = async (native: NativeBridge): Promise<void> => {
   const settings = await loadPetSettings(native);
   const manifest = await resolveActiveManifest(native, settings);
-  currentConfig = { settings, manifest };
+  currentConfig = {
+    settings,
+    manifest,
+    mode: currentMode,
+    chatContext: getPetChatContext(),
+    labels: buildChatLabels(),
+  };
 
   const shouldShow = settings.enabled && manifest !== null;
   if (!shouldShow) {
@@ -282,9 +488,12 @@ export const refreshPetWindow = async (native: NativeBridge): Promise<void> => {
 
   if (!petWindow || petWindow.isDestroyed()) {
     createPetWindow(settings, native);
-  } else {
+  } else if (currentMode === "sprite") {
+    // 精灵形态：缩放设置变化时按原语义原地调整尺寸（保持左上角不动）；
+    // 聊天形态尺寸固定，不随缩放变化。
     const { width, height } = computeWindowSize(settings.scale);
-    petWindow.setSize(width, height);
+    const current = petWindow.getBounds();
+    applyPetWindowBounds({ ...current, width, height });
   }
 
   broadcastConfig();
@@ -293,7 +502,7 @@ export const refreshPetWindow = async (native: NativeBridge): Promise<void> => {
 };
 
 const createPetWindow = (settings: PetSettings, native: NativeBridge): void => {
-  const { width, height } = computeWindowSize(settings.scale);
+  const { width, height } = resolveModeSize(currentMode, settings);
   const { x, y } = resolveWakePosition(width, height);
 
   petWindow = new BrowserWindow({

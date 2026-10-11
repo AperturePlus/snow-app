@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::api::config::resolve_advanced_model;
 use crate::api::conversation::{
-    prepare_context_request, resolve_sub_agent_tools, ConversationContextRequest,
+    prepare_context_request, resolve_request_tools_optional, ConversationContextRequest,
 };
 use crate::api::responses::{
     ResponsesApiRequest, ResponsesApiResult, ResponsesApiStreamCallback, TokenUsage,
@@ -86,7 +86,7 @@ async fn create_interactions_response_async(
         .map(|message| ChatContextMessage {
             role: message.role.clone(),
             content: message.content.clone(),
-            tool_calls_json: None,
+            tool_calls_json: message.tool_calls_json.clone(),
             tool_results_json: message.tool_results_json.clone(),
             thinking: message.thinking.clone(),
             thinking_blocks_json: message.thinking_blocks_json.clone(),
@@ -94,19 +94,7 @@ async fn create_interactions_response_async(
         .collect::<Vec<_>>();
 
     // Collect once, before prompt generation; providers serialize this same snapshot.
-    let allowed_tools = if request.context_compaction.unwrap_or(false)
-        || request.skip_context.unwrap_or(false)
-        || request.disable_tools.unwrap_or(false)
-    {
-        None
-    } else {
-        resolve_sub_agent_tools(&request)
-            .await
-            .map_err(|error| {
-                eprintln!("Failed to prepare request MCP tools: {error}");
-            })
-            .ok()
-    };
+    let allowed_tools = resolve_request_tools_optional(&request).await;
     let prepared_request = prepare_context_request(ConversationContextRequest {
         allowed_tools: allowed_tools.as_deref().unwrap_or_default(),
         database_path: &database_path,

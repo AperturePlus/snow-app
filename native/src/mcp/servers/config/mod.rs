@@ -740,6 +740,25 @@ impl ConfigService {
             }
         }
 
+        // 模型兼容兜底：`value` 在 schema 中没有 type 声明（可能是对象 / 数组 /
+        // 布尔 / 数字 / 字符串），部分模型会把对象、数组、布尔值先序列化成 JSON
+        // 字符串再传入（如 value="{\"fontSize\": 14}" 或 value="true"）。这里按
+        // 目标 scope/key 的期望类型把可解析的字符串还原为真实 JSON 值，消除
+        // 「编码方式」导致的必然失败；还原后仍走原有严格类型校验，不放宽约束。
+        if tool_name == TOOL_SET {
+            let decoded = match (
+                args.get("scope").and_then(Value::as_str),
+                args.get("key").and_then(Value::as_str),
+                args.get("value").and_then(Value::as_str),
+            ) {
+                (Some(scope), Some(key), Some(raw)) => unwrap_stringified_value(scope, key, raw),
+                _ => None,
+            };
+            if let Some(decoded) = decoded {
+                args["value"] = decoded;
+            }
+        }
+
         // 破坏性操作统一二次确认：config-delete（任何 scope，含 imagegen 全量
         // clear all channels / uninstall skills) must carry `confirmed: true`,
         // 而该参数只有在调用方先通过 `user-interaction` 的 `askUserQuestion`
@@ -949,17 +968,21 @@ impl ConfigService {
         }
     }
 
-    /// 校验值的类型与结构（写前检查）。
-    fn validate_value(key_spec: &KeySpec, value: &Value) -> napi::Result<()> {
-        let type_ok = match key_spec.value_type {
+    /// 值是否满足给定类型（字符串 / 布尔 / 整数 / 数字 / 对象 / 数组）。
+    fn value_matches_type(value: &Value, value_type: ValueType) -> bool {
+        match value_type {
             ValueType::String => value.is_string(),
             ValueType::Bool => value.is_boolean(),
             ValueType::Int => value.is_i64() || value.is_u64(),
             ValueType::Number => value.is_f64() || value.is_i64() || value.is_u64(),
             ValueType::Object => value.is_object(),
             ValueType::Array => value.is_array(),
-        };
-        if !type_ok {
+        }
+    }
+
+    /// 校验值的类型与结构（写前检查）。
+    fn validate_value(key_spec: &KeySpec, value: &Value) -> napi::Result<()> {
+        if !Self::value_matches_type(value, key_spec.value_type) {
             return Err(Error::new(
                 Status::InvalidArg,
                 format!(
@@ -3833,6 +3856,44 @@ fn bool_arg(value: Option<&Value>) -> Option<bool> {
         .map(|text| matches!(text.trim().to_lowercase().as_str(), "true" | "1" | "yes"))
 }
 
+/// 该 scope/key 的期望值类型是否为字符串。此类键不做「字符串化 JSON」还原：
+/// 其字面值本身可能恰好是合法 JSON（如路径 `"123"`），还原会改变用户意图。
+fn expects_string_value(scope: &str, key: &str) -> bool {
+    if let Some(spec) =
+        ConfigService::find_scope(scope).and_then(|spec| ConfigService::find_key(spec, key))
+    {
+        return matches!(spec.value_type, ValueType::String);
+    }
+    // DB / 委托域中值为字符串的键（其余 DB 域的 value 均为对象或数组）。
+    matches!(
+        (scope, key),
+        (SCOPE_APP_SETTINGS, "imageLibraryDir") | (SCOPE_PERSONALIZATION, "role")
+    )
+}
+
+/// 把模型错误序列化成字符串的 JSON 值还原为真实值。
+///
+/// 工具 schema 的 `value` 参数没有 type 声明（它可能是对象 / 数组 / 布尔 /
+/// 数字 / 字符串），部分模型在无类型约束下会把对象、数组、布尔值先序列化成
+/// JSON 字符串再作为 `value` 传入（如 `value: "{\"fontSize\": 14}"` 或
+/// `value: "true"`），使后续按真实类型的严格校验必然失败。这里只在该字符串
+/// 能解析成「非字符串」的 JSON 时替换为解析结果（最多剥离两层字符串包裹），
+/// 还原后仍走原有严格校验——只是纠正编码方式，不放宽校验。
+fn unwrap_stringified_value(scope: &str, key: &str, raw: &str) -> Option<Value> {
+    if expects_string_value(scope, key) {
+        return None;
+    }
+    let mut text = raw.trim().to_string();
+    for _ in 0..2 {
+        match serde_json::from_str::<Value>(&text) {
+            Ok(Value::String(inner)) => text = inner,
+            Ok(other) => return Some(other),
+            Err(_) => return None,
+        }
+    }
+    None
+}
+
 /// 生成未占用的请求头方案 id（毫秒时间戳，与 UI 的 `String(Date.now())` 风格一致）。
 fn next_scheme_id(records: &[crate::storage::CustomHeaderSchemeRecord]) -> String {
     let mut candidate = SystemTime::now()
@@ -4102,7 +4163,7 @@ impl McpService for ConfigService {
 "description": "Key name within the scope (see config-list). For imagegen: a channel id/name or provider type (openai|gemini), or the global key maxConcurrentImages. For customHeaderSchemes: a schemeId, or \"new\" to create one."
                         },
                         "value": {
-"description": "New value; type must match the key schema (see config-list). subAgents/hooks/apiProfiles/userscripts/imagegen/customHeaderSchemes require a JSON OBJECT here (e.g. userscripts: {sourcePath: \"C:/abs/path/script.user.js\"}; customHeaderSchemes: {name: \"My headers\", headers: {\"X-Trace\": \"on\"}}), not a string or path."
+"description": "New value; type must match the key schema (see config-list). ALWAYS pass the real JSON value (object / array / boolean / number / string) - NEVER a JSON-encoded string such as \"{\\\"fontSize\\\": 14}\", \"[\\\"a\\\"]\" or \"true\". subAgents/hooks/apiProfiles/userscripts/imagegen/customHeaderSchemes require a JSON OBJECT here (e.g. userscripts: {sourcePath: \"C:/abs/path/script.user.js\"}; customHeaderSchemes: {name: \"My headers\", headers: {\"X-Trace\": \"on\"}}), not a string or path."
                         },
                         "projectId": {
                             "type": "string",

@@ -179,13 +179,21 @@ pub fn parse_tool_results_with_images(
         .collect()
 }
 
-/// 判断工具结果是否携带图片标签，识别两种格式：
+/// 判断工具结果是否携带图片标签，识别三种格式：
 /// 1. 前端 `formatMcpToolResultForModel` 追加的尾部标签行：`JSON\n@@image:...@@`；
-/// 2. filesystem-read 读取图片的 `{"content":"@@image:...@@","isImage":true}`。
+/// 2. filesystem-read 读取图片的 `{"content":"@@image:...@@","isImage":true}`；
+/// 3. askUserQuestion 的结果 JSON：用户在自定义回答里粘贴的图片以 `@@image:...@@`
+///    承载在 `answers` / `customAnswers` 数组元素中。
 ///
-/// 不能用 `contains("@@image:")`——grep 等搜索结果 JSON 内嵌的匹配行文本可能
-/// 恰好含该字样，会误把非图片 base64 发给视觉模型。
+/// 不能只靠 `contains("@@image:")` 判定——grep 等搜索结果 JSON 内嵌的匹配行
+/// 文本可能恰好含该字样，会把非图片 base64 发给视觉模型；因此命中该字样后
+/// 仍按结构逐一核对。反向（不含该字样必不是图片）成立，可作廉价预检。
 fn has_image_tags(result: &str) -> bool {
+    // 廉价预检：绝大多数结果不含图片标签，避免对超大 JSON 结果做无谓解析。
+    if !result.contains("@@image:") {
+        return false;
+    }
+
     // Case 1: 标签行紧跟在序列化 JSON 之后
     let mut trailing_tag_len = 0usize;
     for line in result.lines().rev() {
@@ -202,13 +210,35 @@ fn has_image_tags(result: &str) -> bool {
         }
     }
 
+    let Ok(value) = serde_json::from_str::<Value>(result) else {
+        return false;
+    };
+
     // Case 2: filesystem-read 图片结果（isImage 为可信标志）
-    serde_json::from_str::<Value>(result).ok().is_some_and(|value| {
-        value.get("isImage").and_then(Value::as_bool).unwrap_or(false)
-            && value
-                .get("content")
-                .and_then(Value::as_str)
-                .is_some_and(|content| content.starts_with("@@image:"))
+    if value
+        .get("isImage")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        && value
+            .get("content")
+            .and_then(Value::as_str)
+            .is_some_and(|content| content.starts_with("@@image:"))
+    {
+        return true;
+    }
+
+    // Case 3: askUserQuestion 结果——只认用户回答字段，避免问题/选项文本
+    // 里字面出现的 `@@image:` 被当成图片负载。
+    ["answers", "customAnswers"].iter().any(|field| {
+        value
+            .get(*field)
+            .and_then(Value::as_array)
+            .is_some_and(|items| {
+                items.iter().any(|item| {
+                    item.as_str()
+                        .is_some_and(|answer| answer.contains("@@image:"))
+                })
+            })
     })
 }
 

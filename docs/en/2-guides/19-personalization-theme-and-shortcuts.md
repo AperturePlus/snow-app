@@ -156,6 +156,15 @@ active pet, and toggle between waking (showing on your desktop) and dismissing
 (hiding) it. While awake, a slider adjusts the display size (0.5–2x, default
 0.75). The pet reacts to your AI work in real time.
 
+Snow App ships an official built-in pet (`resources/pets/*.zip`) that is
+installed automatically into `~/.snowapp/pets/` on first launch — no manual
+install needed. If you already installed a pet with the same id, that directory
+is overwritten and the list is de-duplicated by id, so no duplicate entries
+appear. The built-in pet is refreshed after an upgrade when the app version or
+the package content changes (marker file `~/.snowapp/builtin-pets.json`), and a
+pet you uninstalled yourself is never reinstalled. Extraction runs in the Rust
+backend and never blocks the main process.
+
 ## Keyboard Shortcuts
 
 ### Default Bindings

@@ -67,15 +67,57 @@ impl UserInteractionService {
         })?;
         let answer = validate_answer_json(&answer_json, &normalized.options)?;
 
+        // answers 是 selectedOptions ∪ customAnswers 的去重并集：用户在自定义
+        // 回答里粘贴的图片以 `@@image:...@@` 标签承载，同一张图会同时出现在
+        // answers 与 customAnswers 中，payload 层会把整段结果里出现的每个标签
+        // 都解析成一个视觉块（同一张图发两遍，重复计费且语义重复）。UI 展示与
+        // 持久化都只读 customAnswers，因此这里仅从模型可见的 answers 中剥离
+        // 图片标签（纯图片答案保留 `[Image]` 占位），图片负载仍完整保留在
+        // customAnswers 里。
+        let answers: Vec<String> = answer
+            .answers
+            .iter()
+            .map(|entry| {
+                let stripped = strip_inline_image_tags(entry);
+                let trimmed = stripped.trim();
+                if trimmed.is_empty() {
+                    "[Image]".to_string()
+                } else {
+                    trimmed.to_string()
+                }
+            })
+            .collect();
+
         Ok(json!({
             "answered": !answer.cancelled,
             "cancelled": answer.cancelled,
             "question": normalized.question,
-            "answers": answer.answers,
+            "answers": answers,
             "selectedOptions": answer.selected_options,
             "customAnswers": answer.custom_answers,
         }))
     }
+}
+
+/// 移除答案文本中的内联图片标签（`@@image:...@@`），保留其余文字。
+///
+/// 标签值可能是 data URL（未持久化的内联图片）或 `upload/...` 相对路径，
+/// 两者都不含 `@@`，因此以 `@@` 作为终止符切分即可。
+fn strip_inline_image_tags(answer: &str) -> String {
+    const IMAGE_TAG_PREFIX: &str = "@@image:";
+
+    let mut result = String::with_capacity(answer.len());
+    let mut remaining = answer;
+    while let Some(tag_start) = remaining.find(IMAGE_TAG_PREFIX) {
+        result.push_str(&remaining[..tag_start]);
+        let value_and_rest = &remaining[tag_start + IMAGE_TAG_PREFIX.len()..];
+        match value_and_rest.find("@@") {
+            Some(tag_end) => remaining = &value_and_rest[tag_end + 2..],
+            None => return result,
+        }
+    }
+    result.push_str(remaining);
+    result
 }
 
 impl McpService for UserInteractionService {

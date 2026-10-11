@@ -37,6 +37,7 @@ import { initUserscriptSyncStore } from "./userscriptSyncStore";
 import { initBrowserPopupHandler } from "../browser/browserPopupWindow";
 import { initBrowserDeviceEmulation } from "../browser/browserDeviceEmulation";
 import { disposePetWindow, restorePetWindow } from "../pets/petWindow";
+import { ensureBuiltinPets } from "../pets/ensureBuiltinPet";
 import { startScheduledTaskWakeup } from "./scheduledTaskWakeup";
 import { stopRemoteControlServer } from "../remoteControl/remoteControlServer";
 import { initializeRemoteControl } from "../remoteControl/remoteControlLifecycle";
@@ -216,7 +217,13 @@ export const bootstrapApplication = (): void => {
     mainWindow.webContents.once("did-finish-load", () => {
       // Initialise storage — use raw binding to avoid storageReady deadlock.
       initializeApplicationServices(getRawNative())
-        .then(() => restorePetWindow(native))
+        .then(async () => {
+          // 内置宠物包随应用分发（resources/pets），首次安装 / 升级 /
+          // 内置包内容变化时由 Rust 侧解压安装到 ~/.snowapp/pets，
+          // 老用户提前装过的同名宠物会被覆盖去重；安装失败不阻断启动。
+          await ensureBuiltinPets(native).catch(() => undefined);
+          await restorePetWindow(native);
+        })
         .catch((error) => {
           console.error("Failed to initialize application storage:", error);
           snowLog.error({

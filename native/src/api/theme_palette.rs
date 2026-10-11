@@ -55,6 +55,7 @@ fn build_request(image_data_url: &str) -> ResponsesApiRequest {
                 tool_results_json: None,
                 thinking: None,
                 thinking_blocks_json: None,
+                tool_calls_json: None,
             },
             ResponsesApiMessage {
                 role: "user".to_string(),
@@ -65,6 +66,7 @@ fn build_request(image_data_url: &str) -> ResponsesApiRequest {
                 tool_results_json: None,
                 thinking: None,
                 thinking_blocks_json: None,
+                tool_calls_json: None,
             },
         ],
         // Force the advanced model (expected to support vision) for this task.
@@ -98,6 +100,7 @@ fn build_request(image_data_url: &str) -> ResponsesApiRequest {
         remote_include_global_rules: None,
         execution_workspace_root: None,
         worktree_id: None,
+        allowed_tools_json: None,
     }
 }
 

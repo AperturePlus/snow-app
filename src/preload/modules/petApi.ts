@@ -1,5 +1,6 @@
 import { ipcRenderer } from "electron";
 import type {
+  PetChatSnapshot,
   PetManifest,
   PetSettings,
   PetTurnKind,
@@ -31,6 +32,29 @@ export const petApi = {
   /** 设置显示缩放 */
   setPetScale: (scale: number): Promise<PetSettings> =>
     ipcRenderer.invoke("pets:set-scale", scale),
+  /** 设置动画播放速度倍率 */
+  setPetSpeed: (speed: number): Promise<PetSettings> =>
+    ipcRenderer.invoke("pets:set-speed", speed),
+  /** 设置宠物聊天使用的 API 配置（null = 跟随当前激活配置） */
+  setPetApiProfile: (apiProfile: string | null): Promise<PetSettings> =>
+    ipcRenderer.invoke("pets:set-api-profile", apiProfile),
+  /** 设置宠物聊天使用的模型（null = 跟随所选配置的高级模型） */
+  setPetChatModel: (model: string | null): Promise<PetSettings> =>
+    ipcRenderer.invoke("pets:set-model", model),
+  /**
+   * 设置某个宠物的自定义人设（宠物聊天系统提示词里的 Persona 段）。
+   * 传空字符串表示清除该宠物的自定义人设，恢复宠物包默认人设。
+   */
+  setPetPersona: (petId: string, persona: string): Promise<PetSettings> =>
+    ipcRenderer.invoke("pets:set-persona", { petId, persona }),
+  /**
+   * 上报当前打开会话的实时快照（在途正文、工具活动、待办进度）：
+   * 宠物聊天据此注入真实运行信息（btw 式旁路会话）。渲染层节流调用，
+   * 没有打开会话时上报空快照则退化为纯闲聊。
+   */
+  setPetChatContext: (snapshot: PetChatSnapshot): void => {
+    ipcRenderer.send("pets:set-chat-context", snapshot);
+  },
   /** 订阅宠物列表 / 设置变化（安装、卸载、宠物窗口收起等） */
   onPetsChanged: (callback: () => void): (() => void) => {
     const handler = (): void => callback();

@@ -95,6 +95,7 @@ fn build_request(
         tool_results_json: None,
         thinking: None,
         thinking_blocks_json: None,
+        tool_calls_json: None,
     };
     ResponsesApiRequest {
         messages: vec![message("system", system_prompt), message("user", content)],
@@ -123,6 +124,7 @@ fn build_request(
         remote_include_global_rules: None,
         execution_workspace_root: None,
         worktree_id: None,
+        allowed_tools_json: None,
     }
 }
 

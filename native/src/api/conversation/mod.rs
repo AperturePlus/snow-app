@@ -13,7 +13,7 @@ pub mod tool_messages;
 pub use context::{prepare_context_request, PreparedConversationRequest};
 pub use images::ChatImage;
 pub use stream::create_response_stream;
-pub use sub_agent::resolve_sub_agent_tools;
+pub use sub_agent::{resolve_request_tools, resolve_request_tools_optional, should_resolve_tools};
 pub use tags::{parse_chat_message_content, ParsedChatMessageContent};
 
 pub struct ConversationContextRequest<'a> {

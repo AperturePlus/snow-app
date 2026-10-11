@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   CircleAlert,
@@ -9,6 +9,16 @@ import {
   X,
 } from "lucide-react";
 import { useI18n } from "../../../../i18n";
+import { ContentChips } from "../../chatInput/ContentChips";
+import {
+  createImageChipHtml,
+  insertHtmlAtSelection,
+  isEditableContentEmpty,
+  parseContentSegments,
+  readEditableContent,
+  summarizeContentAsPlainText,
+  type ImageTag,
+} from "../../chatInput/fileTagUtils";
 import { useChatConversationContext } from "../components/ChatConversationContext";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolNameBadge } from "./shared/ToolNameBadge";
@@ -59,7 +69,20 @@ export const AskUserQuestionToolCall = ({
   const [customAnswers, setCustomAnswers] = useState<string[]>(() =>
     questionId ? (getUserQuestionDraft(questionId)?.customAnswers ?? []) : [],
   );
-  const [customInput, setCustomInput] = useState("");
+  // 自定义答案输入框是可编辑富文本：粘贴的图片以 @@image:...@@ chip 与文字
+  // 一起提交，序列化结果保存在 customDraft（同时用于提交按钮可用性判定）。
+  const [customDraft, setCustomDraft] = useState("");
+  const customInputRef = useRef<HTMLDivElement | null>(null);
+
+  const syncCustomDraft = useCallback((): void => {
+    const el = customInputRef.current;
+    if (!el) {
+      return;
+    }
+    const encoded = readEditableContent(el);
+    setCustomDraft(encoded);
+    el.dataset.empty = isEditableContentEmpty(encoded) ? "true" : "false";
+  }, []);
 
   useEffect(() => {
     const draft = questionId ? getUserQuestionDraft(questionId) : undefined;
@@ -75,7 +98,11 @@ export const AskUserQuestionToolCall = ({
         parsedResult?.customAnswers ??
         [],
     );
-    setCustomInput("");
+    if (customInputRef.current) {
+      customInputRef.current.innerHTML = "";
+      customInputRef.current.dataset.empty = "true";
+    }
+    setCustomDraft("");
   }, [
     parsedResult?.customAnswers,
     parsedResult?.selectedOptions,
@@ -99,12 +126,100 @@ export const AskUserQuestionToolCall = ({
     });
   };
 
+  /** 把粘贴的图片文件插入自定义答案输入框（chip 与文字一起提交）。 */
+  const insertCustomImage = useCallback(
+    (file: File) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        if (!dataUrl) {
+          return;
+        }
+        const mimeMatch = file.type.match(/^image\/([a-z0-9+.-]+)$/i);
+        const imageTag: ImageTag = {
+          name: `image.${mimeMatch ? mimeMatch[1].split("+")[0] : "png"}`,
+          dataUrl,
+        };
+        const el = customInputRef.current;
+        if (!el) {
+          return;
+        }
+        el.focus();
+        // 光标不在编辑区内（读取图片是异步的，期间焦点可能已移走）时把
+        // range 收到末尾，避免 insertHtmlAtSelection 把 chip 插到别处。
+        const selection = window.getSelection();
+        const anchor = selection?.rangeCount
+          ? selection.getRangeAt(0).startContainer
+          : null;
+        if (selection && (!anchor || !el.contains(anchor))) {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          range.collapse(false);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+        insertHtmlAtSelection(createImageChipHtml(imageTag));
+        syncCustomDraft();
+      };
+      reader.readAsDataURL(file);
+    },
+    [syncCustomDraft],
+  );
+
+  const handleCustomPaste = (
+    event: React.ClipboardEvent<HTMLDivElement>,
+  ): void => {
+    if (!isInteractive) {
+      return;
+    }
+    const imageFiles: File[] = [];
+    for (const item of event.clipboardData.items) {
+      if (item.kind !== "file" || !item.type.startsWith("image/")) {
+        continue;
+      }
+      const file = item.getAsFile();
+      if (file) {
+        imageFiles.push(file);
+      }
+    }
+    if (imageFiles.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    for (const file of imageFiles) {
+      insertCustomImage(file);
+    }
+  };
+
+  /** chip 的移除按钮位于编辑区内，需手动摘除并同步序列化结果。 */
+  const handleCustomClick = (event: React.MouseEvent<HTMLDivElement>): void => {
+    if (!isInteractive) {
+      return;
+    }
+    const target = event.target as HTMLElement | null;
+    const removeBtn = target?.closest("[data-chip-remove='true']");
+    if (!removeBtn) {
+      return;
+    }
+    event.preventDefault();
+    removeBtn.closest(".file-chip")?.remove();
+    syncCustomDraft();
+  };
+
+  const clearCustomInput = (): void => {
+    if (customInputRef.current) {
+      customInputRef.current.innerHTML = "";
+      customInputRef.current.dataset.empty = "true";
+    }
+    setCustomDraft("");
+  };
+
   const addCustomAnswer = (): void => {
     if (!isInteractive || !questionId) {
       return;
     }
 
-    const value = customInput.trim();
+    const value = customDraft.trim();
     if (!value) {
       return;
     }
@@ -113,7 +228,7 @@ export const AskUserQuestionToolCall = ({
       ? customAnswers
       : [...customAnswers, value];
     setCustomAnswers(next);
-    setCustomInput("");
+    clearCustomInput();
     saveUserQuestionDraft(questionId, {
       selectedOptions,
       customAnswers: next,
@@ -132,11 +247,11 @@ export const AskUserQuestionToolCall = ({
     });
   };
 
-  const pendingCustomAnswer = customInput.trim();
+  const hasPendingCustomAnswer = !isEditableContentEmpty(customDraft);
   const canSubmit =
     isInteractive &&
     (selectedOptions.length + customAnswers.length > 0 ||
-      Boolean(pendingCustomAnswer));
+      hasPendingCustomAnswer);
 
   const submitAnswer = (): void => {
     if (!questionState || !canSubmit) {
@@ -145,11 +260,14 @@ export const AskUserQuestionToolCall = ({
     if (questionId) {
       clearUserQuestionDraft(questionId);
     }
+    const pending = customDraft.trim();
     answerUserQuestion(
       questionState.questionId,
       selectedOptions,
-      pendingCustomAnswer && !customAnswers.includes(pendingCustomAnswer)
-        ? [...customAnswers, pendingCustomAnswer]
+      pending &&
+        !isEditableContentEmpty(customDraft) &&
+        !customAnswers.includes(pending)
+        ? [...customAnswers, pending]
         : customAnswers,
     );
     onSubmitted?.();
@@ -263,30 +381,30 @@ export const AskUserQuestionToolCall = ({
           <span className="tool-call-user-question-label">
             {t("toolCall.userQuestion.customLabel")}
           </span>
-          <form
-            className="tool-call-user-question-custom-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              addCustomAnswer();
-            }}
-          >
-            <input
-              type="text"
-              value={customInput}
-              disabled={!isInteractive}
-              placeholder={t("toolCall.userQuestion.customPlaceholder")}
+          <div className="tool-call-user-question-custom-form">
+            <div
+              ref={customInputRef}
+              className="tool-call-user-question-custom-input"
+              contentEditable={isInteractive}
+              role="textbox"
+              aria-multiline="true"
               aria-label={t("toolCall.userQuestion.customLabel")}
-              onChange={(event) => setCustomInput(event.target.value)}
+              data-empty="true"
+              data-placeholder={t("toolCall.userQuestion.customPlaceholder")}
+              onInput={syncCustomDraft}
+              onPaste={handleCustomPaste}
+              onClick={handleCustomClick}
             />
             <button
-              type="submit"
-              disabled={!isInteractive || !customInput.trim()}
+              type="button"
+              disabled={!isInteractive || !hasPendingCustomAnswer}
               aria-label={t("toolCall.userQuestion.addCustom")}
               title={t("toolCall.userQuestion.addCustom")}
+              onClick={addCustomAnswer}
             >
               <Plus size={14} aria-hidden="true" />
             </button>
-          </form>
+          </div>
 
           {customAnswers.length > 0 ? (
             <div className="tool-call-user-question-custom-list">
@@ -295,13 +413,15 @@ export const AskUserQuestionToolCall = ({
                   className="tool-call-user-question-custom-item"
                   key={answer}
                 >
-                  <span>{answer}</span>
+                  <span className="tool-call-user-question-custom-item-body">
+                    <ContentChips segments={parseContentSegments(answer)} />
+                  </span>
                   {isInteractive ? (
                     <button
                       type="button"
                       onClick={() => removeCustomAnswer(answer)}
                       aria-label={t("toolCall.userQuestion.removeCustom", {
-                        values: { answer },
+                        values: { answer: summarizeContentAsPlainText(answer) },
                       })}
                     >
                       <X size={12} aria-hidden="true" />

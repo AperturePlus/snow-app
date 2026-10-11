@@ -67,7 +67,7 @@ pub(crate) use collect::{
 };
 pub use collect::{
     collect_all_mcp_tools, collect_all_mcp_tools_for_workspace,
-    collect_allowed_mcp_tools_for_workspace,
+    collect_allowed_mcp_tools_for_workspace, collect_restricted_mcp_tools_for_workspace,
 };
 pub use serialize::{
     tools_as_anthropic_json, tools_as_gemini_json, tools_as_interactions_json,

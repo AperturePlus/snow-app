@@ -87,6 +87,22 @@ export const CommandPanel = forwardRef<CommandPanelHandle, CommandPanelProps>(
       [groupedCommands],
     );
 
+    // 指令集合的内容签名（id + 禁用态）。重置选中项时以它作为依赖，而不是
+    // filteredCommands 的数组引用：会话运行中父组件高频重渲染会重建 commands
+    // 数组（内容不变、引用变化），若以引用为依赖，键盘方向键选中的项会被反复
+    // 刷回第一项。内容签名不变即视为同一份列表，不重置选中项。
+    const commandsSignature = useMemo(
+      () =>
+        filteredCommands
+          .map((command) => `${command.id}:${command.disabled ? 1 : 0}`)
+          .join("|"),
+      [filteredCommands],
+    );
+    const filteredCommandsRef = useRef(filteredCommands);
+    useEffect(() => {
+      filteredCommandsRef.current = filteredCommands;
+    }, [filteredCommands]);
+
     const hasMultipleGroups =
       groupedCommands.filter((group) => group.commands.length > 0).length > 1;
 
@@ -94,9 +110,10 @@ export const CommandPanel = forwardRef<CommandPanelHandle, CommandPanelProps>(
       if (!visible) {
         return;
       }
-      const firstEnabled = filteredCommands.findIndex((c) => !c.disabled);
+      const items = filteredCommandsRef.current;
+      const firstEnabled = items.findIndex((command) => !command.disabled);
       setSelectedIndex(firstEnabled === -1 ? 0 : firstEnabled);
-    }, [visible, filteredCommands]);
+    }, [visible, commandsSignature]);
 
     useEffect(() => {
       const list = listRef.current;

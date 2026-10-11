@@ -23,7 +23,7 @@
     "build:linux": "npm run build && electron-builder --linux AppImage deb",
     "build:all": "npm run build && electron-builder -mwl",
     "build:rust": "node scripts/build-native.cjs",
-    "postinstall": "node scripts/patch-spectre.cjs && node scripts/ensure-conpty-dll.cjs",
+    "postinstall": "node scripts/patch-spectre.cjs && node scripts/ensure-conpty-dll.cjs && node scripts/fix-pty-spawn-helper.cjs",
     "check": "npm run check:ts && cargo check --manifest-path native/Cargo.toml",
     "check:docs": "node scripts/check-docs.cjs",
     "check:ts": "tsc --noEmit",
@@ -87,6 +87,7 @@
     "electronVersion": "37.10.3",
     "asar": true,
     "npmRebuild": false,
+    "afterPack": "scripts/fix-pty-spawn-helper.cjs",
     "files": [
       "out/**",
       "native/snow_native.*.node",
@@ -127,6 +128,10 @@
       {
         "from": "resources/web",
         "to": "web"
+      },
+      {
+        "from": "resources/pets",
+        "to": "pets"
       },
       {
         "from": "deploy/remote-control",

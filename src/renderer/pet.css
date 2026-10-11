@@ -1,5 +1,47 @@
 /* 桌面宠物窗口样式 —— 独立于主应用 styles.css，保持宠物页面轻量。 */
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* ===== 原生滚动条 =====
+   与主应用 styles.css 的全局滚动条设定保持一致（细滑块、透明轨道、无箭头），
+   颜色改用宠物取色：--scrollbar-thumb 等变量由 paletteToCssVars 下发。 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb, rgba(148, 163, 184, 0.58));
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover, rgba(100, 116, 139, 0.78));
+}
+
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--scrollbar-thumb-active, rgba(71, 85, 105, 0.9));
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb, rgba(148, 163, 184, 0.58)) transparent;
+}
+
 html,
 body,
 #pet-root {
@@ -13,28 +55,379 @@ body,
 }
 
 .pet-window {
+  position: relative;
   width: 100%;
   height: 100%;
   display: flex;
   align-items: flex-end;
   justify-content: center;
   background: transparent;
-  /* 交给操作系统做原生窗口拖拽：1:1 跟手、与 DPI 无关、无漂移。 */
-  -webkit-app-region: drag;
+}
+
+/* 拖拽由渲染层 pointer 捕获实现（见 petMain），不使用 CSS app-region ——
+   否则 Windows 会把窗口当作标题栏，双击事件收不到。精灵形态整窗可拖，
+   聊天形态只有标题栏可拖（[data-pet-drag] 由渲染层按形态挂载）。 */
+.pet-window[data-pet-drag="true"] {
+  cursor: grab;
+}
+
+.pet-window[data-pet-drag="true"]:active {
+  cursor: grabbing;
 }
 
 .pet-stage-canvas {
   display: block;
-  -webkit-app-region: drag;
-  cursor: grab;
-}
-
-.pet-stage-canvas:active {
-  cursor: grabbing;
 }
 
 .pet-stage-error {
   font-size: 11px;
   color: rgba(128, 128, 128, 0.8);
   align-self: center;
+}
+
+/* ── 聊天形态 ─────────────────────────────────────────────────────── */
+
+.pet-window.pet-window-chat {
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+/* 宠物 idle 动画作为聊天面板的背景图：绘制在面板底色之上、消息之下，
+   透明度由 PetChatPanel 下发，保证「看得见但不挡字」。 */
+.pet-chat-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.pet-chat-panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pet-text);
+  /* 面板本身半透明：既透出背景 idle 动画，也保留桌面观感。 */
+  background: var(--pet-surface);
+  border: 1px solid var(--pet-border);
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+.pet-chat-header {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 7px 8px 7px 10px;
+  background: var(--pet-surface-alt);
+  border-bottom: 1px solid var(--pet-border);
+  cursor: grab;
+}
+
+.pet-chat-header:active {
+  cursor: grabbing;
+}
+
+.pet-chat-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--pet-accent);
+  color: var(--pet-user-bubble-text);
+}
+
+.pet-chat-titles {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pet-chat-name {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pet-chat-hint {
+  font-size: 10px;
+  color: var(--pet-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pet-chat-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pet-text-muted);
+  cursor: pointer;
+}
+
+.pet-chat-icon-btn:hover {
+  background: var(--pet-border);
+  color: var(--pet-text);
+}
+
+.pet-chat-messages {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 10px;
+  /* 滚动条走全局设定（与主应用一致），此处不再单独覆盖。 */
+}
+
+.pet-chat-empty {
+  margin: auto;
+  padding: 0 18px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--pet-text-muted);
+}
+
+.pet-chat-row {
+  display: flex;
+}
+
+.pet-chat-row.user {
+  justify-content: flex-end;
+}
+
+.pet-chat-bubble {
+  max-width: 85%;
+  padding: 6px 9px;
+  border-radius: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+/* 流式占位（尚未产出内容时显示「正在思考…」）。 */
+.pet-chat-bubble.pending {
+  color: var(--pet-text-muted);
+}
+
+.pet-chat-row.assistant .pet-chat-bubble {
+  background: var(--pet-surface-alt);
+  border: 1px solid var(--pet-border);
+  border-bottom-left-radius: 3px;
+}
+
+.pet-chat-row.user .pet-chat-bubble {
+  background: var(--pet-user-bubble);
+  color: var(--pet-user-bubble-text);
+  border-bottom-right-radius: 3px;
+}
+
+.pet-chat-row.error .pet-chat-bubble {
+  border-color: rgba(255, 122, 122, 0.6);
+  color: #ffb4b4;
+}
+
+.pet-chat-caret {
+  display: inline-block;
+  width: 6px;
+  height: 12px;
+  margin-left: 2px;
+  vertical-align: -2px;
+  background: var(--pet-accent);
+  animation: pet-caret-blink 1s steps(1) infinite;
+}
+
+/* 工具执行状态行（联网搜索 / 文件搜索 / 文件阅读）：低调的左侧小条提示。 */
+.pet-chat-tool-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: var(--pet-surface-alt);
+  border: 1px solid var(--pet-border);
+  font-size: 10px;
+  color: var(--pet-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pet-chat-tool-status > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pet-chat-tool-caret {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--pet-accent);
+  animation: pet-tool-pulse 1s ease-in-out infinite;
+}
+
+@keyframes pet-tool-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes pet-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.pet-chat-input-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 8px;
+  background: var(--pet-surface-alt);
+  border-top: 1px solid var(--pet-border);
+}
+
+/* 输入区是 contentEditable（需要承载图片 chip），高度与发送按钮对齐。 */
+.pet-chat-input {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 28px;
+  max-height: 72px;
+  padding: 4px 8px;
+  border: 1px solid var(--pet-border);
+  border-radius: 8px;
+  background: var(--pet-surface);
+  color: var(--pet-text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  outline: none;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  cursor: text;
+}
+
+.pet-chat-input:focus {
+  border-color: var(--pet-accent);
+}
+
+/* contentEditable 没有原生 placeholder：空态时用 ::before 呈现提示文案。
+   必须绝对定位：若参与行内流，光标会被排到提示文案之后（提示并非真实内容）。 */
+.pet-chat-input[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  color: var(--pet-text-muted);
+  pointer-events: none;
+  position: absolute;
+  top: 4px;
+  left: 8px;
+  right: 8px;
+}
+
+/* 图片 chip（复用 fileTagUtils 生成的 .file-chip 结构）。 */
+.pet-chat-input .file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  margin: 0 2px;
+  padding: 0 4px;
+  border: 1px solid var(--pet-border);
+  border-radius: 6px;
+  background: var(--pet-surface-alt);
+  color: var(--pet-text);
+  font-size: 11px;
+  line-height: 1.5;
+  vertical-align: -1px;
+  user-select: none;
+}
+
+.pet-chat-input .file-chip-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.pet-chat-input .file-chip-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pet-chat-input .file-chip-remove {
+  display: none;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-left: 2px;
+  border-radius: 4px;
+  color: var(--pet-text-muted);
+  cursor: pointer;
+}
+
+.pet-chat-input .file-chip:hover .file-chip-remove {
+  display: inline-flex;
+}
+
+.pet-chat-input .file-chip-remove:hover {
+  color: var(--pet-text);
+}
+
+.pet-chat-send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: var(--pet-accent);
+  color: var(--pet-user-bubble-text);
+  cursor: pointer;
+}
+
+.pet-chat-send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pet-chat-send.stop {
+  background: var(--pet-surface);
+  border: 1px solid var(--pet-border);
+  color: var(--pet-text);
 }

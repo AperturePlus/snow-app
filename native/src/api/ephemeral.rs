@@ -36,6 +36,7 @@ where
     request.sub_agent_tools_json = None;
     request.sub_agent_system_prompt = None;
     request.sub_agent_config_profile = None;
+    request.allowed_tools_json = None;
     request.context_compaction = None;
     request.resume_after_compaction = None;
     EPHEMERAL.scope(true, call(request)).await

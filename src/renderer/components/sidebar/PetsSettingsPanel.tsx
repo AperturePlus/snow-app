@@ -2,17 +2,29 @@
  * 桌面宠物独立设置页。
  *
  * 与其它设置页保持一致的结构：页头（标题 + 描述 + 关闭按钮）+
- * api-settings-manual-form 表单卡片（分区：当前宠物、已安装宠物列表）。
+ * api-settings-manual-form 表单卡片（分区：当前宠物、宠物聊天、已安装宠物列表）。
  * 支持：唤醒/收起、安装 Codex 宠物包（.zip）、选择激活宠物、
- * 卸载 Snow App 安装的宠物、调整显示大小。
+ * 卸载 Snow App 安装的宠物、调整显示大小与动画播放速度（带实时预览）、
+ * 编辑每只宠物的人设，以及宠物聊天使用的 API 配置与模型
+ * （默认为跟随当前配置的高级模型）。
  */
-import { Loader2, PackagePlus, PawPrint, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Loader2, PackagePlus, PawPrint, Pencil, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../i18n";
+import type { ApiConfigRecord, Model } from "../../../preload";
 import type { PetManifest, PetSettings } from "../../../preload/types/pets";
 import { PetPreview } from "../pet/PetPreview";
+import { PetStage } from "../pet/PetStage";
 import { ConfirmDialog } from "../common/ConfirmDialog";
+import { CustomSelect } from "../common/CustomSelect";
 import { RangeSlider } from "../common/RangeSlider";
+import { ApiModelCombobox } from "./apiSettings/ApiModelCombobox";
+import { PetPersonaDialog } from "./pets/PetPersonaDialog";
+
+/** 预览区宠物动画的固定缩放（约 96×104 px，与列表缩略图区分开）。 */
+const PREVIEW_SCALE = 0.5;
+/** 宠物聊天模型输入的提交防抖（避免逐字符写库）。 */
+const PET_CHAT_TIMER_MS = 250;
 
 export function PetsSettingsPanel(): React.JSX.Element {
   const { t } = useI18n();
@@ -22,15 +34,35 @@ export function PetsSettingsPanel(): React.JSX.Element {
   const [petInstalling, setPetInstalling] = useState(false);
   const [petInstallError, setPetInstallError] = useState<string | null>(null);
   const [petScaleDraft, setPetScaleDraft] = useState<number | null>(null);
+  const [petSpeedDraft, setPetSpeedDraft] = useState<number | null>(null);
   const [petPendingDeletion, setPetPendingDeletion] =
     useState<PetManifest | null>(null);
+  // 人设编辑：被编辑的宠物 + 草稿文本（保存成功或取消后清空）。
+  const [personaTarget, setPersonaTarget] = useState<PetManifest | null>(null);
+  const [personaDraft, setPersonaDraft] = useState("");
+  const [personaSaving, setPersonaSaving] = useState(false);
+  const [apiConfigs, setApiConfigs] = useState<ApiConfigRecord[]>([]);
+  const [chatModels, setChatModels] = useState<Model[]>([]);
+  const [chatModelsLoading, setChatModelsLoading] = useState(false);
+  const [chatModelsError, setChatModelsError] = useState<string | null>(null);
+  const [chatModelsLoadedFor, setChatModelsLoadedFor] = useState<string | null>(
+    null,
+  );
   const petScaleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const petSpeedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const petChatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chatModelRequestRef = useRef(0);
 
   const reloadPets = (): Promise<void> =>
-    Promise.all([window.snow.listInstalledPets(), window.snow.getPetSettings()])
-      .then(([petList, settings]) => {
+    Promise.all([
+      window.snow.listInstalledPets(),
+      window.snow.getPetSettings(),
+      window.snow.listApiConfigs(),
+    ])
+      .then(([petList, settings, configs]) => {
         setPets(petList);
         setPetSettings(settings);
+        setApiConfigs(configs);
       })
       .catch(() => undefined);
 
@@ -44,6 +76,14 @@ export function PetsSettingsPanel(): React.JSX.Element {
       if (petScaleTimerRef.current) {
         clearTimeout(petScaleTimerRef.current);
         petScaleTimerRef.current = null;
+      }
+      if (petSpeedTimerRef.current) {
+        clearTimeout(petSpeedTimerRef.current);
+        petSpeedTimerRef.current = null;
+      }
+      if (petChatTimerRef.current) {
+        clearTimeout(petChatTimerRef.current);
+        petChatTimerRef.current = null;
       }
     };
   }, []);
@@ -122,6 +162,42 @@ export function PetsSettingsPanel(): React.JSX.Element {
       });
   };
 
+  // ── 宠物人设编辑 ────────────────────────────────────────────────────
+
+  const handleEditPersona = (pet: PetManifest): void => {
+    setPersonaTarget(pet);
+    setPersonaDraft(petSettings?.personas[pet.id] ?? "");
+  };
+
+  const handleClosePersona = (): void => {
+    if (personaSaving) {
+      return;
+    }
+    setPersonaTarget(null);
+    setPersonaDraft("");
+  };
+
+  const handleSavePersona = (): void => {
+    const pet = personaTarget;
+    if (!pet || personaSaving) {
+      return;
+    }
+    setPersonaSaving(true);
+    window.snow
+      .setPetPersona(pet.id, personaDraft)
+      .then(setPetSettings)
+      .then(() => {
+        setPersonaTarget(null);
+        setPersonaDraft("");
+      })
+      .catch((error: unknown) => {
+        setPetInstallError(
+          error instanceof Error ? error.message : String(error),
+        );
+      })
+      .finally(() => setPersonaSaving(false));
+  };
+
   const handlePetScaleChange = (value: number): void => {
     setPetScaleDraft(value);
     if (petScaleTimerRef.current) {
@@ -138,8 +214,148 @@ export function PetsSettingsPanel(): React.JSX.Element {
     }, 250);
   };
 
+  const handlePetSpeedChange = (value: number): void => {
+    setPetSpeedDraft(value);
+    if (petSpeedTimerRef.current) {
+      clearTimeout(petSpeedTimerRef.current);
+    }
+    // 防抖提交：避免拖动滑杆时频繁重建宠物窗口（预览区仍实时跟随）。
+    petSpeedTimerRef.current = setTimeout(() => {
+      petSpeedTimerRef.current = null;
+      setPetSpeedDraft(null);
+      window.snow
+        .setPetSpeed(value)
+        .then(setPetSettings)
+        .catch(() => undefined);
+    }, 250);
+  };
+
+  // ── 宠物聊天：API 配置与模型 ────────────────────────────────────────
+  //
+  // 默认「跟随当前使用的配置 + 高级模型」：宠物设置里存 null，请求时不带
+  // apiProfile / model，由 Rust 按主流程同一套解析规则兜底。
+
+  const activeApiConfig = useMemo(
+    () => apiConfigs.find((config) => config.isActive) ?? null,
+    [apiConfigs],
+  );
+  const chatProfileName = petSettings?.apiProfile ?? "";
+  const chatConfig = useMemo(() => {
+    if (!chatProfileName) {
+      return activeApiConfig;
+    }
+    return (
+      apiConfigs.find((config) => config.profileName === chatProfileName) ??
+      activeApiConfig
+    );
+  }, [activeApiConfig, apiConfigs, chatProfileName]);
+
+  const loadChatModels = (force = false): void => {
+    if (!chatConfig) {
+      return;
+    }
+    const cacheKey = chatConfig.profileName;
+    if (chatModelsLoading || (!force && chatModelsLoadedFor === cacheKey)) {
+      return;
+    }
+    const requestId = chatModelRequestRef.current + 1;
+    chatModelRequestRef.current = requestId;
+    setChatModelsLoading(true);
+    setChatModelsError(null);
+    window.snow
+      .fetchAvailableModelsForConfig({
+        baseUrl: chatConfig.baseUrl,
+        baseUrlMode: chatConfig.baseUrlMode,
+        apiKey: chatConfig.apiKey,
+        requestMethod: chatConfig.requestMethod,
+        customHeaderSchemeId: chatConfig.customHeaderSchemeId,
+        configJson: chatConfig.configJson.trim() || undefined,
+      })
+      .then((available) => {
+        if (chatModelRequestRef.current !== requestId) {
+          return;
+        }
+        setChatModels(available);
+        setChatModelsLoadedFor(cacheKey);
+      })
+      .catch((error: unknown) => {
+        if (chatModelRequestRef.current !== requestId) {
+          return;
+        }
+        setChatModelsError(
+          error instanceof Error
+            ? error.message
+            : t("chat.loadModelsError", {
+                defaultValue: "Failed to load models",
+              }),
+        );
+        setChatModelsLoadedFor(null);
+      })
+      .finally(() => {
+        if (chatModelRequestRef.current === requestId) {
+          setChatModelsLoading(false);
+        }
+      });
+  };
+
+  const handlePetApiProfileChange = (profileName: string): void => {
+    if (!petSettings) {
+      return;
+    }
+    const previous = petSettings;
+    // 换配置后原模型 id 未必存在，一并清回「跟随高级模型」。
+    setPetSettings({
+      ...previous,
+      apiProfile: profileName || null,
+      model: null,
+    });
+    setChatModels([]);
+    setChatModelsLoadedFor(null);
+    window.snow
+      .setPetApiProfile(profileName || null)
+      .then(() => window.snow.setPetChatModel(null))
+      .then(setPetSettings)
+      .catch(() => setPetSettings(previous));
+  };
+
+  const handlePetChatModelChange = (model: string): void => {
+    if (!petSettings) {
+      return;
+    }
+    const previous = petSettings;
+    const normalized = model.trim() || null;
+    setPetSettings({ ...previous, model: normalized });
+    if (petChatTimerRef.current) {
+      clearTimeout(petChatTimerRef.current);
+    }
+    // 防抖提交：模型名可自由输入，避免逐字符写库。
+    petChatTimerRef.current = setTimeout(() => {
+      petChatTimerRef.current = null;
+      window.snow
+        .setPetChatModel(normalized)
+        .then(setPetSettings)
+        .catch(() => setPetSettings(previous));
+    }, PET_CHAT_TIMER_MS);
+  };
+
   const hasPets = pets.length > 0;
   const petEnabled = hasPets && (petSettings?.enabled ?? false);
+  // 预览区优先使用激活宠物，未选择时回退到列表第一只。
+  const previewManifest =
+    pets.find((pet) => pet.id === petSettings?.activePetId) ?? pets[0] ?? null;
+  const petSpeed = petSpeedDraft ?? petSettings?.speed ?? 1;
+
+  const chatProfileLabel = activeApiConfig
+    ? activeApiConfig.displayName.trim() || activeApiConfig.profileName
+    : "";
+  const chatModelPlaceholder = chatConfig?.advancedModel?.trim()
+    ? t("settings.petsChatModelFollow", {
+        values: { model: chatConfig.advancedModel.trim() },
+        defaultValue: `Follow the advanced model (${chatConfig.advancedModel.trim()})`,
+      })
+    : t("settings.petsChatModelDefault", {
+        defaultValue: "Follow the advanced model",
+      });
 
   const petSourceLabel = (source: string): string => {
     if (source === "codex") {
@@ -215,6 +431,107 @@ export function PetsSettingsPanel(): React.JSX.Element {
                 onChange={handlePetScaleChange}
               />
             )}
+
+            {previewManifest && (
+              <div className="pets-speed-row">
+                <RangeSlider
+                  className="pets-speed-slider"
+                  label={t("settings.petsSpeed", {
+                    defaultValue: "Animation speed",
+                  })}
+                  value={petSpeed}
+                  min={0.5}
+                  max={2}
+                  step={0.05}
+                  formatValue={(value) => `${Math.round(value * 100)}%`}
+                  onChange={handlePetSpeedChange}
+                />
+                <div className="pets-speed-preview">
+                  <PetStage
+                    manifest={previewManifest}
+                    scale={PREVIEW_SCALE}
+                    speed={petSpeed}
+                    activity="idle"
+                    dragState={null}
+                  />
+                  <span className="pets-speed-preview-label">
+                    {t("settings.petsSpeedPreview", {
+                      defaultValue: "Preview",
+                    })}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="api-settings-form-section">
+            <div className="api-settings-form-section-header">
+              <strong className="api-settings-form-section-title">
+                {t("settings.petsChatSection", { defaultValue: "Pet chat" })}
+              </strong>
+            </div>
+            <span className="settings-item-description">
+              {t("settings.petsChatInfo", {
+                defaultValue:
+                  "Double-click the pet to open a small chat window. It answers with your current session as background, and falls back to small talk when no session is open.",
+              })}
+            </span>
+
+            <div className="api-settings-form-grid">
+              <label className="api-settings-field">
+                <span>
+                  {t("settings.petsChatApiProfile", {
+                    defaultValue: "API config",
+                  })}
+                </span>
+                <CustomSelect
+                  onChange={handlePetApiProfileChange}
+                  options={[
+                    {
+                      value: "",
+                      label: chatProfileLabel
+                        ? t("settings.petsChatFollowActive", {
+                            values: { name: chatProfileLabel },
+                            defaultValue: `Follow the current config (${chatProfileLabel})`,
+                          })
+                        : t("settings.petsChatFollowCurrent", {
+                            defaultValue: "Follow the current config",
+                          }),
+                    },
+                    ...apiConfigs.map((config) => ({
+                      value: config.profileName,
+                      label: `${config.displayName.trim() || config.profileName}${
+                        config.isActive
+                          ? ` (${t("settings.active", { defaultValue: "Enabled" })})`
+                          : ""
+                      }`,
+                    })),
+                  ]}
+                  value={chatProfileName}
+                />
+              </label>
+
+              <ApiModelCombobox
+                disabled={!petSettings || !chatConfig}
+                error={chatModelsError}
+                hasLoaded={chatModelsLoadedFor === chatConfig?.profileName}
+                isLoading={chatModelsLoading}
+                label={t("settings.petsChatModel", { defaultValue: "Model" })}
+                loadingText={t("settings.loadingModels", {
+                  defaultValue: "Loading models...",
+                })}
+                models={chatModels}
+                noModelsText={t("chat.noModelsFound", {
+                  defaultValue: "No models found",
+                })}
+                onChange={handlePetChatModelChange}
+                onRequestModels={() => loadChatModels()}
+                onRetry={() => loadChatModels(true)}
+                placeholder={chatModelPlaceholder}
+                retryText={t("common.retry", { defaultValue: "Retry" })}
+                value={petSettings?.model ?? ""}
+              />
+            </div>
           </div>
 
           <div className="api-settings-form-section">
@@ -295,8 +612,26 @@ export function PetsSettingsPanel(): React.JSX.Element {
                         </span>
                         <span className="pets-list-source">
                           {petSourceLabel(pet.source)}
+                          {petSettings?.personas[pet.id]
+                            ? ` · ${t("settings.petsPersonaCustomized", {
+                                defaultValue: "Custom persona",
+                              })}`
+                            : ""}
                         </span>
                       </span>
+                      <button
+                        className="icon-btn ghost pets-persona-btn"
+                        onClick={() => handleEditPersona(pet)}
+                        type="button"
+                        aria-label={t("settings.petsPersonaEdit", {
+                          defaultValue: "Edit persona",
+                        })}
+                        title={t("settings.petsPersonaEdit", {
+                          defaultValue: "Edit persona",
+                        })}
+                      >
+                        <Pencil size={14} strokeWidth={1.8} />
+                      </button>
                       {pet.source === "snow" && (
                         <button
                           className="icon-btn ghost danger pets-uninstall-btn"
@@ -332,6 +667,17 @@ export function PetsSettingsPanel(): React.JSX.Element {
         onConfirm={confirmUninstallPet}
         onCancel={() => setPetPendingDeletion(null)}
         variant="danger"
+      />
+
+      <PetPersonaDialog
+        open={personaTarget !== null}
+        petName={personaTarget?.displayName ?? ""}
+        defaultPersona={personaTarget?.description ?? ""}
+        value={personaDraft}
+        isSaving={personaSaving}
+        onChange={setPersonaDraft}
+        onSave={handleSavePersona}
+        onClose={handleClosePersona}
       />
     </div>
   );

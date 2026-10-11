@@ -120,6 +120,15 @@ export function useChatConversationList({
     .join("\u0000");
   const hasMore = conversations.length < total;
 
+  // 当前目录已加载的 DB 行数（不含 pending 占位）。重命名/删除/置顶等操作会通过
+  // conversationListVersion 触发整表重拉，此时需按已加载的分页深度取回同样多的
+  // 数据，否则列表退回第一页、用户必须重新点「加载更多」；切换到别的目录仍从
+  // 第一页开始。
+  const loadedDbRowsRef = useRef<{ directoryId: string; count: number }>({
+    directoryId: "",
+    count: 0,
+  });
+
   useEffect(() => {
     if (!directoryId) {
       setConversations([]);
@@ -133,14 +142,26 @@ export function useChatConversationList({
       setIsLoading(true);
       setError(null);
 
+      // 同一目录内重拉（重命名/删除/置顶等）时保持已加载的分页深度；
+      // 切换到别的目录时回到第一页。
+      const loaded = loadedDbRowsRef.current;
+      const pageLimit =
+        loaded.directoryId === directoryId
+          ? Math.max(CHAT_PAGE_SIZE, loaded.count)
+          : CHAT_PAGE_SIZE;
+
       try {
         const result = await window.snow.listChatConversationsPaginated(
           directoryId,
-          CHAT_PAGE_SIZE,
+          pageLimit,
           0,
         );
 
         if (!cancelled) {
+          loadedDbRowsRef.current = {
+            directoryId,
+            count: result.items.length,
+          };
           setConversations((prev) => {
             const fetchedIds = new Set(
               result.items.map((row) => row.conversationId),
@@ -299,6 +320,13 @@ export function useChatConversationList({
 
     if (isNew) {
       setTotal((prev) => prev + 1);
+      // 新会话已落库：同步已加载行数，避免后续重拉时把它挤出取回窗口
+      if (loadedDbRowsRef.current.directoryId === directoryId) {
+        loadedDbRowsRef.current = {
+          directoryId,
+          count: loadedDbRowsRef.current.count + 1,
+        };
+      }
     }
   }, [
     upsertedConversation,
@@ -336,6 +364,12 @@ export function useChatConversationList({
         CHAT_PAGE_SIZE,
         dbOffset,
       );
+
+      // 记录累计已加载的 DB 行数，供后续整表重拉时保持分页深度
+      loadedDbRowsRef.current = {
+        directoryId,
+        count: dbOffset + result.items.length,
+      };
 
       setConversations((prev) => {
         // 运行中会话落库后，DB 顶部的排序位移会让相邻页出现重叠，

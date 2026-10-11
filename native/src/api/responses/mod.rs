@@ -22,7 +22,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::api::config::resolve_advanced_model;
 use crate::api::conversation::{
-    prepare_context_request, resolve_sub_agent_tools, ConversationContextRequest,
+    prepare_context_request, resolve_request_tools_optional, ConversationContextRequest,
 };
 use crate::api::retry::{
     classify_final_stream_warning, resolve_empty_response_terminal, resolve_stream_idle_timeout_sec,
@@ -60,6 +60,12 @@ pub struct ResponsesApiMessage {
     /// type/thinking/signature). Only used by the Anthropic provider to
     /// round-trip thinking blocks verbatim.
     pub thinking_blocks_json: Option<String>,
+    /// Serialized tool calls for role="assistant" messages, in the same
+    /// provider-native shape the conversation history persists. Stateless
+    /// callers (skip_context side channels such as the desktop pet chat) have
+    /// no database history to load, so they must replay their own tool loop
+    /// by sending the assistant tool calls back together with their results.
+    pub tool_calls_json: Option<String>,
 }
 
 #[napi(object)]
@@ -134,11 +140,25 @@ pub struct ResponsesApiRequest {
     pub execution_workspace_root: Option<String>,
     /// Selected or preselected worktree ID for the conversation.
     pub worktree_id: Option<String>,
+    /// Request-scoped MCP tool whitelist (JSON array of full tool names).
+    /// Unlike `sub_agent_tools_json` this does not turn the request into a
+    /// sub-agent request. It keeps its restricted tool set even when
+    /// `skip_context` is set, which is what the desktop pet's side channel
+    /// needs: no conversation history, but still web search / file tools.
+    pub allowed_tools_json: Option<String>,
 }
 
 impl ResponsesApiRequest {
     pub fn is_sub_agent_request(&self) -> bool {
         self.sub_agent_tools_json
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty())
+    }
+
+    /// Whether this request carries an explicit request-scoped tool whitelist.
+    pub fn has_allowed_tools(&self) -> bool {
+        self.allowed_tools_json
             .as_deref()
             .map(str::trim)
             .is_some_and(|value| !value.is_empty())
@@ -298,26 +318,14 @@ async fn create_response_async(
         .map(|message| ChatContextMessage {
             role: message.role.clone(),
             content: message.content.clone(),
-            tool_calls_json: None,
+            tool_calls_json: message.tool_calls_json.clone(),
             tool_results_json: message.tool_results_json.clone(),
             thinking: message.thinking.clone(),
             thinking_blocks_json: message.thinking_blocks_json.clone(),
         })
         .collect::<Vec<_>>();
     // Collect once, before prompt generation; providers serialize this same snapshot.
-    let allowed_tools = if request.context_compaction.unwrap_or(false)
-        || request.skip_context.unwrap_or(false)
-        || request.disable_tools.unwrap_or(false)
-    {
-        None
-    } else {
-        resolve_sub_agent_tools(&request)
-            .await
-            .map_err(|error| {
-                eprintln!("Failed to prepare request MCP tools: {error}");
-            })
-            .ok()
-    };
+    let allowed_tools = resolve_request_tools_optional(&request).await;
     let prepared_request = prepare_context_request(ConversationContextRequest {
         allowed_tools: allowed_tools.as_deref().unwrap_or_default(),
         database_path: &database_path,

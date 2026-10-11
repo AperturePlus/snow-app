@@ -80,6 +80,7 @@ export function ChatConversationRow({
 }: ChatConversationRowProps): React.JSX.Element {
   const conversationId = conversation.conversationId;
   const isWorkflow = workflowNodeConversations.length > 0;
+  const hasTreeChildren = isWorkflow || subAgentConversations.length > 0;
 
   return (
     <Fragment>
@@ -119,39 +120,45 @@ export function ChatConversationRow({
         onSelect={() => onSelectConversation(conversation)}
       />
       {/* 面板渲染在 ChatItem 外部，作为兄弟节点，
-          完全不继承父级会话项的背景色 */}
+          完全不继承父级会话项的背景色。
+          Workflow 节点树与子代理列表共用一个折叠容器：两者由同一个
+          展开按钮控制，共用容器后展开时只出现一个 loading 占位 */}
       <LazyCollapse
-        open={isWorkflow && isTreeExpanded && !isMultiSelectMode}
+        open={hasTreeChildren && isTreeExpanded && !isMultiSelectMode}
         renderContent={() => (
-          <WorkflowNodeListPanel
-            conversations={workflowNodeConversations}
-            activeConversationId={activeConversationId}
-            attentionRequiredConversationIds={attentionRequiredConversationIds}
-            streamingConversationIds={streamingConversationIds}
-            subAgentMap={subAgentMap}
-            expandedNodeIds={expandedWorkflowNodeConversationIds}
-            onToggleNode={onToggleWorkflowNode}
-            onSelect={(nodeConvId) =>
-              onSelectChildConversation(nodeConvId, conversation.directoryId)
-            }
-          />
-        )}
-      />
-      <LazyCollapse
-        open={
-          subAgentConversations.length > 0 &&
-          isTreeExpanded &&
-          !isMultiSelectMode
-        }
-        renderContent={() => (
-          <SubAgentListPanel
-            conversations={subAgentConversations}
-            activeConversationId={activeConversationId}
-            attentionRequiredConversationIds={attentionRequiredConversationIds}
-            onSelect={(subConvId) =>
-              onSelectChildConversation(subConvId, conversation.directoryId)
-            }
-          />
+          <>
+            {isWorkflow ? (
+              <WorkflowNodeListPanel
+                conversations={workflowNodeConversations}
+                activeConversationId={activeConversationId}
+                attentionRequiredConversationIds={
+                  attentionRequiredConversationIds
+                }
+                streamingConversationIds={streamingConversationIds}
+                subAgentMap={subAgentMap}
+                expandedNodeIds={expandedWorkflowNodeConversationIds}
+                onToggleNode={onToggleWorkflowNode}
+                onSelect={(nodeConvId) =>
+                  onSelectChildConversation(
+                    nodeConvId,
+                    conversation.directoryId,
+                  )
+                }
+              />
+            ) : null}
+            {subAgentConversations.length > 0 ? (
+              <SubAgentListPanel
+                conversations={subAgentConversations}
+                activeConversationId={activeConversationId}
+                attentionRequiredConversationIds={
+                  attentionRequiredConversationIds
+                }
+                onSelect={(subConvId) =>
+                  onSelectChildConversation(subConvId, conversation.directoryId)
+                }
+              />
+            ) : null}
+          </>
         )}
       />
     </Fragment>

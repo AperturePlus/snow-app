@@ -7918,8 +7918,10 @@ body.is-panel-resizing * {
 }
 
 .terminal-font-family-row > .custom-select {
-  flex-shrink: 0;
-  min-width: 168px;
+  /* 覆盖 .custom-select 的 width: 100%：预设下拉固定宽度，剩余空间留给输入框。 */
+  flex: 0 0 auto;
+  width: 190px;
+  min-width: 190px;
 }
 
 .terminal-combobox-field {
@@ -14680,25 +14682,39 @@ body.is-panel-resizing * {
   gap: 6px;
 }
 
-.tool-call-user-question-custom-form input {
+.tool-call-user-question-custom-input {
+  position: relative;
   min-width: 0;
   flex: 1;
-  height: 30px;
+  max-height: 120px;
+  overflow-y: auto;
   padding: 5px 8px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   background: var(--bg-primary);
   color: var(--text-primary);
   font: 12px/1.4 var(--font-sans);
-}
-
-.tool-call-user-question-custom-form input::placeholder {
-  color: var(--text-tertiary);
-}
-
-.tool-call-user-question-custom-form input:focus-visible {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
   outline: none;
+}
+
+.tool-call-user-question-custom-input[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  top: 5px;
+  left: 8px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.tool-call-user-question-custom-input:focus-visible {
   border-color: var(--accent-color);
+}
+
+.tool-call-user-question-custom-input[contenteditable="false"] {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .tool-call-user-question-custom-form button,
@@ -14724,8 +14740,7 @@ body.is-panel-resizing * {
   color: var(--text-primary);
 }
 
-.tool-call-user-question-custom-form button:disabled,
-.tool-call-user-question-custom-form input:disabled {
+.tool-call-user-question-custom-form button:disabled {
   cursor: default;
   opacity: 0.55;
 }
@@ -14748,7 +14763,11 @@ body.is-panel-resizing * {
   font-size: 11.5px;
 }
 
-.tool-call-user-question-custom-item > span {
+.tool-call-user-question-custom-item-body {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -49440,6 +49459,67 @@ pre.file-viewer-code {
 .pets-list-item:hover .pets-uninstall-btn,
 .pets-list-item:focus-within .pets-uninstall-btn {
   opacity: 1;
+}
+
+/* 人设编辑按钮：常驻可见（低透明度），悬停或聚焦时提亮。 */
+.pets-persona-btn {
+  flex-shrink: 0;
+  opacity: 0.45;
+  transition: opacity 0.12s;
+}
+
+.pets-list-item:hover .pets-persona-btn,
+.pets-list-item:focus-within .pets-persona-btn {
+  opacity: 1;
+}
+
+/* --- 动画速度：滑块 + 实时预览区并排 --- */
+.pets-speed-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.pets-speed-slider {
+  flex: 1;
+  min-width: 0;
+}
+
+.pets-speed-preview {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px 2px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(
+      45deg,
+      rgba(128, 128, 128, 0.08) 25%,
+      transparent 25%,
+      transparent 75%,
+      rgba(128, 128, 128, 0.08) 75%
+    ),
+    linear-gradient(
+      45deg,
+      rgba(128, 128, 128, 0.08) 25%,
+      transparent 25%,
+      transparent 75%,
+      rgba(128, 128, 128, 0.08) 75%
+    ),
+    var(--bg-secondary);
+  background-size: 8px 8px;
+  background-position:
+    0 0,
+    4px 4px;
+}
+
+.pets-speed-preview-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-tertiary);
 }
 
 /* ==========================================================================

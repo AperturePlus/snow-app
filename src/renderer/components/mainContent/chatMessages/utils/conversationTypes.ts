@@ -669,6 +669,9 @@ export type ConversationContextValue = {
   /** 无会话时预选的 WorkTree ID，新会话发送首条消息时自动完成绑定。 */
   pendingWorktreeId: string | null;
   setPendingWorktreeId: (worktreeId: string | null) => void;
+  /** WorkTree 模式已开启但未绑定工作树时的内置提示文案（非空即弹出）。 */
+  worktreeModeNotice: string | null;
+  setWorktreeModeNotice: (message: string | null) => void;
   pendingToolAuthorizations: ToolCallInfo[];
   activePendingMessages: string[];
   compactionPreview: string;
@@ -1063,6 +1066,9 @@ export type UseChatConversationResult = {
   isUpdatingWorktreeMode: boolean;
   pendingWorktreeId: string | null;
   setPendingWorktreeId: (worktreeId: string | null) => void;
+  /** WorkTree 模式已开启但未绑定工作树时的内置提示文案（非空即弹出）。 */
+  worktreeModeNotice: string | null;
+  setWorktreeModeNotice: (message: string | null) => void;
   setWorktreeMode: (enabled: boolean) => Promise<void>;
   refreshWorktreeMode: () => Promise<boolean>;
   workflowMode: boolean;

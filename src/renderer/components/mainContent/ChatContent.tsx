@@ -20,6 +20,7 @@ import { ChatFloatHeaderStatus } from "./ChatFloatHeaderStatus";
 import { ChatInput } from "./ChatInput";
 import { EmptyChatGreeting } from "./EmptyChatGreeting";
 import { ChatMessageList, useChatConversationContext } from "./chatMessages";
+import { ConfirmDialog } from "../common/ConfirmDialog";
 import { RollbackConfirmDialog } from "./chatMessages/dialogs/RollbackConfirmDialog";
 import { CompactionStream } from "./chatMessages/components/CompactionStream";
 import { ChatHistorySkeleton } from "./chatMessages/components/ChatHistorySkeleton";
@@ -27,6 +28,7 @@ import { UserMessageRail } from "./chatMessages/components/UserMessageRail";
 import type { MainContentView } from "./types";
 import type { RollbackMode } from "./chatMessages/utils/conversationTypes";
 import { useChatScrollFollow } from "./chatMessages/hooks/useChatScrollFollow";
+import { usePetChatSnapshot } from "./chatMessages/hooks/usePetChatSnapshot";
 import { usePathClickOpen } from "./chatMessages/hooks/usePathClickOpen";
 import { useProjectSwitchAutoSelect } from "./chatMessages/hooks/useProjectSwitchAutoSelect";
 import {
@@ -61,6 +63,7 @@ const ChatContentBody = ({
     isInitialHistoryLoaded,
     isLoadingInitialHistory,
     isStreaming,
+    isPaused,
     isAborting,
     handleAbort,
     tokenUsage,
@@ -107,6 +110,8 @@ const ChatContentBody = ({
     isUpdatingWorktreeMode,
     setWorktreeMode,
     refreshWorktreeMode,
+    worktreeModeNotice,
+    setWorktreeModeNotice,
     workflowMode,
     isUpdatingWorkflowMode,
     setWorkflowMode,
@@ -242,6 +247,23 @@ const ChatContentBody = ({
       cancelled = true;
     };
   }, [activeConversationId]);
+
+  // 宠物聊天上下文：把当前打开会话的「实时运行快照」节流同步给主进程 ——
+  // 在途正文、每一次工具调用的参数/状态/结果、待办进度、运行状态。宠物窗口
+  // 据此回答「进行到哪一步」这类问题（btw 式旁路会话）。没有打开的会话时
+  // 上报空快照，宠物聊天转为纯闲聊。
+  const conversationWorkspacePath =
+    directoryIdToPath(conversationDirectoryId) ?? activeDirectory?.path;
+  usePetChatSnapshot({
+    conversationId: activeConversationId ?? null,
+    title: activeConversationMeta?.title?.trim() || null,
+    directoryId:
+      conversationDirectoryId ?? activeDirectory?.directoryId ?? null,
+    workspacePath: conversationWorkspacePath ?? null,
+    isStreaming,
+    isPaused,
+    messages,
+  });
 
   const liveSubAgentEvent = activeConversationId
     ? subAgentSessionEvents[activeConversationId]
@@ -415,7 +437,7 @@ const ChatContentBody = ({
 
   // 覆盖整个中间输出区：文件变更统计、消息正文、Thinking、工具调用和压缩输出。
   const pathClickOpenProps = usePathClickOpen(
-    directoryIdToPath(conversationDirectoryId) ?? activeDirectory?.path,
+    conversationWorkspacePath,
     conversationDirectoryId ?? activeDirectory?.directoryId,
   );
   // 划词引用：AI 正文 / 思考块内选中文本后浮现「添加到输入框」按钮。
@@ -738,6 +760,17 @@ const ChatContentBody = ({
           onCancel={cancelRollback}
         />
       ) : null}
+
+      {/* WorkTree 模式已开启但未绑定工作树：发送被拦截时的内置提示（替代系统 alert）。 */}
+      <ConfirmDialog
+        open={worktreeModeNotice !== null}
+        title={t("git.worktreesTitle")}
+        message={worktreeModeNotice ?? ""}
+        confirmLabel={t("git.errorDismiss")}
+        variant="warning"
+        onConfirm={() => setWorktreeModeNotice(null)}
+        onCancel={() => setWorktreeModeNotice(null)}
+      />
 
       {quoteState
         ? createPortal(

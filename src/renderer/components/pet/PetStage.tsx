@@ -11,7 +11,10 @@
  * 绝无漂移。收起宠物在「设置 → 桌面宠物」中操作。
  */
 import { useEffect, useRef, useState } from "react";
-import type { PetActivityState, PetManifest } from "../../../preload/types/pets";
+import type {
+  PetActivityState,
+  PetManifest,
+} from "../../../preload/types/pets";
 import { themeBgUrl } from "../../utils/themeBgUrl";
 import {
   PET_FRAME_HEIGHT,
@@ -35,6 +38,8 @@ const ACTIVITY_TO_STATE: Record<PetActivityState, PetSpriteState> = {
 type PetStageProps = {
   manifest: PetManifest;
   scale: number;
+  /** 动画播放速度倍率（1 = 原始帧率，见 PET_STATE_FPS） */
+  speed: number;
   activity: PetActivityState;
   /** OS 拖拽方向（左/右奔跑），null 表示未在拖拽 */
   dragState: PetSpriteState | null;
@@ -44,12 +49,14 @@ type AnimState = {
   state: PetSpriteState;
   oneShot: boolean;
   frame: number;
-  elapsed: number;
+  /** 当前状态累计的帧进度（小数），按 fps × 速度倍率累加 */
+  frameFloat: number;
 };
 
 export function PetStage({
   manifest,
   scale,
+  speed,
   activity,
   dragState,
 }: PetStageProps): React.JSX.Element {
@@ -59,11 +66,16 @@ export function PetStage({
     state: "idle",
     oneShot: false,
     frame: 0,
-    elapsed: 0,
+    frameFloat: 0,
   });
   const baseStateRef = useRef<PetSpriteState>("idle");
   const greetingDoneRef = useRef(false);
   const [loadFailed, setLoadFailed] = useState(false);
+  // 速度在主循环中逐帧读取：拖动速度滑块时无需重建动画循环。
+  const speedRef = useRef(speed);
+  useEffect(() => {
+    speedRef.current = speed;
+  }, [speed]);
 
   const frameWidth = Math.round(PET_FRAME_WIDTH * scale);
   const frameHeight = Math.round(PET_FRAME_HEIGHT * scale);
@@ -80,7 +92,7 @@ export function PetStage({
     anim.state = state;
     anim.oneShot = oneShot;
     anim.frame = 0;
-    anim.elapsed = 0;
+    anim.frameFloat = 0;
   };
 
   // ── 精灵图加载与预处理 ─────────────────────────────────────────────
@@ -131,12 +143,12 @@ export function PetStage({
       anim.state = dragState;
       anim.oneShot = false;
       anim.frame = 0;
-      anim.elapsed = 0;
+      anim.frameFloat = 0;
     } else {
       anim.state = baseStateRef.current;
       anim.oneShot = false;
       anim.frame = 0;
-      anim.elapsed = 0;
+      anim.frameFloat = 0;
     }
   }, [dragState]);
 
@@ -171,7 +183,7 @@ export function PetStage({
         (canvas.width - frameWidth) / 2,
         canvas.height - frameHeight,
         frameWidth,
-        frameHeight
+        frameHeight,
       );
     };
 
@@ -180,21 +192,20 @@ export function PetStage({
       const sheet = sheetRef.current;
       if (sheet) {
         const delta = lastTime === null ? 0 : (now - lastTime) / 1000;
-        anim.elapsed += delta;
 
-        const fps = PET_STATE_FPS[anim.state];
+        const fps = PET_STATE_FPS[anim.state] * speedRef.current;
         const row = PET_STATE_ROWS[anim.state];
         const frameCount = sheet.frameCounts[row] ?? 1;
-        const frameFloat = anim.elapsed * fps;
+        anim.frameFloat += delta * fps;
 
-        if (anim.oneShot && frameFloat >= frameCount) {
+        if (anim.oneShot && anim.frameFloat >= frameCount) {
           // 单次动作播完 → 回到基础状态。
           anim.oneShot = false;
           anim.state = baseStateRef.current;
-          anim.elapsed = 0;
+          anim.frameFloat = 0;
           anim.frame = 0;
         } else {
-          anim.frame = Math.floor(frameFloat) % frameCount;
+          anim.frame = Math.floor(anim.frameFloat) % frameCount;
         }
         drawFrame();
       }

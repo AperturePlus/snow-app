@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { ChevronsDown, Loader2 } from "lucide-react";
 import type { Ref } from "react";
 
 import { useI18n } from "../../../../i18n";
@@ -41,7 +41,9 @@ export function ChatListFooter({
         >
           {isLoadingMore ? (
             <Loader2 className="spin" size={13} aria-hidden="true" />
-          ) : null}
+          ) : (
+            <ChevronsDown size={13} aria-hidden="true" />
+          )}
           <span>
             {isLoadingMore
               ? t("sidebar.chatLoadingMore", {

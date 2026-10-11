@@ -2,14 +2,24 @@
  * 宠物窗口专用 preload（独立于主窗口 window.snow，保持轻量）。
  *
  * 暴露 window.petBridge：
- * - getConfig: 拉取宠物配置（设置 + 激活宠物清单）
- * - onConfigChanged / onActivityChanged: 订阅主进程广播
+ * - getConfig / onConfigChanged: 宠物配置（设置 + 激活宠物清单 + 窗口形态 +
+ *   聊天上下文 + 界面文案）
+ * - onActivityChanged: 订阅 AI 活动状态广播
  * - showContextMenu: 请求主进程弹出宠物右键菜单（菜单项在主进程构建）
- *
- * 窗口拖拽由 CSS `-webkit-app-region: drag` 交给操作系统，无需桥接。
+ * - setMode: 精灵 ↔ 聊天形态切换（窗口尺寸由主进程调整）
+ * - sendChat / abortChat / onChatChunk / onChatTool: 宠物聊天（btw 式旁路会话）
+ * - dragStart / dragMove / dragEnd: 渲染层自绘窗口拖拽
+ *   （不再使用 CSS app-region，否则 Windows 上双击被系统标题栏吞掉）
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
-import type { PetActivityState, PetWindowConfig } from "./types/pets";
+import type {
+  PetActivityState,
+  PetChatChunkPayload,
+  PetChatResult,
+  PetChatToolPayload,
+  PetWindowConfig,
+  PetWindowMode,
+} from "./types/pets";
 
 const petBridge = {
   getConfig: (): Promise<PetWindowConfig | null> =>
@@ -20,6 +30,55 @@ const petBridge = {
   /** 请求主进程弹出宠物右键菜单（无返回值，菜单点击在 main 侧处理）。 */
   showContextMenu: (): void => {
     ipcRenderer.send("pets:show-context-menu");
+  },
+  /** 切换宠物窗口形态：双击宠物进入聊天，关闭聊天回到精灵。 */
+  setMode: (mode: PetWindowMode): Promise<PetWindowMode> =>
+    ipcRenderer.invoke("pets:set-mode", mode),
+  /** 宠物聊天：返回最终结果，流式增量通过 onChatChunk 送达。 */
+  sendChat: (requestId: string, text: string): Promise<PetChatResult> =>
+    ipcRenderer.invoke("pets:chat-send", { requestId, text }),
+  /** 中止一次在途宠物聊天。 */
+  abortChat: (requestId: string): Promise<boolean> =>
+    ipcRenderer.invoke("pets:chat-abort", requestId),
+  onChatChunk: (
+    callback: (payload: PetChatChunkPayload) => void,
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      payload: PetChatChunkPayload,
+    ): void => {
+      callback(payload);
+    };
+    ipcRenderer.on("pets:chat-chunk", handler);
+    return () => {
+      ipcRenderer.removeListener("pets:chat-chunk", handler);
+    };
+  },
+  /** 订阅宠物聊天的工具活动（联网搜索 / 文件搜索 / 文件阅读）。 */
+  onChatTool: (
+    callback: (payload: PetChatToolPayload) => void,
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      payload: PetChatToolPayload,
+    ): void => {
+      callback(payload);
+    };
+    ipcRenderer.on("pets:chat-tool", handler);
+    return () => {
+      ipcRenderer.removeListener("pets:chat-tool", handler);
+    };
+  },
+  /** 拖拽开始：主进程记录窗口起始位置。 */
+  dragStart: (): void => {
+    ipcRenderer.send("pets:drag-start");
+  },
+  /** 拖拽中：dx/dy 为相对拖拽起点的屏幕位移（像素）。 */
+  dragMove: (dx: number, dy: number): void => {
+    ipcRenderer.send("pets:drag-move", { dx, dy });
+  },
+  dragEnd: (): void => {
+    ipcRenderer.send("pets:drag-end");
   },
   onConfigChanged: (
     callback: (config: PetWindowConfig) => void,

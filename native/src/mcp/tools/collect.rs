@@ -261,17 +261,7 @@ pub async fn collect_allowed_mcp_tools_for_workspace(
     tools_json: &str,
     allow_wildcard: bool,
 ) -> Result<Vec<McpTool>> {
-    let configured_names = serde_json::from_str::<Vec<String>>(tools_json).map_err(|error| {
-        Error::new(
-            Status::InvalidArg,
-            format!("Sub-agent tools configuration must be a JSON string array: {error}"),
-        )
-    })?;
-    let configured_names = configured_names
-        .into_iter()
-        .map(|name| name.trim().to_string())
-        .filter(|name| !name.is_empty())
-        .collect::<std::collections::HashSet<_>>();
+    let configured_names = parse_configured_tool_names(tools_json)?;
     let wildcard_enabled = configured_names.contains("*");
     if wildcard_enabled && !allow_wildcard {
         return Err(Error::new(
@@ -338,6 +328,54 @@ pub async fn collect_allowed_mcp_tools_for_workspace(
     // Teammate communication tools are always available to every sub-agent,
     // regardless of its configured tool whitelist.
     result.extend(sub_agent_comms_tools());
+    apply_semantic_routing(&mut result);
+    Ok(result)
+}
+
+/// Parse a JSON array of tool full names into a trimmed, non-empty set.
+fn parse_configured_tool_names(
+    tools_json: &str,
+) -> Result<std::collections::HashSet<String>> {
+    let names = serde_json::from_str::<Vec<String>>(tools_json).map_err(|error| {
+        Error::new(
+            Status::InvalidArg,
+            format!("Allowed tools configuration must be a JSON string array: {error}"),
+        )
+    })?;
+    Ok(names
+        .into_iter()
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .collect())
+}
+
+/// Resolve a request-scoped tool whitelist without sub-agent semantics.
+///
+/// Used by stateless side channels (the desktop pet chat) that run with
+/// `skip_context`: they still need real tools (web search, file search, file
+/// read) but must never receive the full main-conversation tool set, the
+/// teammate communication tools, or the main-session sub-agent management
+/// tools. Tools that are disabled for the project or unavailable are silently
+/// skipped so one missing tool never disables the whole set.
+pub async fn collect_restricted_mcp_tools_for_workspace(
+    project_id: Option<&str>,
+    analysis_root: Option<&Path>,
+    tools_json: &str,
+) -> Result<Vec<McpTool>> {
+    let configured_names = parse_configured_tool_names(tools_json)?;
+    if configured_names.is_empty() {
+        return Ok(Vec::new());
+    }
+    let all_tools =
+        collect_mcp_tools(project_id, false, false, Some(&configured_names), analysis_root).await?;
+    let mut result = all_tools
+        .into_iter()
+        .filter(|tool| {
+            configured_names.contains(&tool.full_name())
+                // 子代理管理工具属于主会话职权，受限请求一律排除。
+                && !SUB_AGENT_MAIN_TOOL_FULL_NAMES.contains(&tool.full_name().as_str())
+        })
+        .collect::<Vec<_>>();
     apply_semantic_routing(&mut result);
     Ok(result)
 }

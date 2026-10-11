@@ -54,7 +54,7 @@ import {
   unregisterSshCommandAbort,
 } from "../../ssh/sshCommandRegistry";
 import { safeSend } from "../../utils/safeSend";
-import { WebSearchService } from "../../websearch/webSearchService";
+import { dispatchWebSearchCommand } from "../../websearch/webSearchRegistry";
 
 const MCP_TOOL_CHUNK_CHANNEL = "mcp:call-tool:chunk";
 
@@ -73,9 +73,6 @@ const readConfigScope = (argsJson: string): string | null => {
 };
 
 export const registerNativeHandlers = (native: NativeBridge): void => {
-  // Web 搜索由 puppeteer 驱动系统浏览器执行（绕过 JS 反爬），
-  // 服务实例持有代理/搜索引擎配置的读取能力。
-  const webSearchService = new WebSearchService(native);
   // SSH checkpoint 需要一个独立于工具调用链的远程命令通道：renderer 的
   // checkpoint 导出 API（create/restore/list）不经过 callMcpTool，无法把
   // onRemoteWorkspaceCommand 传入 Rust。这里注册一次全局回调，复用与
@@ -1141,7 +1138,7 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
         (command: BrowserCommand) =>
           dispatchBrowserCommand(event.sender, command),
         (command: WebSearchCommand) =>
-          dispatchWebSearchCommand(webSearchService, command),
+          dispatchWebSearchCommand(native, command),
         (question: UserQuestionCommand) =>
           dispatchUserQuestion(event.sender, question, normalizedInteractionId),
         (command: AppControlCommand) =>
@@ -1445,28 +1442,4 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
   );
 
   ipcMain.handle("logs:prune", () => native.pruneAppLogs());
-};
-
-/**
- * 执行 Rust 转发的 Web 搜索命令（puppeteer 驱动系统浏览器）。
- * 目前仅支持 websearch-search；未知操作返回错误。
- */
-const dispatchWebSearchCommand = async (
-  service: WebSearchService,
-  command: WebSearchCommand,
-): Promise<string> => {
-  const args = JSON.parse(command.argsJson) as {
-    query?: unknown;
-    maxResults?: unknown;
-  };
-  if (command.operation !== "websearch-search") {
-    throw new Error(`Unknown web search operation: ${command.operation}`);
-  }
-  if (typeof args.query !== "string" || !args.query.trim()) {
-    throw new Error('query is required for tool "websearch-search"');
-  }
-  const maxResults =
-    typeof args.maxResults === "number" ? args.maxResults : undefined;
-  const response = await service.search(args.query.trim(), maxResults);
-  return JSON.stringify(response);
 };

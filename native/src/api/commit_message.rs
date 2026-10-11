@@ -53,6 +53,7 @@ fn build_request(staged_diff: &str) -> ResponsesApiRequest {
                 tool_results_json: None,
                 thinking: None,
                 thinking_blocks_json: None,
+                tool_calls_json: None,
             },
             crate::api::responses::ResponsesApiMessage {
                 role: "user".to_string(),
@@ -60,6 +61,7 @@ fn build_request(staged_diff: &str) -> ResponsesApiRequest {
                 tool_results_json: None,
                 thinking: None,
                 thinking_blocks_json: None,
+                tool_calls_json: None,
             },
         ],
         // Force the basic model for this lightweight task.
@@ -88,6 +90,7 @@ fn build_request(staged_diff: &str) -> ResponsesApiRequest {
         remote_include_global_rules: None,
         execution_workspace_root: None,
         worktree_id: None,
+        allowed_tools_json: None,
     }
 }
 

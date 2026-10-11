@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdtempSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { delimiter, dirname, isAbsolute, join } from "node:path";
@@ -155,25 +156,61 @@ const sanitizeEnv = (options: PtySessionOptions): Record<string, string> =>
     cwd: options.cwd,
   });
 
+/**
+ * node-pty 的 spawn-helper 是可执行文件，但 1.1.0 的 npm 包把它以 0644 发布
+ * （prebuilds/darwin-*），且 node-pty 自己的 post-install.js 只处理 build/Release，
+ * 从不修复 prebuilds。缺执行位时 macOS 上 posix_spawn 直接失败，终端报
+ * 「posix_spawnp failed.」。这里在启动时补上执行位。
+ *
+ * 打包后 require.resolve 解析到 asar 内的虚拟路径，而 Electron 的 asar
+ * 文件系统不支持 chmod（抛 ENOENT），所以必须先映射到 asar.unpacked 下的
+ * 真实文件再操作，否则这个修复在正式包里形同虚设。
+ */
+const toUnpackedPath = (path: string): string =>
+  path.includes("app.asar.unpacked")
+    ? path
+    : path.replace("app.asar", "app.asar.unpacked");
+
+const ensureExecutable = (path: string): void => {
+  const realPath = toUnpackedPath(path);
+  if (!existsSync(realPath)) {
+    return;
+  }
+  // 已有任一执行位时跳过，避免每次启动都做一次无意义的 chmod 系统调用。
+  if ((statSync(realPath).mode & 0o111) !== 0) {
+    return;
+  }
+  try {
+    chmodSync(realPath, 0o755);
+  } catch (error) {
+    // 只读安装目录等场景无法修复，交给 node-pty 抛出真实错误。
+    console.warn(`Failed to mark spawn-helper executable: ${realPath}`, error);
+  }
+};
+
 const ensureSpawnHelperExecutable = (): void => {
   if (process.platform === "win32") {
     return;
   }
   try {
+    // 与 node-pty lib/utils.js 的查找顺序保持一致：build/Release →
+    // build/Debug → prebuilds/<platform>-<arch>。
     const ptyModulePath = require2.resolve("node-pty");
     const ptyDir = dirname(ptyModulePath);
-    const prebuildDir = join(
-      ptyDir,
-      "..",
-      "prebuilds",
-      `${process.platform}-${process.arch}`,
-    );
-    const spawnHelperPath = join(prebuildDir, "spawn-helper");
-    if (existsSync(spawnHelperPath)) {
-      chmodSync(spawnHelperPath, 0o755);
+    const ptyRoot = dirname(ptyDir);
+    const platformArch = `${process.platform}-${process.arch}`;
+    for (const dir of [
+      join(ptyRoot, "build", "Release"),
+      join(ptyRoot, "build", "Debug"),
+      join(ptyRoot, "prebuilds", platformArch),
+      join(ptyDir, "build", "Release"),
+      join(ptyDir, "build", "Debug"),
+      join(ptyDir, "prebuilds", platformArch),
+    ]) {
+      ensureExecutable(join(dir, "spawn-helper"));
     }
-  } catch {
-    // Ignore
+  } catch (error) {
+    console.warn("Failed to locate node-pty spawn-helper", error);
   }
 };
 

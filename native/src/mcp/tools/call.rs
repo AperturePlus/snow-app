@@ -87,14 +87,20 @@ pub async fn call_mcp_tool(
                 | "grep-search"
                 | "bash-terminal-execute"
         );
-    if requires_workspace_context
-        && conversation_id
-            .as_deref()
-            .map_or(true, |id| id.trim().is_empty())
-    {
+    // Workspace tools must never resolve relative paths against the Electron
+    // process working directory. A conversation id is the normal anchor; a
+    // request-scoped project id (the desktop pet's stateless side channel)
+    // anchors paths to the project root instead.
+    let has_conversation = conversation_id
+        .as_deref()
+        .is_some_and(|id| !id.trim().is_empty());
+    let has_project = project_id
+        .as_deref()
+        .is_some_and(|id| !id.trim().is_empty());
+    if requires_workspace_context && !has_conversation && !has_project {
         return Err(Error::new(
             Status::GenericFailure,
-            "Workspace tool execution requires a conversation id; refusing to use the process working directory".to_string(),
+            "Workspace tool execution requires a conversation id or project id; refusing to use the process working directory".to_string(),
         ));
     }
 
@@ -140,7 +146,9 @@ pub async fn call_mcp_tool(
     let worktree_mode = conversation_modes
         .as_ref()
         .is_some_and(|modes| modes.worktree_mode.unwrap_or(false));
-    let worktree_binding = if worktree_mode || requires_workspace_context {
+    let worktree_binding = if worktree_mode
+        || (requires_workspace_context && has_conversation)
+    {
         let conversation_id = conversation_id
             .as_deref()
             .map(str::trim)

@@ -243,7 +243,8 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         (existingRef?.worktreeMode ?? ctx.worktreeModeRef.current) &&
         !targetPendingWorktree
       ) {
-        window.alert(t("git.worktreesPendingSessionHint"));
+        // 用内置提示弹窗代替系统 alert：置入文案，由 ChatContent 渲染。
+        ctx.setWorktreeModeNotice(t("git.worktreesPendingSessionHint"));
         return;
       }
       const rollbackState = isFirstMessage ? ctx.rollbackNewChatState : null;

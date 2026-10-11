@@ -138,6 +138,8 @@ export type ResponsesApiMessage = {
   role: "user" | "assistant" | "system" | "developer" | "tool";
   content: string;
   toolResultsJson?: string;
+  /** Serialized assistant tool calls, replayed by stateless tool loops. */
+  toolCallsJson?: string;
 };
 
 export type ResponsesApiRequest = {
@@ -184,6 +186,8 @@ export type ResponsesApiRequest = {
   /** Per-request Responses Fast Mode tier ("off" | "fast" | "ultrafast");
    *  null/omitted follows the profile default. */
   responsesFastMode?: string | null;
+  /** Request-scoped MCP tool whitelist (JSON array of full tool names). */
+  allowedToolsJson?: string | null;
 };
 
 /**
