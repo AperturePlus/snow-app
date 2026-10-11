@@ -3,6 +3,7 @@
 //! 租约等待同样有界：终端命令窗口不被他人等待，长时间命令不阻塞其他会话。
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -100,7 +101,7 @@ pub(crate) enum LeaseClass {
 #[derive(Default)]
 struct Coordination {
     next: u64,
-    active: BTreeMap<u64, (LeaseClass, Vec<String>)>,
+    active: BTreeMap<u64, (LeaseClass, Vec<String>, Arc<AtomicBool>)>,
 }
 static COORDINATION: OnceLock<Mutex<Coordination>> = OnceLock::new();
 static NOTIFY: OnceLock<Notify> = OnceLock::new();
@@ -128,22 +129,26 @@ fn lease_resources(paths: &[String]) -> Vec<String> {
             None => resources.push("*".into()),
         }
     }
+    if resources.is_empty() {
+        resources.push("*".into());
+    }
     resources.sort();
     resources.dedup();
     resources
 }
 
+fn same_domain(held: &[String], resources: &[String]) -> bool {
+    // Physical repo roots are equality domains, not path prefixes:
+    // nested independent worktrees must not serialize their parent repo.
+    held.iter()
+        .any(|a| resources.iter().any(|b| a == "*" || b == "*" || a == b))
+}
+
 /// 与本次请求冲突的持有者类别；Terminal 优先，决定调用方能否等待。
 fn conflict(state: &Coordination, resources: &[String]) -> Option<LeaseClass> {
     let mut busy = None;
-    for (class, held) in state.active.values() {
-        // Physical repo roots are equality domains, not path prefixes:
-        // a nested independent worktree must not serialize its parent repo.
-        // Non-git or unresolved targets conservatively conflict with all.
-        if held
-            .iter()
-            .any(|a| resources.iter().any(|b| a == "*" || b == "*" || a == b))
-        {
+    for (class, held, _) in state.active.values() {
+        if same_domain(held, resources) {
             if *class == LeaseClass::Terminal {
                 return Some(LeaseClass::Terminal);
             }
@@ -153,10 +158,39 @@ fn conflict(state: &Coordination, resources: &[String]) -> Option<LeaseClass> {
     busy
 }
 
+/// Keep even degraded operations visible until they finish. Otherwise a new
+/// terminal could acquire a clean window while an unreserved write still runs.
+fn register_lease(
+    state: &mut Coordination,
+    resources: Vec<String>,
+    class: LeaseClass,
+    contaminated: bool,
+) -> Arc<WriteLease> {
+    if contaminated {
+        for (_, held, flag) in state.active.values() {
+            if same_domain(held, &resources) {
+                flag.store(true, Ordering::Release);
+            }
+        }
+    }
+    state.next = state.next.wrapping_add(1);
+    let id = state.next;
+    let flag = Arc::new(AtomicBool::new(contaminated));
+    state.active.insert(id, (class, resources, flag.clone()));
+    Arc::new(WriteLease { id, contaminated: flag })
+}
+
 /// Arc leases can be carried into blocking writes, so cancellation of the
-/// awaiting future cannot release the reservation while that write still runs.
+/// awaiting future cannot release the observation while that write still runs.
+/// A contaminated lease is an in-flight marker, NOT an isolated tracking lease.
 pub(crate) struct WriteLease {
     id: u64,
+    contaminated: Arc<AtomicBool>,
+}
+impl WriteLease {
+    pub(crate) fn is_contaminated(&self) -> bool {
+        self.contaminated.load(Ordering::Acquire)
+    }
 }
 impl Drop for WriteLease {
     fn drop(&mut self) {
@@ -165,9 +199,9 @@ impl Drop for WriteLease {
     }
 }
 
-/// 抢一个跟踪租约；被终端命令窗口占用或超时返回 None，等待只对短窗口写者生效。
-/// 调用方必须立即降级（跳过或标注 unavailable），绝不无限等待：一个会话里的
-/// 长时间命令（编译等）不得阻塞其他会话的工具。
+/// Bounded isolation attempt. Conflicting terminals or elapsed waits yield a
+/// contaminated observation marker, never a long-lived exclusion lock. Every
+/// caller must check contamination before trusting differential attribution.
 pub(crate) async fn coordinate(
     paths: &[String],
     class: LeaseClass,
@@ -182,22 +216,22 @@ pub(crate) async fn coordinate(
         {
             let mut state = coordination();
             match conflict(&state, &resources) {
-                None => {
-                    state.next = state.next.wrapping_add(1);
-                    let id = state.next;
-                    state.active.insert(id, (class, resources));
-                    return Some(Arc::new(WriteLease { id }));
+                None => return Some(register_lease(&mut state, resources, class, false)),
+                Some(LeaseClass::Terminal) => {
+                    return Some(register_lease(&mut state, resources, class, true));
                 }
-                Some(LeaseClass::Terminal) => return None,
+                Some(LeaseClass::Writer) if Instant::now() >= deadline => {
+                    // The timeout branch must also poison existing windows.
+                    return Some(register_lease(&mut state, resources, class, true));
+                }
                 Some(LeaseClass::Writer) => {}
             }
         }
         let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            return None;
-        }
-        if tokio::time::timeout(remaining, notified).await.is_err() {
-            return None;
+        if !remaining.is_zero() {
+            // Recheck and register under the coordinator mutex even on timeout.
+            // This closes the gap between noticing contention and executing.
+            let _ = tokio::time::timeout(remaining, notified).await;
         }
     }
 }
@@ -222,47 +256,70 @@ pub(crate) fn unavailable(source: &str, reason: &str) -> Value {
     envelope(source, None, "unavailable", reasons, vec![])
 }
 
-/// Called inside the actual blocking write while the independent lease is held.
-pub(crate) fn filesystem_before(paths: &[String]) -> Vec<(PathBuf, Option<bool>)> {
+/// Observe only the explicit targets inside the actual blocking write boundary.
+pub(crate) fn filesystem_before(paths: &[String]) -> Vec<(String, PathBuf, Option<bool>)> {
     paths
         .iter()
-        .filter_map(|path| {
-            let path = physical_path(Path::new(path))?;
+        .filter_map(|original| {
+            let path = physical_path(Path::new(original))?;
             let exists = match std::fs::metadata(&path) {
                 Ok(_) => Some(true),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => Some(false),
                 Err(_) => None,
             };
-            Some((path, exists))
+            Some((original.clone(), path, exists))
         })
         .collect()
 }
 pub(crate) fn filesystem_after(
-    before: Vec<(PathBuf, Option<bool>)>,
+    before: Vec<(String, PathBuf, Option<bool>)>,
     result: &Value,
     expected: usize,
+    isolated: bool,
 ) -> Value {
-    let root = before.first().and_then(|(path, _)| {
+    let root = before.first().and_then(|(_, path, _)| {
         repository_root(path).or_else(|| path.parent().map(Path::to_path_buf))
     });
     let mut reasons = BTreeSet::from(["explicit-targets".to_string()]);
+    if !isolated {
+        reasons.insert("concurrent-execution".into());
+        reasons.insert("operation-evidence-only".into());
+    }
     let mut files = Vec::new();
     if before.len() != expected {
         reasons.insert("path-resolution-failed".into());
     }
     if result.get("success").and_then(Value::as_bool) == Some(true) {
-        for (path, existed) in before {
-            let Some(existed) = existed else {
-                reasons.insert("metadata-unavailable".into());
+        for (original, path, existed) in before {
+            // These tools write files; cutting lines rewrites the source and
+            // never deletes the source file. A concurrent disappearance is not
+            // evidence that this successful operation deleted anything.
+            let Some(after_path) = physical_path(Path::new(&original)) else {
+                reasons.insert("path-resolution-failed".into());
                 continue;
             };
+            if key(&after_path) != key(&path) {
+                reasons.insert("path-identity-changed".into());
+                continue;
+            }
             match std::fs::metadata(&path) {
-                Ok(metadata) if metadata.is_file() => files.push(file(
-                    &physical_path(&path).unwrap_or(path),
-                    if existed { "edit" } else { "create" },
-                )),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound && existed => {
-                    files.push(file(&path, "delete"))
+                Ok(metadata) if metadata.is_file() => {
+                    let kind = if isolated {
+                        match existed {
+                            Some(true) => "edit",
+                            Some(false) => "create",
+                            None => {
+                                reasons.insert("metadata-unavailable".into());
+                                continue;
+                            }
+                        }
+                    } else {
+                        // In degraded evidence, edit denotes the confirmed write
+                        // to this target, not an inferred absent->present change.
+                        // Do not infer create/delete from a racing disk snapshot.
+                        "edit"
+                    };
+                    files.push(file(&path, kind));
                 }
                 _ => {
                     reasons.insert("metadata-unavailable".into());
@@ -274,10 +331,7 @@ pub(crate) fn filesystem_after(
     }
     files.sort_by_key(|value| value["fileKey"].as_str().unwrap_or_default().to_string());
     files.dedup_by(|a, b| a["fileKey"] == b["fileKey"]);
-    let coverage = if reasons
-        .iter()
-        .any(|reason| reason.ends_with("failed") || reason.ends_with("unavailable"))
-    {
+    let coverage = if !isolated || reasons.len() > 1 {
         "partial"
     } else {
         "scoped"
@@ -552,13 +606,16 @@ impl TerminalTracking {
             reason,
             _lease: None,
         };
+        if !remote {
+            // Even an untracked local command (detached or missing a root) must
+            // be visible to other active windows while this invocation runs.
+            let paths = tracking.root.as_ref().map(|root| vec![display(root)])
+                .unwrap_or_default();
+            tracking._lease = coordinate(&paths, LeaseClass::Terminal, TERMINAL_LEASE_WAIT).await;
+        }
         if tracking.reason.is_none() {
             if let Some(root) = tracking.root.as_ref() {
-                // 同域已有终端窗口在跑（长时间命令）时立即降级：命令照常执行，
-                // 只是本次不做文件归属追踪，绝不等待。
-                tracking._lease =
-                    coordinate(&[display(root)], LeaseClass::Terminal, TERMINAL_LEASE_WAIT).await;
-                if tracking._lease.is_some() {
+                if tracking._lease.as_ref().is_some_and(|lease| !lease.is_contaminated()) {
                     tracking.before = bounded_scan(root, None).await;
                 } else {
                     tracking.reason = Some("concurrent-execution");
@@ -570,6 +627,9 @@ impl TerminalTracking {
         tracking
     }
     pub(crate) async fn finish(self) -> Value {
+        if self._lease.as_ref().is_some_and(|lease| lease.is_contaminated()) {
+            return unavailable("terminal", "concurrent-execution");
+        }
         if let Some(reason) = self.reason {
             return unavailable("terminal", reason);
         }
@@ -577,6 +637,9 @@ impl TerminalTracking {
             return unavailable("terminal", "root-unavailable");
         };
         let after = bounded_scan(root, self.before.as_ref()).await;
+        if self._lease.as_ref().is_some_and(|lease| lease.is_contaminated()) {
+            return unavailable("terminal", "concurrent-execution");
+        }
         let (Some(before), Some(after)) = (self.before, after) else {
             return envelope(
                 "terminal",
@@ -606,6 +669,12 @@ impl TerminalTracking {
                 }
                 files.push(file(path, kind));
             }
+        }
+        // Serialize the final contamination check with new window admission,
+        // but hold no coordinator mutex during scans or command execution.
+        let _coordination_guard = coordination();
+        if self._lease.as_ref().is_some_and(|lease| lease.is_contaminated()) {
+            return unavailable("terminal", "concurrent-execution");
         }
         envelope("terminal", Some(root), "partial", reasons, files)
     }
