@@ -375,7 +375,7 @@ type RunnerOptions = {
   sessionModel?: string;
   nodes: WorkflowNodeItem[];
   edges: WorkflowEdgeItem[];
-  /** 每个节点会话创建后回调（侧边栏刷新 / 会话列表更新）。 */
+  /** 每个节点会话创建后回调（侧边栏节点树刷新）。 */
   onNodeConversationCreated?: (conversationId: string) => void;
 };
 
@@ -1416,11 +1416,12 @@ export function createWorkflowRunner(
               error,
             );
           });
-        // 节点状态落盘后立即刷新侧边栏（workflowNodeMap 重查）。
+        // 节点状态落盘后立即刷新侧边栏的树形数据（workflowNodeMap 重查）。
         // updateWorkflowNodeSession 只写 bookkeeping 表，不会触发会话
         // upsert/版本递增，若不主动刷新，用户手动中止后节点树会
-        // 停留在旧的 running（loading）状态。
-        ctx.setConversationListVersion((version) => version + 1);
+        // 停留在旧的 running（loading）状态。这里只 bump 树版本，主会话
+        // 列表未变化，不重拉列表（否则整个会话区域会闪一次 loading）。
+        ctx.setConversationTreeVersion((version) => version + 1);
         emit({
           status: "running",
           nodeId,
@@ -1457,8 +1458,8 @@ export function createWorkflowRunner(
           }
         }
         running.delete(nodeId);
-        // 节点会话已创建（执行中途抛错）：将失败状态落盘并刷新侧边栏，
-        // 避免节点树停留在 running（loading）状态。
+        // 节点会话已创建（执行中途抛错）：将失败状态落盘并刷新侧边栏树形
+        // 数据，避免节点树停留在 running（loading）状态。
         if (node.conversationId) {
           await window.snow
             .updateWorkflowNodeSession(
@@ -1474,7 +1475,7 @@ export function createWorkflowRunner(
                 error,
               );
             });
-          ctx.setConversationListVersion((version) => version + 1);
+          ctx.setConversationTreeVersion((version) => version + 1);
         }
         emit({
           status: "running",
@@ -1694,11 +1695,11 @@ export function createWorkflowRunner(
       "",
       "",
     );
-    // 节点转 running 后立即刷新侧边栏（workflowNodeMap 重查最新
+    // 节点转 running 后立即刷新侧边栏树形数据（workflowNodeMap 重查最新
     // run_status）：节点图标进入 loading。续跑复用原会话没有"新建会话"
     // 的刷新回调（onNodeConversationCreated），不 bump 会停留在上轮
     // 终态（如失败图标），看起来节点没有恢复执行。
-    ctx.setConversationListVersion((version) => version + 1);
+    ctx.setConversationTreeVersion((version) => version + 1);
     // 会话就绪（新节点已创建 / 续跑复用原会话）：通知调用方补发携带
     // conversationId 的 running 事件，画布节点点击跳会话即时可用。
     onSessionReady?.(conversationId);

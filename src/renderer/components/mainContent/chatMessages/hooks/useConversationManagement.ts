@@ -1245,6 +1245,13 @@ export const useConversationManagement = (
     ctx.setConversationListVersion((version) => version + 1);
   }, [ctx]);
 
+  const refreshConversationTree = useCallback((): void => {
+    // 仅触发侧边栏树形数据重查（workflow 节点 / 子代理会话的创建与状态变化）。
+    // 与 refreshConversations 解耦：主会话列表本身没有变化，重拉会让整个
+    // 会话区域闪一次 loading 并丢失滚动位置。
+    ctx.setConversationTreeVersion((version) => version + 1);
+  }, [ctx]);
+
   const handleForkConversation = useCallback(
     async (conversationId: string, upToResponseId: string): Promise<void> => {
       const trimmedId = conversationId.trim();
@@ -1291,6 +1298,7 @@ export const useConversationManagement = (
     abortConversation,
     abortWorkflowNodes,
     refreshConversations,
+    refreshConversationTree,
     handleForkConversation,
   };
 };

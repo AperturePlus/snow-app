@@ -589,6 +589,10 @@ export type ConversationContextValue = {
   /** 侧边栏会话列表刷新信号（置顶/删除/重命名等显式操作后 +1）。
    *  与 conversationVersion 解耦：AI 响应迭代不会触发列表全量重拉。 */
   conversationListVersion: number;
+  /** 侧边栏树形数据刷新信号（workflow 节点 / 子代理会话创建与状态变化后 +1）。
+   *  与 conversationListVersion 解耦：节点与子代理变化只重查树形数据，
+   *  不重拉主会话列表，避免整个会话区域闪一次 loading。 */
+  conversationTreeVersion: number;
   upsertedConversation: UpsertedConversation | null;
   /** All sub-agent session events keyed by sub-agent conversationId. Multiple
    *  parallel sub-agents each keep their own entry so the UI can match every
@@ -771,6 +775,7 @@ export type ConversationContextValue = {
   setActiveConversationId: Dispatch<SetStateAction<string | undefined>>;
   setConversationVersion: Dispatch<SetStateAction<number>>;
   setConversationListVersion: Dispatch<SetStateAction<number>>;
+  setConversationTreeVersion: Dispatch<SetStateAction<number>>;
   setUpsertedConversation: Dispatch<
     SetStateAction<UpsertedConversation | null>
   >;
@@ -860,6 +865,7 @@ export type UseChatConversationResult = {
   summary: string;
   conversationVersion: number;
   conversationListVersion: number;
+  conversationTreeVersion: number;
   upsertedConversation: UpsertedConversation | null;
   /** pending 槽位 -> 迁移后的真实 conversationId（侧边栏占位替换用）。 */
   pendingToRealConversationIdRef: RefValue<Map<string, string>>;
@@ -972,6 +978,9 @@ export type UseChatConversationResult = {
    *  project even when the user is viewing another project). */
   handleNewChat: (directoryId?: string) => void;
   refreshConversations: () => void;
+  /** 仅刷新侧边栏树形数据（workflow 节点 / 子代理会话）：节点会话创建与
+   *  状态变化时使用，不重拉主会话列表。 */
+  refreshConversationTree: () => void;
   /** 同步更新内存中某会话的 summary（如重命名会话后让 TopBar 标题即时刷新）。 */
   updateConversationSummary: (conversationId: string, summary: string) => void;
   /** 按会话 key 更新内存中的消息列表：工具卡片本地收口（见 BashToolCall）

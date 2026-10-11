@@ -21,8 +21,7 @@ type ChatConversationRowProps = {
   workflowNodeConversations: ChatConversationRecord[];
   subAgentMap: Record<string, ChatConversationRecord[]>;
   expandedWorkflowNodeConversationIds: Set<string>;
-  isSubAgentExpanded: boolean;
-  isWorkflowPanelExpanded: boolean;
+  isTreeExpanded: boolean;
   isMultiSelectMode: boolean;
   isSelected: boolean;
   isArchiving: boolean;
@@ -35,8 +34,7 @@ type ChatConversationRowProps = {
   ) => void;
   onToggleSelect: () => void;
   onEnterMultiSelect?: () => void;
-  onToggleSubAgentPanel: () => void;
-  onToggleWorkflowPanel: () => void;
+  onToggleTree: () => void;
   onToggleWorkflowNode: (conversationId: string) => void;
   onPin: () => void;
   onRename: (newTitle: string) => Promise<void>;
@@ -60,8 +58,7 @@ export function ChatConversationRow({
   workflowNodeConversations,
   subAgentMap,
   expandedWorkflowNodeConversationIds,
-  isSubAgentExpanded,
-  isWorkflowPanelExpanded,
+  isTreeExpanded,
   isMultiSelectMode,
   isSelected,
   isArchiving,
@@ -71,8 +68,7 @@ export function ChatConversationRow({
   onSelectChildConversation,
   onToggleSelect,
   onEnterMultiSelect,
-  onToggleSubAgentPanel,
-  onToggleWorkflowPanel,
+  onToggleTree,
   onToggleWorkflowNode,
   onPin,
   onRename,
@@ -104,15 +100,13 @@ export function ChatConversationRow({
         showPinBadge={showPinBadge}
         subAgentConversations={subAgentConversations}
         subAgentAttentionRequiredIds={attentionRequiredConversationIds}
-        isSubAgentExpanded={isSubAgentExpanded}
         isWorkflow={isWorkflow}
-        isWorkflowExpanded={isWorkflowPanelExpanded}
-        onToggleWorkflowPanel={onToggleWorkflowPanel}
+        isTreeExpanded={isTreeExpanded}
+        onToggleTree={onToggleTree}
         isMultiSelectMode={isMultiSelectMode}
         isSelected={isSelected}
         onToggleSelect={onToggleSelect}
         onEnterMultiSelect={onEnterMultiSelect}
-        onToggleSubAgentPanel={onToggleSubAgentPanel}
         onPin={onPin}
         onRename={onRename}
         onSetEmoji={onSetEmoji}
@@ -127,7 +121,7 @@ export function ChatConversationRow({
       {/* 面板渲染在 ChatItem 外部，作为兄弟节点，
           完全不继承父级会话项的背景色 */}
       <LazyCollapse
-        open={isWorkflow && isWorkflowPanelExpanded && !isMultiSelectMode}
+        open={isWorkflow && isTreeExpanded && !isMultiSelectMode}
         renderContent={() => (
           <WorkflowNodeListPanel
             conversations={workflowNodeConversations}
@@ -146,7 +140,7 @@ export function ChatConversationRow({
       <LazyCollapse
         open={
           subAgentConversations.length > 0 &&
-          isSubAgentExpanded &&
+          isTreeExpanded &&
           !isMultiSelectMode
         }
         renderContent={() => (

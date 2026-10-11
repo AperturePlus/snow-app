@@ -42,11 +42,11 @@ type ChatItemProps = {
   subAgentConversations?: ChatConversationRecord[];
   /** 子代理中待用户确认（提问/工具授权）的会话 id 集合 */
   subAgentAttentionRequiredIds?: Set<string>;
-  isSubAgentExpanded?: boolean;
   /** Workflow 主会话（创建了 workflow 节点会话），显示特殊图标与树形展开 */
   isWorkflow?: boolean;
-  isWorkflowExpanded?: boolean;
-  onToggleWorkflowPanel?: () => void;
+  /** 会话树（Workflow 节点 + 子代理）是否已展开：共用同一个展开按钮 */
+  isTreeExpanded?: boolean;
+  onToggleTree?: () => void;
   isMultiSelectMode?: boolean;
   isSelected?: boolean;
   /** 允许作为拖拽源（拖到置顶区/普通列表区切换置顶状态） */
@@ -68,7 +68,6 @@ type ChatItemProps = {
   onEnterMultiSelect?: () => void;
   onToggleSelect?: () => void;
   onSelect?: () => void;
-  onToggleSubAgentPanel?: () => void;
 };
 
 export function ChatItem({
@@ -82,9 +81,8 @@ export function ChatItem({
   showPinBadge = false,
   subAgentConversations = [],
   subAgentAttentionRequiredIds = new Set<string>(),
-  isSubAgentExpanded = false,
   isWorkflow = false,
-  isWorkflowExpanded = false,
+  isTreeExpanded = false,
   isMultiSelectMode = false,
   isSelected = false,
   isDraggable = false,
@@ -100,8 +98,7 @@ export function ChatItem({
   onEnterMultiSelect,
   onToggleSelect,
   onSelect,
-  onToggleSubAgentPanel,
-  onToggleWorkflowPanel,
+  onToggleTree,
 }: ChatItemProps): React.JSX.Element {
   const { t } = useI18n();
   const [isEditing, setIsEditing] = useState(false);
@@ -310,8 +307,10 @@ export function ChatItem({
 
   const handleToggleExpand = (event: React.MouseEvent): void => {
     event.stopPropagation();
-    onToggleSubAgentPanel?.();
+    onToggleTree?.();
   };
+
+  const hasTreeChildren = hasSubAgents || isWorkflow;
 
   const attentionRequiredSubAgentCount = subAgentConversations.filter((sub) =>
     subAgentAttentionRequiredIds.has(sub.conversationId),
@@ -431,33 +430,17 @@ export function ChatItem({
         ) : (
           <>
             <div className="chat-item-title-row">
-              {isWorkflow && (
-                <span
-                  className="chat-item-expand-toggle workflow"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onToggleWorkflowPanel?.();
-                  }}
-                  role="button"
-                  tabIndex={-1}
-                  aria-expanded={isWorkflowExpanded}
-                >
-                  <ChevronRight
-                    size={12}
-                    className={isWorkflowExpanded ? "expanded" : ""}
-                  />
-                </span>
-              )}
-              {hasSubAgents && (
+              {hasTreeChildren && (
                 <span
                   className="chat-item-expand-toggle"
                   onClick={handleToggleExpand}
                   role="button"
                   tabIndex={-1}
+                  aria-expanded={isTreeExpanded}
                 >
                   <ChevronRight
                     size={12}
-                    className={isSubAgentExpanded ? "expanded" : ""}
+                    className={isTreeExpanded ? "expanded" : ""}
                   />
                 </span>
               )}

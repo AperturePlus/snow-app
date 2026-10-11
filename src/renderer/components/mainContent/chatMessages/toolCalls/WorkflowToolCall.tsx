@@ -235,7 +235,7 @@ const WorkflowToolCallInner = ({
   const { t } = useI18n();
   const {
     handleSelectConversation,
-    refreshConversations,
+    refreshConversationTree,
     conversationDirectoryId: contextDirectoryId,
     getRuntimeInputState,
   } = useChatConversationContext();
@@ -834,12 +834,12 @@ const WorkflowToolCallInner = ({
         (flowNode) => flowNode.id === node.id,
       );
       if (target?.data.node.conversationId) {
-        // 跳到节点会话：刷新会话列表后选中（节点状态/结果在会话中查看）。
-        void refreshConversations();
+        // 跳到节点会话：刷新树形数据后选中（节点状态/结果在会话中查看）。
+        void refreshConversationTree();
         handleSelectConversation(target.data.node.conversationId);
       }
     },
-    [handleSelectConversation, refreshConversations],
+    [handleSelectConversation, refreshConversationTree],
   );
 
   // 在画布内打开节点编辑浮层（锚点按画布尺寸收拢，防止溢出）。
@@ -1354,8 +1354,8 @@ const WorkflowToolCallInner = ({
         nodes: workableNodes,
         edges,
         onNodeConversationCreated: () => {
-          // 节点会话写入 DB 后立即刷新侧边栏会话列表。
-          void refreshConversations();
+          // 节点会话写入 DB 后刷新侧边栏树形数据（节点树），主会话列表未变化。
+          void refreshConversationTree();
         },
       });
       settleWorkflow(
@@ -1368,7 +1368,7 @@ const WorkflowToolCallInner = ({
     parentConversationId,
     directoryId,
     edges,
-    refreshConversations,
+    refreshConversationTree,
     getRuntimeInputState,
     toolCall.interactionId,
   ]);

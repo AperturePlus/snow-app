@@ -1491,12 +1491,23 @@ body.is-panel-resizing * {
   color: var(--text-muted);
 }
 
-.sub-agent-list-icon .sub-agent-failed {
+/* 子代理图标：静态状态用 Bot 图标（与 Workflow 节点的 Workflow 图标区分），
+   运行中改用 Loader2 旋转指示器；选择器与灰色兜底规则同优先级且后定义，
+   确保状态配色生效 */
+.sub-agent-list-item .sub-agent-list-icon svg.sub-agent-status-running {
+  color: var(--accent, #3b82f6);
+}
+
+.sub-agent-list-item .sub-agent-list-icon svg.sub-agent-status-completed {
+  color: var(--accent-green, #22c55e);
+}
+
+.sub-agent-list-item .sub-agent-list-icon svg.sub-agent-status-failed {
   color: var(--accent-red-text, #ef4444);
 }
 
-.sub-agent-list-icon .sub-agent-completed {
-  color: var(--accent-green, #22c55e);
+.sub-agent-list-item .sub-agent-list-icon svg.sub-agent-status-pending {
+  color: var(--text-tertiary);
 }
 
 /* 优先级高于 .sub-agent-list-icon svg[stroke="currentColor"] 的灰色覆盖 */

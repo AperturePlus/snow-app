@@ -48,6 +48,9 @@ export const useChatConversation = (
   // 侧边栏列表刷新信号：与 conversationVersion 分离，AI 响应迭代只 bump
   // conversationVersion（UserMessageRail 用），列表仅靠增量 upsert 同步。
   const [conversationListVersion, setConversationListVersion] = useState(0);
+  // 侧边栏树形数据刷新信号：workflow 节点 / 子代理会话的创建与状态变化只
+  // bump 它，避免重拉主会话列表导致整个会话区域闪一次 loading。
+  const [conversationTreeVersion, setConversationTreeVersion] = useState(0);
   const [upsertedConversation, setUpsertedConversation] =
     useState<ConversationContextValue["upsertedConversation"]>(null);
   const [subAgentSessionEvents, setSubAgentSessionEvents] = useState<
@@ -674,6 +677,7 @@ export const useChatConversation = (
     activeConversationId,
     conversationVersion,
     conversationListVersion,
+    conversationTreeVersion,
     upsertedConversation,
     subAgentSessionEvents,
     subAgentSessionEventsRef,
@@ -755,6 +759,7 @@ export const useChatConversation = (
     setActiveConversationId,
     setConversationVersion,
     setConversationListVersion,
+    setConversationTreeVersion,
     setUpsertedConversation,
     setSubAgentSessionEvent,
     setStreamingConversationIds,
@@ -965,6 +970,7 @@ export const useChatConversation = (
     summary: activeSession?.summary ?? "",
     conversationVersion,
     conversationListVersion,
+    conversationTreeVersion,
     upsertedConversation,
     // pending 槽位 -> 真实 conversationId 映射（侧边栏占位替换用）。
     pendingToRealConversationIdRef,
@@ -1029,6 +1035,7 @@ export const useChatConversation = (
       conversationManagementApi.handleSelectConversation,
     handleNewChat: conversationManagementApi.handleNewChat,
     refreshConversations: conversationManagementApi.refreshConversations,
+    refreshConversationTree: conversationManagementApi.refreshConversationTree,
     updateConversationSummary,
     updateSessionMessages: sessionApi.updateSessionMessages,
     isStreaming: Boolean(

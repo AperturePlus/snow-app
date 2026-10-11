@@ -597,8 +597,8 @@ export const runRemoteWorkflow = async (
       nodes,
       edges: graph.edges,
       onNodeConversationCreated: () => {
-        // 节点会话写入 DB 后立即刷新桌面侧边栏会话列表。
-        conversation.refreshConversations();
+        // 节点会话写入 DB 后刷新桌面侧边栏树形数据（节点树）。
+        conversation.refreshConversationTree();
       },
     })
     .then((outcome) => {

@@ -115,6 +115,7 @@ const ChatContentBody = ({
     setGoalModeTokenBudget,
     conversationVersion,
     conversationListVersion,
+    conversationTreeVersion,
     subAgentSessionEvents,
     sessions,
     newChatRequested,
@@ -275,7 +276,7 @@ const ChatContentBody = ({
     (isWorkflowNodeConversation && !isWorkflowNodeFinished);
 
   // 节点状态落盘（updateWorkflowNodeSession）不触发会话 upsert，runner 每次状态
-  // 变化都会 bump conversationListVersion：观看中的节点会话据此重查元数据，
+  // 变化都会 bump conversationTreeVersion：观看中的节点会话据此重查元数据，
   // 节点结束即时切只读，续跑恢复输入框；非节点会话不产生额外查询。
   useEffect(() => {
     if (!activeConversationId || !isWorkflowNodeConversation) {
@@ -307,6 +308,7 @@ const ChatContentBody = ({
   }, [
     activeConversationId,
     conversationListVersion,
+    conversationTreeVersion,
     isWorkflowNodeConversation,
   ]);
 

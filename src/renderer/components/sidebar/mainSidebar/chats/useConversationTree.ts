@@ -10,6 +10,8 @@ type UseConversationTreeOptions = {
   conversationsRef: RefObject<ChatConversationRecord[]>;
   conversationIdsKey: string;
   conversationListVersion: number;
+  /** 树形数据刷新信号：workflow 节点 / 子代理会话创建与状态变化时递增 */
+  conversationTreeVersion: number;
   upsertedConversationTimestamp?: number;
   subAgentSessionEvents: Record<string, SubAgentSessionEvent>;
   activeConversationId: string | undefined;
@@ -21,6 +23,7 @@ export function useConversationTree({
   conversationsRef,
   conversationIdsKey,
   conversationListVersion,
+  conversationTreeVersion,
   upsertedConversationTimestamp,
   subAgentSessionEvents,
   activeConversationId,
@@ -113,8 +116,9 @@ export function useConversationTree({
   );
 
   // 加载所有主会话的 workflow 节点会话（树形子层）。
-  // 依赖 conversationListVersion：workflow 节点创建/状态更新时会话记录
-  // upsert 使版本递增，从而刷新节点树；conversationIdsKey 负责列表切换。
+  // conversationTreeVersion：workflow 节点创建/状态更新时递增（此时主会话列表
+  // 未变化，不重拉列表）；conversationListVersion：重命名/删除等列表操作后同步；
+  // conversationIdsKey 负责列表切换。
   useEffect(() => {
     const current = conversationsRef.current;
     if (current.length === 0) {
@@ -147,6 +151,7 @@ export function useConversationTree({
   }, [
     conversationIdsKey,
     conversationListVersion,
+    conversationTreeVersion,
     // 节点会话创建/更新时主动 upsert（workflowRunner），据此重查节点树
     upsertedConversationTimestamp,
     conversationsRef,
@@ -193,6 +198,7 @@ export function useConversationTree({
     conversationIdsKey,
     workflowNodeIdsKey,
     conversationListVersion,
+    conversationTreeVersion,
     conversationsRef,
   ]);
 
@@ -347,23 +353,26 @@ export function useConversationTree({
     });
   }, [subAgentMap, workflowNodeMap, activeConversationId]);
 
-  const handleToggleSubAgentPanel = (conversationId: string): void => {
-    setExpandedSubAgentConversationIds((prev) => {
+  /** 会话树（Workflow 节点 + 子代理）是否已展开：两者共用单一展开按钮 */
+  const isConversationTreeExpanded = (conversationId: string): boolean =>
+    expandedWorkflowConversationIds.has(conversationId) ||
+    expandedSubAgentConversationIds.has(conversationId);
+
+  /** 展开/收起会话树：Workflow 节点面板与子代理面板同时切换 */
+  const handleToggleConversationTree = (conversationId: string): void => {
+    const isExpanded = isConversationTreeExpanded(conversationId);
+    setExpandedWorkflowConversationIds((prev) => {
       const next = new Set(prev);
-      if (next.has(conversationId)) {
+      if (isExpanded) {
         next.delete(conversationId);
       } else {
         next.add(conversationId);
       }
       return next;
     });
-  };
-
-  /** 展开/收起 Workflow 主会话的节点树 */
-  const handleToggleWorkflowPanel = (conversationId: string): void => {
-    setExpandedWorkflowConversationIds((prev) => {
+    setExpandedSubAgentConversationIds((prev) => {
       const next = new Set(prev);
-      if (next.has(conversationId)) {
+      if (isExpanded) {
         next.delete(conversationId);
       } else {
         next.add(conversationId);
@@ -390,11 +399,9 @@ export function useConversationTree({
     workflowNodeMap,
     surfacedConversationIds,
     collectConversationTreeIds,
-    expandedSubAgentConversationIds,
-    expandedWorkflowConversationIds,
     expandedWorkflowNodeConversationIds,
-    handleToggleSubAgentPanel,
-    handleToggleWorkflowPanel,
+    isConversationTreeExpanded,
+    handleToggleConversationTree,
     handleToggleWorkflowNode,
   };
 }

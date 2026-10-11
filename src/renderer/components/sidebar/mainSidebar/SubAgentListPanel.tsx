@@ -1,10 +1,4 @@
-import {
-  AlertCircle,
-  Bot,
-  CheckCircle2,
-  CircleAlert,
-  Loader2,
-} from "lucide-react";
+import { Bot, CircleAlert, Loader2 } from "lucide-react";
 
 import { useI18n } from "../../../i18n";
 import type { ChatConversationRecord } from "../../../../preload";
@@ -17,6 +11,11 @@ type SubAgentListPanelProps = {
   onSelect?: (conversationId: string) => void;
 };
 
+/**
+ * 子代理图标：静态状态使用 Bot 象形图标（与 Workflow 节点图标区分），
+ * 运行中改用 Loader2 旋转指示器；完成绿色 / 失败红色 / 待执行灰色 /
+ * 需关注黄色感叹号，与 Workflow 节点保持同一套状态配色。
+ */
 function renderStatusIcon(
   status: string,
   isAttentionRequired: boolean,
@@ -25,15 +24,17 @@ function renderStatusIcon(
     return <CircleAlert size={11} className="sub-agent-attention" />;
   }
   if (status === "running") {
-    return <Loader2 size={11} className="spin" />;
+    return <Loader2 size={11} className="spin sub-agent-status-running" />;
   }
-  if (status === "failed") {
-    return <AlertCircle size={11} className="sub-agent-failed" />;
-  }
-  if (status === "completed") {
-    return <CheckCircle2 size={11} className="sub-agent-completed" />;
-  }
-  return <Bot size={11} />;
+  const statusClass =
+    status === "completed"
+      ? "sub-agent-status-completed"
+      : status === "failed"
+        ? "sub-agent-status-failed"
+        : status === "pending"
+          ? "sub-agent-status-pending"
+          : "";
+  return <Bot size={11} className={statusClass} />;
 }
 
 /**

@@ -55,6 +55,7 @@ export function ChatsSection({
   const { t } = useI18n();
   const {
     conversationListVersion,
+    conversationTreeVersion,
     upsertedConversation,
     pendingToRealConversationIdRef,
     subAgentSessionEvents,
@@ -109,6 +110,7 @@ export function ChatsSection({
     conversationsRef: list.conversationsRef,
     conversationIdsKey: list.conversationIdsKey,
     conversationListVersion,
+    conversationTreeVersion,
     upsertedConversationTimestamp: upsertedConversation?.timestamp,
     subAgentSessionEvents,
     activeConversationId,
@@ -311,12 +313,7 @@ export function ChatsSection({
         isDeleting={actions.deletingIds.has(conversationId)}
         isMultiSelectMode={selection.isMultiSelectMode}
         isSelected={selection.selectedIds.has(conversationId)}
-        isSubAgentExpanded={tree.expandedSubAgentConversationIds.has(
-          conversationId,
-        )}
-        isWorkflowPanelExpanded={tree.expandedWorkflowConversationIds.has(
-          conversationId,
-        )}
+        isTreeExpanded={tree.isConversationTreeExpanded(conversationId)}
         onArchive={() => void actions.handleArchive(conversation)}
         onDelete={(deleteImages, deleteMemories) =>
           void actions.handleDelete(conversation, deleteImages, deleteMemories)
@@ -334,13 +331,8 @@ export function ChatsSection({
         onSelectConversation={handleSelectConversationFromList}
         onSetEmoji={(emoji) => actions.handleSetEmoji(conversation, emoji)}
         onToggleSelect={() => selection.handleToggleSelect(conversationId)}
-        onToggleSubAgentPanel={() =>
-          tree.handleToggleSubAgentPanel(conversationId)
-        }
+        onToggleTree={() => tree.handleToggleConversationTree(conversationId)}
         onToggleWorkflowNode={tree.handleToggleWorkflowNode}
-        onToggleWorkflowPanel={() =>
-          tree.handleToggleWorkflowPanel(conversationId)
-        }
         pausedConversationIds={pausedConversationIds}
         runningConversationIds={runningConversationIds}
         streamingConversationIds={streamingConversationIds}
