@@ -753,11 +753,19 @@ async fn vision_request_with_retry(
                 if !should_retry(&error, transport_attempt, retry_options) {
                     return Err(error);
                 }
-                eprintln!(
-                    "Vision {protocol} request failed ({}), retrying (attempt {})",
-                    error.reason,
-                    transport_attempt + 1
-                );
+                // 重试留痕（best-effort）：视觉请求不携带 database_path 句柄，
+                // 由统一入口自行解析本地日志库。
+                log_retry_attempt_best_effort(
+                    "describe_image",
+                    "vision",
+                    protocol,
+                    "request_error",
+                    transport_attempt,
+                    endpoint,
+                    &error.reason,
+                    retry_backoff_ms(retry_options, transport_attempt),
+                )
+                .await;
                 wait_before_retry(
                     retry_options,
                     cancel_token.unwrap_or(&fallback_token),
@@ -815,9 +823,19 @@ async fn vision_request_with_retry(
         // 截断且无内容 → 重试一次（翻倍 max_tokens）
         if !max_tokens_bumped {
             max_tokens_bumped = true;
-            eprintln!(
-                "Vision {protocol} response truncated (no content), retrying with doubled max_tokens"
-            );
+            // 截断重试同样留痕：这是本路径唯一的「无错误对象」重试，
+            // 只靠错误日志无法对账。
+            log_retry_attempt_best_effort(
+                "describe_image",
+                "vision",
+                protocol,
+                "truncated_empty",
+                transport_attempt,
+                endpoint,
+                &format!("Vision {protocol} response truncated with no content; retrying with doubled max_tokens"),
+                0,
+            )
+            .await;
             bump_max_tokens(payload);
             continue;
         }
