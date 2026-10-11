@@ -1,5 +1,30 @@
 # Release Notes
 
+## v0.4.22
+
+## New Features
+
+- **Multiple Drawing Models per Channel**: a channel can host several drawing models, each with its own size, quality, thinking level, aspect ratios, resolutions and custom prompt; generation resolves explicit parameters first, then the matched model, then the channel defaults.
+- **Desktop Pet Chat**: the pet window gains a chat with conversation history, uses the conversation transcript as its background, and ships built-in pet characters plus an animation-speed setting.
+- **Prompt Optimization in the Drawing Workbench**: optimize the prompt in place, cancel mid-run, and restore the previous prompt in one click; generation is never triggered automatically.
+- **Commit Detail Card**: adds the changed-file count, links to the commit on GitHub / GitLab, and can record the commit into a memo.
+
+## Improvements
+
+- Retry observability: every API path (chat, anthropic, gemini, interactions, responses, vision, model list) now logs retries through one entry point with a consistent context, and the server-error keywords cover the Cloudflare 5xx family.
+- The retry notice shows a live "retrying in N seconds" countdown instead of up to 30 seconds of blind waiting.
+- Auxiliary requests (summary, commit message, prompt optimization, theme palette, code review) use a fixed retry count of 3, so background tasks fail fast.
+- Sidebar session tree: the sub-agent and Workflow expand toggles are unified into one, and tree refreshes are decoupled from the main conversation list.
+- Decorative emoji are replaced with lucide icons in the drawing gallery, tool cards and settings panels.
+
+## Bug Fixes
+
+- Fixed permanent 400 parameter errors being retried forever: numeric keywords are matched on digit boundaries, so random digits inside a conversation id no longer look like a 5xx status code.
+- Fixed flickering and stale states of the input-bar plugin Action: it now stays silent, keeping only the spinner and the restore button.
+- Fixed task-history persistence and message-footer snapshot identity: transient write failures are retried, and a footer snapshot is bound to its own response.
+- Fixed file-tracking false conflicts with concurrent terminal commands: the conflict window no longer blocks file writes and marks a contaminated lease instead.
+- Restored Chromium's default occlusion throttling (removed `backgroundThrottling: false`), fixing alt+tab stutter while a session is streaming.
+
 ## v0.4.21
 
 ## New Features
