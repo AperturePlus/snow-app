@@ -130,6 +130,35 @@ export const METADATA_DOMAINS: MetadataDomainDefinition[] = [
     collect: () => safe(() => window.snow.listApiConfigs()),
   },
   {
+    // 渠道实时模型清单：用档案已保存的凭据向服务商拉取，只返回模型 ID，
+    // 不返回密钥。仅在显式传入 profileName 时才发起网络请求。
+    id: "apiModels",
+    collect: async (ctx) => {
+      const profileName = param(ctx, "profileName", "");
+      if (!profileName) return null;
+      const configs = await safe(() => window.snow.listApiConfigs());
+      const config = configs?.find((item) => item.profileName === profileName);
+      if (!config) return null;
+      const models = await safe(() =>
+        window.snow.fetchAvailableModelsForConfig({
+          baseUrl: config.baseUrl,
+          baseUrlMode: config.baseUrlMode,
+          apiKey: config.apiKey,
+          requestMethod: config.requestMethod,
+          customHeaderSchemeId: config.customHeaderSchemeId,
+          configJson:
+            typeof config.configJson === "string" && config.configJson.trim()
+              ? config.configJson
+              : undefined,
+        }),
+      );
+      return {
+        profileName: config.profileName,
+        models: models ? models.map((model) => model.id) : null,
+      };
+    },
+  },
+  {
     id: "systemPrompts",
     scope: "systemPrompts",
     collect: () => safe(() => window.snow.listSystemPrompts()),
