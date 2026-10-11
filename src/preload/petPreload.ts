@@ -15,6 +15,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type {
   PetActivityState,
   PetChatChunkPayload,
+  PetChatHistoryMessage,
   PetChatResult,
   PetChatToolPayload,
   PetWindowConfig,
@@ -34,9 +35,17 @@ const petBridge = {
   /** 切换宠物窗口形态：双击宠物进入聊天，关闭聊天回到精灵。 */
   setMode: (mode: PetWindowMode): Promise<PetWindowMode> =>
     ipcRenderer.invoke("pets:set-mode", mode),
-  /** 宠物聊天：返回最终结果，流式增量通过 onChatChunk 送达。 */
-  sendChat: (requestId: string, text: string): Promise<PetChatResult> =>
-    ipcRenderer.invoke("pets:chat-send", { requestId, text }),
+  /**
+   * 宠物聊天：返回最终结果，流式增量通过 onChatChunk 送达。
+   * history 为本次提问之前的对话（宠物窗口内存态），主进程据此让宠物
+   * 记得自己刚才说过什么；只传正文，不含任何主会话内容。
+   */
+  sendChat: (
+    requestId: string,
+    text: string,
+    history: PetChatHistoryMessage[],
+  ): Promise<PetChatResult> =>
+    ipcRenderer.invoke("pets:chat-send", { requestId, text, history }),
   /** 中止一次在途宠物聊天。 */
   abortChat: (requestId: string): Promise<boolean> =>
     ipcRenderer.invoke("pets:chat-abort", requestId),

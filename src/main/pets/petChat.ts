@@ -22,6 +22,10 @@
  *    正文、每一次工具调用的名称/参数/状态/结果摘要、待办进度、运行状态。
  *    这是「正在进行到哪一步」类问题的唯一可靠来源（落库文本要等本轮结束）。
  * 2. 数据库最近消息（native.listChatMessages）：快照为空时的兜底。
+ *
+ * 宠物自身的对话历史（`PetChatRunInput.history`）由宠物窗口内存态回传：
+ * skipContext 下 Rust 不加载任何历史，若不回传，宠物连自己上一句说过什么
+ * 都不记得。历史只含宠物窗口里的 user / assistant 正文，不涉及任何主会话内容。
  * 提示词人设取自宠物设置里的自定义人设（设置页可编辑），未自定义时
  * 回落宠物清单的 `description`。
  */
@@ -32,6 +36,7 @@ import type {
   ResponsesApiRequest,
   ResponsesApiStreamChunk,
 } from "../native/types";
+import type { PetChatHistoryMessage } from "../../preload/types/pets";
 import { snowLog } from "../../utils/snowLogger";
 import { dispatchRemoteWorkspaceCommand } from "../ssh/remoteWorkspaceCommand";
 import { dispatchWebSearchCommand } from "../websearch/webSearchRegistry";
@@ -65,8 +70,12 @@ const MAX_CONTEXT_MESSAGE_CHARS = 2000;
 /** 单条工具行的参数 / 结果摘要上限。 */
 const MAX_TOOL_DETAIL_CHARS = 100;
 const MAX_TOOL_RESULT_CHARS = 120;
-/** 单条工具结果回传给模型的字符上限（宠物场景只读，避免上下文被撑爆）。 */
+/** 单次工具结果回传给模型的字符上限（宠物场景只读，避免上下文被撑爆）。 */
 const MAX_TOOL_RESULT_FOR_MODEL_CHARS = 12000;
+
+/** 宠物自身对话历史（宠物窗口内存态）的条数 / 单条字符上限。 */
+const MAX_HISTORY_MESSAGES = 20;
+const MAX_HISTORY_MESSAGE_CHARS = 2000;
 
 /** 会话里一次工具调用的单行摘要（与 preload 类型保持一致）。 */
 export type PetChatToolLine = {
@@ -301,6 +310,64 @@ const buildDatabaseTranscript = async (
   return selected;
 };
 
+/**
+ * 规整宠物窗口回传的自身对话历史：只保留 user / assistant 的非空正文，
+ * 单条截断到上限，并按字符预算从最近一条往前取。
+ */
+export const normalizePetChatHistory = (
+  value: unknown,
+): PetChatHistoryMessage[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const candidates: PetChatHistoryMessage[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) {
+      continue;
+    }
+    if (item.role !== "user" && item.role !== "assistant") {
+      continue;
+    }
+    const content = typeof item.content === "string" ? item.content.trim() : "";
+    if (!content) {
+      continue;
+    }
+    candidates.push({
+      role: item.role,
+      content: truncate(content, MAX_HISTORY_MESSAGE_CHARS),
+    });
+  }
+
+  const selected: PetChatHistoryMessage[] = [];
+  let budget = MAX_CONTEXT_CHARS;
+  for (
+    let index = candidates.length - 1;
+    index >= Math.max(0, candidates.length - MAX_HISTORY_MESSAGES);
+    index -= 1
+  ) {
+    const candidate = candidates[index];
+    if (candidate.content.length > budget) {
+      break;
+    }
+    budget -= candidate.content.length;
+    selected.unshift(candidate);
+  }
+  return selected;
+};
+
+/**
+ * 把主会话转录渲染成一段纯文本背景资料。它写进系统提示词而不是对话流，
+ * 以免与宠物自身的对话历史相邻同角色时被合并（那会让宠物把主会话里
+ * 助手说的话当成自己说过的）。
+ */
+const formatTranscript = (messages: ResponsesApiMessage[]): string =>
+  messages
+    .map(
+      (message) =>
+        `${message.role === "assistant" ? "Assistant" : "User"}: ${message.content}`,
+    )
+    .join("\n\n");
+
 /** 运行状态文案（结合渲染层状态与主进程的活动状态）。 */
 const describeRunStatus = (
   snapshot: PetChatSnapshot,
@@ -405,18 +472,20 @@ const normalizeTurnMessages = (
 
 /**
  * 宠物内置提示词：人设优先取用户为该宠物自定义的 personas（设置页可编辑），
- * 缺省回落宠物清单的 description（`liveState` 为实时运行状态段落，见
- * buildLiveStateSection）。
+ * 缺省回落宠物清单的 description。`liveState` 为实时运行状态段落（见
+ * buildLiveStateSection），`transcript` 为主会话转录的纯文本背景资料
+ * （见 formatTranscript）—— 它作为资料写在这里，而不是混进对话流。
  */
 const buildPetSystemPrompt = (
   manifest: PetManifestRecord | null,
   context: PetChatContext,
-  hasContext: boolean,
+  transcript: string,
   liveState: string,
   customPersona: string,
 ): string => {
   const name = manifest?.displayName.trim() || "Snow Pet";
   const description = (customPersona || manifest?.description || "").trim();
+  const hasContext = Boolean(transcript || liveState);
   const lines = [
     `You are "${name}", the user's desktop pet companion who lives on their desktop.`,
     description ? `\nPersona:\n${description}` : "",
@@ -424,10 +493,11 @@ const buildPetSystemPrompt = (
     `Rules:`,
     `- Reply in the user's language, stay in character, and keep it short and warm (usually 1-3 sentences).`,
     `- This is casual conversation, not a task: never output long plans or code blocks, and never claim to have changed files or run commands yourself.`,
+    `- The conversation above is your own chat with the user — remember what you two just said.`,
     hasContext
-      ? `- The user has a session open right now${
+      ? `- The user also has a session open right now${
           context.title ? `, titled "${truncate(context.title, 80)}"` : ""
-        }. The live state and transcript below are what you can see of it${
+        }. The reference material below is what you can see of it${
           liveState ? " (already up to date with the user's screen)" : ""
         }. Answer questions about it with those concrete facts. If something truly is not in there, say so briefly instead of guessing.`
       : `- The user has no session open right now, so just chat freely.`,
@@ -448,6 +518,12 @@ const buildPetSystemPrompt = (
       `\nWhen the user asks what is happening / which step it is on / the progress: answer with these concrete facts (current step, the tool or file involved, recent tool results, todo progress, run status). Never claim you have no record of it while this state or the transcript is available, and never invent steps that are not listed.`,
     );
   }
+  if (transcript) {
+    lines.push(
+      `\n## Session transcript (the user's open session — reference material, NOT your own words)`,
+      transcript,
+    );
+  }
   return lines.filter(Boolean).join("\n");
 };
 
@@ -457,6 +533,11 @@ export type PetChatRunInput = {
   /** 渲染层生成的请求 id，用于把 chunk / 中止关联到同一次提问。 */
   requestId: string;
   text: string;
+  /**
+   * 本次提问之前宠物窗口里的对话（内存态回传）。
+   * skipContext 下 Rust 不加载任何历史，缺了它宠物就记不住自己说过什么。
+   */
+  history: PetChatHistoryMessage[];
   /** 主进程侧的宠物活动状态（判断是否正在等待用户回答等）。 */
   activity: PetActivityState;
 };
@@ -600,17 +681,19 @@ export const runPetChat = async (
     ? buildLiveStateSection(snapshot, input.activity)
     : "";
   // 快照优先（含在途内容与工具活动），缺失时才回落到落库文本。
+  // 主会话转录作为系统提示词里的背景资料，不混进对话流。
   const contextMessages =
     snapshot && snapshot.messages.length > 0
       ? buildSnapshotTranscript(snapshot)
       : await buildDatabaseTranscript(native, context);
+  const transcript = formatTranscript(contextMessages);
 
-  // 规整后再判定「是否真的带上了会话背景」：开头的 assistant 残段会被丢弃。
+  // 对话流只含宠物自身的对话历史（内存态回传）与本次提问：
+  // 规整时相邻同角色会被合并、开头的 assistant 残段会被丢弃。
   const turnMessages = normalizeTurnMessages([
-    ...contextMessages,
+    ...input.history,
     { role: "user", content: text },
   ]);
-  const hasContext = turnMessages.length > 1;
 
   // 自定义人设按宠物 id 取（设置已在 petSettings 归一化，含长度上限）。
   const customPersona = input.manifest
@@ -622,7 +705,7 @@ export const runPetChat = async (
       content: buildPetSystemPrompt(
         input.manifest,
         context,
-        hasContext,
+        transcript,
         liveState,
         customPersona,
       ),

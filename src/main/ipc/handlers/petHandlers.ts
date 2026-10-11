@@ -8,6 +8,7 @@
  */
 import { dialog, ipcMain } from "electron";
 import type { NativeBridge } from "../../native/types";
+import type { PetChatHistoryMessage } from "../../../preload/types/pets";
 import {
   PET_PERSONA_MAX_CHARS,
   PET_SCALE_MAX,
@@ -21,6 +22,7 @@ import {
 import {
   abortPetChat,
   getPetChatContext,
+  normalizePetChatHistory,
   runPetChat,
   setPetChatContext,
 } from "../../pets/petChat";
@@ -65,7 +67,11 @@ const parsePetTurnPayload = (
 /** 解析宠物聊天请求载荷，非法载荷返回 null。 */
 const parsePetChatPayload = (
   payload: unknown,
-): { requestId: string; text: string } | null => {
+): {
+  requestId: string;
+  text: string;
+  history: PetChatHistoryMessage[];
+} | null => {
   if (typeof payload !== "object" || payload === null) {
     return null;
   }
@@ -76,7 +82,11 @@ const parsePetChatPayload = (
   if (!requestId || !text.trim()) {
     return null;
   }
-  return { requestId, text };
+  return {
+    requestId,
+    text,
+    history: normalizePetChatHistory(record.history),
+  };
 };
 
 export const registerPetHandlers = (native: NativeBridge): void => {
@@ -283,6 +293,7 @@ export const registerPetHandlers = (native: NativeBridge): void => {
         manifest,
         requestId: parsed.requestId,
         text: parsed.text,
+        history: parsed.history,
         activity: getCurrentPetActivity(),
       },
       {

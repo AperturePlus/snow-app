@@ -154,3 +154,12 @@ export type PetChatToolPayload = {
 export type PetChatResult = {
   content: string;
 };
+
+/**
+ * 宠物聊天的一条既往对话（仅存在于宠物窗口内存中）。
+ * 每次提问都把当前对话回传给主进程，让宠物记得自己刚才说过什么。
+ */
+export type PetChatHistoryMessage = {
+  role: "user" | "assistant";
+  content: string;
+};

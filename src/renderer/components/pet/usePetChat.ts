@@ -10,6 +10,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type {
+  PetChatHistoryMessage,
   PetChatLabels,
   PetChatMessage,
 } from "../../../preload/types/pets";
@@ -93,6 +94,20 @@ export function usePetChat(labels: PetChatLabels | null): PetChatController {
       return;
     }
 
+    // 已完成的对话回传给主进程：skipContext 下模型没有历史，缺了它宠物
+    // 连自己上一句说过什么都记不住。在途 / 失败的助手气泡不参与。
+    const history: PetChatHistoryMessage[] = messages
+      .filter(
+        (message) =>
+          message.status === "done" &&
+          (message.role === "user" || message.role === "assistant") &&
+          message.content.trim().length > 0,
+      )
+      .map((message) => ({
+        role: message.role === "assistant" ? "assistant" : "user",
+        content: message.content,
+      }));
+
     const requestId = createRequestId();
     const assistantId = `${requestId}-a`;
     setMessages((previous) => [
@@ -110,7 +125,7 @@ export function usePetChat(labels: PetChatLabels | null): PetChatController {
     setToolActivity(null);
 
     bridge
-      .sendChat(requestId, text)
+      .sendChat(requestId, text, history)
       .then((result) => {
         setMessages((previous) =>
           previous.map((message) => {
