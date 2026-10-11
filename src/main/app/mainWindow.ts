@@ -217,9 +217,6 @@ export const createWindow = (): BrowserWindow => {
       nodeIntegration: false,
       webviewTag: true,
       spellcheck: false,
-      // The scheduler lives in this renderer. Keep its timers and IPC event
-      // loop active when the main window is minimized or unfocused.
-      backgroundThrottling: false,
     },
   });
   mainWindowRef = mainWindow;

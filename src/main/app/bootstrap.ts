@@ -45,16 +45,8 @@ import { isInstallerQuitRequest } from "./installerQuit";
 
 export const bootstrapApplication = (): void => {
   // ─── Chromium 启动加速开关（必须在 whenReady 之前）─────────────────────
-  // 禁用不必要的 GPU 光栅化和合成特性检测，减少内核初始化耗时。
-  app.commandLine.appendSwitch(
-    "disable-features",
-    "CalculateNativeWinOcclusion",
-  );
   // 跳过 GPU 沙箱预热（部分显卡驱动初始化极慢）。
   app.commandLine.appendSwitch("disable-gpu-sandbox");
-  // 定时任务需要在后台持续运行。仅对主窗口关闭 Chromium 后台节流，避免
-  // 最小化/失焦后 renderer 的调度器和 IPC 事件被挂起；其他窗口和页面仍保留
-  // 默认后台节流策略。
 
   snowLog.info({
     module: "app/bootstrap",

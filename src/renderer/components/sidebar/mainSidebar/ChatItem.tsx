@@ -12,7 +12,13 @@ import {
   Snowflake,
   Workflow,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { useI18n } from "../../../i18n";
 import type { ChatConversationRecord } from "../../../../preload";
@@ -115,6 +121,7 @@ export function ChatItem({
   const titleBoxRef = useRef<HTMLSpanElement>(null);
   const titleTextRef = useRef<HTMLSpanElement>(null);
   const [isTitleOverflowing, setIsTitleOverflowing] = useState(false);
+  const isTitleHoveredRef = useRef(false);
 
   useEffect(() => {
     if (isEditing && editInputRef.current) {
@@ -223,10 +230,10 @@ export function ChatItem({
       ? t("sidebar.chatTimeYesterday", { defaultValue: "Yesterday" })
       : rawTimeLabel;
 
-  const handleTitleHover = (): void => {
+  const measureTitleOverflow = useCallback((): void => {
     const box = titleBoxRef.current;
     const text = titleTextRef.current;
-    if (!box || !text) {
+    if (!box || !text || isTitleHoveredRef.current) {
       return;
     }
     const textWidth = text.scrollWidth;
@@ -240,10 +247,36 @@ export function ChatItem({
       "--chat-title-marquee-duration",
       `${Math.min(40, Math.max(6, distance / 50))}s`,
     );
+  }, []);
+
+  useLayoutEffect(() => {
+    if (isEditing) {
+      return;
+    }
+    measureTitleOverflow();
+  }, [displayName, isEditing, measureTitleOverflow]);
+
+  useEffect(() => {
+    const box = titleBoxRef.current;
+    if (!box) {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      measureTitleOverflow();
+    });
+    observer.observe(box);
+    return () => {
+      observer.disconnect();
+    };
+  }, [isEditing, measureTitleOverflow]);
+
+  const handleTitleHover = (): void => {
+    isTitleHoveredRef.current = true;
   };
 
   const handleTitleLeave = (): void => {
-    setIsTitleOverflowing(false);
+    isTitleHoveredRef.current = false;
+    measureTitleOverflow();
   };
 
   const handleSelectClick = (): void => {

@@ -365,7 +365,8 @@ fn resolve_review_llm_context() -> Result<(
 )> {
     let context = get_active_api_request_context()?;
     let database_path = context.database_path;
-    let api_config = context.api_config;
+    let mut api_config = context.api_config;
+    crate::api::retry::apply_auxiliary_retries(&mut api_config);
 
     if api_config.api_key.trim().is_empty() {
         return Err(Error::from_reason(

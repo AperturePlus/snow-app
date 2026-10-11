@@ -17,6 +17,16 @@ pub const RETRY_POLICY_SETTING_CODE: &str = "retry_policy";
 /// 实际值来自 API 档案配置 `partial_retry_max_chars`，未配置时用此缺省。
 pub const DEFAULT_PARTIAL_RETRY_MAX_CHARS: usize = 1000;
 
+/// 辅助请求（摘要 / 提交信息 / 主题调色板）的固定重试次数：不跟随 API 档案的
+/// `maxRetries`（该值面向正式对话，默认 5 次且指数退避）。辅助生成失败时应更快
+/// 放弃，避免后台长时间占用上游配额。
+pub const AUXILIARY_MAX_RETRIES: i32 = 3;
+
+/// 把辅助请求的固定重试次数写入档案的内存副本（不写库、不影响其他请求）。
+pub fn apply_auxiliary_retries(config: &mut crate::storage::ApiConfigRecord) {
+    config.max_retries = Some(AUXILIARY_MAX_RETRIES);
+}
+
 pub struct RetryOptions {
     pub max_retries: u32,
     pub base_delay_ms: u64,

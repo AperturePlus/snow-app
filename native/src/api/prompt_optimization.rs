@@ -206,6 +206,7 @@ pub async fn optimize_prompt_stream(
     // Disable thinking in the in-memory copy only, matching the auxiliary
     // commit generation path without altering the saved API profile.
     let mut config = context.api_config;
+    crate::api::retry::apply_auxiliary_retries(&mut config);
     let mut value: serde_json::Value =
         serde_json::from_str(&config.config_json).unwrap_or_else(|_| serde_json::json!({}));
     if let Some(object) = value.as_object_mut() {

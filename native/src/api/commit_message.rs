@@ -132,6 +132,7 @@ pub async fn generate_commit_message_stream(
     let request_method = context.api_config.request_method.clone();
     let database_path = context.database_path;
     let mut api_config = context.api_config;
+    crate::api::retry::apply_auxiliary_retries(&mut api_config);
     let custom_headers = context.custom_headers;
 
     // Disable thinking/reasoning for all providers — commit message

@@ -65,7 +65,8 @@ pub async fn generate_conversation_summary(
         get_api_request_context_with_fallback,
     )?;
     let database_path = context.database_path;
-    let api_config = context.api_config;
+    let mut api_config = context.api_config;
+    crate::api::retry::apply_auxiliary_retries(&mut api_config);
     let mut custom_headers = context.custom_headers;
     // The summary belongs to `conversation_id`, so session-scoped header
     // placeholders (e.g. `{{session_id}}`) resolve to that conversation.
