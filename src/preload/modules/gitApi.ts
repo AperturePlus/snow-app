@@ -45,6 +45,8 @@ const normalizeStreamChunk = (
     retryAttempt:
       typeof value.retryAttempt === "number" ? value.retryAttempt : null,
     retryError: typeof value.retryError === "string" ? value.retryError : null,
+    retryBackoffMs:
+      typeof value.retryBackoffMs === "number" ? value.retryBackoffMs : null,
     streamTokenCount:
       typeof value.streamTokenCount === "number" ? value.streamTokenCount : 0,
     thinkingTokenCount:
@@ -142,6 +144,12 @@ export const gitApi = {
     ipcRenderer.invoke("git:commit", repoPath, message),
   gitRemotes: (repoPath: string): Promise<GitRemoteInfo[]> =>
     ipcRenderer.invoke("git:remotes", repoPath),
+  /** 按作者邮箱反查 GitHub 头像（邮箱 → 头像地址）；查不到的项不出现在结果中。 */
+  gitAuthorAvatars: (
+    remoteUrl: string | null,
+    emails: string[],
+  ): Promise<Record<string, string>> =>
+    ipcRenderer.invoke("git:author-avatars", remoteUrl, emails),
   gitPush: (
     repoPath: string,
     remote?: string,

@@ -61,6 +61,8 @@ pub(crate) async fn run_chat_round(
         build_header_map(api_key, custom_headers)?,
         &payload,
         retry_options,
+        "run_file_search_agent",
+        "chat",
         |event| {
             merge_chat_stream_event(
                 &event,
@@ -317,6 +319,8 @@ pub(crate) async fn run_responses_round(
         build_header_map(api_key, custom_headers)?,
         &payload,
         retry_options,
+        "run_file_search_agent",
+        "responses",
         |event| {
             merge_responses_stream_event(
                 &event,
@@ -533,6 +537,8 @@ pub(crate) async fn run_anthropic_round(
         build_anthropic_header_map(api_key, custom_headers, enable_one_m_context)?,
         &payload,
         retry_options,
+        "run_file_search_agent",
+        "anthropic",
         |event| {
             merge_anthropic_stream_event(&event, &mut blocks_by_index);
             Ok(())
@@ -746,6 +752,8 @@ pub(crate) async fn run_gemini_round(
         build_gemini_header_map(custom_headers)?,
         &payload,
         retry_options,
+        "run_file_search_agent",
+        "gemini",
         |event| {
             merge_gemini_stream_event(&event, &mut parts);
             Ok(())

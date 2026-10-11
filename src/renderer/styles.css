@@ -11165,11 +11165,20 @@ body.is-panel-resizing * {
 }
 
 .memory-panel-row-importance {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
   flex-shrink: 0;
   font-size: 10px;
   color: var(--warning, #f5b301);
   line-height: 1;
-  letter-spacing: 1px;
+}
+
+.memory-importance-dim {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  opacity: 0.22;
 }
 
 .memory-panel-row-source {
@@ -11982,6 +11991,35 @@ body.is-panel-resizing * {
   opacity: 0.85;
   font-variant-numeric: tabular-nums;
   font-weight: 500;
+}
+
+/* 「N 秒后重试」倒计时：与重试标题同处一行，等宽数字避免逐秒跳动。 */
+.stream-retry-notice-countdown {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-amber-bg) 70%, transparent);
+  color: var(--accent-amber-text);
+  font-family: var(--font-mono, monospace);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stream-retry-notice-countdown-urgent {
+  color: var(--accent-red-text);
+  animation: stream-retry-countdown-pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes stream-retry-countdown-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
 }
 
 .stream-retry-notice-preview {
@@ -16376,6 +16414,9 @@ body.is-panel-resizing * {
   border: 1px solid rgba(210, 153, 34, 0.3);
 }
 .tool-call-edit-closest-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
   font-weight: 500;
   color: var(--warning, #d29922);
@@ -20122,6 +20163,18 @@ body.is-panel-resizing * {
   grid-column: 1 / -1;
 }
 
+/* 生图设置面板：字段名标注（请求参数原名，非解释性小字） */
+.imagegen-thinking-field {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+}
+
 .imagegen-panel .api-settings-field-hint {
   color: var(--text-muted);
   font-size: 10.5px;
@@ -20302,6 +20355,130 @@ body.is-panel-resizing * {
   .imagegen-size-input {
     grid-column: 1 / -1;
   }
+}
+
+/* 渠道内多模型管理区（支持单渠道多模型） */
+.imagegen-models-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 12px;
+}
+
+.imagegen-models-tabs-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.imagegen-models-tabs-list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.imagegen-model-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle, var(--border-color));
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.imagegen-model-tab:hover {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.05));
+  color: var(--text-primary);
+  border-color: var(--border-light);
+}
+
+.imagegen-model-tab.active {
+  background: var(--accent-color, #3b82f6);
+  color: #fff;
+  border-color: var(--accent-color, #3b82f6);
+  font-weight: 500;
+}
+
+.imagegen-model-tab.disabled {
+  opacity: 0.55;
+}
+
+.imagegen-model-tab-star {
+  color: #eab308;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.imagegen-model-tab.active .imagegen-model-tab-star {
+  color: #fef08a;
+}
+
+.imagegen-model-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0.65;
+  transition: all 0.12s ease;
+  margin-left: 2px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+.imagegen-model-tab-close:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.imagegen-model-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  font-size: 11.5px;
+}
+
+.imagegen-model-primary-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #eab308;
+  font-weight: 600;
+}
+
+.imagegen-model-more-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  font-size: 10px;
+  border-radius: 9999px;
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.08));
+  border: 1px solid var(--border-subtle, var(--border-color));
+  color: var(--text-muted);
 }
 
 .tool-call-imagegen-lightbox {
@@ -36201,22 +36378,31 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   white-space: nowrap;
 }
 
-/* 提交行上的变更行数统计（+N 新增 / -N 删除）。 */
+/* 变更统计行：文件数（次要色）+ 绿色新增 / 红色删除的紧凑标记。 */
 .git-graph-stats {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   font-size: 11px;
-  font-family: var(--font-mono);
   flex-shrink: 0;
+}
+
+.git-graph-stats-files {
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .git-graph-stats-add {
   color: var(--accent-green-text);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .git-graph-stats-del {
   color: var(--accent-red-text);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .git-graph-date {
@@ -36283,6 +36469,19 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   color: #f87171;
   background: rgba(239, 68, 68, 0.18);
   border-bottom-color: rgba(248, 113, 113, 0.3);
+}
+
+/* 成功类提示（如「已记录到备忘录」）复用同一条提示位，只换语义配色。 */
+.git-graph-action-error.success {
+  color: #16a34a;
+  background: rgba(34, 197, 94, 0.12);
+  border-bottom-color: rgba(34, 197, 94, 0.3);
+}
+
+:root[data-theme="dark"] .git-graph-action-error.success {
+  color: #4ade80;
+  background: rgba(34, 197, 94, 0.18);
+  border-bottom-color: rgba(74, 222, 128, 0.3);
 }
 
 /* 本地分支（含当前 HEAD） */
@@ -36391,9 +36590,13 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 .git-graph-tooltip {
   position: fixed;
   z-index: 1000;
-  min-width: 240px;
-  max-width: 440px;
-  padding: 10px 12px;
+  min-width: 260px;
+  max-width: 460px;
+  max-height: calc(100vh - 24px);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
   background: var(--bg-secondary);
@@ -36429,23 +36632,49 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   border-right: 1px solid var(--border-light);
 }
 
-.git-graph-tooltip-row {
+/* 作者行：头像 + 作者名 + 相对时间（括号内是本地化后的绝对时间）。 */
+.git-graph-tooltip-header {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
 }
 
-.git-graph-tooltip-label {
+.git-graph-tooltip-avatar {
   flex-shrink: 0;
-  min-width: 44px;
-  color: var(--text-tertiary);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
 }
 
-.git-graph-tooltip-value {
-  min-width: 0;
+.git-graph-tooltip-avatar-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.git-graph-tooltip-author {
+  flex-shrink: 0;
   color: var(--text-primary);
-  word-break: break-all;
+  font-weight: 600;
+}
+
+.git-graph-tooltip-time {
+  min-width: 0;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .git-graph-tooltip-mono {
@@ -36453,17 +36682,88 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   font-size: 10px;
 }
 
-.git-graph-tooltip-divider {
-  height: 1px;
-  background: var(--border-light);
-  margin: 6px 0;
+/* 引用 / 父提交 / 工作树：图标 + 文本的次要信息行。 */
+.git-graph-tooltip-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
 }
 
-.git-graph-tooltip-message {
-  font-size: 12px;
-  color: var(--text-primary);
-  white-space: pre-wrap;
-  word-break: break-word;
+.git-graph-tooltip-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 变更统计：与 VS Code 一致的一句话（文件数 + 插入 + 删除）。 */
+.git-graph-tooltip-stats {
+  color: var(--text-secondary);
+}
+
+/* 底栏：短哈希 + 在 GitHub 上打开。 */
+.git-graph-tooltip-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-light);
+}
+
+.git-graph-tooltip-hash {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.git-graph-tooltip-footer-divider {
+  width: 1px;
+  height: 11px;
+  background: var(--border-light);
+}
+
+.git-graph-tooltip-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent-blue-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.git-graph-tooltip-link:hover {
+  text-decoration: underline;
+}
+
+/* 卡片高度受限（max-height）时只让正文区收缩，其余各行保持原高。 */
+.git-graph-tooltip-header,
+.git-graph-tooltip-meta,
+.git-graph-tooltip-stats,
+.git-graph-tooltip-footer {
+  flex-shrink: 0;
+}
+
+/* 正文按 markdown 列表 / 段落结构化渲染（替代原先的 pre-wrap 纯文本）。 */
+.git-graph-tooltip-paragraph {
+  margin: 0;
+}
+
+.git-graph-tooltip-list {
+  margin: 0;
+  padding-left: 16px;
+  list-style: disc;
+}
+
+.git-graph-tooltip-list li {
+  margin: 0;
 }
 
 /* 提交按钮与模式切换下拉按钮合体：整体一个圆角胶囊，
@@ -37498,6 +37798,74 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
     var(--accent-color) 35%,
     var(--border-color)
   );
+}
+
+/* 优化提示词（复用宿主 prompt 优化接口；与上传按钮同尺寸族） */
+.ai-drawing-optimize-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s,
+    border-color 0.12s;
+}
+
+.ai-drawing-optimize-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-color) 12%, var(--bg-tertiary));
+  color: var(--text-primary);
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 45%,
+    var(--border-color)
+  );
+}
+
+.ai-drawing-optimize-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 优化进行中：可点击取消，用强调色提示正在工作 */
+.ai-drawing-optimize-btn.is-busy {
+  color: var(--accent-color);
+  border-color: color-mix(
+    in srgb,
+    var(--accent-color) 45%,
+    var(--border-color)
+  );
+  background: color-mix(in srgb, var(--accent-color) 10%, var(--bg-tertiary));
+}
+
+/* 还原（回退优化前原文）：低调的文本按钮 */
+.ai-drawing-optimize-undo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+
+.ai-drawing-optimize-undo:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 /* 上传导入提示（成功/失败，自动消失） */
@@ -51551,7 +51919,9 @@ pre.file-viewer-code {
 }
 
 .userscripts-cell-rating {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   margin-left: 6px;
   font-size: 11px;
   color: var(--accent-amber-text, #b45309);
@@ -52105,15 +52475,13 @@ pre.file-viewer-code {
 }
 
 .memory-list-item-importance {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
   flex-shrink: 0;
   font-size: 10px;
   color: var(--warning, #f5b301);
   line-height: 1;
-  letter-spacing: 1px;
-}
-
-.memory-importance-dim {
-  opacity: 0.22;
 }
 
 .memory-list-item-meta {
@@ -54434,8 +54802,10 @@ img.plugin-icon {
 /* Git Graph Commit Details & Tooltip */
 .git-graph-tooltip-message-section {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 6px;
+  min-height: 0;
 }
 
 .git-graph-tooltip-subject {
@@ -54447,20 +54817,19 @@ img.plugin-icon {
 }
 
 .git-graph-tooltip-body {
-  font-size: 11px;
-  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11.5px;
+  line-height: 1.55;
   color: var(--text-secondary);
-  white-space: pre-wrap;
   word-break: break-word;
-  padding: 6px 8px;
-  background: var(--bg-tertiary, rgba(0, 0, 0, 0.04));
-  border-radius: var(--radius-sm, 4px);
-  border: 1px solid var(--border-light);
+  /* 卡片整体高度受限时优先收缩正文区并滚动。 */
+  min-height: 0;
   max-height: 240px;
   overflow-y: auto;
   /* 滚到底不把滚动传递给面板背后的界面。 */
   overscroll-behavior: contain;
-  font-family: var(--font-mono, monospace);
 }
 
 .git-graph-detail-message-body {

@@ -27,6 +27,31 @@ import type {
 } from "../../../../plugins/types";
 import { useChatConversationContext } from "./ChatConversationContext";
 
+// Keep diagnostics searchable without logging plugin errors, paths or file data.
+const logFooterDiagnostic = (
+  level: "INFO" | "WARN",
+  conversationId: string,
+  phase: string,
+  details: Record<string, string | number | boolean>,
+): void => {
+  try {
+    void window.snow
+      .writeLog(level, {
+        module: "plugins/messageFooter",
+        func: "PluginMessageFooters",
+        message: "Message footer lifecycle",
+        context: JSON.stringify({
+          conversation_id: conversationId,
+          phase,
+          ...details,
+        }),
+      })
+      .catch(() => {});
+  } catch {
+    // Diagnostics must not change the mount or history lifecycle.
+  }
+};
+
 const PluginMessageFooter = ({
   plugin,
   footer,
@@ -99,12 +124,15 @@ const PluginMessageFooter = ({
       ...(task ? { task } : {}),
     });
     void (async () => {
+      let phase = "messages";
       try {
         check();
         const messages = await loadPluginMessages(plugin, locale, signal);
         check();
+        phase = "icons";
         const icons = await loadLucideIcons();
         check();
+        phase = "api";
         const sourceApi = await createPluginApi({
           plugin,
           locale,
@@ -118,6 +146,7 @@ const PluginMessageFooter = ({
           signal,
           isCurrent,
         );
+        phase = "module";
         const module = await loadPluginModule({
           plugin,
           entry: footer.entry,
@@ -127,15 +156,18 @@ const PluginMessageFooter = ({
           isCurrent,
         });
         check();
+        phase = "styles";
         const styles = await injectPluginStyles(plugin, signal, isCurrent);
         // A late style result is still owned and must be released before throwing.
         removeStyles = styles;
         if (disposed) styles();
         check();
+        phase = "export";
         const mount = module[footer.exportName];
         if (typeof mount !== "function")
           throw new Error("Missing footer mount export");
         host.appendChild(container);
+        phase = "mount";
         const result = (mount as PluginMessageFooterMount)(
           container,
           api,
@@ -154,13 +186,35 @@ const PluginMessageFooter = ({
           }
         }
         check();
+        logFooterDiagnostic("INFO", conversationId, "mounted", {
+          pluginId: plugin.pluginId,
+          footerId: footer.id,
+          messageId,
+          hasTask: !!task,
+          fileRecordCount: task?.records.length ?? 0,
+          coverageCount: task?.coverage.length ?? 0,
+          unavailableCoverageCount:
+            task?.coverage.filter((record) => record.coverage === "unavailable")
+              .length ?? 0,
+          concurrentCoverageCount:
+            task?.coverage.filter((record) =>
+              record.reasons.includes("concurrent-execution"),
+            ).length ?? 0,
+        });
       } catch {
-        if (!signal.aborted && isCurrent())
+        if (!signal.aborted && isCurrent()) {
           console.warn(
             "Plugin message footer failed",
             plugin.pluginId,
             footer.id,
           );
+          logFooterDiagnostic("WARN", conversationId, "mount-failed", {
+            failedAt: phase,
+            pluginId: plugin.pluginId,
+            footerId: footer.id,
+            messageId,
+          });
+        }
         dispose();
       }
     })();
@@ -198,17 +252,42 @@ export const PluginMessageFooters = ({
     void pluginStore.ensureLoaded();
   }, []);
   const message = conversation.messages.find((item) => item.id === messageId);
-  const [task, setTask] = useState<TaskSnapshot>();
+  const taskIdentity = JSON.stringify([
+    conversationId,
+    messageId,
+    message?.responseId,
+  ]);
+  const [loadedTask, setLoadedTask] = useState<{
+    identity: string;
+    plugins: PluginView[];
+    snapshot?: TaskSnapshot;
+  }>();
+  // Never expose a previous reply's snapshot while a new identity is loading.
+  const task =
+    loadedTask?.identity === taskIdentity ? loadedTask.snapshot : undefined;
   const hasTaskFooters = plugins.some(
     (plugin) =>
       plugin.enabled &&
+      plugin.renderMode === "esm" &&
       plugin.messageFooters.some((footer) => footer.taskHistory),
   );
   const hasLegacyFooters = plugins.some(
     (plugin) =>
       plugin.enabled &&
+      plugin.renderMode === "esm" &&
       plugin.messageFooters.some((footer) => !footer.taskHistory),
   );
+  const lastMessage = conversation.messages.findLast(
+    (message) => message.role !== "tool",
+  );
+  const legacyEligible =
+    conversation.activeConversationId === conversationId &&
+    !conversation.isStreaming &&
+    !conversation.isPaused &&
+    !conversation.isAborting &&
+    lastMessage?.role === "assistant" &&
+    lastMessage.id === messageId &&
+    lastMessage.status !== "sending";
   useEffect(() => {
     if (!hasTaskFooters) return;
     let disposed = false;
@@ -223,36 +302,53 @@ export const PluginMessageFooters = ({
             (message?.responseId
               ? snapshots.get(`response:${message.responseId}`)
               : undefined);
-          setTask((previous) => (previous?.id === next?.id ? previous : next));
+          // A stable task ID does not prove the extraction result is unchanged
+          // after a host logic update. Keep the mount only for identical evidence.
+          setLoadedTask((previous) =>
+            previous?.identity === taskIdentity &&
+            previous.plugins === plugins &&
+            previous.snapshot?.id === next?.id &&
+            JSON.stringify(previous.snapshot) === JSON.stringify(next)
+              ? previous
+              : { identity: taskIdentity, plugins, snapshot: next },
+          );
+          if (legacyEligible && !next)
+            logFooterDiagnostic("INFO", conversationId, "no-task-snapshot", {
+              messageId,
+              snapshotKeys: snapshots.size,
+            });
         })
         .catch(() => {
-          // A failed refresh must not withdraw an already fixed historical task.
-          // Initial failures still have no snapshot and cannot show cumulative data.
-          if (!disposed && current === generation)
+          // Preserve only an already fixed snapshot of this same reply.
+          // A different identity stays hidden; never fall back to cumulative data.
+          if (!disposed && current === generation) {
             console.warn("Task history unavailable");
+            logFooterDiagnostic("WARN", conversationId, "history-load-failed", {
+              messageId,
+            });
+          }
         });
     };
     const changed = (event: Event): void => {
       if ((event as CustomEvent<string>).detail === conversationId) refresh();
     };
-    refresh();
     window.addEventListener("agent-task-history-updated", changed);
+    refresh();
     return () => {
       disposed = true;
       window.removeEventListener("agent-task-history-updated", changed);
     };
-  }, [conversationId, messageId, message?.responseId, hasTaskFooters]);
-  const lastMessage = conversation.messages.findLast(
-    (message) => message.role !== "tool",
-  );
-  const legacyEligible =
-    conversation.activeConversationId === conversationId &&
-    !conversation.isStreaming &&
-    !conversation.isPaused &&
-    !conversation.isAborting &&
-    lastMessage?.role === "assistant" &&
-    lastMessage.id === messageId &&
-    lastMessage.status !== "sending";
+    // Plugin replacement and run completion must retry an initially failed read,
+    // even when the contribution's taskHistory boolean has not changed.
+  }, [
+    conversationId,
+    messageId,
+    message?.responseId,
+    taskIdentity,
+    hasTaskFooters,
+    plugins,
+    legacyEligible,
+  ]);
   const directoryId = conversation.conversationDirectoryId;
   const identity = JSON.stringify([
     conversationId,

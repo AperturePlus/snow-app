@@ -1216,25 +1216,24 @@ fn migrate_scheduled_tasks_pre_script(connection: &Connection) -> rusqlite::Resu
 /// so a single long response could balloon to several MB, and the table
 /// dominated the database (>450 MB for ~3000 rows in practice).
 ///
-/// The column is only read back for tool-role messages (to reconstruct
-/// `tool_call_id` on the next request) and for image-ref stripping (which
-/// operates on the `[{name, callId, result}]` tool format only). Assistant
-/// `raw_json` is never consulted, so it is safe to wipe.
+/// Tool-role metadata still carries call identities, and assistant objects now
+/// carry persisted task-end references (`__snowTaskHistory`). Only the legacy
+/// streaming array format is disposable; object metadata must survive regardless
+/// of its size. Invalid JSON is preserved rather than guessed to be a legacy blob.
 ///
 /// Idempotent: once cleared the rows match `{}` (or are empty) and the
 /// `WHERE` clause no longer matches them, so re-running is a no-op.
 fn purge_assistant_raw_json_blobs(connection: &Connection) -> rusqlite::Result<()> {
-    // Only target rows whose raw_json still contains the old SSE chunk
-    // structure (a JSON array of objects with "choices" / "candidates" /
-    // "type":"message_delta" etc.). The simplest portable guard is length:
-    // tool-role raw_json is typically < 2 KB; assistant blobs were > 2 KB.
-    // Using 2048 bytes as the threshold keeps tool messages untouched while
-    // catching every legacy assistant blob.
+    // The size threshold limits cleanup to large legacy streaming arrays.
+    // CASE guards json_type from malformed JSON without relying on AND order.
     let purged = connection.execute(
         "UPDATE chat_messages
             SET raw_json = '{}'
           WHERE role = 'assistant'
-            AND length(raw_json) > 2048",
+            AND length(raw_json) > 2048
+            AND CASE WHEN json_valid(raw_json)
+                     THEN json_type(raw_json) = 'array'
+                     ELSE 0 END",
         [],
     )?;
 

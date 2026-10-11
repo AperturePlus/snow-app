@@ -1,4 +1,11 @@
-import type { GitCommitFile, GitFileStatus } from "../../../../preload";
+import type {
+  GitCommitFile,
+  GitFileStatus,
+  GitLogEntry,
+} from "../../../../preload";
+import type { TranslateOptions } from "../../../i18n";
+import { md5Hex } from "../../../utils/md5";
+import { parseRefs } from "./gitGraphRefs";
 
 /** 将提交文件（GitCommitFile）转换为 DiffTab 所需的 GitFileStatus 形状。 */
 export const toGitFileStatus = (file: GitCommitFile): GitFileStatus => ({
@@ -48,4 +55,277 @@ export function isOtherWorktreePath(
 export function getWorktreeFolderName(wtPath: string): string {
   const parts = wtPath.replace(/\\/g, "/").split("/").filter(Boolean);
   return parts[parts.length - 1] || wtPath;
+}
+
+/**
+ * 解析 git 输出的提交时间（`2026-10-09 16:36:32 +0800`，或 ISO 串）。
+ * 解析失败返回 null，调用方回退展示原始字符串。
+ */
+export function parseGitDate(value: string): Date | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  // "2026-10-09 16:36:32 +0800" -> "2026-10-09T16:36:32+08:00"
+  const match =
+    /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\s*([+-]\d{2}):?(\d{2}))?$/.exec(
+      trimmed,
+    );
+  if (match) {
+    const [, datePart, timePart, offsetHour, offsetMinute] = match;
+    const offset = offsetHour ? `${offsetHour}:${offsetMinute}` : "";
+    const parsed = new Date(`${datePart}T${timePart}${offset}`);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  const fallback = new Date(trimmed);
+  return Number.isNaN(fallback.getTime()) ? null : fallback;
+}
+
+/** 相对时间单位由粗到细，命中第一个不超过差值的单位。 */
+const RELATIVE_TIME_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ["year", 365 * 24 * 60 * 60],
+  ["month", 30 * 24 * 60 * 60],
+  ["day", 24 * 60 * 60],
+  ["hour", 60 * 60],
+  ["minute", 60],
+  ["second", 1],
+];
+
+/** 相对时间（如「1 小时前」），按当前界面语言本地化，含单复数处理。 */
+export function formatRelativeTime(date: Date, locale: string): string {
+  const diffSeconds = Math.round((date.getTime() - Date.now()) / 1000);
+  const formatter = new Intl.RelativeTimeFormat(locale, {
+    numeric: "auto",
+    style: "long",
+  });
+
+  for (const [unit, unitSeconds] of RELATIVE_TIME_UNITS) {
+    if (Math.abs(diffSeconds) >= unitSeconds || unit === "second") {
+      return formatter.format(Math.round(diffSeconds / unitSeconds), unit);
+    }
+  }
+
+  return formatter.format(0, "second");
+}
+
+/** 绝对时间（如「2026年10月9日 16:36」），按当前界面语言本地化。 */
+export function formatAbsoluteTime(date: Date, locale: string): string {
+  return new Intl.DateTimeFormat(locale, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+/** 远端托管平台：决定提交网页地址的路径规则与「打开」按钮文案。 */
+export type CommitRemoteProvider =
+  "github" | "gitlab" | "gitee" | "bitbucket" | "other";
+
+export type CommitWebLink = {
+  url: string;
+  provider: CommitRemoteProvider;
+};
+
+type ParsedRemote = {
+  host: string;
+  path: string;
+};
+
+/** 解析远端地址（https / ssh / scp 三种写法）为 host + path。 */
+const parseRemote = (remoteUrl: string | null): ParsedRemote | null => {
+  const trimmed = remoteUrl?.trim() ?? "";
+  if (!trimmed) return null;
+
+  if (trimmed.includes("://")) {
+    try {
+      const parsed = new URL(trimmed);
+      return { host: parsed.hostname.toLowerCase(), path: parsed.pathname };
+    } catch {
+      return null;
+    }
+  }
+
+  // scp 形式：git@github.com:owner/repo.git
+  const match = /^(?:[^@/]+@)?([^:/]+):(.+)$/.exec(trimmed);
+  if (!match) return null;
+  return { host: match[1].toLowerCase(), path: match[2] };
+};
+
+/** 去掉首尾斜杠与 .git 后缀，得到 `owner/repo`。 */
+const repositoryOfPath = (path: string): string =>
+  path
+    .replace(/^\/+/, "")
+    .replace(/\.git$/i, "")
+    .replace(/\/+$/, "");
+
+const providerOfHost = (host: string): CommitRemoteProvider => {
+  switch (host.replace(/^www\./, "")) {
+    case "github.com":
+      return "github";
+    case "gitlab.com":
+      return "gitlab";
+    case "gitee.com":
+      return "gitee";
+    case "bitbucket.org":
+      return "bitbucket";
+    default:
+      return "other";
+  }
+};
+
+/** 各平台的提交详情页路径（其余平台沿用 `/commit/<hash>`）。 */
+const commitPathOf = (
+  provider: CommitRemoteProvider,
+  repository: string,
+  hash: string,
+): string => {
+  switch (provider) {
+    case "gitlab":
+      return `${repository}/-/commit/${hash}`;
+    case "bitbucket":
+      return `${repository}/commits/${hash}`;
+    default:
+      return `${repository}/commit/${hash}`;
+  }
+};
+
+/**
+ * 由远端地址推导该提交的网页地址，并给出托管平台（决定按钮文案）。
+ * 支持 https / ssh / scp 三种写法；地址无法解析时返回 null。
+ */
+export function getCommitWebLink(
+  remoteUrl: string | null,
+  hash: string,
+): CommitWebLink | null {
+  const remote = parseRemote(remoteUrl);
+  if (!remote || !hash) return null;
+
+  const repository = repositoryOfPath(remote.path);
+  if (!repository) return null;
+
+  const provider = providerOfHost(remote.host);
+  return {
+    url: `https://${remote.host}/${commitPathOf(provider, repository, hash)}`,
+    provider,
+  };
+}
+
+/** 头像端点请求的边长（像素）。列表按 18px 展示，2x 屏下 40px 足够清晰。 */
+const AVATAR_SIZE = 40;
+
+/** GitHub noreply 邮箱：`<id>+<login>@users.noreply.github.com`（新版）或
+ *  `<login>@users.noreply.github.com`（旧版），两种写法都取 login。 */
+const GITHUB_NOREPLY_RE = /^(?:\d+\+)?([^@+]+)@users\.noreply\.github\.com$/;
+
+/** QQ 邮箱（含 vip.qq.com）：本地部分是纯数字 QQ 号，可直接换取 QQ 头像。 */
+const QQ_MAIL_RE = /^(\d+)@(?:qq|vip\.qq)\.com$/;
+
+/** 归一化邮箱：去首尾空白并转小写（Gravatar 哈希与各端点匹配都要求小写）。 */
+const normalizeEmail = (email: string | null | undefined): string =>
+  email?.trim().toLowerCase() ?? "";
+
+/**
+ * 按提交作者邮箱推导其头像地址。
+ *
+ * 逐个邮箱推导而非用仓库 owner：一个仓库里往往有多个作者，用 owner 会让所有
+ * 提交都显示同一个头像（这正是之前的缺陷）。三条链路都只是拼 URL、不调 API，
+ * 因此不受匿名接口限流影响：
+ *  - GitHub noreply 邮箱 → 由邮箱里的 login 拼 `github.com/<login>.png`；
+ *  - QQ 邮箱 → `q1.qlogo.cn` 的 QQ 号头像；
+ *  - 其余 → Gravatar 真实头像（`md5(邮箱)`）。
+ *
+ * Gravatar 分支带 `d=404`：未注册的邮箱返回 404 而非别人的默认头像，调用方据此
+ * 退到 getGravatarIdenticonUrl 的几何图案，最后才是首字母色块。
+ *
+ * 邮箱缺失时返回 null，由调用方直接展示首字母。
+ */
+export function getCommitAvatarUrl(
+  email: string | null | undefined,
+  size = AVATAR_SIZE,
+): string | null {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+
+  const noreply = GITHUB_NOREPLY_RE.exec(normalized);
+  if (noreply) {
+    return `https://github.com/${noreply[1]}.png?size=${size}`;
+  }
+
+  const qq = QQ_MAIL_RE.exec(normalized);
+  if (qq) {
+    return `https://q1.qlogo.cn/g?b=qq&nk=${qq[1]}&s=${size}`;
+  }
+
+  return `https://secure.gravatar.com/avatar/${md5Hex(normalized)}?s=${size}&d=404`;
+}
+
+/**
+ * Gravatar 几何图案头像（identicon）：邮箱未注册 Gravatar 时的第二级兜底。
+ *
+ * 图案由邮箱哈希决定，因此同一作者每次都是同一张图、不同作者图案不同，比所有人
+ * 共用的首字母色块更有区分度。调用方在 getCommitAvatarUrl 加载失败（Gravatar
+ * 返回 404）时改用它；只有它也无法加载时才退回首字母。
+ */
+export function getGravatarIdenticonUrl(
+  email: string | null | undefined,
+  size = AVATAR_SIZE,
+): string | null {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+
+  return `https://secure.gravatar.com/avatar/${md5Hex(normalized)}?s=${size}&d=identicon`;
+}
+
+/** 远端平台 → 「打开」文案词条（悬停卡片底栏与提交右键菜单共用）。 */
+export const REMOTE_LINK_LABEL_KEY: Record<CommitRemoteProvider, string> = {
+  github: "git.tooltipOpenOnGitHub",
+  gitlab: "git.tooltipOpenOnGitLab",
+  gitee: "git.tooltipOpenOnRemote",
+  bitbucket: "git.tooltipOpenOnRemote",
+  other: "git.tooltipOpenOnRemote",
+};
+
+/**
+ * 把一次提交整理成可直接落库的备忘录正文：字段标签跟随界面语言，提交说明保留
+ * 原始换行（备忘录按纯文本展示）。只做文本拼接，不做任何标记语法。
+ */
+export function buildCommitMemoContent(
+  commit: GitLogEntry,
+  t: (key: string, options?: TranslateOptions) => string,
+): string {
+  const lines: string[] = [];
+
+  lines.push(`${t("git.graphTooltipHash")}: ${commit.hash}`);
+  lines.push(
+    `${t("git.graphTooltipAuthor")}: ${commit.author}${
+      commit.email ? ` <${commit.email}>` : ""
+    }`,
+  );
+  lines.push(`${t("git.graphTooltipDate")}: ${commit.date}`);
+
+  const refs = parseRefs(commit.refs)
+    .map((ref) => ref.name)
+    .join(", ");
+  if (refs) {
+    lines.push(`${t("git.graphTooltipRefs")}: ${refs}`);
+  }
+  if (commit.parents.length > 0) {
+    lines.push(`${t("git.graphTooltipParents")}: ${commit.parents.join(", ")}`);
+  }
+
+  const stats = `${t("git.graphTooltipStats")}: +${commit.additions} -${commit.deletions}`;
+  lines.push(
+    commit.filesChanged > 0
+      ? `${stats} · ${t("git.memoFiles", {
+          values: { count: commit.filesChanged },
+        })}`
+      : stats,
+  );
+
+  lines.push("");
+  lines.push(`${t("git.memoMessage")}:`);
+  lines.push(
+    commit.body ? `${commit.message}\n\n${commit.body}` : commit.message,
+  );
+
+  return lines.join("\n");
 }

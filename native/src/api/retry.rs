@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use futures::{Stream, StreamExt};
@@ -6,10 +7,16 @@ use serde_json::{json, Value};
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
+use crate::storage::services::app_logs::{insert_app_log, log_api_warning, AppLogInput};
+
 pub const DEFAULT_MAX_RETRIES: u32 = 5;
 pub const DEFAULT_BASE_DELAY_MS: u64 = 3000;
 pub const DEFAULT_STREAM_IDLE_TIMEOUT_SEC: u64 = 60;
 pub const RETRY_POLICY_SETTING_CODE: &str = "retry_policy";
+/// 空响应（正文与工具全空）重试类别的策略 id。与其它类别不同，它不是
+/// 「错误文案关键词」类别，而是由流式收尾阶段直接判定的条件开关，因此它的
+/// keywords 为空数组（不参与 `is_retriable_error` 的文案匹配）。
+pub const EMPTY_RESPONSE_CATEGORY_ID: &str = "emptyResponse";
 
 /// 阶段感知流恢复的可见正文保留阈值缺省值（Unicode 字符数）。
 /// transport 中断时仅用户可见 content 达到该阈值才可保留 partial；
@@ -34,6 +41,9 @@ pub struct RetryOptions {
     pub partial_retry_max_chars: usize,
     pub retry_always: bool,
     pub match_keywords: Vec<String>,
+    /// 空响应（正文与工具全空，思考不计）是否重试。默认开启；由重试策略的
+    /// `emptyResponse` 类别控制，`retry_always` 打开时一并生效。
+    pub retry_empty_response: bool,
 }
 
 pub struct RetryCategoryDefaults {
@@ -81,15 +91,31 @@ pub const DEFAULT_RETRY_CATEGORIES: &[RetryCategoryDefaults] = &[
     },
     RetryCategoryDefaults {
         id: "rateLimit",
-        keywords: &["rate limit", "too many requests", "429"],
+        // `rate_limit`（下划线）是 OpenAI 系错误体的标准 type 名（`rate_limit_error`）；
+        // 只匹配带空格的 `rate limit` 时，若中转商只回传 type 而不回传 message
+        // 就会漏判。两种写法都收录。
+        keywords: &["rate limit", "rate_limit", "too many requests", "429"],
     },
     RetryCategoryDefaults {
         id: "serverError",
         keywords: &[
+            // 通用 5xx
             "500",
             "502",
             "503",
             "504",
+            // Cloudflare 5xx（中转/网关侧，长请求场景高频）：
+            // 520 源站返回空/未知响应、521 源站宕机、522 连接超时、
+            // 523 源站不可达、524 等待超时（125s 读超时）、525 SSL 握手失败、
+            // 530 源站 DNS 错误。
+            // 526（源站证书无效）是配置类永久错误，重试无意义，故不收录。
+            "520",
+            "521",
+            "522",
+            "523",
+            "524",
+            "525",
+            "530",
             "server_error",
             "internal server error",
             "bad gateway",
@@ -122,6 +148,11 @@ pub const DEFAULT_RETRY_CATEGORIES: &[RetryCategoryDefaults] = &[
         id: "nonSse",
         keywords: &["non-sse response"],
     },
+    // 条件型类别：keywords 为空，不参与错误文案匹配，仅作为重试策略里的开关。
+    RetryCategoryDefaults {
+        id: EMPTY_RESPONSE_CATEGORY_ID,
+        keywords: &[],
+    },
 ];
 
 fn default_retry_keywords() -> Vec<String> {
@@ -140,7 +171,7 @@ fn split_keywords(raw: &str) -> Vec<String> {
         .collect()
 }
 
-fn load_global_retry_policy() -> (bool, Vec<String>) {
+fn load_global_retry_policy() -> (bool, Vec<String>, bool) {
     let raw = crate::storage::get_system_setting_value(RETRY_POLICY_SETTING_CODE.to_string())
         .ok()
         .flatten()
@@ -148,10 +179,13 @@ fn load_global_retry_policy() -> (bool, Vec<String>) {
     resolve_retry_rules(&raw)
 }
 
-fn resolve_retry_rules(policy_json: &str) -> (bool, Vec<String>) {
+/// 解析重试策略，返回 `(retry_always, keywords, retry_empty_response)`。
+/// `retry_empty_response` 来自 `emptyResponse` 类别的 enabled 开关，缺省为
+/// `true`，保证旧策略数据（无该类别）行为与之前完全一致。
+fn resolve_retry_rules(policy_json: &str) -> (bool, Vec<String>, bool) {
     let parsed: Value = serde_json::from_str(policy_json).unwrap_or(Value::Null);
     if !parsed.is_object() {
-        return (false, default_retry_keywords());
+        return (false, default_retry_keywords(), true);
     }
     let retry = &parsed;
 
@@ -161,6 +195,7 @@ fn resolve_retry_rules(policy_json: &str) -> (bool, Vec<String>) {
         .unwrap_or(false);
     let categories = retry.get("categories");
     let mut keywords = Vec::new();
+    let mut retry_empty_response = true;
 
     for category in DEFAULT_RETRY_CATEGORIES {
         let entry = categories.and_then(|value| value.get(category.id));
@@ -168,6 +203,9 @@ fn resolve_retry_rules(policy_json: &str) -> (bool, Vec<String>) {
             .and_then(|value| value.get("enabled"))
             .and_then(Value::as_bool)
             .unwrap_or(true);
+        if category.id == EMPTY_RESPONSE_CATEGORY_ID {
+            retry_empty_response = enabled;
+        }
         if !enabled {
             continue;
         }
@@ -186,7 +224,7 @@ fn resolve_retry_rules(policy_json: &str) -> (bool, Vec<String>) {
         keywords.extend(split_keywords(custom));
     }
 
-    (always, keywords)
+    (always, keywords, retry_empty_response)
 }
 
 pub fn retry_defaults_json() -> String {
@@ -210,6 +248,7 @@ impl Default for RetryOptions {
             partial_retry_max_chars: DEFAULT_PARTIAL_RETRY_MAX_CHARS,
             retry_always: false,
             match_keywords: default_retry_keywords(),
+            retry_empty_response: true,
         }
     }
 }
@@ -232,13 +271,14 @@ impl RetryOptions {
             .filter(|&v| v > 0)
             .map(|v| v as usize)
             .unwrap_or(DEFAULT_PARTIAL_RETRY_MAX_CHARS);
-        let (retry_always, match_keywords) = load_global_retry_policy();
+        let (retry_always, match_keywords, retry_empty_response) = load_global_retry_policy();
         Self {
             max_retries,
             base_delay_ms,
             partial_retry_max_chars,
             retry_always,
             match_keywords,
+            retry_empty_response,
         }
     }
 }
@@ -314,23 +354,26 @@ pub fn classify_final_stream_warning(
 
 /// 空响应重试预算耗尽后的终态标记。
 ///
-/// Provider 以 `completed`/`failed` 正常收尾、但正文、思考、工具调用与 reasoning
-/// 全为空时，落库结果与「正常完成」完全同形（`status=completed` 且
-/// `interruption_reason`/`recovery_outcome` 均为空），前端只能看到一个空白气泡，
-/// 日志里也只剩一条 WARN。这里把该终态显式化：补上 `empty_response` 原因与
-/// `retry_exhausted` 结果，让日志、DB 与前端提示都能区分「上游返回空」与「正常完成」。
+/// Provider 正常收尾、但**没有用户可见正文、也没有工具/推理状态**时，落库结果
+/// 与「正常完成」完全同形（`status=completed` 且 `interruption_reason` /
+/// `recovery_outcome` 均为空），前端只能看到一个空白气泡，日志里也只剩一条
+/// WARN。这里把该终态显式化：补上 `empty_response` 原因与 `retry_exhausted`
+/// 结果，让日志、DB 与前端提示都能区分「上游返回空」与「正常完成」。
 ///
-/// 只在「原本没有任何中断原因」时改写：真实传输中断 / 服务商明确未完成
-/// （`incomplete`）等既有终态一律原样透传，不改变它们的语义与恢复结果。
+/// 判定口径（三者缺一不可）：
+/// - `interruption_reason` 原本为空：真实传输中断 / 服务商明确未完成
+///   （`incomplete`）等既有终态一律原样透传，不改变它们的语义与恢复结果；
+/// - `has_response_payload == false`：正文与工具/推理状态都为空。thinking
+///   不计入有效载荷（见 `attempt_has_payload`），否则「只有思考、没有正文」
+///   的残缺结果会被误判为正常完成；
+/// - `final_status` 不是取消态：`cancelled` 是用户主动停止，取消路径会清空
+///   中断原因与工具调用，零载荷本就是预期结果。补标记会让前端把用户自己的
+///   打断渲染成「重试已耗尽 / 响应未完整结束」告警（与
+///   `classify_final_stream_warning` 的 cancelled 豁免口径保持一致）。
 ///
-/// 只有 Provider 正常收尾（`final_status == "completed"`）才可能被判定为
-/// 「空响应」：
-/// - `cancelled`：用户主动停止。取消路径会清空中断原因与工具调用，零载荷本
-///   就是预期结果；补标记会让前端把用户自己的打断渲染成「重试已耗尽 / 响应
-///   未完整结束」告警（与 `classify_final_stream_warning` 的 cancelled 豁免
-///   口径保持一致）。
-/// - `failed`：服务商明确失败，语义已由 `status` 与错误内容承载；补
-///   `empty_response` 会让落库标记与前端展示（error 分支优先）分叉。
+/// 与早期版本的区别：此前只认 `completed`，导致 `failed` / `network_error`
+/// 等非完成态的零载荷响应既不打标记、界面也无提示（只剩一条 WARN）。现在
+/// 这些非取消态的零载荷终态同样会被标记，前端据此渲染明确的失败提示。
 pub fn resolve_empty_response_terminal(
     final_status: &str,
     interruption_reason: Option<StreamInterruptionReason>,
@@ -340,7 +383,8 @@ pub fn resolve_empty_response_terminal(
     Option<StreamInterruptionReason>,
     Option<StreamRecoveryOutcome>,
 ) {
-    if final_status != "completed" {
+    // 用户主动取消：零载荷是预期结果，不补标记（避免误报告警）。
+    if final_status == "cancelled" || final_status == "canceled" {
         return (interruption_reason, recovery_outcome);
     }
 
@@ -497,21 +541,56 @@ pub fn decide_stream_recovery(
     StreamRecoveryDecision::SurfaceInterrupted
 }
 
+/// 一次尝试是否产生了「有效载荷」。
+///
+/// 有效载荷只认 **用户可见正文** 与 **工具/推理状态**：thinking 不计入。
+/// 上游先流出一段思考、随后正文与工具全空就收尾时，用户实际什么也没得到；
+/// 若把 thinking 算作载荷，这种尝试既不会触发空响应重试、也不会被标记为
+/// `empty_response`，最终只能落一个「只有思考、没有正文」的残缺结果。
 pub fn attempt_has_payload(
     content_chunks: &[String],
-    thinking_chunks: &[String],
+    _thinking_chunks: &[String],
     has_tool_state: bool,
 ) -> bool {
     has_tool_state
         || content_chunks.iter().any(|chunk| !chunk.trim().is_empty())
-        || thinking_chunks.iter().any(|chunk| !chunk.trim().is_empty())
 }
 
 pub const EMPTY_RESPONSE_RETRY_ERROR: &str =
     "AI returned an empty response (no content, thinking or tool calls)";
 
+/// 判定一次「零载荷」尝试是否应触发空响应重试。
+///
+/// 两个前提缺一不可：
+/// 1. 该尝试确实没有有效载荷（`has_payload == false`）；
+/// 2. 重试预算未耗尽，且重试策略允许空响应重试（`retry_empty_response`，
+///    由设置里的 `emptyResponse` 类别控制；`always` 打开时一并生效）。
 pub fn should_retry_empty_response(attempt: u32, options: &RetryOptions, has_payload: bool) -> bool {
-    !has_payload && attempt < options.max_retries
+    !has_payload
+        && (options.retry_empty_response || options.retry_always)
+        && attempt < options.max_retries
+}
+
+/// 关键词是否为纯数字（HTTP 状态码类关键词）。
+fn is_numeric_keyword(keyword: &str) -> bool {
+    !keyword.is_empty() && keyword.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+/// 数字关键词按「完整数字」匹配：前后不得紧邻其他数字。
+///
+/// 裸子串匹配会让随机数字里的片段造成误判——例如会话 ID
+/// `conv-1791567107342905000-22828` 含子串 `500`，会把一个永久性的
+/// 400 Bad Request 误判成可重试的 5xx 并反复重试。真实状态码在错误文本里
+/// 总是被空格、括号、换行或标点包围，因此要求数字边界不会漏掉任何真实状态码，
+/// 只会消除「大数字内部的片段」这类误报。
+fn contains_numeric_keyword(message: &str, keyword: &str) -> bool {
+    let bytes = message.as_bytes();
+    message.match_indices(keyword).any(|(index, _)| {
+        let before_ok = index == 0 || !bytes[index - 1].is_ascii_digit();
+        let end = index + keyword.len();
+        let after_ok = end >= bytes.len() || !bytes[end].is_ascii_digit();
+        before_ok && after_ok
+    })
 }
 
 pub fn is_retriable_error(error: &Error, options: &RetryOptions) -> bool {
@@ -525,10 +604,13 @@ pub fn is_retriable_error(error: &Error, options: &RetryOptions) -> bool {
         return true;
     }
 
-    options
-        .match_keywords
-        .iter()
-        .any(|keyword| message.contains(keyword.as_str()))
+    options.match_keywords.iter().any(|keyword| {
+        if is_numeric_keyword(keyword) {
+            contains_numeric_keyword(&message, keyword)
+        } else {
+            message.contains(keyword.as_str())
+        }
+    })
 }
 
 /// Check if an error should trigger a retry, given the current attempt count.
@@ -539,6 +621,17 @@ pub fn should_retry(error: &Error, attempt: u32, options: &RetryOptions) -> bool
         return false;
     }
     is_retriable_error(error, options)
+}
+
+/// 第 `attempt` 次重试前的退避时长（毫秒）。
+///
+/// 与 `wait_before_retry` 使用完全相同的公式（`base_delay_ms × 2^attempt`，
+/// 上限 30s），保证下发给前端做倒计时的时长与实际等待时间一致——两处算法
+/// 必须同源，否则倒计时会在到点后继续等待或提前归零。
+pub fn retry_backoff_ms(options: &RetryOptions, attempt: u32) -> i64 {
+    const MAX_BACKOFF_MS: u64 = 30_000;
+    let backoff = options.base_delay_ms.saturating_mul(1u64 << attempt.min(4));
+    backoff.min(MAX_BACKOFF_MS) as i64
 }
 
 /// Wait for the retry delay, respecting the cancel token.
@@ -557,9 +650,7 @@ pub async fn wait_before_retry(
     cancel_token: &CancellationToken,
     attempt: u32,
 ) -> Result<()> {
-    const MAX_BACKOFF_MS: u64 = 30_000;
-    let backoff = options.base_delay_ms.saturating_mul(1u64 << attempt.min(4));
-    let delay = Duration::from_millis(backoff.min(MAX_BACKOFF_MS));
+    let delay = Duration::from_millis(retry_backoff_ms(options, attempt).max(0) as u64);
     tokio::select! {
         biased;
         _ = cancel_token.cancelled() => {
@@ -569,6 +660,176 @@ pub async fn wait_before_retry(
             Ok(())
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// 重试留痕（单一来源）
+// ---------------------------------------------------------------------------
+//
+// 每一条 API 路径（chat / responses / anthropic / gemini / interactions /
+// vision / 文件搜索 / 模型列表）在**真正发起一次重试之前**都必须调用这里的
+// 入口写一条日志，否则「上游抖动过、重试了几次、最后一次是什么错误」事后
+// 完全无法对账：重试成功时终态是正常完成，重试耗尽时终态只有一个错误，
+// 中间过程全部丢失。
+//
+// 统一约定：
+// - message 固定为 [`RETRY_LOG_MESSAGE`]，所有路径共用同一字符串，
+//   单条件检索即可拿到全局重试流水；
+// - 差异全部收敛到 context 的 `key=value` 字段（provider / request_method /
+//   attempt / cause / backoff_ms / endpoint / error）；
+// - `error` 写入前截断（上游 5xx 常返回整页 Cloudflare HTML，7KB 级别的
+//   正文会把日志淹没），同时用 `error_chars` 保留原始长度以便判断是否截断。
+
+/// 所有路径统一的重试日志 message（单条件检索入口）。
+pub const RETRY_LOG_MESSAGE: &str = "AI request retrying";
+
+/// 重试日志中上游错误正文的最大字符数（超出部分截断并标注原始长度）。
+const RETRY_LOG_ERROR_MAX_CHARS: usize = 600;
+
+fn truncate_error_for_log(error: &str) -> String {
+    let mut truncated: String = error.chars().take(RETRY_LOG_ERROR_MAX_CHARS).collect();
+    if error.chars().count() > RETRY_LOG_ERROR_MAX_CHARS {
+        truncated.push_str("...");
+    }
+    truncated
+}
+
+fn build_retry_log_context(
+    provider: &str,
+    request_method: &str,
+    cause: &str,
+    attempt: u32,
+    endpoint: &str,
+    error: &str,
+    backoff_ms: i64,
+) -> String {
+    format!(
+        "provider={provider}, request_method={request_method}, attempt={}, cause={cause}, backoff_ms={backoff_ms}, error_chars={}, endpoint={endpoint}, error={}",
+        attempt + 1,
+        error.chars().count(),
+        truncate_error_for_log(error),
+    )
+}
+
+/// 记录一次重试（异步路径统一入口）。
+///
+/// `attempt` 为本次失败对应的尝试序号（0 表示第一次失败，即将发起第 1 次
+/// 重试），与 `wait_before_retry` 的口径一致；`cause` 是稳定的分类标识
+/// （`http_status` / `connect_error` / `empty_response` / `read_error` /
+/// `idle_timeout` / `unexpected_eof` / `connect` 等）。
+#[allow(clippy::too_many_arguments)]
+pub async fn log_retry_attempt(
+    database_path: &Path,
+    func: &str,
+    provider: &str,
+    request_method: &str,
+    cause: &str,
+    attempt: u32,
+    endpoint: &str,
+    error: &str,
+    backoff_ms: i64,
+) {
+    log_api_warning(
+        database_path,
+        func,
+        RETRY_LOG_MESSAGE,
+        &build_retry_log_context(
+            provider,
+            request_method,
+            cause,
+            attempt,
+            endpoint,
+            error,
+            backoff_ms,
+        ),
+    )
+    .await;
+}
+
+/// 解析本地日志数据库路径（best-effort）。
+///
+/// 供未携带 `database_path` 句柄的路径（视觉、文件搜索、模型列表）写重试
+/// 日志使用：存储初始化本身是阻塞操作，放到阻塞线程池执行；任何失败都返回
+/// `None` —— 日志永远不能影响主请求流程。
+pub async fn retry_log_database_path() -> Option<PathBuf> {
+    tokio::task::spawn_blocking(crate::storage::ensure_database_file)
+        .await
+        .ok()
+        .and_then(std::result::Result::ok)
+}
+
+/// [`log_retry_attempt`] 的 best-effort 变体：自行解析数据库路径，解析失败
+/// 时静默跳过。供未持有 `database_path` 句柄的路径使用。
+#[allow(clippy::too_many_arguments)]
+pub async fn log_retry_attempt_best_effort(
+    func: &str,
+    provider: &str,
+    request_method: &str,
+    cause: &str,
+    attempt: u32,
+    endpoint: &str,
+    error: &str,
+    backoff_ms: i64,
+) {
+    if let Some(database_path) = retry_log_database_path().await {
+        log_retry_attempt(
+            &database_path,
+            func,
+            provider,
+            request_method,
+            cause,
+            attempt,
+            endpoint,
+            error,
+            backoff_ms,
+        )
+        .await;
+    }
+}
+
+/// [`log_retry_attempt`] 的同步版本：供 `with_retry_sync` 这类阻塞代码路径
+/// 使用（调用方本身已在 `spawn_blocking` 中，不能再 await）。
+#[allow(clippy::too_many_arguments)]
+pub fn log_retry_attempt_sync(
+    func: &str,
+    provider: &str,
+    request_method: &str,
+    cause: &str,
+    attempt: u32,
+    endpoint: &str,
+    error: &str,
+    backoff_ms: i64,
+) {
+    if crate::api::ephemeral::is_active() {
+        return;
+    }
+    let Ok(database_path) = crate::storage::ensure_database_file() else {
+        return;
+    };
+    let _ = insert_app_log(
+        &database_path,
+        &AppLogInput {
+            level: "WARN".to_string(),
+            module: "api".to_string(),
+            func: func.to_string(),
+            line: None,
+            message: RETRY_LOG_MESSAGE.to_string(),
+            input: None,
+            output: None,
+            duration: None,
+            context: Some(build_retry_log_context(
+                provider,
+                request_method,
+                cause,
+                attempt,
+                endpoint,
+                error,
+                backoff_ms,
+            )),
+            error: None,
+            source: "main".to_string(),
+        },
+    );
 }
 
 /// Build the error used when the stream has been idle (no data received)
@@ -597,9 +858,28 @@ pub fn non_sse_response_error(body: &str) -> Error {
     ))
 }
 
+/// 同步重试路径（[`with_retry_sync`]）的留痕上下文。
+///
+/// 该结构体把「谁在重试、往哪个端点重试」收敛为显式参数：同步路径没有
+/// `database_path` 句柄，日志走 [`log_retry_attempt_sync`] 自行解析数据库
+/// 路径，因此端点与 provider 必须由调用方在构造时给出。
+pub struct RetryLogContext<'a> {
+    /// 日志 func 字段（与对应导出函数的函数名保持一致，便于按功能过滤）。
+    pub func: &'a str,
+    /// 协议标签（chat / responses / anthropic / gemini / interactions）。
+    pub provider: &'a str,
+    /// 请求方式标签（与 provider 一致，保留独立字段以对齐流式路径的格式）。
+    pub request_method: &'a str,
+    /// 完整请求 URL。
+    pub endpoint: &'a str,
+}
+
 /// Wrap a sync function with retry logic (for blocking code paths like
 /// `reqwest::blocking` and the model-list client).
-pub fn with_retry_sync<F, T>(f: F, options: &RetryOptions) -> Result<T>
+///
+/// 每次真正重试之前都通过 `log_context` 写一条重试日志，保证同步路径与
+/// 流式路径拥有同一份可观测口径（见 [`RETRY_LOG_MESSAGE`]）。
+pub fn with_retry_sync<F, T>(f: F, options: &RetryOptions, log_context: &RetryLogContext<'_>) -> Result<T>
 where
     F: Fn() -> Result<T>,
 {
@@ -617,6 +897,16 @@ where
                     return Err(error);
                 }
 
+                log_retry_attempt_sync(
+                    log_context.func,
+                    log_context.provider,
+                    log_context.request_method,
+                    "request_error",
+                    attempt,
+                    log_context.endpoint,
+                    &error.reason,
+                    retry_backoff_ms(options, attempt),
+                );
                 std::thread::sleep(Duration::from_millis(options.base_delay_ms));
                 attempt += 1;
             }

@@ -109,6 +109,15 @@ export const METADATA_DOMAIN_CATALOG: Record<
       "zh-TW": "API 設定檔（金鑰已剝離）",
     },
   },
+  apiModels: {
+    group: "ai",
+    params: ["profileName"],
+    summary: {
+      en: "Live model list fetched from one API profile's provider",
+      "zh-CN": "从服务商实时拉取的单个 API 档案模型清单",
+      "zh-TW": "從服務商即時取得的單一 API 設定檔模型清單",
+    },
+  },
   systemPrompts: {
     group: "ai",
     params: [],

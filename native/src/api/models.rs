@@ -21,7 +21,7 @@ use crate::api::oauth::provider::{
     self as oauth_provider, OAuthProfileMetadata, OAuthProviderId,
 };
 use crate::api::oauth::xai as xai_oauth;
-use crate::api::retry::{with_retry_sync, RetryOptions};
+use crate::api::retry::{with_retry_sync, RetryLogContext, RetryOptions};
 
 #[napi(object)]
 pub struct Model {
@@ -245,6 +245,12 @@ fn fetch_openai_models(
             parse_models_response(response)
         },
         &retry_options,
+        &RetryLogContext {
+            func: "fetch_available_models",
+            provider: "chat",
+            request_method: "chat",
+            endpoint: models_url,
+        },
     )?;
 
     Ok(parse_openai_compatible_models(&data))
@@ -284,6 +290,12 @@ fn fetch_gemini_models(
             parse_models_response(response)
         },
         &retry_options,
+        &RetryLogContext {
+            func: "fetch_available_models",
+            provider: "gemini",
+            request_method: "gemini",
+            endpoint: &url,
+        },
     )?;
 
     Ok(parse_gemini_models(&data))
@@ -335,6 +347,12 @@ fn fetch_anthropic_models(
             parse_models_response(response)
         },
         &retry_options,
+        &RetryLogContext {
+            func: "fetch_available_models",
+            provider: "anthropic",
+            request_method: "anthropic",
+            endpoint: &url,
+        },
     )?;
 
     let anthropic_models = parse_anthropic_models(&data);

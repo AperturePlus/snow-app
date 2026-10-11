@@ -16,13 +16,12 @@ use crate::api::common::{
 use crate::api::common::StreamSink;
 use crate::api::responses::ResponsesApiStreamChunk;
 use crate::api::retry::{
-    attempt_has_payload, decide_stream_recovery, should_retry, should_retry_empty_response,
-    stream_idle_timeout_error, visible_content_char_count, wait_before_retry,
+    attempt_has_payload, decide_stream_recovery, should_retry, should_retry_empty_response, retry_backoff_ms,
+    log_retry_attempt, stream_idle_timeout_error, visible_content_char_count, wait_before_retry,
     RetryOptions, StreamAttemptProgress, StreamEndCause, StreamInterruptionReason,
     StreamRecoveryDecision, StreamRecoveryOutcome, EMPTY_RESPONSE_RETRY_ERROR,
 };
 use crate::api::sse::{read_sse_stream_until_terminal, SseStreamEnd};
-use crate::storage::services::app_logs::log_api_warning;
 use crate::storage::services::chat_conversations::ChatTokenUsage;
 
 pub(super) struct InteractionsStreamResult {
@@ -78,25 +77,24 @@ pub(super) async fn collect_interactions_stream(
                     elapsed_ms: stream_start.elapsed().as_millis() as i64,
                     ttft_ms,
                     vision_status: None,
+                    retry_backoff_ms: Some(retry_backoff_ms(retry_options, attempt)),
                 },
                 ThreadsafeFunctionCallMode::NonBlocking,
             );
 
-            // 空响应重试此前完全不落库（该 provider 连传输重试都不写日志），
-            // 事后无法对账「是否重试过、重试了几次」。这里补一条 WARN。
-            {
-                let db_path = database_path.clone();
-                log_api_warning(
-                    &db_path,
-                    "create_interactions_response_stream",
-                    "AI response stream retrying",
-                    &format!(
-                        "provider=interactions, request_method=interactions, attempt={}, cause=empty_response, endpoint={endpoint}, error={EMPTY_RESPONSE_RETRY_ERROR}",
-                        attempt + 1
-                    ),
-                )
-                .await;
-            }
+            // 空响应重试同样留痕：事后可对账「是否重试过、重试了几次」。
+            log_retry_attempt(
+                &database_path,
+                "create_interactions_response_stream",
+                "interactions",
+                "interactions",
+                "empty_response",
+                attempt,
+                endpoint,
+                EMPTY_RESPONSE_RETRY_ERROR,
+                retry_backoff_ms(retry_options, attempt),
+            )
+            .await;
 
             wait_before_retry(retry_options, cancel_token, attempt).await?;
             attempt += 1;
@@ -209,9 +207,25 @@ pub(super) async fn collect_interactions_stream(
                                 elapsed_ms: stream_start.elapsed().as_millis() as i64,
                                 ttft_ms,
                                 vision_status: None,
+                                retry_backoff_ms: Some(retry_backoff_ms(retry_options, attempt)),
                             },
                             ThreadsafeFunctionCallMode::NonBlocking,
                         );
+
+                        // 记录重试到本地日志：即使后续重试成功也留痕，便于
+                        // 事后对账「上游抖动过几次、最后一次错误是什么」。
+                        log_retry_attempt(
+                            &database_path,
+                            "create_interactions_response_stream",
+                            "interactions",
+                            "interactions",
+                            "http_status",
+                            attempt,
+                            endpoint,
+                            &error.reason,
+                            retry_backoff_ms(retry_options, attempt),
+                        )
+                        .await;
 
                         match wait_before_retry(retry_options, cancel_token, attempt).await {
                             Ok(()) => {
@@ -243,9 +257,24 @@ pub(super) async fn collect_interactions_stream(
                             elapsed_ms: stream_start.elapsed().as_millis() as i64,
                             ttft_ms,
                             vision_status: None,
+                            retry_backoff_ms: Some(retry_backoff_ms(retry_options, attempt)),
                         },
                         ThreadsafeFunctionCallMode::NonBlocking,
                     );
+
+                    // 连接层失败（DNS / TCP / TLS / 超时）同样必须留痕。
+                    log_retry_attempt(
+                        &database_path,
+                        "create_interactions_response_stream",
+                        "interactions",
+                        "interactions",
+                        "connect_error",
+                        attempt,
+                        endpoint,
+                        &error.reason,
+                        retry_backoff_ms(retry_options, attempt),
+                    )
+                    .await;
 
                     match wait_before_retry(retry_options, cancel_token, attempt).await {
                         Ok(()) => {
@@ -403,16 +432,32 @@ pub(super) async fn collect_interactions_stream(
                             thinking: String::new(),
                         retrying: true,
                         retry_attempt: Some((attempt + 1) as i32),
-                        retry_error: Some(retry_error),
+                        retry_error: Some(retry_error.clone()),
                         stream_token_count: stream_token_count as i64,
                         thinking_token_count: thinking_tracker.token_count as i64,
                         thinking_duration_ms: thinking_tracker.duration_ms(),
                         elapsed_ms: stream_start.elapsed().as_millis() as i64,
                             ttft_ms,
                             vision_status: None,
+                            retry_backoff_ms: Some(retry_backoff_ms(retry_options, attempt)),
                         },
                         ThreadsafeFunctionCallMode::NonBlocking,
                     );
+
+                    // 流中断恢复重试同样留痕：重试成功时终态是正常完成，中断原因
+                    // 不会进入结果，只有这条日志能证明「中途断过一次」。
+                    log_retry_attempt(
+                        &database_path,
+                        "create_interactions_response_stream",
+                        "interactions",
+                        "interactions",
+                        cause.interruption_reason().as_code(),
+                        attempt,
+                        endpoint,
+                        &retry_error,
+                        retry_backoff_ms(retry_options, attempt),
+                    )
+                    .await;
 
                     match wait_before_retry(retry_options, cancel_token, attempt).await {
                         Ok(()) => {

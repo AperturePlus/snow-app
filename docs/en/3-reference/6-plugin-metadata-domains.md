@@ -52,9 +52,9 @@ const list = api.metadata.domains(); // [{ id, scope, granted, live, sensitiveFi
 | `withheld`    | object   | Domain id to the list of stripped field paths (for example `["0.apiKey", "api.apiKey"]`)   |
 | `unknown`     | string[] | Domain ids that do not exist                                                               |
 
-`get(domain)` accepts a single domain id or an array; an empty array requests all 34 domains (undeclared sensitive domains are still denied).
+`get(domain)` accepts a single domain id or an array; an empty array requests all 35 domains (undeclared sensitive domains are still denied).
 
-The app ships the same catalog for users: **Plugins** at the bottom of the sidebar, then **Metadata catalog** in the toolbar, opens the "App metadata available to plugins" modal. It groups all 34 domains with a one-line summary, the privacy requirement, live-versus-polled behavior and accepted parameters, and offers keyword search; the per-plugin "Metadata n/34" link marks that plugin's declared (readable) and undeclared (denied) domains. The modal offers "Reading" and "Writable" tabs; the Writable tab uses the same catalog source (204 write actions with their required `scope` and declaration state), and the "Write n/204" badge on a plugin row counts the write actions that plugin has declared; the amber privacy-scope badges on plugin and script rows open the "Privacy scopes" dialog, which lists each declared scope with its purpose and the readable / writable surface it unlocks - see [24-Plugin development and installation](../2-guides/24-plugin-development-and-installation.md).
+The app ships the same catalog for users: **Plugins** at the bottom of the sidebar, then **Metadata catalog** in the toolbar, opens the "App metadata available to plugins" modal. It groups all 35 domains with a one-line summary, the privacy requirement, live-versus-polled behavior and accepted parameters, and offers keyword search; the per-plugin "Metadata n/35" link marks that plugin's declared (readable) and undeclared (denied) domains. The modal offers "Reading" and "Writable" tabs; the Writable tab uses the same catalog source (204 write actions with their required `scope` and declaration state), and the "Write n/204" badge on a plugin row counts the write actions that plugin has declared; the amber privacy-scope badges on plugin and script rows open the "Privacy scopes" dialog, which lists each declared scope with its purpose and the readable / writable surface it unlocks - see [24-Plugin development and installation](../2-guides/24-plugin-development-and-installation.md).
 
 ### 1.2 Parameters (`params`)
 
@@ -77,7 +77,7 @@ When a parameter is missing, mistyped, or the underlying data is unavailable, th
 | Kind                | Push behavior                                                                         | Domains                                                                        |
 | ------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | Live (`live: true`) | Re-collected and pushed after a 200 ms debounce whenever the runtime snapshot changes | `projects`, `git`, `conversations`, `messages`, `runtime`, `panels`, `plugins` |
-| Non-live            | Pushed once on subscribe; pass `intervalMs` (minimum 1000 ms) to poll                 | The other 27 domains                                                           |
+| Non-live            | Pushed once on subscribe; pass `intervalMs` (minimum 1000 ms) to poll                 | The other 28 domains                                                           |
 
 The `live` flag from `api.metadata.domains()` lets a panel distinguish "realtime once subscribed" from "poll to refresh" domains.
 
@@ -100,6 +100,7 @@ The `live` flag from `api.metadata.domains()` lets a panel distinguish "realtime
 | Git status, branches, repo identity                      | `git`                                               | `status`, `branches[]`, `identity`                          |
 | Codebase index progress and file list                    | `codebase`                                          | `indexStats`, `indexedFiles`, `resumableSessions[]`         |
 | API profile and model pickers                            | `apiProfiles`                                       | Profile array (`profileName`, `advancedModel`, ...)         |
+| Live channel model picker                                | `apiModels`                                         | `models[]` (for the profile in `profileName`)               |
 | Matching the app theme                                   | `theme`                                             | `mode`, `custom`, `fontFamily`                              |
 | Reading app switches (lite, auto-format, shortcuts, ...) | `settings`                                          | See 4.1.3                                                   |
 | MCP servers and tools                                    | `mcp`                                               | `servers[]`, `projectServersWithTools[]`                    |
@@ -130,6 +131,7 @@ The `live` flag from `api.metadata.domains()` lets a panel distinguish "realtime
 | `pets`            | —                   | No   | —                                                      | Installed pets and pet window settings                            |
 | `plugins`         | `plugins`           | Yes  | —                                                      | Installed plugin inventory                                        |
 | `apiProfiles`     | Field-level         | No   | —                                                      | API profiles (keys stripped)                                      |
+| `apiModels`       | —                   | No   | `profileName`                                          | Live provider model list (ids only)                               |
 | `systemPrompts`   | `systemPrompts`     | No   | —                                                      | System prompt entries                                             |
 | `customHeaders`   | `customHeaders`     | No   | —                                                      | Custom request-header schemes                                     |
 | `personalization` | `personalization`   | No   | —                                                      | The global ROLE rules file                                        |
@@ -282,19 +284,35 @@ Field-level sensitive: `apiKey`, `visionApiKey` to `apiKeys` · Not live · No p
 
 Returns the API profile array. Key fields: `profileName`, `displayName`, `isActive`, `baseUrl`, `baseUrlMode`, `requestMethod`, `advancedModel`, `basicModel`, `supportsVision`, `visionModel`, `maxContextTokens`, `maxTokens`, `enableAutoCompress`, `autoCompressThreshold`, `systemPromptIdsJson`, `customHeaderSchemeId`, `sortOrder`, `source`, `updatedAt`.
 
-#### 4.2.2 `systemPrompts`
+#### 4.2.2 `apiModels`
+
+No declaration · Not live · Parameters: `profileName`
+
+| Field         | Type             | Description                                                                           |
+| ------------- | ---------------- | ------------------------------------------------------------------------------------- |
+| `profileName` | string           | The profile actually used                                                             |
+| `models`      | string[] \| null | Model ids fetched live from the provider (sorted by id); `null` when the fetch failed |
+
+The host requests the provider with the profile's stored base URL, request method, custom headers and credentials, through the same chain as the input-toolbar model picker (`api-models:fetch-for-config` → native `fetch_available_models_for_config`), and returns **model ids only, never a key**; it covers OpenAI-compatible `/v1/models`, Gemini, Anthropic and OAuth subscription channels.
+
+- A network request is made only when `profileName` is passed explicitly; a missing parameter, an unknown profile or an unavailable domain returns `null` instead of silently falling back to another or the active profile.
+- This is an **outbound request**: every read may reach the provider network (15-second timeout). Panel-style consumers should fetch once when opening or on an explicit user refresh, never inside high-frequency polling or live subscriptions.
+- `models: null` means this fetch failed (network, credentials, timeout) and must not be read as "the channel has no models"; consumers fall back to the profile's `basicModel`/`advancedModel` and tell the user.
+- Provider model lists change over time and domain fields may be added; read `models` as needed and stay tolerant of unknown fields.
+
+#### 4.2.3 `systemPrompts`
 
 **Whole-domain sensitive: `systemPrompts`** · Not live · No parameters
 
 Returns system prompt entries: `{ promptId, name, content, isActive, sortOrder, scope, projectId, updatedAt }` where `scope` is `global` or `project`.
 
-#### 4.2.3 `customHeaders`
+#### 4.2.4 `customHeaders`
 
 **Whole-domain sensitive: `customHeaders`** · Not live · No parameters
 
 Returns header schemes: `{ schemeId, name, headersJson, isActive, sortOrder, updatedAt }`.
 
-#### 4.2.4 `personalization`
+#### 4.2.5 `personalization`
 
 **Whole-domain sensitive: `personalization`** · Not live · No parameters
 
@@ -303,7 +321,7 @@ Returns header schemes: `{ schemeId, name, headersJson, isActive, sortOrder, upd
 | `filePath` | string | Absolute path of the global ROLE file (`~/.snow/ROLE.md`) |
 | `content`  | string | File content (empty string when the file does not exist)  |
 
-#### 4.2.5 `mcp`
+#### 4.2.6 `mcp`
 
 Field-level sensitive: `env`, `headers`, `url` to `mcpSecrets` · Not live · Parameters: `projectId`
 
@@ -314,13 +332,13 @@ Field-level sensitive: `env`, `headers`, `url` to `mcpSecrets` · Not live · Pa
 | `tools`                   | object[] \| null | Global tools: `{ name, description, inputSchemaJson, enabled }`                                                                                     |
 | `projectServersWithTools` | object[] \| null | Project servers with tool state: `{ id, name, source, globalEnabled, enabled, tools[], toolsPending, error }`                                       |
 
-#### 4.2.6 `subAgents`
+#### 4.2.7 `subAgents`
 
 Field-level sensitive: `systemPrompt`, `toolsJson` to `subAgents` · Not live · Parameters: `projectId`
 
 Returns sub-agent entries: `{ agentId, name, description, systemPrompt, toolsJson, configProfile, model, builtin, sortOrder, source, projectId, updatedAt }`.
 
-#### 4.2.7 `hooks`
+#### 4.2.8 `hooks`
 
 No declaration · Not live · Parameters: `projectId`
 
@@ -329,7 +347,7 @@ No declaration · Not live · Parameters: `projectId`
 | `global`  | object[] \| null | Global hooks: `{ hookType, scope, projectId, rulesJson, updatedAt }`; `hookType` is one of `onUserMessage`, `beforeToolCall`, `toolConfirmation`, `afterToolCall`, `onSubAgentComplete`, `beforeCompress`, `onSessionStart`, `onStop`, `beforeSubAgentStart` |
 | `project` | object[] \| null | Project-level hooks (`null` without a project)                                                                                                                                                                                                               |
 
-#### 4.2.8 `skills`
+#### 4.2.9 `skills`
 
 No declaration · Not live · Parameters: `projectId`
 
@@ -338,7 +356,7 @@ No declaration · Not live · Parameters: `projectId`
 | `available` | object[] \| null | Available skills: `{ id, name, description, location, source, path, allowedTools, enabled }` |
 | `project`   | object[] \| null | Project skills (additionally carry `defaultEnabled`)                                         |
 
-#### 4.2.9 `lsp`
+#### 4.2.10 `lsp`
 
 No declaration · Not live · Parameters: `projectId`
 
@@ -417,6 +435,8 @@ Check `runtime.conversation.fileChangeTrackingVersion === 1` before consuming en
 - v1 evidence comes from a tool result's `fileTracking: { version: 1, source, root, coverage, reasons, files: [{ filePath, fileKey, kind }] }`. `filePath` is the backend's actual absolute normalized response path. `fileKey` is the backend-provided identity key: do not regenerate it, case-fold it, or infer identity from a basename. Legacy filesystem history may fall back to original arguments without `fileKey/source/root`; this is not canonical evidence.
 - Deduplicate file lists by `fileKey ?? filePath`, displaying the last record with the highest timestamp. Raw arrays retain individual records. The last record's `source` describes that record only, **not the file's exclusive source**. For source counts, group the raw records by source and deduplicate identities within each group. Groups may overlap; summing their counts is not a total unique-file count.
 - `scoped` means precise attribution within an explicit filesystem tool's write scope, not a comprehensive project scan. Terminal collection observes before/after content changes with at least `partial` coverage. Out-of-scope files and concurrent writers cannot be guaranteed: this is not an operating-system audit or exhaustive write attribution. `root` is the actual collection root, or `null` when unknown; never fill it from the currently selected workspace.
+- In the current companion source, a successful filesystem write overlapping a repository-level terminal window retains operation-target evidence when the physical target identity remains reliable. Coverage is `partial` with `concurrent-execution` / `operation-evidence-only`, rather than unconditionally empty records. A concurrent record's `kind: 'edit'` proves successful writing, not that the file previously existed. Changed path identity, unverifiable state or failed tools never fabricate records; copy excludes an unmodified source, while cut includes the actually rewritten source and target. This evidence is not a net disk diff.
+- A terminal window overlapping other operations remains marked as contaminated and ends with empty `unavailable` / `concurrent-execution` evidence, rather than attributing another session's or filesystem tool's writes to itself. A shared repository is not a shared task. Coordination does not block long commands and retains independent worktrees' physical-root isolation. This is not an OS audit: attribution cannot be guaranteed for outside processes or detached children writing after their tool returns. A companion native build is required; real concurrent UI acceptance is still pending.
 - A non-zero terminal exit can still return actual `files`; retain both files and coverage. Detached/SSH execution may return `unavailable`. Even with no files, display `partial/unavailable` and the actual `reasons`; do not interpret them as “no files changed.” The file panel displays coverage separately.
 - Main sessions, sub-agents and their parents record both files and coverage. After restart, full-history restoration uses actual tool results, including valid v1 evidence from failed toolcalls; an assistant interruption/error by itself never proves a write. Legacy terminal history and missing, truncated or invalid envelopes produce `unavailable` (`missing_file_tracking` / `invalid_file_tracking`) without invented files. Successful legacy filesystem records likewise report missing-envelope coverage. Hook suffixes are excluded from JSON parsing; truncated JSON is never repaired into evidence. When a thrown backend result is preserved by catch as an outer `result.error` string, only one complete JSON layer is parsed and its v1 envelope and tool source are validated. Terminal evidence may restore actual files; filesystem errors accept only valid empty-file coverage, never inferred success. Original error messages and authorization handling remain unchanged.
 - `diff` retains filesystem content-diff behavior, matching copy source/target by actual response paths. Terminal evidence has no such tool-content diff. File records, tracking coverage and rollback checkpoints are different data; none proves the others complete.
@@ -668,9 +688,9 @@ api.metadata.subscribe("git", ({ domains }) => {
 
 ## Source anchors
 
-- `src/renderer/plugins/metadata/domains.ts::METADATA_DOMAINS`: definitions, parameter resolution, and collectors for all 34 domains
+- `src/renderer/plugins/metadata/domains.ts::METADATA_DOMAINS`: definitions, parameter resolution, and collectors for all 35 domains
 - `src/renderer/plugins/metadata/index.ts::collectMetadata`, `::subscribeMetadata`, `::describeMetadataDomains`: privacy checks, field redaction, subscribe/poll plumbing
-- `src/renderer/plugins/metadata/catalog.ts::METADATA_DOMAIN_CATALOG`: grouping, accepted parameters and quick-reference summaries for the 34 domains (data source of the in-app catalog)
+- `src/renderer/plugins/metadata/catalog.ts::METADATA_DOMAIN_CATALOG`: grouping, accepted parameters and quick-reference summaries for the 35 domains (data source of the in-app catalog)
 - `src/renderer/plugins/writes/index.ts::executeWrite`, `::describeWriteDomains`: privacy-declaration checks for write actions and the action list returned by `api.write.domains()` (data source of the write badge and modal section)
 - `src/renderer/plugins/writes/domains/`: 204 write action definitions in `content.ts`, `system.ts`, `draft.ts`, `config.ts`, and `admin.ts`
 - `src/renderer/components/sidebar/PluginMetadataCatalog.tsx`: the user-facing "App metadata available to plugins" modal (including the writable-capabilities section)

@@ -1957,6 +1957,73 @@ export const en = {
   "settings.imagegenCap.capLegacy": "Legacy",
   "settings.imagegenCap.capDeprecated": "Deprecated (shuts down 2026-08-17)",
   "settings.imagegenCap.capTextToImageOnly": "Text-to-image only",
+  "settings.imagegenMultiModelsGroup":
+    "Image models configuration (multi-model channel)",
+  "settings.imagegenMultiModelsHint":
+    "A channel connection can include multiple image models. Each model independently configures size, quality, thinking effort, and custom prompt.",
+  "settings.imagegenAddModel": "Add model",
+  "settings.imagegenAddFromTemplate": "Add from preset template...",
+  "settings.imagegenAddCustomModel": "Add blank custom model",
+  "settings.imagegenSetAsPrimary": "Set as default primary model",
+  "settings.imagegenPrimaryBadge": "Default primary model",
+  "settings.imagegenPrimaryHint":
+    "Default model used when AI does not specify a specific image model",
+  "settings.imagegenModelDuplicate":
+    "Model {model} is already configured in this channel — switched to it instead.",
+  "settings.imagegenModelDuplicateEdit":
+    "Model {model} already exists in this channel. Each model ID can only be configured once — edit the existing one instead.",
+  "settings.imagegenModelAlias": "Model display alias",
+  "settings.imagegenModelAliasPlaceholder": "e.g. Ultra / Fast (optional)",
+  "settings.imagegenModelAliasHint":
+    "Custom label shown on tabs for easier identification (shows model ID if empty)",
+  "settings.imagegenDeleteModel": "Delete model",
+  "settings.imagegenDeleteModelConfirm":
+    "Are you sure you want to remove this model config from the channel?",
+  "settings.imagegenMoreModels": "+{count} models",
+  "settings.imagegenModelEnabled": "Enable this model",
+  "settings.imagegenModelDisabled": "Disabled",
+  "settings.imagegenActiveModelConfig": "Configuring model:",
+  "settings.imagegenTemplate": "Preset template",
+  "settings.imagegenApplyTemplate": "Apply template",
+  "settings.imagegenTemplateReplaceConfirm":
+    "Applying this template will REPLACE all models currently configured in this channel. Continue?",
+  "settings.imagegenTemplateSelect":
+    "Select a template to auto-fill settings...",
+  "settings.imagegenDefaultThinking": "Default thinking strength",
+  "settings.imagegenDefaultThinkingHint":
+    "Written to generation_config.thinking_level; supported levels differ per model (no such parameter on OpenAI image endpoints)",
+  "settings.imagegenThinkingAuto": "Auto",
+  "settings.imagegenThinkingMinimal": "Minimal",
+  "settings.imagegenThinkingLow": "Low",
+  "settings.imagegenThinkingMedium": "Medium",
+  "settings.imagegenThinkingHigh": "High",
+  "settings.imagegenCapabilitiesGroup": "Model capabilities & prompt template",
+  "settings.imagegenFillCapability": "Fill from model ID",
+  "settings.imagegenFillCapabilityHint":
+    "Overwrite this model's default size / quality / thinking strength and supported ranges with the built-in capability profile",
+  "settings.imagegenCapabilityFillUnavailable":
+    "The built-in capability library has no entry for model {model} — fill the capability fields manually.",
+  "settings.imagegenFillCapabilityDone":
+    "Filled this model's capability fields from the built-in library.",
+  "settings.imagegenFillCapabilityOpenSpace":
+    "Filled from the built-in library. This model has an open size space, so aspect ratios / resolutions stay empty (= no check, any valid value passes).",
+  "settings.imagegenAutoGeneratePrompt": "Auto-generate prompt",
+  "settings.imagegenSupportedRatios": "Supported aspect ratios",
+  "settings.imagegenSupportedRatiosHint":
+    "Aspect ratios available for this model (comma-separated, e.g. 1:1, 16:9, 9:16)",
+  "settings.imagegenSupportedResolutions": "Supported resolutions / tiers",
+  "settings.imagegenSupportedResolutionsHint":
+    "Resolution tiers or dimensions supported by this model (e.g. 1K, 2K, 4K or 1024x1024)",
+  "settings.imagegenCapabilityEmptyHint":
+    "Empty = no restriction: the backend skips the check and lets any valid value through.",
+  "settings.imagegenSupportedThinking": "Supported thinking strength",
+  "settings.imagegenSupportedThinkingHint":
+    "thinking_level values supported by this model (e.g. minimal, medium, high)",
+  "settings.imagegenCustomPrompt": "Channel prompt instructions",
+  "settings.imagegenCustomPromptPlaceholder":
+    "Custom instructions and capability notes injected into imagegen-generate tool description...",
+  "settings.imagegenCustomPromptHint":
+    "Directly injected into AI tool description to guide model on parameters and features.",
   "settings.imagegenDefaults": "Default parameters",
   "settings.imagegenDefaultSize": "Default size",
   "settings.imagegenDefaultSizeHint":
@@ -1967,7 +2034,11 @@ export const en = {
   "settings.imagegenFormatDefault": "Default (png)",
   "settings.imagegenWebSearch": "Google Search grounding",
   "settings.imagegenWebSearchHint":
-    "Gemini only: saved per channel; when a generation request does not override it, the backend injects the Google Search tool.",
+    "Gemini native protocol only: saved per channel; when a generation request does not override it, the backend injects the Google Search tool.",
+  "settings.imagegenWebSearchProtocolOnly":
+    "Only available on the Gemini native protocol (google_search grounding). OpenAI-compatible endpoints do not support web search — switch this channel's provider to Google Gemini to enable it.",
+  "settings.imagegenWebSearchModelUnsupported":
+    "The current model ({model}) is not a Gemini image model, so grounding has no effect. Pick a Gemini / Nano Banana model to enable it.",
   "settings.imagegenStreaming": "Streaming preview",
   "settings.imagegenStreamingHint":
     "Streaming: show intermediate preview images while generating; Non-streaming: show images once generation finishes (OpenAI gpt-image / Gemini Imagen)",
@@ -2016,7 +2087,7 @@ export const en = {
     "This model also accepts any WxH (divisible by 16, aspect 1:3–3:1, up to 3840x2160; above 2560x1440 is experimental).",
   "settings.imagegenModelPreviewBadge": "Preview",
   "settings.imagegenSizeLimitsHint":
-    "Rules: max side ≤3840px AND total pixels 655,360–8,294,400 (multiples of 16, aspect ≤3:1). Largest square is 2880x2880; 16:9 tops at 3840x2160; the 4K tier is the recommended size closest to the pixel cap for each ratio.",
+    "Rules: side ≤3840px, total pixels 655,360–8,294,400, multiples of 16, aspect 1:3–3:1.",
   "settings.imagegenMaxConcurrent": "Max concurrent generations",
   "settings.imagegenMaxConcurrentHint":
     "When the agent requests several images at once, at most this many are generated in parallel (1-8); the rest wait in the queue, and a new one starts as soon as one finishes. Lower it if your provider rate-limits image requests.",
@@ -2525,6 +2596,8 @@ export const en = {
   "settings.retryCategoryStream": "Stream errors",
   "settings.retryCategoryIdleTimeout": "Stream idle timeout",
   "settings.retryCategoryNonSse": "Non-SSE response",
+  "settings.retryCategoryEmptyResponse":
+    "Empty response (no content or tool calls)",
   "settings.retrySaveSuccess": "Retry settings saved.",
   "settings.retryLoadError": "Failed to load retry settings",
   "settings.retrySaveError": "Failed to save retry settings",
@@ -4348,6 +4421,8 @@ export const en = {
   "chat.streamMetrics.tpsTitle": "Output speed (tokens per second)",
   "chat.retrying": "Retrying",
   "chat.retryExhausted": "Retries exhausted",
+  "chat.retryCountdown": "in {{seconds}}s",
+  "chat.retryCountdownHint": "Waiting before the next attempt",
   "chat.retryDetailsShow": "Error details",
   "chat.retryDetailsHide": "Hide details",
   "chat.retryCopyDetails": "Copy error details",
@@ -4823,6 +4898,24 @@ export const en = {
   "rightPanel.aiDrawing.promptPlaceholder":
     "Describe the image you want to generate, Chinese supported; e.g. cyberpunk rainy city at night, neon reflections…",
   "rightPanel.aiDrawing.promptHint": "Ctrl + Enter to generate",
+  "rightPanel.aiDrawing.optimizePrompt": "Optimize prompt",
+  "rightPanel.aiDrawing.optimizeHint":
+    "Rewrite the current prompt with AI, enriching visual details (subject, style, composition, lighting, camera). It never generates an image.",
+  "rightPanel.aiDrawing.optimizing": "Optimizing",
+  "rightPanel.aiDrawing.optimizeCancelHint":
+    "Click to cancel this optimization",
+  "rightPanel.aiDrawing.optimizeDone":
+    "Prompt optimized — generate now or keep editing",
+  "rightPanel.aiDrawing.optimizeFailed":
+    "Optimization failed. Check the API configuration and retry.",
+  "rightPanel.aiDrawing.optimizeCancelled": "Optimization cancelled",
+  "rightPanel.aiDrawing.optimizeUnavailable":
+    "Prompt optimization is not available in this version. Please update Snow App.",
+  "rightPanel.aiDrawing.optimizeUndo": "Restore",
+  "rightPanel.aiDrawing.optimizeUndoHint":
+    "Restore the prompt from before optimizing",
+  "rightPanel.aiDrawing.optimizeRestored":
+    "Restored the pre-optimization prompt",
   "rightPanel.aiDrawing.generate": "Generate",
   "rightPanel.aiDrawing.channelAuto": "Auto (default channel)",
   "rightPanel.aiDrawing.model": "Model",
@@ -5155,6 +5248,20 @@ export const en = {
   "git.graphTooltipStats": "Changes",
   "git.graphTooltipRefs": "Refs",
   "git.graphTooltipParents": "Parents",
+  "git.tooltipFilesChanged": "{{count}} files changed",
+  "git.tooltipFilesChangedOne": "1 file changed",
+  "git.tooltipChangedFiles":
+    "{{count}} files changed, {{insertions}} insertions(+), {{deletions}} deletions(-)",
+  "git.tooltipChangedFilesOne":
+    "1 file changed, {{insertions}} insertions(+), {{deletions}} deletions(-)",
+  "git.tooltipOpenOnGitHub": "Open on GitHub",
+  "git.tooltipOpenOnGitLab": "Open on GitLab",
+  "git.tooltipOpenOnRemote": "Open in remote repository",
+  "git.saveToMemo": "Save to Memo",
+  "git.memoSaved": "Saved to memo",
+  "git.memoSaveFailed": "Failed to save memo",
+  "git.memoMessage": "Commit message",
+  "git.memoFiles": "Files: {{count}}",
   "git.graphCurrentBranch": "Current branch",
   "git.graphDetachedHead": "Detached HEAD",
   "git.graphLocalBranch": "Local branch",
@@ -5711,7 +5818,7 @@ export const en = {
   "remoteControl.passphrase": "Key passphrase (leave empty if none)",
   "remoteControl.step4Title": "Verify first, then deploy automatically",
   "remoteControl.step4Text":
-    "Click “Check DNS” first. When both lines show ✓, click “Deploy and connect automatically”; Snow then handles FRP, Caddy, token, CA, certificates, and configuration import.",
+    "Click “Check DNS” first. Once both lines pass, click “Deploy and connect automatically”; Snow then handles FRP, Caddy, token, CA, certificates, and configuration import.",
   "remoteControl.checkDns": "Check DNS",
   "remoteControl.deployConnect": "Deploy and connect",
   "remoteControl.cancelDeploy": "Cancel deployment",

@@ -6,8 +6,8 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use crate::api::retry::{
-    next_stream_item_with_idle, non_sse_response_error, should_retry, RetryOptions,
-    StreamReadOutcome,
+    log_retry_attempt_best_effort, next_stream_item_with_idle, non_sse_response_error, retry_backoff_ms,
+    should_retry, RetryOptions, StreamReadOutcome,
 };
 
 /// Find the earliest SSE event separator in a byte buffer.
@@ -114,12 +114,15 @@ where
 /// 200 + JSON 错误体响应流式请求）。
 /// 调用方负责取消：本函数不自带取消令牌，上游用 `tokio::select!` 竞争
 /// 取消令牌并丢弃本 future 即可中止在途请求。
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn send_streaming_sse_request(
     client: &reqwest::Client,
     endpoint: &str,
     headers: reqwest::header::HeaderMap,
     payload: &Value,
     retry_options: &RetryOptions,
+    func: &str,
+    provider: &str,
     mut on_event: impl FnMut(Value) -> Result<()>,
 ) -> Result<()> {
     let mut attempt: u32 = 0;
@@ -137,6 +140,17 @@ pub(crate) async fn send_streaming_sse_request(
                 if !should_retry(&error, attempt, retry_options) {
                     return Err(error);
                 }
+                log_retry_attempt_best_effort(
+                    func,
+                    provider,
+                    provider,
+                    "connect_error",
+                    attempt,
+                    endpoint,
+                    &error.reason,
+                    retry_backoff_ms(retry_options, attempt),
+                )
+                .await;
                 attempt += 1;
                 tokio::time::sleep(std::time::Duration::from_millis(
                     retry_options.base_delay_ms,
@@ -154,6 +168,17 @@ pub(crate) async fn send_streaming_sse_request(
             if !should_retry(&error, attempt, retry_options) {
                 return Err(error);
             }
+            log_retry_attempt_best_effort(
+                func,
+                provider,
+                provider,
+                "http_status",
+                attempt,
+                endpoint,
+                &error.reason,
+                retry_backoff_ms(retry_options, attempt),
+            )
+            .await;
             attempt += 1;
             tokio::time::sleep(std::time::Duration::from_millis(
                 retry_options.base_delay_ms,

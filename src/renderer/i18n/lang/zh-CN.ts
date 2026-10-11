@@ -1868,6 +1868,69 @@ export const zhCN = {
   "settings.imagegenCap.capLegacy": "旧版",
   "settings.imagegenCap.capDeprecated": "已弃用（2026-08-17 关停）",
   "settings.imagegenCap.capTextToImageOnly": "仅文生图",
+  "settings.imagegenMultiModelsGroup": "绘图模型配置",
+  "settings.imagegenMultiModelsHint":
+    "一个渠道连接可配置多个绘图模型，每个模型独立配置其默认尺寸、质量、思考强度与专属提示词。",
+  "settings.imagegenAddModel": "添加模型",
+  "settings.imagegenAddFromTemplate": "从预设模板添加...",
+  "settings.imagegenAddCustomModel": "添加空白自定义模型",
+  "settings.imagegenSetAsPrimary": "设为默认主模型",
+  "settings.imagegenPrimaryBadge": "默认主模型",
+  "settings.imagegenPrimaryHint": "AI 未指定具体模型出图时，默认优先调用此模型",
+  "settings.imagegenModelDuplicate":
+    "模型 {model} 已在当前渠道配置过，已为你切换到该模型。",
+  "settings.imagegenModelDuplicateEdit":
+    "模型 {model} 已存在于当前渠道。同一模型 ID 只能配置一次，请直接编辑已有模型。",
+  "settings.imagegenModelAlias": "模型显示别名",
+  "settings.imagegenModelAliasPlaceholder": "如：超清旗舰版 / 快速生图（选填）",
+  "settings.imagegenModelAliasHint":
+    "在界面标签中更易识别的自定义名称（留空则显示模型 ID）",
+  "settings.imagegenDeleteModel": "删除模型",
+  "settings.imagegenDeleteModelConfirm": "确定要从当前渠道删除该模型配置吗？",
+  "settings.imagegenMoreModels": "+{count} 个模型",
+  "settings.imagegenModelEnabled": "启用此模型",
+  "settings.imagegenModelDisabled": "已停用",
+  "settings.imagegenActiveModelConfig": "当前配置模型：",
+  "settings.imagegenTemplate": "预设配置模板",
+  "settings.imagegenApplyTemplate": "应用模板",
+  "settings.imagegenTemplateReplaceConfirm":
+    "应用该模板会整体替换本渠道当前已配置的全部模型，是否继续？",
+  "settings.imagegenTemplateSelect": "选择模板快速填入配置...",
+  "settings.imagegenDefaultThinking": "默认思考强度",
+  "settings.imagegenDefaultThinkingHint":
+    "写入 generation_config.thinking_level；各模型支持档位不同（OpenAI 图像接口无此参数）",
+  "settings.imagegenThinkingAuto": "自动",
+  "settings.imagegenThinkingMinimal": "minimal",
+  "settings.imagegenThinkingLow": "low",
+  "settings.imagegenThinkingMedium": "medium",
+  "settings.imagegenThinkingHigh": "high",
+  "settings.imagegenCapabilitiesGroup": "模型能力与提示词动态配置",
+  "settings.imagegenFillCapability": "按模型 ID 填充能力",
+  "settings.imagegenFillCapabilityHint":
+    "用内置能力库覆盖当前模型的默认尺寸 / 质量 / 思考强度与支持范围",
+  "settings.imagegenCapabilityFillUnavailable":
+    "内置能力库未收录模型 {model}，请手动填写能力参数。",
+  "settings.imagegenFillCapabilityDone":
+    "已按内置能力库填充当前模型的能力字段。",
+  "settings.imagegenFillCapabilityOpenSpace":
+    "已按内置能力库填充。该模型尺寸空间开放，故「支持宽高比 / 分辨率」保持留空（= 不校验，任意合法尺寸均放行）。",
+  "settings.imagegenAutoGeneratePrompt": "按参数自动生成提示词",
+  "settings.imagegenSupportedRatios": "支持的宽高比（比例）",
+  "settings.imagegenSupportedRatiosHint":
+    "告知 AI 该模型支持的比例（逗号分隔，如 1:1, 16:9, 9:16）",
+  "settings.imagegenSupportedResolutions": "支持的分辨率/档位",
+  "settings.imagegenSupportedResolutionsHint":
+    "告知 AI 该模型支持的分辨率预设或档位（如 1K, 2K, 4K 或 1024x1024）",
+  "settings.imagegenCapabilityEmptyHint":
+    "留空 = 不限制：后端跳过校验，任意合法取值均放行。",
+  "settings.imagegenSupportedThinking": "支持的思考强度",
+  "settings.imagegenSupportedThinkingHint":
+    "告知 AI 该模型支持的 thinking_level 档位（如 minimal, medium, high）",
+  "settings.imagegenCustomPrompt": "渠道提示词说明/补充指引",
+  "settings.imagegenCustomPromptPlaceholder":
+    "为 AI 注入此渠道的专属要求、参数规范或风格说明...",
+  "settings.imagegenCustomPromptHint":
+    "直接动态注入到生图工具（imagegen-generate）描述与系统提示词中，指导 AI 准确传参",
   "settings.imagegenDefaults": "默认参数",
   "settings.imagegenDefaultSize": "默认尺寸",
   "settings.imagegenDefaultSizeHint":
@@ -1878,7 +1941,11 @@ export const zhCN = {
   "settings.imagegenFormatDefault": "默认（png）",
   "settings.imagegenWebSearch": "谷歌搜索联网",
   "settings.imagegenWebSearchHint":
-    "仅 Gemini：保存到当前渠道；生图请求未显式指定时，后端会使用此开关并注入 Google Search 工具。",
+    "仅 Gemini 原生协议支持：保存到当前渠道；生图请求未显式指定时，后端会使用此开关并注入 Google Search 工具。",
+  "settings.imagegenWebSearchProtocolOnly":
+    "仅 Gemini 原生协议支持（google_search grounding）。OpenAI 兼容端点不支持联网搜索，把渠道服务商切换为 Google Gemini 后即可启用。",
+  "settings.imagegenWebSearchModelUnsupported":
+    "当前模型（{model}）不是 Gemini 生图模型，联网搜索不会生效；请选择 Gemini / Nano Banana 系列模型。",
   "settings.imagegenStreaming": "流式预览",
   "settings.imagegenStreamingHint":
     "流式：生成过程中实时显示中间预览图；非流式：生成完成后一次性出图（OpenAI gpt-image / Gemini Imagen）",
@@ -1924,7 +1991,7 @@ export const zhCN = {
     "该模型支持任意分辨率：宽高均须为 16 的倍数、比例 1:3~3:1，最大 3840x2160（超过 2560x1440 为实验性）。",
   "settings.imagegenModelPreviewBadge": "预览",
   "settings.imagegenSizeLimitsHint":
-    "规则：最大边长 ≤3840px 且总像素 65.5万~829万（16px 的倍数、比例 ≤3:1）。正方形最大 2880x2880；16:9 最大 3840x2160；4K 档即各比例下最接近像素上限的推荐值（如 1:1→2880x2880、5:4→3200x2560）。",
+    "规则：边长 ≤3840px、总像素 65.5万~829万、16px 的倍数、比例 1:3~3:1。",
   "settings.imagegenMaxConcurrent": "最大并发生成数",
   "settings.imagegenMaxConcurrentHint":
     "AI 一次请求多张图片时，最多同时生成的张数（1-8），其余排队等待，完成一张补一张。服务商限流较严时调低。",
@@ -2408,6 +2475,7 @@ export const zhCN = {
   "settings.retryCategoryStream": "流错误",
   "settings.retryCategoryIdleTimeout": "流空闲超时",
   "settings.retryCategoryNonSse": "非 SSE 响应",
+  "settings.retryCategoryEmptyResponse": "空响应（无正文且无工具调用）",
   "settings.retrySaveSuccess": "重试配置已保存。",
   "settings.retryLoadError": "加载重试配置失败",
   "settings.retrySaveError": "保存重试配置失败",
@@ -4083,6 +4151,8 @@ export const zhCN = {
   "chat.streamMetrics.tpsTitle": "输出速度（每秒 Token 数）",
   "chat.retrying": "重试中",
   "chat.retryExhausted": "重试已耗尽",
+  "chat.retryCountdown": "{{seconds}} 秒后重试",
+  "chat.retryCountdownHint": "正在等待下一次重试",
   "chat.retryDetailsShow": "错误详情",
   "chat.retryDetailsHide": "收起详情",
   "chat.retryCopyDetails": "复制错误详情",
@@ -4534,6 +4604,19 @@ export const zhCN = {
   "rightPanel.aiDrawing.promptPlaceholder":
     "描述你想生成的画面，支持中文；例如：赛博朋克风格的雨夜城市，霓虹灯倒影…",
   "rightPanel.aiDrawing.promptHint": "Ctrl + Enter 快速生成",
+  "rightPanel.aiDrawing.optimizePrompt": "优化提示词",
+  "rightPanel.aiDrawing.optimizeHint":
+    "用 AI 改写当前提示词，补全画面要素（主体、风格、构图、光影、镜头），不会自动生成图片",
+  "rightPanel.aiDrawing.optimizing": "优化中",
+  "rightPanel.aiDrawing.optimizeCancelHint": "点击取消本次优化",
+  "rightPanel.aiDrawing.optimizeDone": "提示词已优化，可直接生成或继续编辑",
+  "rightPanel.aiDrawing.optimizeFailed": "优化失败，请检查 API 配置后重试",
+  "rightPanel.aiDrawing.optimizeCancelled": "已取消优化",
+  "rightPanel.aiDrawing.optimizeUnavailable":
+    "当前版本不支持提示词优化，请升级 Snow App",
+  "rightPanel.aiDrawing.optimizeUndo": "还原",
+  "rightPanel.aiDrawing.optimizeUndoHint": "还原到优化前的提示词",
+  "rightPanel.aiDrawing.optimizeRestored": "已还原为优化前的提示词",
   "rightPanel.aiDrawing.generate": "生成",
   "rightPanel.aiDrawing.channelAuto": "自动（默认渠道）",
   "rightPanel.aiDrawing.model": "模型",
@@ -4844,6 +4927,20 @@ export const zhCN = {
   "git.graphTooltipStats": "变更行数",
   "git.graphTooltipRefs": "引用",
   "git.graphTooltipParents": "父提交",
+  "git.tooltipFilesChanged": "已更改 {{count}} 个文件",
+  "git.tooltipFilesChangedOne": "已更改 1 个文件",
+  "git.tooltipChangedFiles":
+    "已更改 {{count}} 个文件，{{insertions}} 行插入(+)，{{deletions}} 行删除(-)",
+  "git.tooltipChangedFilesOne":
+    "已更改 1 个文件，{{insertions}} 行插入(+)，{{deletions}} 行删除(-)",
+  "git.tooltipOpenOnGitHub": "在 GitHub 上打开",
+  "git.tooltipOpenOnGitLab": "在 GitLab 上打开",
+  "git.tooltipOpenOnRemote": "在远端仓库打开",
+  "git.saveToMemo": "记录到备忘录",
+  "git.memoSaved": "已记录到备忘录",
+  "git.memoSaveFailed": "记录到备忘录失败",
+  "git.memoMessage": "提交说明",
+  "git.memoFiles": "文件：{{count}} 个",
   "git.graphCurrentBranch": "当前分支",
   "git.graphDetachedHead": "分离头指针",
   "git.graphLocalBranch": "本地分支",
@@ -5381,7 +5478,7 @@ export const zhCN = {
   "remoteControl.passphrase": "私钥密码（没有可留空）",
   "remoteControl.step4Title": "检测成功后再自动部署",
   "remoteControl.step4Text":
-    "先点“检测 DNS”。两行均为 ✓ 后，再点“自动部署并连接”；之后 FRP、Caddy、token、CA、证书和配置导入都由 Snow 处理。",
+    "先点“检测 DNS”。两行均通过后，再点“自动部署并连接”；之后 FRP、Caddy、token、CA、证书和配置导入都由 Snow 处理。",
   "remoteControl.checkDns": "检测 DNS",
   "remoteControl.deployConnect": "自动部署并连接",
   "remoteControl.cancelDeploy": "取消部署",
