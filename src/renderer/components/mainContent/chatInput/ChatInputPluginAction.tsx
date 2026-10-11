@@ -46,9 +46,6 @@ const LABELS = {
     copied: "Copied",
     confirm: "Confirm",
     close: "Close",
-    running: "Running…",
-    cancelled: "Cancelled",
-    stale: "Context changed; result is copy-only",
     failed: "Action failed",
   },
   "zh-CN": {
@@ -61,9 +58,6 @@ const LABELS = {
     copied: "已复制",
     confirm: "确认",
     close: "关闭",
-    running: "执行中…",
-    cancelled: "已取消",
-    stale: "上下文已变更，结果仅可复制",
     failed: "操作失败",
   },
   "zh-TW": {
@@ -76,9 +70,6 @@ const LABELS = {
     copied: "已複製",
     confirm: "確認",
     close: "關閉",
-    running: "執行中…",
-    cancelled: "已取消",
-    stale: "上下文已變更，結果僅可複製",
     failed: "操作失敗",
   },
 };
@@ -220,7 +211,9 @@ export const ChatInputPluginAction = ({
         ? { message: previous.message, preview: previous.preview }
         : null,
     );
-    if (hadRun) setStatus(labels.stale);
+    // Context changes keep only the copy-only preview; the toolbar stays free of
+    // status sentences, so no stale notice is left behind.
+    if (hadRun) setStatus("");
   }, [
     plugin,
     panel,
@@ -230,7 +223,6 @@ export const ChatInputPluginAction = ({
     locale,
     contextRevision,
     invalidate,
-    labels.stale,
   ]);
 
   const cancel = (): void => {
@@ -241,7 +233,8 @@ export const ChatInputPluginAction = ({
         ? { message: previous.message, preview: previous.preview }
         : null,
     );
-    setStatus(labels.cancelled);
+    // Cancelling also stays silent: the spinner simply stops.
+    setStatus("");
   };
   const openConfiguration = (): void => {
     rightPanelEvents.emit("open-plugin-panel", {
@@ -358,7 +351,9 @@ export const ChatInputPluginAction = ({
     };
     runRef.current = run;
     setResult(null);
-    setStatus(labels.running);
+    // Start silent: the spinner conveys progress. The plugin clears it again on
+    // its first `onStatus`, and a slow plugin no longer flashes a truncated label.
+    setStatus("");
     void perform(
       run,
       async () => {
@@ -489,13 +484,29 @@ export const ChatInputPluginAction = ({
           role="status"
           aria-live="polite"
           title={status}
-          style={{
-            maxWidth: 160,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            fontSize: 12,
-          }}
+          style={
+            busy
+              ? {
+                  // While running, the spinner already conveys progress; the
+                  // text stays in the accessibility tree only.
+                  position: "absolute",
+                  width: 1,
+                  height: 1,
+                  padding: 0,
+                  margin: -1,
+                  overflow: "hidden",
+                  clipPath: "inset(50%)",
+                  whiteSpace: "nowrap",
+                  border: 0,
+                }
+              : {
+                  maxWidth: 160,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  fontSize: 12,
+                }
+          }
         >
           {status}
         </span>
@@ -507,6 +518,7 @@ export const ChatInputPluginAction = ({
           disabled={busy || disabled}
           onClick={() => useResult("undo")}
           title={labels.undo}
+          style={{ whiteSpace: "nowrap", flex: "0 0 auto" }}
         >
           <Undo2 size={14} />
           {labels.undo}
