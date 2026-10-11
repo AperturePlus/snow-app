@@ -1869,6 +1869,69 @@ export const zhTW = {
   "settings.imagegenCap.capLegacy": "舊版",
   "settings.imagegenCap.capDeprecated": "已棄用（2026-08-17 關停）",
   "settings.imagegenCap.capTextToImageOnly": "僅文生圖",
+  "settings.imagegenMultiModelsGroup": "繪圖模型配置",
+  "settings.imagegenMultiModelsHint":
+    "一個渠道連線可配置多個繪圖模型，每個模型獨立配置其預設尺寸、質量、思考強度與專屬提示詞。",
+  "settings.imagegenAddModel": "新增模型",
+  "settings.imagegenAddFromTemplate": "從預設範本新增...",
+  "settings.imagegenAddCustomModel": "新增空白自訂模型",
+  "settings.imagegenSetAsPrimary": "設為預設主模型",
+  "settings.imagegenPrimaryBadge": "預設主模型",
+  "settings.imagegenPrimaryHint": "AI 未指定具體模型出圖時，預設優先調用此模型",
+  "settings.imagegenModelDuplicate":
+    "模型 {model} 已在目前渠道配置過，已為你切換到該模型。",
+  "settings.imagegenModelDuplicateEdit":
+    "模型 {model} 已存在於目前渠道。同一模型 ID 只能配置一次，請直接編輯已有模型。",
+  "settings.imagegenModelAlias": "模型顯示別名",
+  "settings.imagegenModelAliasPlaceholder": "如：超清旗艦版 / 快速生圖（選填）",
+  "settings.imagegenModelAliasHint":
+    "在介面標籤中更易識別的自訂名稱（留空則顯示模型 ID）",
+  "settings.imagegenDeleteModel": "刪除模型",
+  "settings.imagegenDeleteModelConfirm": "確定要從目前渠道刪除該模型配置嗎？",
+  "settings.imagegenMoreModels": "+{count} 個模型",
+  "settings.imagegenModelEnabled": "啟用此模型",
+  "settings.imagegenModelDisabled": "已停用",
+  "settings.imagegenActiveModelConfig": "目前配置模型：",
+  "settings.imagegenTemplate": "預設配置範本",
+  "settings.imagegenApplyTemplate": "套用範本",
+  "settings.imagegenTemplateReplaceConfirm":
+    "套用該範本會整體替換本渠道目前已配置的全部模型，是否繼續？",
+  "settings.imagegenTemplateSelect": "選擇範本快速填入配置...",
+  "settings.imagegenDefaultThinking": "預設思考強度",
+  "settings.imagegenDefaultThinkingHint":
+    "寫入 generation_config.thinking_level；各模型支援檔位不同（OpenAI 圖像介面無此參數）",
+  "settings.imagegenThinkingAuto": "自動",
+  "settings.imagegenThinkingMinimal": "minimal",
+  "settings.imagegenThinkingLow": "low",
+  "settings.imagegenThinkingMedium": "medium",
+  "settings.imagegenThinkingHigh": "high",
+  "settings.imagegenCapabilitiesGroup": "模型能力與提示詞動態配置",
+  "settings.imagegenFillCapability": "按模型 ID 填充能力",
+  "settings.imagegenFillCapabilityHint":
+    "用內建能力庫覆蓋目前模型的預設尺寸 / 品質 / 思考強度與支援範圍",
+  "settings.imagegenCapabilityFillUnavailable":
+    "內建能力庫未收錄模型 {model}，請手動填寫能力參數。",
+  "settings.imagegenFillCapabilityDone":
+    "已按內建能力庫填充當前模型的能力欄位。",
+  "settings.imagegenFillCapabilityOpenSpace":
+    "已按內建能力庫填充。該模型尺寸空間開放，故「支援寬高比 / 解析度」保持留空（= 不校驗，任意合法尺寸均放行）。",
+  "settings.imagegenAutoGeneratePrompt": "按參數自動生成提示词",
+  "settings.imagegenSupportedRatios": "支援的寬高比（比例）",
+  "settings.imagegenSupportedRatiosHint":
+    "告知 AI 該模型支援的比例（逗號分隔，如 1:1, 16:9, 9:16）",
+  "settings.imagegenSupportedResolutions": "支援的解析度/檔位",
+  "settings.imagegenSupportedResolutionsHint":
+    "告知 AI 該模型支援的解析度預設或檔位（如 1K, 2K, 4K 或 1024x1024）",
+  "settings.imagegenCapabilityEmptyHint":
+    "留空 = 不限制：後端跳過校驗，任意合法取值均放行。",
+  "settings.imagegenSupportedThinking": "支援的思考強度",
+  "settings.imagegenSupportedThinkingHint":
+    "告知 AI 該模型支援的 thinking_level 檔位（如 minimal, medium, high）",
+  "settings.imagegenCustomPrompt": "渠道提示詞說明/補充指引",
+  "settings.imagegenCustomPromptPlaceholder":
+    "為 AI 注入此渠道的專屬要求、參數規範或風格說明...",
+  "settings.imagegenCustomPromptHint":
+    "直接動態注入到生圖工具（imagegen-generate）描述與系統提示詞中，指導 AI 準確傳參",
   "settings.imagegenDefaults": "預設參數",
   "settings.imagegenDefaultSize": "預設尺寸",
   "settings.imagegenDefaultSizeHint":
@@ -1879,7 +1942,11 @@ export const zhTW = {
   "settings.imagegenFormatDefault": "預設（png）",
   "settings.imagegenWebSearch": "Google 搜尋聯網",
   "settings.imagegenWebSearchHint":
-    "僅 Gemini：儲存到目前渠道；生圖請求未明確指定時，後端會使用此開關並注入 Google Search 工具。",
+    "僅 Gemini 原生協議支援：儲存到目前渠道；生圖請求未明確指定時，後端會使用此開關並注入 Google Search 工具。",
+  "settings.imagegenWebSearchProtocolOnly":
+    "僅 Gemini 原生協議支援（google_search grounding）。OpenAI 相容端點不支援聯網搜尋，將渠道服務商切換為 Google Gemini 後即可啟用。",
+  "settings.imagegenWebSearchModelUnsupported":
+    "目前模型（{model}）不是 Gemini 生圖模型，聯網搜尋不會生效；請選擇 Gemini / Nano Banana 系列模型。",
   "settings.imagegenStreaming": "串流預覽",
   "settings.imagegenStreamingHint":
     "串流：生成過程中即時顯示中間預覽圖；非串流：生成完成後一次顯示（OpenAI gpt-image / Gemini Imagen）",
@@ -1925,7 +1992,7 @@ export const zhTW = {
     "此模型支援任意解析度：寬高皆須為 16 的倍數、比例 1:3~3:1，最大 3840x2160（超過 2560x1440 為實驗性）。",
   "settings.imagegenModelPreviewBadge": "預覽",
   "settings.imagegenSizeLimitsHint":
-    "規則：最大邊長 ≤3840px 且總像素 65.5萬~829萬（16px 的倍數、比例 ≤3:1）。正方形最大 2880x2880；16:9 最大 3840x2160；4K 檔即各比例下最接近像素上限的推薦值（如 1:1→2880x2880、5:4→3200x2560）。",
+    "規則：邊長 ≤3840px、總像素 65.5萬~829萬、16px 的倍數、比例 1:3~3:1。",
   "settings.imagegenMaxConcurrent": "最大並發生成數",
   "settings.imagegenMaxConcurrentHint":
     "AI 一次請求多張圖片時，最多同時生成的張數（1-8），其餘排隊等待，完成一張補一張。服務商限流較嚴時調低。",

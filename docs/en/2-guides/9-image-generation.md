@@ -61,6 +61,24 @@ Selecting a model shows its **capability tags**:
 | Fast                | Speed-first generation                           |
 | Legacy / Deprecated | Old models; Imagen shuts down 2026-08-17         |
 
+**Fill from model ID**: the button next to the model ID overwrites this model's
+`default size / quality / thinking strength / supported aspect ratios /
+resolutions / thinking levels` from the built-in capability library. Model IDs
+not in the library get a hint to fill the fields manually. Changing the model ID
+also applies the library silently — but only while those fields are still empty
+or equal to the previous model's values (hand-edited values are never overwritten).
+
+> **Empty = no restriction**: an empty aspect ratios / resolutions / thinking
+> field means _not declared_ — the backend skips that check and lets any valid
+> value through. Once you type something, it is matched as an exact token
+> whitelist and out-of-range values are silently dropped (the parameter is not sent).
+>
+> That is why models with an **open size space** such as `gpt-image-2` /
+> `gpt-image-2.5` (incl. sunburst / flare) deliberately keep these fields empty:
+> they accept any ratio and resolution (side ≤3840px, multiples of 16, aspect
+> 1:3–3:1), so an exhaustive whitelist would wrongly block valid sizes. After
+> filling, the hint below the field states this — it is expected behaviour.
+
 ## 3. Supported Models
 
 ### OpenAI channel
@@ -235,13 +253,18 @@ Hard input limits come from the runtime source and current error messages. In th
 | `background`        | enum              | OpenAI: `opaque` (default) / `transparent` / `auto`; falls back to `opaque` automatically when the model lacks transparency support (e.g. gpt-image-2). For a transparent background (sticker / cutout / desktop pet) pick **`gpt-image-1`** with `outputFormat="png"` — it is the only model that actually outputs transparency; gpt-image-2 silently downgrades the request and dall-e-3 / Gemini ignore the parameter entirely                                                                                                             |
 | `moderation`        | enum              | OpenAI: `auto` (default) / `low` (less filtering)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `seed`              | number            | Deterministic seed for reproducible results                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `thinkingLevel`     | enum              | Gemini 3.1 Flash Image: `minimal` (default) / `high`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `thinkingLevel`     | enum              | **Gemini image models only**: written to `generation_config.thinking_level`; supported levels differ per model (Nano Banana 2.1: `minimal`/`medium`/`high`; Gemini 3 Pro Image: `high`). OpenAI image endpoints have no such parameter, so the settings panel hides it for OpenAI channels                                                                                                                                                                                                                                                    |
 | `imageSearch`       | boolean           | Gemini 3.1 Flash Image: Google Image Search grounding                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 > When multiple channels are enabled, the `provider` parameter wins; otherwise the
 > provider is derived from the configuration. OpenAI edits use `/images/edits`
 > (multipart), Gemini edits use `inlineData` multimodal prompts; the Gemini
 > Nano Banana family uses the Interactions API.
+> Streaming previews are implemented per protocol: OpenAI parses
+> `image_generation.partial_image` SSE events; Gemini Nano Banana 2+ parses
+> Interactions API `step.delta` events (only `image` deltas from the
+> `model_output` step; intermediate drafts from `thought` steps are discarded);
+> legacy Gemini uses `streamGenerateContent` `inlineData` deltas.
 
 ## 5. Image Library Management
 
