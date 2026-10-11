@@ -2524,6 +2524,8 @@ export const en = {
   "settings.retryCategoryStream": "Stream errors",
   "settings.retryCategoryIdleTimeout": "Stream idle timeout",
   "settings.retryCategoryNonSse": "Non-SSE response",
+  "settings.retryCategoryEmptyResponse":
+    "Empty response (no content or tool calls)",
   "settings.retrySaveSuccess": "Retry settings saved.",
   "settings.retryLoadError": "Failed to load retry settings",
   "settings.retrySaveError": "Failed to save retry settings",
@@ -4327,6 +4329,8 @@ export const en = {
   "chat.streamMetrics.tpsTitle": "Output speed (tokens per second)",
   "chat.retrying": "Retrying",
   "chat.retryExhausted": "Retries exhausted",
+  "chat.retryCountdown": "in {{seconds}}s",
+  "chat.retryCountdownHint": "Waiting before the next attempt",
   "chat.retryDetailsShow": "Error details",
   "chat.retryDetailsHide": "Hide details",
   "chat.retryCopyDetails": "Copy error details",
