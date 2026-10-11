@@ -29,6 +29,7 @@ use crate::api::retry::{
     FinalStreamWarningDisposition,
     RetryOptions,
 };
+use crate::api::responses::stream::RESPONSES_FAILED_NO_REASON;
 use crate::storage::services::app_logs::{
     log_api_error, log_api_warning, maybe_log_api_request_for_conversation,
     maybe_log_api_response_for_conversation,
@@ -177,6 +178,10 @@ pub struct ResponsesApiStreamChunk {
     pub retrying: bool,
     pub retry_attempt: Option<i32>,
     pub retry_error: Option<String>,
+    /// 本次重试前的退避时长（毫秒）。仅在 `retrying == true` 的分片上为
+    /// `Some(...)`，供前端渲染「N 秒后重试」倒计时——否则用户面对 3s→30s 的
+    /// 指数退避只能盲等，不知道还要多久。普通分片恒为 `None`。
+    pub retry_backoff_ms: Option<i64>,
     /// Cumulative token count for the current agent-loop iteration.
     ///
     /// The Rust backend counts tokens for every streamed delta (content and
@@ -548,6 +553,35 @@ async fn create_response_async(
             .await;
         }
         FinalStreamWarningDisposition::None => {}
+    }
+
+    // 上游以 `response.failed` / `error` 明确收尾时，既不算传输中断也不触发
+    // 重试，`classify_final_stream_warning` 会落到 None 分支。此前这种失败在
+    // app_logs 里完全无痕（事后只能反查 usage_records 的 status='failed'）。
+    // 这里补一条 WARN，把上游给出的失败原因留痕；上游没给可读原因时用兜底文案，
+    // 保证「failed 却查不到任何记录」不再发生。
+    if streamed_response.status == "failed" {
+        let failure_reason = streamed_response
+            .failure_reason
+            .as_deref()
+            .unwrap_or(RESPONSES_FAILED_NO_REASON);
+        log_api_warning(
+            &database_path,
+            "create_response_stream_with_context",
+            "AI response stream failed",
+            &format!(
+                "provider=openai, request_method=responses, reason={}, model={}, status={}, conversation_id={}, response_id={}, content_chars={}, thinking_chars={}, duration_ms={}",
+                failure_reason,
+                model,
+                streamed_response.status,
+                prepared_request.conversation_id,
+                streamed_response.id,
+                streamed_response.content.chars().count(),
+                streamed_response.thinking.chars().count(),
+                streamed_response.total_duration_ms,
+            ),
+        )
+        .await;
     }
 
     let persisted_user_message_ids = if !skip_context {

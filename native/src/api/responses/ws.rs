@@ -39,12 +39,11 @@ use crate::api::http_client::{app_user_agent, load_proxy_config, resolve_transpo
 use crate::api::common::StreamSink;
 use crate::api::responses::ResponsesApiStreamChunk;
 use crate::api::retry::{
-    decide_stream_recovery, is_retriable_error, next_stream_item_with_idle,
-    should_retry_empty_response, stream_idle_timeout_error, wait_before_retry, RetryOptions,
+    decide_stream_recovery, is_retriable_error, log_retry_attempt, next_stream_item_with_idle,
+    should_retry_empty_response, retry_backoff_ms, stream_idle_timeout_error, wait_before_retry, RetryOptions,
     StreamEndCause, StreamReadOutcome, StreamRecoveryDecision, EMPTY_RESPONSE_RETRY_ERROR,
 };
 use crate::api::sse::SseStreamEnd;
-use crate::storage::services::app_logs::log_api_warning;
 
 use super::stream::{
     cancelled_stream_result, finalize_attempt_result, finalize_transport_interruption,
@@ -608,7 +607,13 @@ impl StreamProgress {
     }
 
     /// 推送一次「请求重试中」状态。
-    fn emit_retry(&self, on_chunk: StreamSink<'_>, attempt: u32, retry_error: &str) {
+    fn emit_retry(
+        &self,
+        on_chunk: StreamSink<'_>,
+        attempt: u32,
+        retry_error: &str,
+        retry_options: &RetryOptions,
+    ) {
         on_chunk.call(
             ResponsesApiStreamChunk {
                 content_delta: String::new(),
@@ -624,6 +629,7 @@ impl StreamProgress {
                 elapsed_ms: self.elapsed_ms(),
                 ttft_ms: self.ttft_ms,
                 vision_status: None,
+                retry_backoff_ms: Some(retry_backoff_ms(retry_options, attempt)),
             },
             ThreadsafeFunctionCallMode::NonBlocking,
         );
@@ -794,15 +800,33 @@ pub(super) async fn collect_streaming_response_ws(
             Ok(started) => started,
             Err(failure) => {
                 // 复用的连接在发送阶段就失效（服务端已回收）：立即换新连接重发，
-                // 不等待退避——复用的收益不该被一条过期连接吃掉。
+                // 不等待退避——复用的收益不该被一条过期连接吃掉。这条无退避重发
+                // 同样留痕（cause=reused_connection），否则「池化连接被回收过」
+                // 在日志里完全不可见。
                 if failure.reused {
+                    log_retry(
+                        &database_path,
+                        "reused_connection",
+                        attempt,
+                        endpoint,
+                        &failure.error.reason,
+                        0,
+                    )
+                    .await;
                     continue 'attempt_loop;
                 }
                 if !failure.retriable || attempt >= retry_options.max_retries {
                     return Err(failure.error);
                 }
-                progress.emit_retry(on_chunk, attempt, &failure.error.reason);
-                log_retry(&database_path, "connect", attempt, endpoint, &failure.error.reason)
+                progress.emit_retry(on_chunk, attempt, &failure.error.reason, retry_options);
+                log_retry(
+                    &database_path,
+                    "connect",
+                    attempt,
+                    endpoint,
+                    &failure.error.reason,
+                    retry_backoff_ms(retry_options, attempt),
+                )
                     .await;
                 wait_before_retry(retry_options, cancel_token, attempt).await?;
                 attempt += 1;
@@ -892,8 +916,15 @@ pub(super) async fn collect_streaming_response_ws(
                 if !retriable || attempt >= retry_options.max_retries {
                     return Err(error);
                 }
-                progress.emit_retry(on_chunk, attempt, &error.reason);
-                log_retry(&database_path, "connection_error", attempt, endpoint, &error.reason)
+                progress.emit_retry(on_chunk, attempt, &error.reason, retry_options);
+                log_retry(
+                    &database_path,
+                    "connection_error",
+                    attempt,
+                    endpoint,
+                    &error.reason,
+                    retry_backoff_ms(retry_options, attempt),
+                )
                     .await;
                 wait_before_retry(retry_options, cancel_token, attempt).await?;
                 attempt += 1;
@@ -915,8 +946,14 @@ pub(super) async fn collect_streaming_response_ws(
             if terminal_interruption_reason.is_none()
                 && should_retry_empty_response(attempt, retry_options, attempt_state.has_payload())
             {
-                progress.emit_retry(on_chunk, attempt, EMPTY_RESPONSE_RETRY_ERROR);
-                log_empty_retry(&database_path, attempt, endpoint).await;
+                progress.emit_retry(on_chunk, attempt, EMPTY_RESPONSE_RETRY_ERROR, retry_options);
+                log_empty_retry(
+                    &database_path,
+                    attempt,
+                    endpoint,
+                    retry_backoff_ms(retry_options, attempt),
+                )
+                .await;
                 wait_before_retry(retry_options, cancel_token, attempt).await?;
                 attempt += 1;
                 continue 'attempt_loop;
@@ -959,8 +996,14 @@ pub(super) async fn collect_streaming_response_ws(
                         attempt_state.has_payload(),
                     )
                 {
-                    progress.emit_retry(on_chunk, attempt, EMPTY_RESPONSE_RETRY_ERROR);
-                    log_empty_retry(&database_path, attempt, endpoint).await;
+                    progress.emit_retry(on_chunk, attempt, EMPTY_RESPONSE_RETRY_ERROR, retry_options);
+                    log_empty_retry(
+                        &database_path,
+                        attempt,
+                        endpoint,
+                        retry_backoff_ms(retry_options, attempt),
+                    )
+                    .await;
                     wait_before_retry(retry_options, cancel_token, attempt).await?;
                     attempt += 1;
                     continue 'attempt_loop;
@@ -968,13 +1011,14 @@ pub(super) async fn collect_streaming_response_ws(
                 break 'attempt_loop (attempt_state, provider_reason, provider_outcome);
             }
             StreamRecoveryDecision::Retry => {
-                progress.emit_retry(on_chunk, attempt, &retry_error);
+                progress.emit_retry(on_chunk, attempt, &retry_error, retry_options);
                 log_retry(
                     &database_path,
-                    &format!("{cause:?}"),
+                    cause.interruption_reason().as_code(),
                     attempt,
                     endpoint,
                     &retry_error,
+                    retry_backoff_ms(retry_options, attempt),
                 )
                 .await;
                 wait_before_retry(retry_options, cancel_token, attempt).await?;
@@ -999,37 +1043,49 @@ pub(super) async fn collect_streaming_response_ws(
     ))
 }
 
-/// 记录一次重试（复用 log_api_warning：即使后续成功也留痕，便于对账）。
+/// 记录一次重试（委托 [`log_retry_attempt`] 统一入口：即使后续成功也留痕，
+/// 便于对账）。`transport=websocket` 通过 provider 标签承载，与 HTTP 版
+/// responses 路径（`provider=openai`）在检索上可区分。
 async fn log_retry(
     database_path: &Path,
     cause: &str,
     attempt: u32,
     endpoint: &str,
     error: &str,
+    backoff_ms: i64,
 ) {
-    log_api_warning(
+    log_retry_attempt(
         database_path,
         "create_response_stream_with_context",
-        "Responses API WebSocket request retrying",
-        &format!(
-            "transport=websocket attempt={} cause={cause} endpoint={endpoint} error={error}",
-            attempt + 1
-        ),
+        "openai+websocket",
+        "responses",
+        cause,
+        attempt,
+        endpoint,
+        error,
+        backoff_ms,
     )
     .await;
 }
 
 /// 记录一次「空响应」重试（WebSocket 传输）。与传输重试同样留痕：即使后续
 /// 重试成功或预算耗尽，也能从日志对账重试次数与上游的空响应行为。
-async fn log_empty_retry(database_path: &Path, attempt: u32, endpoint: &str) {
-    log_api_warning(
+async fn log_empty_retry(
+    database_path: &Path,
+    attempt: u32,
+    endpoint: &str,
+    backoff_ms: i64,
+) {
+    log_retry_attempt(
         database_path,
         "create_response_stream_with_context",
-        "AI response stream retrying",
-        &format!(
-            "provider=openai, request_method=responses, transport=websocket, attempt={}, cause=empty_response, endpoint={endpoint}, error={EMPTY_RESPONSE_RETRY_ERROR}",
-            attempt + 1
-        ),
+        "openai+websocket",
+        "responses",
+        "empty_response",
+        attempt,
+        endpoint,
+        EMPTY_RESPONSE_RETRY_ERROR,
+        backoff_ms,
     )
     .await;
 }
