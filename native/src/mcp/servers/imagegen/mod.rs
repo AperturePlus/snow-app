@@ -89,6 +89,57 @@ impl ImageGenSettings {
     }
 }
 
+/// 渠道内配置的单个绘图模型的独立参数项。
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ImageGenModelItem {
+    pub id: String,
+    pub model: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub default_size: String,
+    #[serde(default)]
+    pub default_quality: String,
+    #[serde(default)]
+    pub default_thinking: String,
+    #[serde(default)]
+    pub supported_ratios: String,
+    #[serde(default)]
+    pub supported_resolutions: String,
+    #[serde(default)]
+    pub supported_thinking: String,
+    #[serde(default)]
+    pub custom_prompt: String,
+    #[serde(default = "default_model_enabled")]
+    pub enabled: bool,
+}
+
+fn default_model_enabled() -> bool {
+    true
+}
+
+/// 渠道内模型列表的容错反序列化：`models` 是新增字段，历史/手工编辑的存储
+/// 可能包含类型不符的脏数据。若其中一个模型项解析失败，**不应让整个 imagegen
+/// 设置加载失败**（否则工具会整体消失）；此处逐项解析并跳过非法项，保证
+/// 其余合法模型与渠道仍可用。
+fn deserialize_models_lenient<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Vec<ImageGenModelItem>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    // 注意：本模块通过 `napi::bindgen_prelude::*` 引入了 napi 版 `Result` /
+    // `Deserialize`，此处必须用全限定 std/serde 路径，否则泛型错误类型会被
+    // 套成 `napi::Error<D::Error>` 而无法满足 `AsRef<str>` 约束。
+    let raw = <Option<Vec<Value>> as serde::Deserialize>::deserialize(deserializer)?;
+    Ok(raw
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|item| serde_json::from_value::<ImageGenModelItem>(item).ok())
+        .collect())
+}
+
 /// 单个生图渠道的配置（与对话 API 完全独立；无内置默认模型）。
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -104,7 +155,7 @@ struct ImageGenChannel {
     /// 留空 = 使用官方默认端点
     base_url: String,
     api_key: String,
-    /// 绘图模型名；留空时该渠道不可用（代码中不内置默认模型）
+    /// 默认主绘图模型名（未配置 models 时作为唯一模型；配置 models 时作为默认模型）
     model: String,
     default_size: String,
     default_quality: String,
@@ -113,11 +164,115 @@ struct ImageGenChannel {
     web_search: bool,
     /// 默认流式预览（partial image 实时推送到会话页），工具参数 stream 可覆盖
     default_stream: bool,
+    /// 默认思考强度（Gemini: minimal/high；OpenAI: low/medium/high），留空 = auto/默认
+    #[serde(default)]
+    default_thinking: String,
+    /// 用户配置的模型支持的宽高比（逗号分隔，如 "1:1, 16:9, 9:16, 4:3, 3:4, 21:9"）
+    #[serde(default)]
+    supported_ratios: String,
+    /// 用户配置的模型支持的分辨率档位（如 "1K, 2K, 4K" 或具体像素尺寸）
+    #[serde(default)]
+    supported_resolutions: String,
+    /// 用户配置的模型支持的思考强度选项（如 "low, medium, high"）
+    #[serde(default)]
+    supported_thinking: String,
+    /// 用户自定义的提示词/模型特性说明（注入给工具提示词，告诉模型此渠道的特殊要求或能力）
+    #[serde(default)]
+    custom_prompt: String,
+    /// 渠道内配置的多个独立生图模型列表（每个模型有独立的尺寸/画质/思考强度/提示词配置）
+    #[serde(default, deserialize_with = "deserialize_models_lenient")]
+    models: Vec<ImageGenModelItem>,
 }
 
 impl ImageGenChannel {
     fn is_usable(&self) -> bool {
-        self.enabled && !self.api_key.trim().is_empty() && !self.model.trim().is_empty()
+        if !self.enabled || self.api_key.trim().is_empty() {
+            return false;
+        }
+        !self.model.trim().is_empty() || self.models.iter().any(|m| m.enabled && !m.model.trim().is_empty())
+    }
+
+    /// 取得当前生效的默认主模型 ID。
+    fn primary_model(&self) -> String {
+        let m = self.model.trim();
+        if !m.is_empty() {
+            return m.to_string();
+        }
+        self.models
+            .iter()
+            .find(|item| item.enabled && !item.model.trim().is_empty())
+            .map(|item| item.model.trim().to_string())
+            .unwrap_or_default()
+    }
+
+    /// 获取当前渠道全部可用模型配置（向后兼容：若 models 为空，则从渠道顶层字段合成默认模型项）。
+    fn get_model_items(&self) -> Vec<ImageGenModelItem> {
+        let active_models: Vec<ImageGenModelItem> = self
+            .models
+            .iter()
+            .filter(|item| item.enabled && !item.model.trim().is_empty())
+            .cloned()
+            .collect();
+        if !active_models.is_empty() {
+            return active_models;
+        }
+        let m = self.model.trim();
+        if !m.is_empty() {
+            vec![ImageGenModelItem {
+                id: m.to_string(),
+                model: m.to_string(),
+                name: self.name.clone(),
+                default_size: self.default_size.clone(),
+                default_quality: self.default_quality.clone(),
+                default_thinking: self.default_thinking.clone(),
+                supported_ratios: self.supported_ratios.clone(),
+                supported_resolutions: self.supported_resolutions.clone(),
+                supported_thinking: self.supported_thinking.clone(),
+                custom_prompt: self.custom_prompt.clone(),
+                enabled: true,
+            }]
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// 根据调用的 model ID 查找其专属的参数配置项（尺寸、画质、思考强度等）。
+    ///
+    /// 匹配优先级（高 → 低）：
+    /// 1. 精确匹配（忽略大小写）；
+    /// 2. 中转前缀 / 别名包含匹配（如 `[yu]gpt-image-2.5-flare` 匹配
+    ///    `gpt-image-2.5-flare`）——**取最长命中**，避免 `gpt-image-2` 抢先
+    ///    匹配掉更具体的 `gpt-image-2.5-flare`；
+    /// 3. 兜底首个模型项（Agent 传了渠道未登记的模型时，继承渠道默认参数）。
+    fn find_model_config(&self, requested_model: &str) -> Option<ImageGenModelItem> {
+        let req = requested_model.trim().to_ascii_lowercase();
+        let items = self.get_model_items();
+        if items.is_empty() {
+            return None;
+        }
+        if req.is_empty() {
+            return items.first().cloned();
+        }
+        // 1. 精确匹配 model ID
+        if let Some(matched) = items
+            .iter()
+            .find(|item| item.model.trim().eq_ignore_ascii_case(&req))
+        {
+            return Some(matched.clone());
+        }
+        // 2. 模糊/中转前缀匹配：取最长命中项（最具体的那个）
+        let longest = items
+            .iter()
+            .filter(|item| {
+                let m_lower = item.model.trim().to_ascii_lowercase();
+                !m_lower.is_empty() && (req.contains(&m_lower) || m_lower.contains(&req))
+            })
+            .max_by_key(|item| item.model.trim().len());
+        if let Some(matched) = longest {
+            return Some(matched.clone());
+        }
+        // 3. 兜底首个模型
+        items.first().cloned()
     }
 
     /// 渠道的显示名（name 留空时回退到协议名）。
@@ -201,34 +356,60 @@ impl ImageGenService {
         let base_url = channel_base_url(channel_config);
         let api_key = channel_config.api_key.trim();
 
-        // --- 4. Resolve the model: argument > channel model; NO hard-coded default ---
+        // --- 4. Resolve the model: argument > channel primary model; NO hard-coded default ---
         let model = args
             .get("model")
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string)
-            .or_else(|| non_empty(&channel_config.model))
+            .or_else(|| non_empty(&channel_config.primary_model()))
             .ok_or_else(|| {
                 Error::from_reason(
                     "No image model configured for the selected channel. Configure the model in Settings -> Image generation, or pass the `model` argument explicitly.",
                 )
             })?;
 
-        // --- 5. Resolve default size / quality / outputFormat from the channel ---
+        // 查找此特定模型项的专有独立配置（多模型渠道支持）
+        let model_item = channel_config.find_model_config(&model);
+
+        // 支持范围：只读「当前生效模型项」的声明，不做渠道级回退（渠道顶层字段
+        // 只是主模型的兼容镜像，读它会让非主模型拿到错误的支持范围）。
+        // 未声明 = 未声明：发送前的本地校验放行任意合法值。
+        let supported_ratios = model_item
+            .as_ref()
+            .map(|item| item.supported_ratios.trim().to_string())
+            .unwrap_or_default();
+        let supported_resolutions = model_item
+            .as_ref()
+            .map(|item| item.supported_resolutions.trim().to_string())
+            .unwrap_or_default();
+        let supported_thinking = model_item
+            .as_ref()
+            .map(|item| item.supported_thinking.trim().to_string())
+            .unwrap_or_default();
+
+        // --- 5. Resolve default size / quality / outputFormat from the model item or channel ---
         let size = args
             .get("size")
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string)
-            .or_else(|| non_empty(&channel_config.default_size));
+            .or_else(|| model_item.as_ref().and_then(|m| non_empty(&m.default_size)))
+            .or_else(|| non_empty(&channel_config.default_size))
+            // 发送前按声明的支持范围校验：未声明支持范围视为不支持，直接不下发
+            // size（交由上游默认），避免把不支持的尺寸发给模型得到 400。
+            .and_then(|value| {
+                sanitize_size(Some(&value), &supported_ratios, &supported_resolutions)
+            });
         let quality = args
             .get("quality")
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string)
+            .or_else(|| model_item.as_ref().and_then(|m| non_empty(&m.default_quality)))
             .or_else(|| non_empty(&channel_config.default_quality));
         let output_format = args
             .get("outputFormat")
@@ -277,9 +458,9 @@ impl ImageGenService {
                 "Model \"{model}\" does not support image-to-image (reference images). {hint}"
             )));
         }
-        // Gemini 参考图数量上限（官方文档）：3 系列 14 张，2.5 Flash Image 3 张。
+        // Gemini 参考图数量上限（官方文档）：Nano Banana 2/2.1/3系列 14 张，2.5 Flash Image 3 张。
         if provider == "gemini" && !images.is_empty() {
-            let max_ref = if model_lower.contains("gemini-2.5-flash-image") {
+            let max_ref = if model_lower.contains("2.5") {
                 3
             } else {
                 14
@@ -375,12 +556,25 @@ impl ImageGenService {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string);
-        let thinking_level = args
-            .get("thinkingLevel")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
+        // 思考强度：**仅 Gemini 图像模型有该官方请求参数**
+        // （`generation_config.thinking_level`，Google 官方文档 Thinking 页）。
+        // OpenAI Images API 官方参数表（model/prompt/background/moderation/n/
+        // output_compression/output_format/partial_images/quality/response_format/
+        // size/stream/style/user）不含任何推理强度字段，故对 OpenAI 渠道一律不解析、
+        // 不下发（避免把非官方字段发给上游）。
+        let thinking_level = if provider == "gemini" {
+            args.get("thinkingLevel")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .or_else(|| model_item.as_ref().and_then(|m| non_empty(&m.default_thinking)))
+                // 发送前按模型声明的 supported_thinking 校验：已声明但不在列表内
+                // 则不下发（上游会 400）；未声明 = 放行合法取值。
+                .and_then(|value| sanitize_thinking_level(Some(&value), &supported_thinking))
+        } else {
+            None
+        };
         // 反向提示词（negativePrompt）：仅 Gemini Imagen 系生效（写入
         // generationConfig.negativePrompt）；Nano Banana / OpenAI 不支持，
         // 在 generate_gemini 内按模型判断丢弃。
@@ -867,10 +1061,14 @@ impl ImageGenService {
         channel_label: &str,
         timeout_secs: Option<u64>,
     ) -> napi::Result<Value> {
-        let is_nano_banana_2 = matches!(
-            model,
-            "gemini-3.1-flash-image" | "gemini-3-pro-image" | "gemini-3.1-flash-lite-image"
-        );
+        let model_lower = model.to_ascii_lowercase();
+        let is_nano_banana = model_lower.contains("banana")
+            || model_lower.contains("flash-image")
+            || model_lower.contains("pro-image")
+            || model_lower.contains("lite-image")
+            || model_lower.contains("gemini-3")
+            || model_lower.contains("gemini-2.5");
+        let is_nano_banana_2 = is_nano_banana && !model_lower.contains("gemini-2.5");
 
         // --- Shared: web search grounding (tools) ---
         let web_search = args
@@ -941,8 +1139,15 @@ impl ImageGenService {
         }
         let mut interactions_generation_config = json!({});
         if let Some(level) = thinking_level {
-            if matches!(level, "minimal" | "high") {
-                interactions_generation_config["thinking_level"] = json!(level);
+            let lower = level.to_ascii_lowercase();
+            let effective = match lower.as_str() {
+                "minimal" | "low" => "minimal",
+                "medium" => "medium",
+                "high" => "high",
+                _ => "",
+            };
+            if !effective.is_empty() {
+                interactions_generation_config["thinking_level"] = json!(effective);
             }
         }
         if let Some(person_generation) = args
@@ -991,6 +1196,18 @@ impl ImageGenService {
         if let Some(quality) = quality {
             if matches!(quality.as_str(), "low" | "medium" | "high") {
                 legacy_generation_config["imageQuality"] = json!(quality);
+            }
+        }
+        if let Some(level) = thinking_level {
+            let lower = level.to_ascii_lowercase();
+            if matches!(lower.as_str(), "minimal" | "low") {
+                legacy_generation_config["thinkingConfig"] = json!({ "thinkingBudget": 1024 });
+            } else if lower == "medium" {
+                // 官方 medium 档（Nano Banana 2.1 默认）在 legacy 协议里没有
+                // 字符串档位，只能近似为介于 minimal(1024) 与 high(4096) 之间的预算。
+                legacy_generation_config["thinkingConfig"] = json!({ "thinkingBudget": 2048 });
+            } else if lower == "high" {
+                legacy_generation_config["thinkingConfig"] = json!({ "thinkingBudget": 4096 });
             }
         }
         if let Some(person_generation) = args
@@ -1061,6 +1278,14 @@ impl ImageGenService {
                         if generation_config.as_object().is_some_and(|m| !m.is_empty()) {
                             body["generation_config"] = generation_config;
                         }
+                        // 流式：官方 Interactions API 用 `stream: true` 走 SSE 事件流
+                        // （interaction.created → step.start/step.delta/step.stop →
+                        // interaction.completed → done），图片以 delta.type == "image"
+                        // 的 base64 增量到达。仅单请求（requests == 1）时启用，
+                        // 多路流式无法区分归属（与 OpenAI / legacy 分支同策略）。
+                        if allow_stream {
+                            body["stream"] = json!(true);
+                        }
 
                         let response = client
                             .post(&interactions_endpoint)
@@ -1082,14 +1307,26 @@ impl ImageGenService {
                             ));
                         }
 
+                        // --- 流式路径：边到达边推送预览图 ---
+                        if allow_stream {
+                            let images =
+                                gemini_stream::read_interactions_stream(response, on_chunk).await?;
+                            return gemini_stream::collect_gemini_result(
+                                prompt,
+                                model,
+                                channel_label,
+                                images,
+                            );
+                        }
+
                         let response_body: Value = response.json().await.map_err(|error| {
                             generic_error(format!(
                                 "Failed to parse image generation response: {error}"
                             ))
                         })?;
 
-                        // Parse steps[].content blocks where type == "image"
-                        // (only model_output steps; thought steps are hidden drafts).
+                        // 非流式：解析 steps[].content 中 type == "image" 的块
+                        // （仅 model_output 步骤；thought 步骤是隐藏草稿）。
                         let images = gemini_stream::parse_interactions_images(&response_body);
                         return gemini_stream::collect_gemini_result(prompt, model, channel_label, images);
                     }
@@ -1240,8 +1477,8 @@ impl McpService for ImageGenService {
                     },
                     "quality": {
                         "type": "string",
-                        "description": "Rendering quality: \"low\", \"medium\", \"high\" or \"auto\". OpenAI: gpt-image models only, ignored for dall-e. Gemini: low/medium/high (imageQuality).",
-                        "enum": ["low", "medium", "high", "auto"]
+                        "description": "Rendering quality: \"low\", \"medium\", \"high\", \"xhigh\", \"max\" or \"auto\". OpenAI: gpt-image-2 / 2.5 models (2.5 adds xhigh and max). Gemini: low/medium/high (imageQuality).",
+                        "enum": ["low", "medium", "high", "xhigh", "max", "auto"]
                     },
                     "outputFormat": {
                         "type": "string",
@@ -1272,7 +1509,7 @@ impl McpService for ImageGenService {
                     },
                     "stream": {
                         "type": "boolean",
-                        "description": "Stream intermediate preview images to the conversation while generating (OpenAI gpt-image partial images / Gemini streamGenerateContent). Defaults to the setting configured in Settings -> Image generation. Ignored for dall-e models and image edits.",
+                        "description": "Stream intermediate preview images to the conversation while generating (OpenAI gpt-image partial images / Gemini Interactions API step.delta events / Gemini streamGenerateContent). Defaults to the setting configured in Settings -> Image generation. Ignored for dall-e models and image edits.",
                         "default": false
                     },
                     "inputFidelity": {
@@ -1296,8 +1533,8 @@ impl McpService for ImageGenService {
                     },
                     "thinkingLevel": {
                         "type": "string",
-                        "description": "Gemini 3.1 Flash Image only: reasoning effort before rendering — \"minimal\" (default, faster) or \"high\" (better quality, slower). Other models ignore it.",
-                        "enum": ["minimal", "high"]
+                        "description": "Gemini image models only: thinking level written to generation_config.thinking_level (Nano Banana 2.1 / 3.1 Flash Image / 3 Pro Image etc.). Supported values differ per model (e.g. Nano Banana 2.1: \"minimal\", \"medium\", \"high\"; Gemini 3 Pro Image: \"high\"). Not supported by OpenAI-compatible image endpoints — their Images API has no reasoning/thinking parameter.",
+                        "enum": ["minimal", "low", "medium", "high"]
                     },
                     "imageSearch": {
                         "type": "boolean",
@@ -1471,6 +1708,198 @@ pub fn is_imagegen_configured() -> napi::Result<bool> {
     Ok(load_imagegen_settings()?.has_enabled_channel())
 }
 
+/// 格式化单个渠道内模型项（子模型）的独立能力说明：尺寸/画质/思考强度/提示词。
+/// 用于把「一个渠道多个模型、每个模型参数不同」的事实完整暴露给 Agent。
+fn format_model_item_capabilities(item: &ImageGenModelItem) -> Vec<String> {
+    let mut lines = Vec::new();
+    let label = if item.name.trim().is_empty() {
+        item.model.trim().to_string()
+    } else {
+        format!("{} ({})", item.name.trim(), item.model.trim())
+    };
+    lines.push(format!("Model: {label}"));
+    let size = item.default_size.trim();
+    if !size.is_empty() {
+        lines.push(format!("  default size: {size}"));
+    }
+    let quality = item.default_quality.trim();
+    if !quality.is_empty() {
+        lines.push(format!("  default quality: {quality}"));
+    }
+    let thinking = item.supported_thinking.trim();
+    let default_thinking = item.default_thinking.trim();
+    if !thinking.is_empty() {
+        let def = if default_thinking.is_empty() {
+            String::new()
+        } else {
+            format!(" (default: {default_thinking})")
+        };
+        lines.push(format!("  thinking: {thinking}{def}"));
+    } else if !default_thinking.is_empty() {
+        lines.push(format!("  thinking: default {default_thinking}"));
+    }
+    let ratios = item.supported_ratios.trim();
+    let resolutions = item.supported_resolutions.trim();
+    if !ratios.is_empty() {
+        lines.push(format!("  aspect ratios: {ratios}"));
+    }
+    if !resolutions.is_empty() {
+        lines.push(format!("  resolutions: {resolutions}"));
+    }
+    // 两项都留空 = 用户未声明尺寸范围 → 发送前的 `sanitize_size` 跳过校验、
+    // 放行任意合法尺寸。多模型渠道下必须显式告知 Agent：渠道级说明只覆盖主模型，
+    // 若此处静默，Agent 会误以为该模型不能自定义尺寸而不敢传 size。
+    if ratios.is_empty() && resolutions.is_empty() {
+        lines.push(
+            "  size limits: not declared (the backend does not restrict size; any valid value is passed through)"
+                .to_string(),
+        );
+    }
+    let notes = item.custom_prompt.trim();
+    if !notes.is_empty() {
+        lines.push(format!("  notes: {notes}"));
+    }
+    lines
+}
+
+/// 渠道内所有子模型的摘要（供工具描述与错误提示列出可调用模型）。
+/// 若渠道未配置 models（旧数据），回退为单条顶层模型摘要，保持向后兼容。
+fn channel_model_summaries(channel: &ImageGenChannel) -> Vec<String> {
+    let items = channel.get_model_items();
+    if items.is_empty() {
+        return Vec::new();
+    }
+    items
+        .iter()
+        .map(|item| {
+            let mut line = format!(
+                "  - {} (model={})",
+                if item.name.trim().is_empty() {
+                    "unnamed"
+                } else {
+                    item.name.trim()
+                },
+                item.model.trim()
+            );
+            let mut traits = Vec::new();
+            if !item.default_size.trim().is_empty() {
+                traits.push(format!("size={}", item.default_size.trim()));
+            }
+            if !item.default_quality.trim().is_empty() {
+                traits.push(format!("quality={}", item.default_quality.trim()));
+            }
+            if !item.default_thinking.trim().is_empty() {
+                traits.push(format!("thinking={}", item.default_thinking.trim()));
+            }
+            if !traits.is_empty() {
+                line.push_str(&format!(" [{}]", traits.join(", ")));
+            }
+            line
+        })
+        .collect()
+}
+
+/// 格式化当前生效模型的能力与参数特性说明。
+///
+/// 能力**只认模型项（`models[]`）的声明**：渠道顶层字段只是主模型的兼容镜像，
+/// 读取它会让非主模型拿到错误的能力（宽高比/思考强度凭空出现或消失）。模型项
+/// 未声明某项能力时，按模型名给出内置兜底说明供 Agent 参考。
+fn format_channel_capabilities(
+    channel: &ImageGenChannel,
+    model_item: Option<&ImageGenModelItem>,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+
+    // 兜底分支按「当前生效模型」判定：模型项存在时用它自己的模型名，
+    // 否则退回渠道主模型名。
+    let m = model_item
+        .map(|item| item.model.trim())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| channel.model.trim())
+        .to_ascii_lowercase();
+
+    let ratios = model_item
+        .map(|item| item.supported_ratios.trim())
+        .unwrap_or("");
+    if !ratios.is_empty() {
+        lines.push(format!("Supported aspect ratios: {ratios}"));
+    } else {
+        if channel.provider == "gemini" {
+            lines.push("Supported aspect ratios: 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 5:4, 4:5, 21:9 (1:4, 1:8, 4:1, 8:1 for ultra-wide)".to_string());
+        } else if m.contains("dall-e-3") {
+            lines.push("Supported aspect ratios: 1:1 (1024x1024), 16:9 (1792x1024), 9:16 (1024x1792)".to_string());
+        } else if m.contains("qwen") || m.contains("wanx") {
+            lines.push("Supported aspect ratios: 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 21:9".to_string());
+        } else if m.contains("niji") || m.contains("novelai") || m.contains("animagine") {
+            lines.push("Supported aspect ratios: 1:1 (avatar), 2:3 / 9:16 (character portrait), 3:2 / 16:9 (landscape wallpaper)".to_string());
+        } else if m.contains("gpt-image-1") {
+            // gpt-image-1 / 1.5 / 1-mini：仅固定三种尺寸，比例受限。
+            lines.push("Supported aspect ratios: 1:1, 3:2, 2:3".to_string());
+        } else if m.contains("gpt-image-2") {
+            // gpt-image-2 / 2.5：任意比例，仅受 1:3~3:1 与 3840px 上限约束。
+            lines.push("Supported aspect ratios: any ratio between 1:3 and 3:1 (multiples of 16px, max edge 3840px)".to_string());
+        } else {
+            lines.push("Supported aspect ratios: 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 2:1, 1:2, 21:9, 5:4, 4:5".to_string());
+        }
+    }
+
+    let resolutions = model_item
+        .map(|item| item.supported_resolutions.trim())
+        .unwrap_or("");
+    if !resolutions.is_empty() {
+        lines.push(format!("Supported resolutions / size tiers: {resolutions}"));
+    } else {
+        if channel.provider == "gemini" {
+            lines.push("Supported resolutions: 512px, 1K, 2K, 4K (format: \"16:9@2K\" or \"16:9\")".to_string());
+        } else if m.contains("dall-e-3") {
+            lines.push("Supported sizes: 1024x1024, 1792x1024, 1024x1792".to_string());
+        } else if m.contains("qwen") || m.contains("wanx") {
+            lines.push("Supported resolutions: 1024x1024, 1280x720, 720x1280, 2048x2048 (up to native 2K)".to_string());
+        } else if m.contains("flux") {
+            lines.push("Supported resolutions: 1024x1024, 1536x1024, 1792x1008, 2048x2048 (up to 4MP)".to_string());
+        } else if m.contains("gpt-image-1") {
+            // gpt-image-1 / 1.5 / 1-mini：仅固定三种尺寸。
+            lines.push("Supported sizes: 1024x1024, 1536x1024, 1024x1536".to_string());
+        } else {
+            lines.push("Supported resolution tiers: 1K, 2K, 4K (multiples of 16px, max side <=3840px)".to_string());
+        }
+    }
+
+    // 思考强度：仅 Gemini 图像模型有官方请求参数（generation_config.thinking_level）；
+    // OpenAI Images API 的官方参数表（model/prompt/background/moderation/n/
+    // output_compression/output_format/partial_images/quality/response_format/
+    // size/stream/style/user）不含任何推理强度字段，故不注入、也不下发。
+    let thinking = model_item
+        .map(|item| item.supported_thinking.trim())
+        .unwrap_or("");
+    let default_thinking = model_item
+        .map(|item| item.default_thinking.trim())
+        .unwrap_or("");
+    if channel.provider == "gemini" {
+        if !thinking.is_empty() {
+            let def = if default_thinking.is_empty() {
+                "".to_string()
+            } else {
+                format!(" (configured default: {default_thinking})")
+            };
+            lines.push(format!("Supported thinking_level: {thinking}{def}"));
+        } else if !default_thinking.is_empty() {
+            lines.push(format!("Configured default thinking_level: {default_thinking}"));
+        } else {
+            lines.push("Thinking level (parameter: thinking_level in generation_config): minimal (fast), medium (balanced), high (deep thinking)".to_string());
+        }
+    }
+
+    let prompt_notes = model_item
+        .map(|item| item.custom_prompt.trim())
+        .unwrap_or("");
+    if !prompt_notes.is_empty() {
+        lines.push(format!("Model prompt instructions: {prompt_notes}"));
+    }
+
+    lines
+}
+
 /// 当前默认（第一个可用）渠道的非敏感摘要，注入到 imagegen-generate 工具
 /// 定义中，让 Agent 看到实际配置而不再从静态说明里猜测模型/渠道。
 /// 返回 None 表示没有任何可用渠道（此时工具不应暴露）。
@@ -1478,29 +1907,127 @@ pub fn is_imagegen_configured() -> napi::Result<bool> {
 /// 执行（内部有 SQLite 读取）。
 pub fn default_channel_context() -> napi::Result<Option<String>> {
     let settings = load_imagegen_settings()?;
-    let Some(channel) = settings.channels.iter().find(|channel| channel.is_usable()) else {
+    let usable_channels: Vec<&ImageGenChannel> = settings
+        .channels
+        .iter()
+        .filter(|channel| channel.is_usable())
+        .collect();
+    let Some(channel) = usable_channels.first() else {
         return Ok(None);
     };
-    let mut parts = vec![format!(
-        "Current default image channel: {}",
-        channel.display_name()
-    )];
-    let channel_id = channel.id.trim();
-    if !channel_id.is_empty() {
-        parts.push(format!("Channel ID: {channel_id}"));
-    }
-    parts.push(format!("Provider: {}", channel.provider));
-    parts.push(format!("Configured model: {}", channel.model.trim()));
-    let default_size = channel.default_size.trim();
+
+    let primary_model = channel.primary_model();
+    // 当前默认生效的模型项（渠道主模型对应的那一条）。能力与默认值**只取模型项**：
+    // 渠道顶层字段只是主模型的兼容镜像，读取它会让非主模型拿到错误的参数。
+    let primary_item = channel.find_model_config(&primary_model);
+    let primary_item_ref = primary_item.as_ref();
+    let mut parts = vec![
+        format!("Current default image channel: \"{}\"", channel.display_name()),
+        format!("Channel ID: {}", channel.id.trim()),
+        format!("Provider: {}", channel.provider),
+        format!("Primary model: {primary_model}"),
+    ];
+
+    let default_size = primary_item_ref
+        .map(|item| item.default_size.trim())
+        .unwrap_or("");
     if !default_size.is_empty() {
         parts.push(format!("Default size: {default_size}"));
     }
-    let default_quality = channel.default_quality.trim();
+    let default_quality = primary_item_ref
+        .map(|item| item.default_quality.trim())
+        .unwrap_or("");
     if !default_quality.is_empty() {
         parts.push(format!("Default quality: {default_quality}"));
     }
+    // 思考强度仅 Gemini 图像模型有官方请求参数（thinking_level），
+    // OpenAI Images API 无此字段 → 仅 Gemini 渠道注入默认值。
+    if channel.provider == "gemini" {
+        let default_thinking = primary_item_ref
+            .map(|item| item.default_thinking.trim())
+            .unwrap_or("");
+        if !default_thinking.is_empty() {
+            parts.push(format!("Default thinking: {default_thinking}"));
+        }
+    }
+
+    parts.push("Model capabilities & dynamic parameters:".to_string());
+    for cap in format_channel_capabilities(channel, primary_item_ref) {
+        parts.push(format!("  * {cap}"));
+    }
+
+    // 一个渠道可配置多个模型，且每个模型的尺寸/画质/思考强度/提示词各不相同：
+    // 逐模型列出其独立参数，Agent 才能按用户要求精准传 `model` 并继承对应默认值。
+    // 单模型渠道不再重复罗列——上面能力块已按「模型项优先」注入同一份声明。
+    let model_items = channel.get_model_items();
+    if model_items.len() > 1 {
+        parts.push(format!(
+            "\nModels available in this channel ({} total; pass `model` to pick one, otherwise the primary model is used):",
+            model_items.len()
+        ));
+        for item in &model_items {
+            for line in format_model_item_capabilities(item) {
+                parts.push(format!("  {line}"));
+            }
+            parts.push(String::new());
+        }
+        if parts.last().is_some_and(|line| line.is_empty()) {
+            parts.pop();
+        }
+    }
+
+    if usable_channels.len() > 1 {
+        parts.push("\nOther available configured channels:".to_string());
+        for (idx, ch) in usable_channels.iter().skip(1).enumerate() {
+            let mut summary = format!(
+                "  {}. \"{}\" (id={}, provider={}, model={})",
+                idx + 1,
+                ch.display_name(),
+                ch.id,
+                ch.provider,
+                ch.primary_model()
+            );
+            let ch_primary_model = ch.primary_model();
+            let ch_primary_item = ch.find_model_config(&ch_primary_model);
+            let ch_primary_item_ref = ch_primary_item.as_ref();
+            let mut traits = Vec::new();
+            let ch_ratios = ch_primary_item_ref
+                .map(|item| item.supported_ratios.trim())
+                .unwrap_or("");
+            if !ch_ratios.is_empty() {
+                traits.push(format!("ratios: {ch_ratios}"));
+            }
+            // 思考强度仅 Gemini 渠道有该参数。
+            if ch.provider == "gemini" {
+                let ch_thinking = ch_primary_item_ref
+                    .map(|item| item.supported_thinking.trim())
+                    .unwrap_or("");
+                if !ch_thinking.is_empty() {
+                    traits.push(format!("thinking: {ch_thinking}"));
+                }
+            }
+            let ch_notes = ch_primary_item_ref
+                .map(|item| item.custom_prompt.trim())
+                .unwrap_or("");
+            if !ch_notes.is_empty() {
+                traits.push(format!("notes: {ch_notes}"));
+            }
+            if !traits.is_empty() {
+                summary.push_str(&format!(" -> [{}]", traits.join("; ")));
+            }
+            parts.push(summary);
+            // 其他渠道内的子模型同样列出，避免 Agent 只看到主模型而误判。
+            // 仅多模型渠道需要罗列（单模型的能力已并入上方 traits 摘要）。
+            let other_models = channel_model_summaries(ch);
+            if other_models.len() > 1 {
+                parts.push("     models in this channel:".to_string());
+                parts.extend(other_models);
+            }
+        }
+    }
+
     parts.push(
-        "For normal requests OMIT both `model` and `provider` to inherit these configured defaults; only pass them when the user explicitly asks to override the model or channel."
+        "\nFor normal requests OMIT both `model` and `provider` to inherit these configured defaults; only pass them when the user explicitly asks to override the model or channel. When a channel exposes several models, pass `model` with the exact ID from the list above to use that model's own defaults."
             .to_string(),
     );
     Ok(Some(parts.join("\n")))
@@ -1563,10 +2090,15 @@ fn resolve_channel<'a>(
             }
         }
         None => {
-            // auto / 缺省 + 显式 model：先尝试路由到配置模型匹配的渠道
+            // auto / 缺省 + 显式 model：先尝试路由到配置模型匹配的渠道（支持多模型渠道内的子模型检索）
             if let Some(model) = explicit_model.as_deref() {
                 if let Some(channel) = settings.channels.iter().find(|channel| {
-                    channel.is_usable() && channel.model.trim().eq_ignore_ascii_case(model)
+                    channel.is_usable()
+                        && (channel.model.trim().eq_ignore_ascii_case(model)
+                            || channel
+                                .models
+                                .iter()
+                                .any(|m| m.enabled && m.model.trim().eq_ignore_ascii_case(model)))
                 }) {
                     return Ok((channel.provider.as_str(), channel));
                 }
@@ -1616,19 +2148,34 @@ fn cross_protocol_mismatch(model: &str, provider: &str) -> Option<String> {
     None
 }
 
-/// 可用渠道摘要（列出 id / 名称 / 协议，帮助 agent 通过 provider 参数指定渠道）。
+/// 可用渠道摘要（列出 id / 名称 / 协议 / 主模型 / 渠道内全部模型 / 默认思考强度，
+/// 帮助 agent 通过 provider + model 参数精确指定渠道与模型）。
 fn available_channels_summary(settings: &ImageGenSettings) -> String {
     let usable: Vec<String> = settings
         .channels
         .iter()
         .filter(|channel| channel.is_usable())
         .map(|channel| {
-            format!(
-                "\"{}\" (id={}, provider={})",
+            let mut summary = format!(
+                "\"{}\" (id={}, provider={}, model={})",
                 channel.display_name(),
                 channel.id,
-                channel.provider
-            )
+                channel.provider,
+                channel.primary_model()
+            );
+            if !channel.default_thinking.trim().is_empty() {
+                summary.push_str(&format!(" [thinking={}]", channel.default_thinking.trim()));
+            }
+            // 多模型渠道：把子模型 ID 一并列出，Agent 才能用 model 参数指定它们。
+            let items = channel.get_model_items();
+            if items.len() > 1 {
+                let ids: Vec<String> = items
+                    .iter()
+                    .map(|item| item.model.trim().to_string())
+                    .collect();
+                summary.push_str(&format!(" [models: {}]", ids.join(" | ")));
+            }
+            summary
         })
         .collect();
     if usable.is_empty() {
@@ -1831,6 +2378,114 @@ fn mime_for_format(format: &str) -> String {
         "webp" => "image/webp".to_string(),
         _ => "image/png".to_string(),
     }
+}
+
+/// 将「支持范围」说明文本切分为小写词元集合。
+///
+/// `supported_ratios` / `supported_resolutions` / `supported_thinking` 是用户在
+/// 设置面板自由填写的说明文本（如 `"1K (1792x1008), 2K (2560x1440)"`、
+/// `"512px, 1K, 2K, 4K (支持 16:9@2K 组合语法)"`、`"low, medium, high"`），
+/// 因此不能用精确相等判定，需按词元匹配。按空白与常见分隔符（逗号/分号/
+/// 括号/竖线/斜杠/@）切分，`@` 也切分以便 `"16:9@2K"` 拆成比例与档位。
+fn capability_tokens(raw: &str) -> Vec<String> {
+    raw.split(|c: char| {
+        c.is_whitespace() || matches!(c, ',' | ';' | '(' | ')' | '[' | ']' | '|' | '/' | '@')
+    })
+    .map(|token| token.trim().to_ascii_lowercase())
+    .filter(|token| !token.is_empty())
+    .collect()
+}
+
+/// 判断某个取值是否出现在支持列表中（大小写不敏感的词元匹配）。
+fn capability_contains(raw: &str, value: &str) -> bool {
+    let needle = value.trim().to_ascii_lowercase();
+    if needle.is_empty() {
+        return false;
+    }
+    capability_tokens(raw).iter().any(|token| token == &needle)
+}
+
+/// 「支持范围」是否已被用户显式声明（非空白）。
+///
+/// 三态语义：**未声明**（空）与**已声明**（有值）必须区分——
+/// - 未声明：用户没配过（旧数据/未收录模型），宽松放行，保持原有行为；
+/// - 已声明：用户明确写了范围，越界即拦截，避免上游 400。
+fn capability_declared(raw: &str) -> bool {
+    !raw.trim().is_empty()
+}
+
+/// 规整 Gemini 思考强度：只有模型项**已声明**支持范围且取值在其中时才下发，
+/// 否则返回 None（不发送该参数），避免模型收到不支持的 `thinking_level` 而 400。
+///
+/// - `supported` 为空 = 未声明能力 → 宽松放行（保留归一化后的合法取值）；
+/// - 取值先归一化（low/minimal → minimal），再与支持列表做词元匹配，
+///   与下游 Gemini 分支的映射保持一致。
+fn sanitize_thinking_level(requested: Option<&str>, supported: &str) -> Option<String> {
+    let value = requested?.trim().to_ascii_lowercase();
+    if value.is_empty() {
+        return None;
+    }
+    // Nano Banana 2.1（gemini-nano-banana-2.1）官方新增 medium 档并设为默认
+    // （Google 官方文档 Thinking 页），必须保留，否则用户在下拉里选的 medium
+    // 会被静默丢弃。
+    let effective = match value.as_str() {
+        "minimal" | "low" => "minimal",
+        "medium" => "medium",
+        "high" => "high",
+        _ => return None,
+    };
+    // 未声明支持范围 → 宽松放行；已声明 → 必须在范围内。
+    if !capability_declared(supported) || capability_contains(supported, effective) {
+        Some(effective.to_string())
+    } else {
+        None
+    }
+}
+
+/// 按模型能力规整尺寸：拆解 `"16:9@2K"` / `"1K"` / `"16:9"` / `"1024x1024"` 等写法，
+/// 与 `supported_ratios` / `supported_resolutions` 比对；已声明范围但取值越界时
+/// 返回 None（不发送 size，交由上游默认），避免 400。
+///
+/// - `"auto"` 是 OpenAI 的合法取值，直接放行（不受比例/分辨率列表约束）；
+/// - 两字段均未声明 = 未配置能力 → 宽松放行，保持原有行为不回退。
+fn sanitize_size(
+    requested: Option<&str>,
+    supported_ratios: &str,
+    supported_resolutions: &str,
+) -> Option<String> {
+    let raw = requested?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    if raw.eq_ignore_ascii_case("auto") {
+        return Some(raw.to_string());
+    }
+    let ratios_declared = capability_declared(supported_ratios);
+    let resolutions_declared = capability_declared(supported_resolutions);
+    // 两段都未声明 → 无从校验，放行。
+    if !ratios_declared && !resolutions_declared {
+        return Some(raw.to_string());
+    }
+    // 组合写法「比例@档位」：已声明的那一段必须命中。
+    if let Some((ratio_part, tier_part)) = raw.split_once('@') {
+        let ratio = ratio_part.trim();
+        let tier = tier_part.trim();
+        let ratio_ok = !ratios_declared || capability_contains(supported_ratios, ratio);
+        let tier_ok = !resolutions_declared || capability_contains(supported_resolutions, tier);
+        return (ratio_ok && tier_ok).then(|| format!("{ratio}@{tier}"));
+    }
+    // 纯比例（含 ':'）→ 查 supported_ratios（未声明则放行）。
+    if raw.contains(':') {
+        if !ratios_declared || capability_contains(supported_ratios, raw) {
+            return Some(raw.to_string());
+        }
+        return None;
+    }
+    // 纯档位（1K/2K/512px）或具体像素尺寸（1024x1024）→ 查 supported_resolutions。
+    if !resolutions_declared || capability_contains(supported_resolutions, raw) {
+        return Some(raw.to_string());
+    }
+    None
 }
 
 /// 根据模型能力规整 `background` 参数：
