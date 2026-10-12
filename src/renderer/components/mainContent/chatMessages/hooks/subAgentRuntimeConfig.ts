@@ -4,7 +4,7 @@ import type {
 } from "../../../../../preload";
 import {
   getResponsesFastModeFromConfig,
-  getThinkingValueFromConfig,
+  resolveEffectiveThinkingValue,
 } from "../../chatInput/configThinking";
 
 export type SubAgentRuntimeConfig = {
@@ -16,9 +16,10 @@ export type SubAgentRuntimeConfig = {
   /** Inherited from the parent conversation's captured request. Undefined =
    *  let the selected profile use its own default. An explicit tier is kept. */
   responsesFastMode?: string;
-  /** Effective thinking snapshot captured at sub-agent creation. Resolved
-   *  from the thinking configured on the resolved API profile; the parent
-   *  run's per-send override never applies. Not a Profile write. */
+  /** Effective thinking snapshot captured at sub-agent creation. Inherited
+   *  from the parent run's per-send override when that tier is supported by
+   *  the resolved profile's request method; otherwise the resolved profile's
+   *  own configured value. Not a Profile write. */
   effectiveThinkingStrength: string;
   /** Effective Fast Mode snapshot captured at sub-agent creation. */
   effectiveResponsesFastMode: string;
@@ -31,6 +32,9 @@ export type ResolveSubAgentRuntimeConfigInput = {
   apiConfigs: readonly ApiConfigRecord[];
   parentApiProfile?: string;
   parentModel?: string;
+  /** Thinking strength captured by the parent run (conversation-level choice).
+   *  An unsupported tier falls back to the resolved profile default. */
+  parentThinkingStrength?: string | null;
   /** Effective Fast Mode captured by the parent run; an explicit tier is meaningful. */
   parentResponsesFastMode?: string | null;
 };
@@ -63,6 +67,7 @@ export const resolveSubAgentRuntimeConfig = ({
   apiConfigs,
   parentApiProfile,
   parentModel,
+  parentThinkingStrength,
   parentResponsesFastMode,
 }: ResolveSubAgentRuntimeConfigInput): SubAgentRuntimeConfig => {
   const agentId = normalizeNonEmpty(config.agentId);
@@ -108,9 +113,13 @@ export const resolveSubAgentRuntimeConfig = ({
     throw new Error(`No model is configured for API profile: ${apiProfile}`);
   }
 
-  // 思考强度始终跟随解析后 Profile 的配置值，不继承父会话的发送覆盖
-  //（父覆盖未必适用于该 Profile 的模型）。
-  const effectiveThinkingStrength = getThinkingValueFromConfig(apiConfig);
+  // 思考强度：优先沿用父会话（主流程）本次发送的显式选择——用户可能已在
+  // 输入区把思考强度改成与 Profile 默认不同的档位，派生的子代理应保持一致；
+  // 该档位不被解析后 Profile 的请求方法支持时，回落 Profile 自身配置值。
+  const effectiveThinkingStrength = resolveEffectiveThinkingValue(
+    apiConfig,
+    parentThinkingStrength,
+  );
   // Resolve effective values exactly once when this sub-agent runtime is built.
   // These are request snapshots, never mutations of the API Profile.
   const effectiveResponsesFastMode =

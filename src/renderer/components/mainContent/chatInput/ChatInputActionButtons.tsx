@@ -10,7 +10,6 @@ type ChatInputActionButtonsProps = Pick<
   | "value"
   | "isStreaming"
   | "isAborting"
-  | "isCompacting"
   | "apiConfigs"
   | "runtimeApiConfig"
   | "handleAbort"
@@ -25,7 +24,6 @@ export const ChatInputActionButtons = ({
   value,
   isStreaming,
   isAborting,
-  isCompacting,
   apiConfigs,
   runtimeApiConfig,
   handleAbort,
@@ -78,10 +76,7 @@ export const ChatInputActionButtons = ({
   }, [isSendKeyMenuOpen]);
 
   const sendDisabled =
-    !value.trim() ||
-    isCompacting ||
-    apiConfigs.length === 0 ||
-    !runtimeApiConfig;
+    !value.trim() || apiConfigs.length === 0 || !runtimeApiConfig;
 
   const sendKeyModeLabel = (mode: SendKeyMode): string =>
     mode === "enter"

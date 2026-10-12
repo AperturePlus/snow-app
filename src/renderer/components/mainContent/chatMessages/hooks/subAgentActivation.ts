@@ -103,6 +103,9 @@ export type SubAgentActivationDeps = {
   ) => Promise<ToolAuthorizationDecision[]>;
   parentApiProfile: string | undefined;
   parentModel: string | undefined;
+  /** Effective thinking strength captured by the parent run; inherited by the
+   *  sub-agent when its resolved profile's request method supports the tier. */
+  parentThinkingStrength?: string | null;
   /** Effective Fast Mode captured by the parent run; an explicit tier is valid. */
   parentResponsesFastMode?: string | null;
   planApprovedSessionKeysRef: { current: Set<string> };
@@ -1632,6 +1635,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
     requestToolAuthorizations,
     parentApiProfile,
     parentModel,
+    parentThinkingStrength,
     parentResponsesFastMode,
     planApprovedSessionKeysRef,
   } = deps;
@@ -1709,6 +1713,7 @@ export const createSubAgentActivation = (deps: SubAgentActivationDeps) => {
         apiConfigs: await window.snow.listApiConfigs(),
         parentApiProfile,
         parentModel,
+        parentThinkingStrength,
         parentResponsesFastMode,
       });
       const allowedTools = parseSubAgentTools(runtimeConfig.toolsJson);
@@ -1951,6 +1956,7 @@ const restoreSubAgentResumer = async (
   ctx: ConversationContextValue,
   requestToolAuthorizations: SubAgentActivationDeps["requestToolAuthorizations"],
   planApprovedSessionKeysRef: { current: Set<string> },
+  parentThinkingStrength: string | null | undefined,
   parentResponsesFastMode: string | null | undefined,
   parentConversationId: string,
   targetConvId: string,
@@ -2010,7 +2016,8 @@ const restoreSubAgentResumer = async (
       .getConversationRuntimeConfig(targetConvId)
       .catch(() => null);
     // Fast mode 回退顺序：父运行捕获值 > 会话持久化快照 > 该持久化会话
-    // Profile 的配置值；思考强度则始终由解析后的 Profile 配置决定。
+    // Profile 的配置值；思考强度同理（父运行捕获值 > 会话持久化快照，
+    // 最终由 resolveSubAgentRuntimeConfig 校验档位并回落 Profile 配置）。
     const fallbackProfileName =
       record.apiProfileName.trim() || parentRecord?.apiProfileName.trim();
     const fallbackApiConfig = fallbackProfileName
@@ -2018,6 +2025,10 @@ const restoreSubAgentResumer = async (
           (item) => item.profileName.trim() === fallbackProfileName,
         )
       : undefined;
+    const restoredThinkingStrength =
+      parentThinkingStrength ??
+      persistedRuntimeConfig?.thinkingStrength ??
+      undefined;
     const restoredFastMode =
       parentResponsesFastMode ??
       persistedRuntimeConfig?.responsesFastMode ??
@@ -2029,6 +2040,7 @@ const restoreSubAgentResumer = async (
       apiConfigs,
       parentApiProfile: fallbackProfileName || undefined,
       parentModel: parentRecord?.model || undefined,
+      parentThinkingStrength: restoredThinkingStrength,
       parentResponsesFastMode: restoredFastMode,
     });
     if (
@@ -2157,12 +2169,14 @@ export const createSubAgentMainToolExecutor = (
     SubAgentActivationDeps,
     "requestToolAuthorizations" | "planApprovedSessionKeysRef"
   > & {
+    parentThinkingStrength?: string | null;
     parentResponsesFastMode?: string | null;
   },
 ) => {
   const {
     requestToolAuthorizations,
     planApprovedSessionKeysRef,
+    parentThinkingStrength,
     parentResponsesFastMode,
   } = deps;
 
@@ -2258,6 +2272,7 @@ export const createSubAgentMainToolExecutor = (
           ctx,
           requestToolAuthorizations,
           planApprovedSessionKeysRef,
+          parentThinkingStrength,
           parentResponsesFastMode,
           parentConversationId,
           targetConvId,

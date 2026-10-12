@@ -1,6 +1,7 @@
 import {
   Database,
   FolderTree,
+  Gauge,
   Globe,
   Maximize2,
   Minimize2,
@@ -190,10 +191,16 @@ const ProjectExplorerContent = lazy(() =>
     default: m.ProjectExplorerContent,
   })),
 );
+const TaskManagerContent = lazy(() =>
+  import("./rightPanel/TaskManagerContent").then((m) => ({
+    default: m.TaskManagerContent,
+  })),
+);
 
 const GIT_TAB_ID = "git";
 const CODEBASE_TAB_ID = "codebase";
 const EXPLORER_TAB_ID = "explorer";
+const TASKS_TAB_ID = "tasks";
 
 // 文件类 tab(diff / file / file-diff-preview)在标题前显示对应的文件类型图标。
 const getTabFileIcon = (tab: RightPanelTab): React.ReactNode => {
@@ -238,6 +245,7 @@ export type RightPanelRef = {
   openCodebase: (projectId: string, projectName: string) => void;
   openExplorer: (directoryId: string) => void;
   openDrawing: () => void;
+  openTaskManager: () => void;
   openPluginPanel: (pluginId: string, panelId: string) => void;
   openFile: (
     filePath: string,
@@ -554,6 +562,23 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
       ]);
       setActiveTabId(tabId);
       return tabId;
+    }, [t]);
+
+    // 打开（或切换到已存在的）应用任务管理器 tab：全局唯一固定 tab。
+    const handleOpenTaskManagerTab = useCallback((): void => {
+      setTabs((prev) =>
+        prev.some((tab) => tab.id === TASKS_TAB_ID)
+          ? prev
+          : [
+              ...prev,
+              {
+                id: TASKS_TAB_ID,
+                type: "tasks",
+                title: t("rightPanel.tasksTab"),
+              },
+            ],
+      );
+      setActiveTabId(TASKS_TAB_ID);
     }, [t]);
 
     // 插件面板 tab：同一插件的同一面板复用同一个 tab（避免重复实例）。
@@ -979,6 +1004,9 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         openDrawing: () => {
           handleOpenDrawingTab();
         },
+        openTaskManager: () => {
+          handleOpenTaskManagerTab();
+        },
         openPluginPanel: (pluginId: string, panelId: string) => {
           const plugin = pluginStore.getById(pluginId);
           const panel = plugin?.panels.find((item) => item.id === panelId);
@@ -1016,6 +1044,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         handleOpenCodebaseTab,
         handleOpenExplorerTab,
         handleOpenDrawingTab,
+        handleOpenTaskManagerTab,
         handleOpenPluginPanel,
         handleOpenFileTab,
       ],
@@ -1508,6 +1537,11 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             },
           ]
         : []),
+      {
+        id: "tasks",
+        label: t("topBar.plusMenu.tasks", { defaultValue: "Task manager" }),
+        icon: Gauge,
+      },
       ...pluginPanels.map(({ plugin, panelIndex }) => {
         const panel = plugin.panels[panelIndex];
         const panelTitle = resolveLocalized(panel.title, locale);
@@ -1550,6 +1584,8 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         handleOpenBrowserTab();
       } else if (actionId === "drawing") {
         handleOpenDrawingTab();
+      } else if (actionId === "tasks") {
+        handleOpenTaskManagerTab();
       } else if (actionId === "explorer") {
         handleOpenExplorerTab(activeDirectory?.directoryId ?? "");
       } else if (actionId === "codebase" && activeDirectory?.directoryId) {
@@ -1644,6 +1680,8 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
                   : undefined
               }
             />
+          ) : tab.type === "tasks" ? (
+            <TaskManagerContent isActive={activeTabId === tab.id} />
           ) : tab.type === "plugin" ? (
             (tab.data as PluginTabData) ? (
               <PluginPanelContent

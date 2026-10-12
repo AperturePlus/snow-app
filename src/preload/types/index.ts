@@ -18,6 +18,7 @@ export type * from "./scheduledTask";
 export type * from "./personalization";
 export type * from "./imageLibrary";
 export type * from "./storage";
+export type * from "./taskManager";
 export type * from "./ide";
 export type * from "./pets";
 export type * from "./team";

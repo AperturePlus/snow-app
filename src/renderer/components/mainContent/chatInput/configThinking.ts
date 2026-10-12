@@ -1,5 +1,8 @@
 import type { ApiConfigRecord } from "../../../../preload";
-import { DEFAULT_THINKING_VALUE } from "./constants";
+import {
+  DEFAULT_THINKING_VALUE,
+  THINKING_OPTIONS_BY_METHOD,
+} from "./constants";
 import type { RequestMethod } from "./types";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -79,6 +82,29 @@ export const getThinkingValueFromConfig = (config: ApiConfigRecord): string => {
     ? snowcfg.chatThinking
     : {};
   return resolveThinkingValue(chatThinking, "reasoning_effort");
+};
+
+/**
+ * 解析一次请求实际生效的思考强度：父会话（主流程）为本次发送捕获的显式
+ * 覆盖值优先，但它必须属于该 Profile 请求方法支持的档位；否则回落该
+ * Profile 自身配置的默认值。用于子代理 / Workflow 节点等派生运行——
+ * 它们跟随父会话/会话在输入区选定的思考强度，而不是静默改用 Profile 默认。
+ */
+export const resolveEffectiveThinkingValue = (
+  config: ApiConfigRecord,
+  override: string | null | undefined,
+): string => {
+  const requested = override?.trim();
+  if (requested) {
+    const method = normalizeRequestMethod(config.requestMethod);
+    const supported = THINKING_OPTIONS_BY_METHOD[method].some(
+      (option) => option.value === requested,
+    );
+    if (supported) {
+      return requested;
+    }
+  }
+  return getThinkingValueFromConfig(config);
 };
 
 export const getResponsesFastModeFromConfig = (

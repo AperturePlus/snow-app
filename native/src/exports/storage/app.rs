@@ -38,6 +38,24 @@ pub async fn get_process_memory_bytes() -> napi::Result<i64> {
         .map_err(map_spawn_error)?
 }
 
+/// 采集以 `root_pid` 为根的应用进程树快照（任务管理器面板）。
+/// 系统调用 + CPU 采样缓存，置于 spawn_blocking，不阻塞 Node.js 主线程。
+#[napi]
+pub async fn list_process_tree(root_pid: u32) -> napi::Result<Vec<ProcessSnapshotEntry>> {
+    tokio::task::spawn_blocking(move || crate::storage::list_process_tree(root_pid))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+/// 结束指定进程树（任务管理器面板的「结束进程」）。
+/// Windows 用 taskkill /T /F 连同后代一起结束，Unix 走进程组 kill。
+#[napi]
+pub async fn kill_process_tree(pid: u32) -> napi::Result<()> {
+    tokio::task::spawn_blocking(move || crate::storage::kill_process_tree(pid))
+        .await
+        .map_err(map_spawn_error)?
+}
+
 /// 本进程内存整理（「优化占用」的内存部分）：仅 Windows 支持——Node 侧的
 /// V8 GC 在调用前完成，Rust 侧收缩工作集把不活跃页换出物理内存。
 /// 非 Windows 平台返回错误（macOS/Linux 的堆整理接口存在崩溃风险）。

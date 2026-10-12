@@ -33,6 +33,26 @@ pub struct MemoryOptimizeResult {
     pub bytes_after: i64,
 }
 
+/// 进程资源占用快照条目（任务管理器面板使用；仅覆盖应用自身的进程树）。
+#[napi(object)]
+pub struct ProcessSnapshotEntry {
+    /// 进程 id
+    pub pid: u32,
+    /// 父进程 id（进程树根节点为 0）
+    pub parent_pid: u32,
+    /// 可执行文件名（不含路径）
+    pub name: String,
+    /// CPU 占用百分比（按整机逻辑处理器数归一化，与系统任务管理器口径一致：
+    /// 跑满全部核心 = 100%）。首次采样没有历史基线时为 -1，由前端显示为占位符。
+    pub cpu_percent: f64,
+    /// 可执行文件完整路径；取不到时为空串
+    pub exe_path: String,
+    /// 常驻内存 / 工作集（字节）
+    pub memory_bytes: i64,
+    /// 线程数
+    pub thread_count: u32,
+}
+
 /// 数据清理：单个分类的扫描结果（由「设置 → 存储与资源 → 数据清理」触发）。
 #[napi(object)]
 pub struct CleanupCategoryStats {

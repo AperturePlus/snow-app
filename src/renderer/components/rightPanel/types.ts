@@ -90,6 +90,9 @@ export type PluginTabData = {
   panelId: string;
 };
 
+/** 应用任务管理器 tab 数据（进程快照由组件自行轮询，无需持久化字段）。 */
+export type TaskManagerTabData = Record<string, never>;
+
 export type RightPanelTab = {
   id: string;
   type:
@@ -102,7 +105,8 @@ export type RightPanelTab = {
     | "codebase"
     | "explorer"
     | "drawing"
-    | "plugin";
+    | "plugin"
+    | "tasks";
   title: string;
   data?:
     | DiffTabData
@@ -113,7 +117,8 @@ export type RightPanelTab = {
     | CodebaseTabData
     | ExplorerTabData
     | DrawingTabData
-    | PluginTabData;
+    | PluginTabData
+    | TaskManagerTabData;
 };
 
 export type OpenDiffTabCallback = (

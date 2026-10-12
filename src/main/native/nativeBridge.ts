@@ -61,6 +61,8 @@ const STORAGE_INDEPENDENT_METHODS = new Set<string>([
   "openInIde",
   "writeInteractiveStdin",
   "getProcessMemoryBytes",
+  "listProcessTree",
+  "killProcessTree",
   // 团队协作（仓库内 git 身份与文件，不落数据库）
   "teamGetIdentity",
   "teamResolveRepo",

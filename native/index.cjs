@@ -118,6 +118,9 @@ const requiredExports = [
   "getOAuthLoginStatus",
   "submitOAuthCallback",
   "cancelOAuthLogin",
+  // 应用任务管理器（进程树快照采集与结束进程）
+  "listProcessTree",
+  "killProcessTree",
 ];
 
 const platformName = platformMap[`${process.platform}-${process.arch}`];

@@ -19,7 +19,7 @@ import {
 } from "../utils/pendingInputs";
 import {
   getResponsesFastModeFromConfig,
-  getThinkingValueFromConfig,
+  resolveEffectiveThinkingValue,
 } from "../../chatInput/configThinking";
 import { rejectionKeepsAiFlow } from "../utils/conversationTypes";
 import {
@@ -369,10 +369,12 @@ type RunnerOptions = {
   /** 触发执行的 workflow-generate 工具调用 id：多 flow 卡片隔离键。 */
   interactionId: string;
   directoryId: string;
-  /** 父会话自身使用的 API 配置/模型：节点未单独选择时的兜底（会话可独立
-   *  改配置，因此跟随会话而非全局 active 配置；均空则回落全局默认）。 */
+  /** 父会话自身使用的 API 配置/模型/思考强度：节点未单独选择时的兜底
+   *  （会话可独立改配置与思考强度，因此跟随会话而非全局 active 配置；
+   *  均空则回落全局默认）。 */
   sessionApiProfile?: string;
   sessionModel?: string;
+  sessionThinkingStrength?: string | null;
   nodes: WorkflowNodeItem[];
   edges: WorkflowEdgeItem[];
   /** 每个节点会话创建后回调（侧边栏节点树刷新）。 */
@@ -436,6 +438,7 @@ type FailedFlowEntry = {
   directoryId: string;
   sessionApiProfile: string;
   sessionModel: string;
+  sessionThinkingStrength: string | null;
   nodes: WorkflowNodeItem[];
   edges: WorkflowEdgeItem[];
   onNodeConversationCreated?: (conversationId: string) => void;
@@ -931,6 +934,7 @@ export function createWorkflowRunner(
       directoryId: options.directoryId,
       sessionApiProfile: options.sessionApiProfile ?? "",
       sessionModel: options.sessionModel ?? "",
+      sessionThinkingStrength: options.sessionThinkingStrength ?? null,
       nodes: options.nodes,
       edges: options.edges,
       onNodeConversationCreated: options.onNodeConversationCreated,
@@ -1079,6 +1083,7 @@ export function createWorkflowRunner(
       directoryId: failed.directoryId,
       sessionApiProfile: failed.sessionApiProfile,
       sessionModel: failed.sessionModel,
+      sessionThinkingStrength: failed.sessionThinkingStrength,
       nodes: failed.nodes,
       edges: failed.edges,
       onNodeConversationCreated: failed.onNodeConversationCreated,
@@ -1649,9 +1654,15 @@ export function createWorkflowRunner(
     );
     const effectiveApiProfile =
       requestedApiProfile || apiSnapshot?.profileName.trim() || "";
-    // Freeze defaults for the entire delegated task, including its steering.
+    // 思考强度：沿用父会话本次运行捕获的用户选择（输入区可能已改成与
+    // Profile 默认不同的档位）；该档位不被解析后 Profile 的请求方法支持时，
+    // 由 resolveEffectiveThinkingValue 回落 Profile 自身配置值。
+    // Freeze it for the entire delegated task, including steering.
     const thinkingStrength = apiSnapshot
-      ? getThinkingValueFromConfig(apiSnapshot)
+      ? resolveEffectiveThinkingValue(
+          apiSnapshot,
+          options.sessionThinkingStrength,
+        )
       : undefined;
     const responsesFastMode = apiSnapshot
       ? getResponsesFastModeFromConfig(apiSnapshot)

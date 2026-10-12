@@ -276,7 +276,6 @@ export const ChatInputToolbar = ({
           ])}
           apiConfigIdentity={runtimeApiConfig}
           disabled={
-            isCompacting ||
             isLoadingApiConfig ||
             !runtimeApiConfig ||
             modelSelectorProps.apiConfigs.length === 0 ||
@@ -293,7 +292,6 @@ export const ChatInputToolbar = ({
           value={value}
           isStreaming={isStreaming}
           isAborting={isAborting}
-          isCompacting={isCompacting}
           apiConfigs={modelSelectorProps.apiConfigs}
           runtimeApiConfig={runtimeApiConfig}
           handleAbort={handleAbort}

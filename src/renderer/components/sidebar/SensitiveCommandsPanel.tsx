@@ -612,7 +612,7 @@ export function SensitiveCommandsPanel({
       });
 
   return (
-    <div className="api-settings-page" role="region">
+    <div className="api-settings-page sensitive-commands-page" role="region">
       <div
         className="import-settings-tabs"
         role="tablist"

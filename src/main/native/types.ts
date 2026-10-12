@@ -1100,6 +1100,22 @@ export type MemoryOptimizeResult = {
   bytesAfter: number;
 };
 
+/** 进程资源占用快照条目（任务管理器面板；仅覆盖应用自身的进程树） */
+export type ProcessSnapshotEntry = {
+  pid: number;
+  /** 父进程 id（进程树根节点为 0） */
+  parentPid: number;
+  /** 可执行文件名（不含路径） */
+  name: string;
+  /** 可执行文件完整路径；取不到时为空串 */
+  exePath: string;
+  /** CPU 占用百分比（按整机逻辑处理器数归一化，跑满全部核心 = 100；无基线时为 -1） */
+  cpuPercent: number;
+  /** 常驻内存 / 工作集（字节） */
+  memoryBytes: number;
+  threadCount: number;
+};
+
 /** 数据清理：可清理的分类 id（与 Rust 侧 cleanup 服务一一对应） */
 export type CleanupCategoryId =
   | "checkpoints"
@@ -2981,6 +2997,10 @@ export type NativeBridge = {
   getPathSize: (path: string) => Promise<number>;
   /** 当前进程常驻内存占用（字节；用于设置页展示资源占用） */
   getProcessMemoryBytes: () => Promise<number>;
+  /** 采集以 rootPid 为根的应用进程树快照（任务管理器面板；CPU 为相对上次采样的占用） */
+  listProcessTree: (rootPid: number) => Promise<ProcessSnapshotEntry[]>;
+  /** 结束指定进程树（任务管理器面板的「结束进程」；仅用于应用派生的子进程） */
+  killProcessTree: (pid: number) => Promise<void>;
   /** 整理本进程内存（仅 Windows 支持）：配合主进程 V8 GC 收缩 OS 工作集 */
   optimizeMemory: () => Promise<MemoryOptimizeResult>;
   /** 修复数据库（runtime=运行库 / archive=归档库）：完整性检查、损坏恢复与压缩 */

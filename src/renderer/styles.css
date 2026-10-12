@@ -6563,10 +6563,35 @@ body.is-panel-resizing * {
   line-height: 1.45;
 }
 
+/* 敏感命令面板：规则列表撑满卡片剩余高度，由列表自身滚动 */
 .sensitive-command-table-wrap {
   min-height: 0;
-  max-height: min(360px, 46vh);
+  max-height: none;
+  flex: 1 1 auto;
   overscroll-behavior: contain;
+}
+
+/* 敏感命令面板：卡片与列表链路逐层撑满页面剩余高度 */
+.sensitive-commands-page > .import-settings-tabs,
+.sensitive-commands-page > .api-settings-summary-grid,
+.sensitive-commands-page > .api-settings-actions,
+.sensitive-commands-page > .skills-settings-tabs {
+  flex-shrink: 0;
+}
+
+.sensitive-commands-page .api-settings-manual-form {
+  min-height: 0;
+  margin-bottom: 0;
+  flex: 1 1 auto;
+}
+
+.sensitive-commands-page .api-settings-manual-form > .api-settings-form-body,
+.sensitive-commands-page
+  .api-settings-manual-form
+  > .api-settings-form-body
+  > .api-settings-form-section {
+  min-height: 0;
+  flex: 1 1 auto;
 }
 
 /* API 设置页：同步 / 手动添加 / 导入配置 三键并排等宽 */
@@ -29674,6 +29699,252 @@ body.is-panel-resizing * {
   font-variant-numeric: tabular-nums;
   min-width: 60px;
   text-align: center;
+}
+
+/* ===== Task Manager Panel ===== */
+.task-manager {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.task-manager-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.task-manager-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.task-manager-summary-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+/* 自动刷新开关复用全局 .toggle-switch（文字在左、滑块在右）。 */
+.task-manager-auto-refresh {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.task-manager-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+
+.task-manager-refresh-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.task-manager-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  padding: 24px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.task-manager-error {
+  color: var(--accent-red-text, #e5484d);
+}
+
+.task-manager-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.task-manager-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  table-layout: fixed;
+}
+
+.task-manager-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0;
+  text-align: left;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-light);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.task-manager-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-manager-sort-btn:hover {
+  color: var(--text-primary);
+}
+
+.task-manager-col-name {
+  width: auto;
+}
+
+.task-manager-col-kind {
+  width: 92px;
+}
+
+.task-manager-col-pid {
+  width: 72px;
+}
+
+.task-manager-col-cpu {
+  width: 68px;
+}
+
+.task-manager-col-memory {
+  width: 86px;
+}
+
+.task-manager-col-threads {
+  width: 60px;
+}
+
+.task-manager-col-actions {
+  width: 44px;
+}
+
+.task-manager-col-actions-label {
+  display: block;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.task-manager-table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-manager-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.task-manager-cell-name {
+  color: var(--text-primary);
+}
+
+.task-manager-name-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.task-manager-process-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  object-fit: contain;
+  color: var(--text-muted);
+}
+
+.task-manager-name-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-manager-name-sub {
+  display: block;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-manager-cell-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.task-manager-cell-actions {
+  text-align: center;
+}
+
+.task-manager-kill-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+
+.task-manager-kill-btn:hover {
+  background: var(--bg-hover);
+  color: var(--accent-red-text, #e5484d);
+}
+
+.task-manager-kill-error {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: var(--accent-red-text, #e5484d);
 }
 
 /* ===== Codebase Panel View Toggle ===== */

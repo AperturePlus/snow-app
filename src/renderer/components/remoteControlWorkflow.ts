@@ -591,9 +591,10 @@ export const runRemoteWorkflow = async (
       interactionId: normalized,
       directoryId,
       // 空节点配置跟随会话自身的 API 配置 / 模型（会话可独立更改配置），
-      // 会话也未设置时由 Rust 端回落全局默认。
+      // 会话也未设置时由 Rust 端回落全局默认；思考强度同样继承会话选择。
       sessionApiProfile: runtime?.apiProfile || record?.apiProfileName || "",
       sessionModel: runtime?.model || record?.model || "",
+      sessionThinkingStrength: runtime?.thinkingStrength ?? null,
       nodes,
       edges: graph.edges,
       onNodeConversationCreated: () => {

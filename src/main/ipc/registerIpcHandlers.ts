@@ -28,6 +28,7 @@ import { registerBrowserHistoryHandlers } from "./handlers/browserHistoryHandler
 import { registerUserscriptHandlers } from "./handlers/userscriptHandlers";
 import { registerPluginHandlers } from "./handlers/pluginHandlers";
 import { registerPetHandlers } from "./handlers/petHandlers";
+import { registerProcessHandlers } from "./handlers/processHandlers";
 import { registerRemoteControlHandlers } from "./handlers/remoteControlHandlers";
 
 export const registerIpcHandlers = (native: NativeBridge): void => {
@@ -61,5 +62,6 @@ export const registerIpcHandlers = (native: NativeBridge): void => {
   registerUserscriptHandlers(native);
   registerPluginHandlers(native);
   registerPetHandlers(native);
+  registerProcessHandlers(native);
   registerRemoteControlHandlers();
 };

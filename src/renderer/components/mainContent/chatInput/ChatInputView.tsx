@@ -694,7 +694,6 @@ export const ChatInputView = ({
       projectId: projectId ?? conversationDirectoryId ?? "",
       sessionKey: sessionViewKey ?? "",
       conversationId: activeConversationId ?? null,
-      blocked: isCompacting,
       restoreContent,
     });
   }, [
@@ -703,7 +702,6 @@ export const ChatInputView = ({
     conversationDirectoryId,
     sessionViewKey,
     activeConversationId,
-    isCompacting,
     restoreContent,
   ]);
 
@@ -834,10 +832,8 @@ export const ChatInputView = ({
         <div className="input-box">
           <div
             ref={textareaRef}
-            className={`input-field input-field-editable${
-              isCompacting ? " is-disabled" : ""
-            }`}
-            contentEditable={!isCompacting}
+            className="input-field input-field-editable"
+            contentEditable
             suppressContentEditableWarning
             data-placeholder={placeholder}
             data-empty="true"

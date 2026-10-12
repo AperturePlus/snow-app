@@ -32,7 +32,7 @@ import { PlusMenuButton, type PlusMenuItem } from "./common/PlusMenuButton";
 import { explorerPlacementStore } from "./common/explorerPlacementStore";
 import { PluginIcon } from "./common/PluginIcon";
 import { SnowLogo } from "./common/SnowLogo";
-import { Puzzle } from "lucide-react";
+import { Gauge, Puzzle } from "lucide-react";
 import { resolveLocalized } from "../plugins/manifest";
 import { pluginStore, usePluginStore } from "../plugins/pluginStore";
 import { WindowControlsButtons } from "./WindowControls";
@@ -56,6 +56,7 @@ type TopBarProps = {
   onOpenCodebase?: (projectId: string, projectName: string) => void;
   onOpenProjectExplorer?: (directoryId: string) => void;
   onOpenDrawing?: () => void;
+  onOpenTaskManager?: () => void;
   onOpenPluginPanel?: (pluginId: string, panelId: string) => void;
 };
 
@@ -74,6 +75,7 @@ export const TopBar = ({
   onOpenCodebase,
   onOpenProjectExplorer,
   onOpenDrawing,
+  onOpenTaskManager,
   onOpenPluginPanel,
 }: TopBarProps): React.JSX.Element => {
   const isWindows = navigator.userAgent.includes("Win");
@@ -682,6 +684,11 @@ export const TopBar = ({
           },
         ]
       : []),
+    {
+      id: "tasks",
+      label: t("topBar.plusMenu.tasks", { defaultValue: "Task manager" }),
+      icon: Gauge,
+    },
     ...pluginPanels.map(({ plugin, panelIndex }) => {
       const panel = plugin.panels[panelIndex];
       const panelTitle = resolveLocalized(panel.title, locale);
@@ -716,6 +723,8 @@ export const TopBar = ({
       onOpenBrowser?.();
     } else if (actionId === "drawing") {
       onOpenDrawing?.();
+    } else if (actionId === "tasks") {
+      onOpenTaskManager?.();
     } else if (actionId === "explorer") {
       onOpenProjectExplorer?.(activeProjectId ?? "");
     } else if (actionId === "codebase" && activeProjectId) {

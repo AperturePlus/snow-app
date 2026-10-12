@@ -15,7 +15,6 @@ type DraftHost = {
   projectId: string;
   sessionKey: string;
   conversationId: string | null;
-  blocked: boolean;
   restoreContent: (content: string) => void;
 };
 
@@ -57,7 +56,7 @@ const tokens = new Map<string, DraftToken>();
 const TOKEN_LIMIT = 128;
 const TOKEN_TTL_MS = 5 * 60 * 1000;
 
-/** Re-register on project/session/editability changes; streaming alone is not a draft change. */
+/** Re-register on project/session changes; streaming or compaction are not draft changes. */
 export const registerPluginDraftHost = (next: DraftHost): (() => void) => {
   host = next;
   tokens.clear();
@@ -88,8 +87,6 @@ const requireHost = (): DraftHost => {
   if (!host || !host.element.isConnected || !host.element.isContentEditable) {
     throw new Error("Chat input is not mounted or available");
   }
-  if (host.blocked)
-    throw new Error("Chat input is not editable (compacting or unavailable)");
   return host;
 };
 

@@ -568,6 +568,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         requestToolAuthorizations,
         parentApiProfile: capturedOptions.apiProfile,
         parentModel: capturedOptions.model,
+        parentThinkingStrength: capturedOptions.thinkingStrength,
         parentResponsesFastMode: capturedOptions.responsesFastMode,
         planApprovedSessionKeysRef,
       });
@@ -698,6 +699,7 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
       const executeSubAgentMainTool = createSubAgentMainToolExecutor(ctx, {
         requestToolAuthorizations,
         planApprovedSessionKeysRef,
+        parentThinkingStrength: capturedOptions.thinkingStrength,
         parentResponsesFastMode: capturedOptions.responsesFastMode,
       });
 

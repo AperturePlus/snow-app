@@ -666,6 +666,15 @@ export const App = (): React.JSX.Element => {
     });
   }, [isRightPanelCollapsed]);
 
+  const handleOpenTaskManager = useCallback(() => {
+    if (isRightPanelCollapsed) {
+      setIsRightPanelCollapsed(false);
+    }
+    requestAnimationFrame(() => {
+      rightPanelRef.current?.openTaskManager();
+    });
+  }, [isRightPanelCollapsed]);
+
   const handleOpenPluginPanel = useCallback(
     (pluginId: string, panelId: string) => {
       if (isRightPanelCollapsed) {
@@ -1062,6 +1071,7 @@ export const App = (): React.JSX.Element => {
             onOpenCodebase={handleOpenCodebase}
             onOpenProjectExplorer={handleOpenProjectExplorer}
             onOpenDrawing={handleOpenDrawing}
+            onOpenTaskManager={handleOpenTaskManager}
             onOpenPluginPanel={handleOpenPluginPanel}
           />
           <div className="app-layout">

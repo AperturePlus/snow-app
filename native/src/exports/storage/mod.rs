@@ -28,6 +28,7 @@ pub(crate) use crate::storage::{
     MemoryOptimizeResult,
     MemoryPage, MemoryRecord, MemoryStats,
     MemoCountSummary, MemoPage, MemoRecord, PluginRecord, PluginStorageValue,
+    ProcessSnapshotEntry,
     ProjectCollectionRecord, ProjectMcpServerConfigRecord,
     ProjectSensitiveCommandConfigInput, ProjectSensitiveCommandConfigRecord,
     RemoteDraftInput, RemoteDraftRecord,

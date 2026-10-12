@@ -1351,6 +1351,8 @@ const WorkflowToolCallInner = ({
         sessionApiProfile:
           runtimeInputState?.apiProfile || record?.apiProfileName || "",
         sessionModel: runtimeInputState?.model || record?.model || "",
+        // 会话在输入区选定的思考强度（null = 跟随 Profile 默认）随节点继承。
+        sessionThinkingStrength: runtimeInputState?.thinkingStrength ?? null,
         nodes: workableNodes,
         edges,
         onNodeConversationCreated: () => {
