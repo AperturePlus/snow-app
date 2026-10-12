@@ -20445,15 +20445,15 @@ body.is-panel-resizing * {
 }
 
 .imagegen-model-tab:hover {
-  background: var(--hover-bg, rgba(255, 255, 255, 0.05));
+  background: var(--bg-hover);
   color: var(--text-primary);
   border-color: var(--border-light);
 }
 
 .imagegen-model-tab.active {
-  background: var(--accent-color, #3b82f6);
-  color: #fff;
-  border-color: var(--accent-color, #3b82f6);
+  background: color-mix(in srgb, var(--accent-color) 14%, transparent);
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent-color) 45%, transparent);
   font-weight: 500;
 }
 
@@ -20462,13 +20462,9 @@ body.is-panel-resizing * {
 }
 
 .imagegen-model-tab-star {
-  color: #eab308;
+  color: var(--accent-amber-text);
   font-size: 12px;
   line-height: 1;
-}
-
-.imagegen-model-tab.active .imagegen-model-tab-star {
-  color: #fef08a;
 }
 
 .imagegen-model-tab-close {
@@ -20492,7 +20488,7 @@ body.is-panel-resizing * {
 
 .imagegen-model-tab-close:hover {
   opacity: 1;
-  background: rgba(0, 0, 0, 0.25);
+  background: color-mix(in srgb, currentColor 24%, transparent);
 }
 
 .imagegen-model-actions-bar {
@@ -20511,7 +20507,7 @@ body.is-panel-resizing * {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: #eab308;
+  color: var(--accent-amber-text);
   font-weight: 600;
 }
 
@@ -47683,6 +47679,11 @@ pre.file-viewer-code {
   flex: none;
 }
 
+/* 面板内原生复选框跟随主题强调色 */
+.imagegen-tab-page input[type="checkbox"] {
+  accent-color: var(--accent-color);
+}
+
 /* 汇总卡片区：与 API 设置页 api-settings-summary-grid 同构。
    4 列：渠道数 / 已启用 / 最大并发生成数 / 生成超时 */
 .imagegen-summary-grid {
@@ -47845,6 +47846,11 @@ pre.file-viewer-code {
   font-size: 10.5px;
   font-weight: 500;
   line-height: 1.45;
+}
+
+/* 弹窗内原生复选框跟随主题强调色 */
+.imagegen-editor input[type="checkbox"] {
+  accent-color: var(--accent-color);
 }
 
 .imagegen-editor-actions {
