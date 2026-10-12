@@ -14431,6 +14431,44 @@ body.is-panel-resizing * {
   color: var(--text-tertiary);
 }
 
+/* 工具调用被用户拒绝时的理由提示条：常驻显示（不随卡片展开状态隐藏），
+   让用户回看历史时仍能知道当时为什么拒绝。 */
+.tcn-rejection {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 3px 0 0 2px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid
+    color-mix(in srgb, var(--accent-red, #ef4444) 28%, transparent);
+  background: var(--accent-red-bg);
+  color: var(--accent-red-text);
+  font-size: 12px;
+  /* 固定行高：图标按首行行高精确居中（见 .tcn-rejection-icon 的 margin-top） */
+  line-height: 18px;
+  min-width: 0;
+}
+
+.tcn-rejection-icon {
+  display: block;
+  flex-shrink: 0;
+  /* 12px 图标在 18px 行高内居中 */
+  margin-top: 3px;
+  color: var(--accent-red);
+}
+
+.tcn-rejection-label {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.tcn-rejection-reason {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .tcn-chevron {
   flex-shrink: 0;
   transition:
@@ -16970,6 +17008,13 @@ body.is-panel-resizing * {
 
 .tool-call-error > span {
   min-width: 0;
+}
+
+/* 无文案的错误行（如拒绝场景：理由已由卡片下方的提示条承载）整体隐藏，
+   避免只剩一个孤零零的错误图标。 */
+.tool-call-error:has(> span:empty),
+.tool-call-codelens-no-results:has(> span:empty) {
+  display: none;
 }
 
 .tool-call-error svg {
@@ -26488,6 +26533,7 @@ body.is-panel-resizing * {
 .file-chip {
   margin: 0 2px;
   user-select: none;
+  max-width: 240px;
 }
 .file-chip[contenteditable="false"] {
   cursor: default;
@@ -27991,6 +28037,56 @@ body.is-panel-resizing * {
 
 .mention-entry.selected .mention-entry-path {
   color: var(--text-tertiary);
+}
+
+.mention-entry.has-lines {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.mention-entry-lines {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 42px;
+  margin-top: 1px;
+}
+
+.mention-entry-line {
+  display: flex;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.mention-entry.selected .mention-entry-line {
+  color: var(--text-tertiary);
+}
+
+.mention-entry-line-number {
+  flex-shrink: 0;
+  min-width: 20px;
+  text-align: right;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.mention-entry.selected .mention-entry-line-number {
+  color: var(--text-muted);
+}
+
+.mention-entry-line-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mention-entry-line-more {
+  font-size: 10.5px;
+  color: var(--text-muted);
 }
 
 .file-mention-footer {
@@ -35392,6 +35488,18 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
 .confirm-dialog-btn.confirm:hover {
   background: var(--accent-red-text);
   color: #fff;
+}
+
+/* 非破坏性确认（安装/更新等）使用主色，避免误用危险色 */
+.confirm-dialog-btn.primary {
+  border: none;
+  background: var(--accent-color);
+  color: var(--on-solid);
+}
+
+.confirm-dialog-btn.primary:hover {
+  background: color-mix(in srgb, var(--accent-color) 88%, white);
+  color: var(--on-solid);
 }
 
 /* 关闭确认弹窗的「不再询问」勾选行（ConfirmDialog children 插槽） */

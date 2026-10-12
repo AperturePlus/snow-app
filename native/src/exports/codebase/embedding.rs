@@ -896,12 +896,8 @@ async fn embed_with_retry(
                     return Err(error);
                 }
 
-                // 与 wait_before_retry 一致的指数退避（base×2^attempt，封顶 30s）
                 let delay = std::time::Duration::from_millis(
-                    options
-                        .base_delay_ms
-                        .saturating_mul(1u64 << attempt.min(4))
-                        .min(30_000),
+                    crate::api::retry::retry_backoff_ms(&options, attempt).max(0) as u64,
                 );
                 tokio::select! {
                     _ = tokio::time::sleep(delay) => {}

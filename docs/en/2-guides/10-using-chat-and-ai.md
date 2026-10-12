@@ -73,6 +73,7 @@ The sidebar **Conversations** section normally shows only the **current project'
 ### 2.3 Files and Images
 
 - Type `@` to search workspace files. Browse into folders, use breadcrumbs to jump to a parent, or press the left arrow to go up one level;
+- Type `@@<query>` to **search file contents**: only files whose body matches the keyword are listed, each annotated with the matching line numbers and text; selecting one inserts a line-numbered file reference (`file.ts:L5,L20`) and the matching lines are sent to the AI with the message;
 - Type `@?<query>` for a **natural-language file search** (see [Git and Code Browsing](12-git-and-code-browsing.md));
 - Type `@!<query>` to search and reference **enabled Skills**: selecting one inserts a Skill chip into the composer that is sent to the AI as-is, letting the AI read the Skill's name and description and load it on demand;
 - Select or drag a whole directory when the AI should inspect its contents;

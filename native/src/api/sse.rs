@@ -140,6 +140,7 @@ pub(crate) async fn send_streaming_sse_request(
                 if !should_retry(&error, attempt, retry_options) {
                     return Err(error);
                 }
+                let backoff_ms = retry_backoff_ms(retry_options, attempt);
                 log_retry_attempt_best_effort(
                     func,
                     provider,
@@ -148,12 +149,12 @@ pub(crate) async fn send_streaming_sse_request(
                     attempt,
                     endpoint,
                     &error.reason,
-                    retry_backoff_ms(retry_options, attempt),
+                    backoff_ms,
                 )
                 .await;
                 attempt += 1;
                 tokio::time::sleep(std::time::Duration::from_millis(
-                    retry_options.base_delay_ms,
+                    backoff_ms.max(0) as u64,
                 ))
                 .await;
                 continue;
@@ -168,6 +169,7 @@ pub(crate) async fn send_streaming_sse_request(
             if !should_retry(&error, attempt, retry_options) {
                 return Err(error);
             }
+            let backoff_ms = retry_backoff_ms(retry_options, attempt);
             log_retry_attempt_best_effort(
                 func,
                 provider,
@@ -176,12 +178,12 @@ pub(crate) async fn send_streaming_sse_request(
                 attempt,
                 endpoint,
                 &error.reason,
-                retry_backoff_ms(retry_options, attempt),
+                backoff_ms,
             )
             .await;
             attempt += 1;
             tokio::time::sleep(std::time::Duration::from_millis(
-                retry_options.base_delay_ms,
+                backoff_ms.max(0) as u64,
             ))
             .await;
             continue;

@@ -206,7 +206,7 @@ flowchart TD
 
 1. **Retry Configuration Parameters** (derived from `api_configs` profiles):
    - `max_retries`: Maximum automated retry attempts per stream request (default 3).
-   - `retry_base_delay_ms`: Base exponential backoff delay (default 1000ms), backing off by $base \times 2^{(attempt-1)}$.
+   - `retry_base_delay_ms`: Retry interval. When set to 0, exponential backoff is used (3000ms base, growing as $base \times 2^{attempt}$, capped at 30s); a value above 0 makes every retry wait that fixed interval (no cap).
    - `stream_idle_timeout_sec`: Streaming idle watchdog (default 60s; if the upstream provider ceases sending data chunks for this duration, `idle_timeout` triggers and invokes retry).
    - `partial_retry_max_chars`: Mid-stream partial preservation threshold (default 1000 characters).
 2. **Error Classification Matrix (`DEFAULT_RETRY_CATEGORIES`)**:

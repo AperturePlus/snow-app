@@ -11,6 +11,7 @@ const PTY_FILTERED_ENV_KEYS = new Set([
   "ELECTRON_RUN_AS_NODE",
   "ELECTRON_NO_ATTACH_CONSOLE",
   "NODE_ENV",
+  "ARGV0",
 ]);
 
 const hasEnvKey = (

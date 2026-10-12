@@ -16,6 +16,7 @@ dirs-next = "2.0.0"
 futures = "0.3.31"
 napi = { version = "3.2.4", default-features = false, features = ["napi4", "async"] }
 napi-derive = "3.2.4"
+ctor = "1"
 reqwest = { version = "0.12.5", features = ["blocking", "json", "stream", "multipart", "gzip", "brotli", "deflate"] }
 flate2 = "1"
 libc = "0.2"

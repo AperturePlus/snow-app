@@ -206,7 +206,7 @@ flowchart TD
 
 1. **核心重试参数配置**（来源于 `api_configs` 档案与全局规则）：
    - `max_retries`：每个请求最大自动重试次数（默认 3 次）。
-   - `retry_base_delay_ms`：指数退避基数（默认 1000ms），后续按 $base \times 2^{(attempt-1)}$ 递增退避。
+   - `retry_base_delay_ms`：重试间隔。档案留 0 时走指数退避——基数 3000ms，按 $base \times 2^{attempt}$ 递增，上限 30s；填写大于 0 的数值时每次重试固定等待该时长（不封顶）。
    - `stream_idle_timeout_sec`：流空闲心跳守护（默认 60s，若 Provider 超过该时间无任何新数据块，主动判定为 `idle_timeout` 并介入重试）。
    - `partial_retry_max_chars`：中途保留阈值（默认 1000 字符）。
 2. **错误分类矩阵（`DEFAULT_RETRY_CATEGORIES`）**：

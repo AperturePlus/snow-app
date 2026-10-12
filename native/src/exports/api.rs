@@ -93,7 +93,8 @@ pub async fn create_response_stream(
     on_chunk: ResponsesApiStreamCallback,
     stream_id: String,
 ) -> napi::Result<ResponsesApiResult> {
-    create_conversation_response_stream(request, on_chunk, stream_id).await
+    let stream = create_conversation_response_stream(request, on_chunk, stream_id);
+    crate::utils::panic_guard::guard_panic(stream).await
 }
 
 #[napi]
@@ -217,7 +218,8 @@ pub async fn search_files_by_agent(
 ) -> napi::Result<Vec<FileSearchResult>> {
     let linked_roots = resolve_linked_roots_for_file_search(&workspace_path).await;
     let token = CancellationToken::new();
-    run_agent(query, workspace_path, linked_roots, token, on_progress).await
+    let agent = run_agent(query, workspace_path, linked_roots, token, on_progress);
+    crate::utils::panic_guard::guard_panic(agent).await
 }
 
 /// 解析工作区路径所属关联项目组（合集）的成员根目录：文件搜索 agent 把这些
@@ -478,7 +480,7 @@ pub async fn call_mcp_tool(
     plan_approved: Option<bool>,
     conversation_id: Option<String>,
 ) -> napi::Result<String> {
-    call_tool(
+    let execution = call_tool(
         tool_full_name,
         args_json,
         project_id,
@@ -496,8 +498,8 @@ pub async fn call_mcp_tool(
         plan_mode.unwrap_or(false),
         plan_approved.unwrap_or(false),
         conversation_id,
-    )
-    .await
+    );
+    crate::utils::panic_guard::guard_panic(execution).await
 }
 
 #[napi(object)]

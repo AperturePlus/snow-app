@@ -406,7 +406,7 @@ export const emptyApiConfigForm = (
   autoCompressThreshold: String(DEFAULT_AUTO_COMPRESS_THRESHOLD_PERCENT),
   toolResultTokenLimit: String(DEFAULT_TOOL_RESULT_LIMIT_PERCENT),
   maxRetries: "5",
-  retryBaseDelayMs: "3000",
+  retryBaseDelayMs: "",
   partialRetryMaxChars: "1000",
   systemPromptIdsJson: "",
   customHeaderSchemeId: "",

@@ -54,7 +54,7 @@ Snow CLI).
 | `showThinking`          | boolean |           | Show thinking process                                                                   |
 | `streamIdleTimeoutSec`  | integer |           | Streaming idle timeout (seconds)                                                        |
 | `maxRetries`            | integer |           | Max request retries                                                                     |
-| `retryDelayMs`          | integer |           | Retry delay (ms)                                                                        |
+| `retryDelayMs`          | integer |           | Retry delay (ms); 0 uses exponential backoff                                            |
 | `enableAutoCompress`    | boolean |           | Auto-compress toggle                                                                    |
 | `autoCompressThreshold` | integer |           | Auto-compress threshold (percent)                                                       |
 | `toolResultTokenLimit`  | integer |           | Maximum percentage of the model context available to each tool result                   |

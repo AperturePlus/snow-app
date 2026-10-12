@@ -5,7 +5,11 @@ import {
   useState,
   type RefObject,
 } from "react";
-import { loadTaskSnapshots, type TaskSnapshot } from "../hooks/taskHistory";
+import {
+  loadTaskSnapshots,
+  taskSnapshotFingerprint,
+  type TaskSnapshot,
+} from "../hooks/taskHistory";
 import type { Locale } from "../../../../../shared/locale";
 import { useI18n } from "../../../../i18n";
 import { loadPluginMessages } from "../../../../plugins/manifest";
@@ -26,6 +30,8 @@ import type {
   PluginView,
 } from "../../../../plugins/types";
 import { useChatConversationContext } from "./ChatConversationContext";
+
+const TASK_HISTORY_REFRESH_DEBOUNCE_MS = 150;
 
 // Keep diagnostics searchable without logging plugin errors, paths or file data.
 const logFooterDiagnostic = (
@@ -261,6 +267,7 @@ export const PluginMessageFooters = ({
     identity: string;
     plugins: PluginView[];
     snapshot?: TaskSnapshot;
+    fingerprint: string;
   }>();
   // Never expose a previous reply's snapshot while a new identity is loading.
   const task =
@@ -292,7 +299,8 @@ export const PluginMessageFooters = ({
     if (!hasTaskFooters) return;
     let disposed = false;
     let generation = 0;
-    const refresh = (): void => {
+    let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+    const run = (): void => {
       const current = ++generation;
       void loadTaskSnapshots(conversationId)
         .then((snapshots) => {
@@ -302,15 +310,20 @@ export const PluginMessageFooters = ({
             (message?.responseId
               ? snapshots.get(`response:${message.responseId}`)
               : undefined);
+          const fingerprint = taskSnapshotFingerprint(next);
           // A stable task ID does not prove the extraction result is unchanged
           // after a host logic update. Keep the mount only for identical evidence.
           setLoadedTask((previous) =>
             previous?.identity === taskIdentity &&
             previous.plugins === plugins &&
-            previous.snapshot?.id === next?.id &&
-            JSON.stringify(previous.snapshot) === JSON.stringify(next)
+            previous.fingerprint === fingerprint
               ? previous
-              : { identity: taskIdentity, plugins, snapshot: next },
+              : {
+                  identity: taskIdentity,
+                  plugins,
+                  snapshot: next,
+                  fingerprint,
+                },
           );
           if (legacyEligible && !next)
             logFooterDiagnostic("INFO", conversationId, "no-task-snapshot", {
@@ -329,13 +342,29 @@ export const PluginMessageFooters = ({
           }
         });
     };
+    const schedule = (immediate: boolean): void => {
+      if (debounceTimer !== undefined) {
+        clearTimeout(debounceTimer);
+        debounceTimer = undefined;
+      }
+      if (immediate) {
+        run();
+        return;
+      }
+      debounceTimer = setTimeout(() => {
+        debounceTimer = undefined;
+        run();
+      }, TASK_HISTORY_REFRESH_DEBOUNCE_MS);
+    };
     const changed = (event: Event): void => {
-      if ((event as CustomEvent<string>).detail === conversationId) refresh();
+      if ((event as CustomEvent<string>).detail === conversationId)
+        schedule(false);
     };
     window.addEventListener("agent-task-history-updated", changed);
-    refresh();
+    schedule(true);
     return () => {
       disposed = true;
+      if (debounceTimer !== undefined) clearTimeout(debounceTimer);
       window.removeEventListener("agent-task-history-updated", changed);
     };
     // Plugin replacement and run completion must retry an initially failed read,

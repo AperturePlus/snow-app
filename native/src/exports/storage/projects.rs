@@ -368,6 +368,16 @@ pub async fn search_files(root_dir: String, query: String) -> napi::Result<Vec<F
 }
 
 #[napi]
+pub async fn search_file_contents(
+    root_dir: String,
+    query: String,
+) -> napi::Result<Vec<FileSearchResult>> {
+    tokio::task::spawn_blocking(move || crate::storage::search_file_contents(root_dir, query))
+        .await
+        .map_err(map_spawn_error)?
+}
+
+#[napi]
 pub async fn read_file_content(file_path: String) -> napi::Result<FileContentResult> {
     tokio::task::spawn_blocking(move || crate::storage::read_file_content(file_path))
         .await

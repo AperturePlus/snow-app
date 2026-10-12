@@ -49,6 +49,7 @@ const STORAGE_INDEPENDENT_METHODS = new Set<string>([
   "readFileContent",
   "writeFileContent",
   "searchFiles",
+  "searchFileContents",
   "sha256File",
   "getPathSize",
   "startFileWatch",

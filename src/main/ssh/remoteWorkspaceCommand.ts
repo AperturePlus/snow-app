@@ -1350,6 +1350,13 @@ const executeFilesystemCopy = async (
   }
   const position: "before" | "after" =
     args.position === "after" ? "after" : "before";
+  // position 只在 insert 模式有意义：与 targetEndLine 的护栏对称，replace 下显式
+  // 传入直接拒绝，避免参数被静默吞掉。
+  if (mode === "replace" && args.position !== undefined) {
+    throw new Error(
+      'position is only used with mode="insert". Pass mode="insert" to insert the lines before/after targetLine, or drop position to overwrite the targetLine..targetEndLine range.',
+    );
+  }
 
   const sourceStartArg = ensureRequiredPositiveInteger(
     args.sourceStartLine,

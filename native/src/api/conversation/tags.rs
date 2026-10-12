@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::Path;
 
 use base64::Engine;
@@ -28,7 +29,8 @@ pub fn parse_chat_message_content(
     const CONVERSATION_TAG_PREFIX: &str = "@@conversation:";
     const ANNOTATION_TAG_PREFIX: &str = "@@annotation:";
     const FILE_SELECTION_TAG_PREFIX: &str = "@@file-selection:";
-    const TAG_PREFIXES: [&str; 7] = [
+    const FILE_TAG_PREFIX: &str = "@@file:";
+    const TAG_PREFIXES: [&str; 8] = [
         IMAGE_TAG_PREFIX,
         REVIEW_TAG_PREFIX,
         COMMAND_TAG_PREFIX,
@@ -36,6 +38,7 @@ pub fn parse_chat_message_content(
         CONVERSATION_TAG_PREFIX,
         ANNOTATION_TAG_PREFIX,
         FILE_SELECTION_TAG_PREFIX,
+        FILE_TAG_PREFIX,
     ];
 
     let mut parsed = ParsedChatMessageContent::default();
@@ -118,6 +121,12 @@ pub fn parse_chat_message_content(
             // file-selection 标签：将文件选区引用展开为「文件:行号 + 选中原文」
             // 的可读文本，使 AI 直接看到用户选中的内容，而不是自行读取整行。
             if let Some(text) = try_expand_file_selection_tag(value) {
+                parsed.text.push_str(&text);
+            } else {
+                parsed.text.push_str(&remaining[tag_start..full_tag_end]);
+            }
+        } else if prefix == FILE_TAG_PREFIX {
+            if let Some(text) = try_expand_file_reference_tag(value) {
                 parsed.text.push_str(&text);
             } else {
                 parsed.text.push_str(&remaining[tag_start..full_tag_end]);
@@ -344,6 +353,144 @@ fn try_expand_file_selection_tag(value: &str) -> Option<String> {
     Some(text)
 }
 
+const MAX_FILE_REFERENCE_FILE_SIZE: u64 = 8 * 1024 * 1024;
+const MAX_FILE_REFERENCE_LINES: usize = 80;
+const MAX_FILE_REFERENCE_LINE_CHARS: usize = 400;
+const MAX_FILE_REFERENCE_TOTAL_CHARS: usize = 6000;
+
+fn try_expand_file_reference_tag(value: &str) -> Option<String> {
+    let (path, lines_suffix) = split_line_suffix(value)?;
+    if path.trim().is_empty() {
+        return None;
+    }
+    let lines = parse_line_references(lines_suffix);
+    if lines.is_empty() {
+        return None;
+    }
+
+    let raw = fs::read(path).ok()?;
+    if raw.len() as u64 > MAX_FILE_REFERENCE_FILE_SIZE {
+        return None;
+    }
+    let check_len = raw.len().min(8192);
+    if raw[..check_len].iter().any(|byte| *byte == 0) {
+        return None;
+    }
+
+    let content = String::from_utf8_lossy(&raw);
+    let file_lines: Vec<&str> = content.lines().collect();
+    let width = lines
+        .iter()
+        .max()
+        .map(|line| line.to_string().len())
+        .unwrap_or(1);
+
+    let mut quoted = String::new();
+    let mut emitted = 0usize;
+    let mut used_chars = 0usize;
+    let mut truncated = false;
+
+    for line_no in &lines {
+        if emitted >= MAX_FILE_REFERENCE_LINES {
+            truncated = true;
+            break;
+        }
+        let Some(text) = file_lines.get((*line_no as usize).saturating_sub(1)) else {
+            continue;
+        };
+        let text = truncate_line(text, MAX_FILE_REFERENCE_LINE_CHARS);
+        if used_chars + text.len() > MAX_FILE_REFERENCE_TOTAL_CHARS {
+            truncated = true;
+            break;
+        }
+        used_chars += text.len();
+        emitted += 1;
+        quoted.push_str(&format!("> {line_no:>width$} | {text}\n"));
+    }
+
+    if emitted == 0 {
+        return None;
+    }
+
+    let mut text = format!(
+        "用户引用了文件 {path} 的以下内容（{}）：\n\n{}",
+        describe_line_references(&lines),
+        quoted.trim_end()
+    );
+    if truncated {
+        text.push_str("\n（内容过长，已截断）");
+    }
+    Some(text)
+}
+
+fn parse_line_references(suffix: &str) -> Vec<u64> {
+    let mut lines: Vec<u64> = Vec::new();
+
+    for part in suffix.split(',') {
+        let mut segments = part.split('-');
+        let start = segments.next().and_then(parse_line_segment);
+        let end = segments.next().and_then(parse_line_segment);
+
+        match (start, end) {
+            (Some(start), Some(end)) => {
+                let (lo, hi) = if start <= end { (start, end) } else { (end, start) };
+                let cap = lo + MAX_FILE_REFERENCE_LINES as u64 - 1;
+                for line in lo..=hi.min(cap) {
+                    lines.push(line);
+                }
+            }
+            (Some(start), None) => lines.push(start),
+            _ => {}
+        }
+    }
+
+    lines.sort_unstable();
+    lines.dedup();
+    lines
+}
+
+fn parse_line_segment(segment: &str) -> Option<u64> {
+    segment
+        .strip_prefix('L')?
+        .parse::<u64>()
+        .ok()
+        .filter(|line| *line > 0)
+}
+
+fn describe_line_references(lines: &[u64]) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let mut iter = lines.iter().copied().peekable();
+
+    while let Some(start) = iter.next() {
+        let mut end = start;
+        while let Some(next) = iter.peek().copied() {
+            if next == end + 1 {
+                end = next;
+                iter.next();
+            } else {
+                break;
+            }
+        }
+        parts.push(if end > start {
+            format!("{start}–{end}")
+        } else {
+            start.to_string()
+        });
+    }
+
+    format!("第 {} 行", parts.join("、"))
+}
+
+fn truncate_line(text: &str, max_chars: usize) -> String {
+    let trimmed = text.trim_end();
+    if trimmed.chars().count() <= max_chars {
+        return trimmed.to_string();
+    }
+    let mut out: String = trimmed.chars().take(max_chars).collect();
+    out.push('…');
+    out
+}
+
 /// 展示型 chip 标签前缀（与前端 fileTagUtils 的 encode* 编码格式一一对应）。
 const DISPLAY_TAG_PREFIXES: [&str; 15] = [
     "@@file-selection:",
@@ -467,8 +614,10 @@ fn display_text_for_tag(prefix: &str, value: &str) -> Option<String> {
     }
 }
 
+const FILE_REFERENCE_LINES_MAX_CHARS: usize = 24;
+
 /// 文件/目录引用的展示文本：`名称` 或 `名称:L7-L9`（行号后缀由编码端
-/// 规范化，原样保留）。
+/// 规范化；行号过多时只保留前两段并省略，避免撑爆标题与单行预览）。
 fn display_file_reference(value: &str, is_directory: bool) -> String {
     let (path, lines) = if is_directory {
         (value, "")
@@ -481,8 +630,16 @@ fn display_file_reference(value: &str, is_directory: bool) -> String {
     if lines.is_empty() {
         name
     } else {
-        format!("{name}:{lines}")
+        format!("{name}:{}", collapse_lines_label(lines))
     }
+}
+
+fn collapse_lines_label(lines: &str) -> String {
+    if lines.chars().count() <= FILE_REFERENCE_LINES_MAX_CHARS {
+        return lines.to_string();
+    }
+    let head = lines.split(',').take(2).collect::<Vec<_>>().join(",");
+    format!("{head}…")
 }
 
 /// 拆出文件引用末尾的行号后缀（`:L7-L9,L47`）。Windows 路径自带冒号

@@ -15,7 +15,7 @@ import { registerGlobalShortcuts } from "./globalShortcuts";
 import { registerIpcHandlers } from "../ipc/registerIpcHandlers";
 import { native, getRawNative } from "../native/nativeBridge";
 import { installGuestViewErrorFilter } from "../utils/guestViewErrorFilter";
-import { snowLog } from "../../utils/snowLogger";
+import { flushLogs, snowLog } from "../../utils/snowLogger";
 import {
   registerThemeBgProtocol,
   registerThemeBgSchemePrivilege,
@@ -43,8 +43,13 @@ import { stopRemoteControlServer } from "../remoteControl/remoteControlServer";
 import { initializeRemoteControl } from "../remoteControl/remoteControlLifecycle";
 import { remoteTunnelManager } from "../remoteControl/remoteTunnelManager";
 import { isInstallerQuitRequest } from "./installerQuit";
+import { sanitizeLauncherEnvironment } from "./launcherEnvironment";
 
 export const bootstrapApplication = (): void => {
+  // 必须先于任何子进程创建：剔除 Linux AppImage 运行时注入的 ARGV0，
+  // 否则 zsh 会把它当作子命令的 argv[0]（python venv 因此失效）。
+  sanitizeLauncherEnvironment();
+
   // ─── Chromium 启动加速开关（必须在 whenReady 之前）─────────────────────
   // 跳过 GPU 沙箱预热（部分显卡驱动初始化极慢）。
   app.commandLine.appendSwitch("disable-gpu-sandbox");
@@ -305,6 +310,7 @@ export const bootstrapApplication = (): void => {
       stopRemoteControlServer(),
       // 自动格式化已改为延迟执行：退出前把尚未落盘的格式化任务跑完。
       native.flushPendingFileFormats(),
+      flushLogs(),
     ])
       .then(() => undefined)
       .finally(() => {

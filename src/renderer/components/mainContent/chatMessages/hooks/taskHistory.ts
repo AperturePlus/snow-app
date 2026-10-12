@@ -17,6 +17,53 @@ export type TaskSnapshot = Readonly<{
   records: readonly FileChangeRecord[];
   coverage: readonly FileChangeCoverageRecord[];
 }>;
+
+const hashPatch = (patch: string, seed: number): number => {
+  let hash = seed;
+  for (let index = 0; index < patch.length; index += 1) {
+    hash ^= patch.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+};
+
+export const taskSnapshotFingerprint = (
+  snapshot: TaskSnapshot | undefined,
+): string => {
+  if (!snapshot) return "";
+  const parts: string[] = [
+    snapshot.id,
+    String(snapshot.records.length),
+    String(snapshot.coverage.length),
+  ];
+  let patchHash = 2166136261;
+  for (const record of snapshot.records) {
+    parts.push(
+      [
+        record.filePath,
+        record.kind,
+        record.agent,
+        record.subAgentName ?? "",
+        record.timestamp,
+        record.diff?.isBinary ? "binary" : "text",
+      ].join("\u0001"),
+    );
+    if (record.diff) patchHash = hashPatch(record.diff.patch, patchHash);
+  }
+  for (const record of snapshot.coverage) {
+    parts.push(
+      [
+        record.coverage,
+        record.source,
+        record.root ?? "",
+        record.agent,
+        record.timestamp,
+        record.reasons.join(","),
+      ].join("\u0001"),
+    );
+  }
+  return `${parts.join("\u0003")}\u0002${patchHash.toString(16)}`;
+};
 export type AgentTaskHistory = {
   id: string;
   closed: boolean;
@@ -258,6 +305,7 @@ export const finishAgentTask = (
       }
       persistedTasks.add(task);
       pendingSnapshots.delete(conversationId);
+      invalidateTaskSnapshots(conversationId);
       logTaskHistory(
         "INFO",
         "finishAgentTask",
@@ -478,18 +526,36 @@ const reconstructTaskSnapshots = async (
 
 // Share simultaneous history reads across the visible message window, not durable data.
 const pendingSnapshots = new Map<string, Promise<Map<string, TaskSnapshot>>>();
+
+const SNAPSHOT_CACHE_TTL_MS = 1000;
+const snapshotCache = new Map<
+  string,
+  { at: number; value: Map<string, TaskSnapshot> }
+>();
+
+export const invalidateTaskSnapshots = (conversationId: string): void => {
+  snapshotCache.delete(conversationId);
+};
+
 export const loadTaskSnapshots = (
   conversationId: string,
 ): Promise<Map<string, TaskSnapshot>> => {
+  const cached = snapshotCache.get(conversationId);
+  if (cached && Date.now() - cached.at < SNAPSHOT_CACHE_TTL_MS) {
+    return Promise.resolve(cached.value);
+  }
   const existing = pendingSnapshots.get(conversationId);
   if (existing) return existing;
   const pending = reconstructTaskSnapshots(conversationId);
   pendingSnapshots.set(conversationId, pending);
   void pending
+    .then((value) => {
+      snapshotCache.set(conversationId, { at: Date.now(), value });
+    })
+    .catch(() => {})
     .finally(() => {
       if (pendingSnapshots.get(conversationId) === pending)
         pendingSnapshots.delete(conversationId);
-    })
-    .catch(() => {});
+    });
   return pending;
 };

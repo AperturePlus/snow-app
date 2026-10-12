@@ -54,7 +54,6 @@ export function useProjectsWorkspace({
   } = directories;
 
   const collectionsApi = useProjectCollections({
-    activeConversationId,
     activeDirectoryId: activeDirectory?.directoryId,
     setDirectoryError,
     setIsSavingDirectory,

@@ -50,6 +50,8 @@ export function PetsSettingsPanel(): React.JSX.Element {
   );
   const petScaleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const petSpeedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 速度草稿的镜像：写库返回前保持滑杆不回退，避免拖动时抖动。
+  const petSpeedDraftRef = useRef<number | null>(null);
   const petChatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chatModelRequestRef = useRef(0);
 
@@ -214,7 +216,31 @@ export function PetsSettingsPanel(): React.JSX.Element {
     }, 250);
   };
 
+  // 草稿只在写库返回后才清空，中途不清空，否则滑杆会先跳回旧值再跳回来。
+  const commitPetSpeed = (): void => {
+    const value = petSpeedDraftRef.current;
+    if (value == null) {
+      return;
+    }
+    if (petSpeedTimerRef.current) {
+      clearTimeout(petSpeedTimerRef.current);
+      petSpeedTimerRef.current = null;
+    }
+    const settle = (): void => {
+      if (petSpeedDraftRef.current === value) {
+        petSpeedDraftRef.current = null;
+        setPetSpeedDraft(null);
+      }
+    };
+    window.snow
+      .setPetSpeed(value)
+      .then(setPetSettings)
+      .then(settle)
+      .catch(settle);
+  };
+
   const handlePetSpeedChange = (value: number): void => {
+    petSpeedDraftRef.current = value;
     setPetSpeedDraft(value);
     if (petSpeedTimerRef.current) {
       clearTimeout(petSpeedTimerRef.current);
@@ -222,11 +248,7 @@ export function PetsSettingsPanel(): React.JSX.Element {
     // 防抖提交：避免拖动滑杆时频繁重建宠物窗口（预览区仍实时跟随）。
     petSpeedTimerRef.current = setTimeout(() => {
       petSpeedTimerRef.current = null;
-      setPetSpeedDraft(null);
-      window.snow
-        .setPetSpeed(value)
-        .then(setPetSettings)
-        .catch(() => undefined);
+      commitPetSpeed();
     }, 250);
   };
 
@@ -445,6 +467,7 @@ export function PetsSettingsPanel(): React.JSX.Element {
                   step={0.05}
                   formatValue={(value) => `${Math.round(value * 100)}%`}
                   onChange={handlePetSpeedChange}
+                  onCommit={commitPetSpeed}
                 />
                 <div className="pets-speed-preview">
                   <PetStage

@@ -17,7 +17,8 @@ export type StreamRetryNoticeProps = {
   /**
    * 本次重试前的退避时长（毫秒）。由后端随重试分片下发，与 `wait_before_retry`
    * 的实际等待时间同源。给出时渲染「N 秒后重试」实时倒计时——否则面对
-   * 3s→6s→12s→24s→30s 的指数退避，用户只能盲等，不知道还要多久。
+   * 3s→6s→12s→24s→30s 的指数退避或档案配置的固定间隔，用户只能盲等，
+   * 不知道还要多久。
    */
   backoffMs?: number | null;
 };
@@ -33,8 +34,10 @@ export const StreamRetryNotice = ({
   const errorText = error?.trim() ?? "";
   const isExhausted = status === "exhausted";
 
-  // 倒计时基准：每次拿到新的退避时长就重设一次。后端可能在同一次退避期间
-  // 重发分片，这里用 backoffMs 本身作为依赖，重复值不会打断倒计时节奏。
+  // 倒计时基准：每次新的重试通知到达就重设一次。依赖必须同时含 attempt 与
+  // backoffMs —— 固定间隔配置下每轮重试的 backoffMs 完全相同，只依赖它会让
+  // 倒计时在首轮归零后永远停在 0s；而同一轮重试内后端可能重发分片，此时
+  // attempt 与 backoffMs 都不变，因此不会打断正在走的倒计时。
   const hasCountdown =
     !isExhausted && typeof backoffMs === "number" && backoffMs > 0;
   const [remainingSec, setRemainingSec] = useState<number | null>(null);
@@ -53,7 +56,7 @@ export const StreamRetryNotice = ({
       setRemainingSec(left > 0 ? Math.ceil(left / 1000) : 0);
     }, 200);
     return () => window.clearInterval(timer);
-  }, [hasCountdown, backoffMs]);
+  }, [hasCountdown, backoffMs, attempt]);
 
   const isUrgent = remainingSec !== null && remainingSec <= 3;
 
