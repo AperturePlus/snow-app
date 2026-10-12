@@ -65,7 +65,9 @@ pub(super) fn build_interactions_payload(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or(api_config.advanced_model.as_str());
-    let clean_model = selected_model.strip_prefix("models/").unwrap_or(selected_model);
+    let clean_model = selected_model
+        .strip_prefix("models/")
+        .unwrap_or(selected_model);
 
     // The proxy may route this request through ordinary Gemini, so replay
     // complete call/result pairs instead of relying only on interaction state.
@@ -383,6 +385,9 @@ fn pair_interactions_tool_history(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const TINY_PNG_BASE64: &str =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
     fn create_test_request() -> ResponsesApiRequest {
         ResponsesApiRequest {
@@ -1081,7 +1086,10 @@ mod tests {
                     {
                         "name": "browser-screenshot",
                         "callId": "image-call",
-                        "result": "captured @@image:data:image/png;base64,YQ==@@"
+                        "result": format!(
+                            "{{\"text\":\"captured\"}}\n@@image:data:image/png;base64,{}@@",
+                            TINY_PNG_BASE64
+                        )
                     },
                     {
                         "name": "filesystem-read",
@@ -1120,10 +1128,10 @@ mod tests {
         assert_eq!(input[2]["call_id"], "image-call");
         assert_eq!(
             input[2]["result"],
-            json!({ "result": "captured [Image #1]" })
+            json!({ "result": "{\"text\":\"captured\"}\n[Image #1]" })
         );
         assert_eq!(input[3]["inline_data"]["mime_type"], "image/png");
-        assert_eq!(input[3]["inline_data"]["data"], "YQ==");
+        assert_eq!(input[3]["inline_data"]["data"], TINY_PNG_BASE64);
         assert_eq!(input[4]["id"], "text-call");
         assert_eq!(input[5]["call_id"], "text-call");
     }
