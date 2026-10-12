@@ -1,4 +1,5 @@
-import { Copy, Loader2, Settings, Undo2, X } from "lucide-react";
+import { ChevronDown, Copy, Loader2, Settings, Undo2, X } from "lucide-react";
+import { PromptContextReview } from "./PromptContextReview";
 import {
   useCallback,
   useEffect,
@@ -29,6 +30,7 @@ import {
 } from "../../../plugins/pluginRuntime";
 import { pluginStore } from "../../../plugins/pluginStore";
 import type { PluginPanelDefinition, PluginView } from "../../../plugins/types";
+import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
 import { Modal } from "../../common/Modal";
 import { PluginIcon } from "../../common/PluginIcon";
 import { Tooltip } from "../../common/Tooltip";
@@ -39,6 +41,8 @@ const LABELS = {
   en: {
     cancel: "Cancel action",
     configure: "Configure",
+    openConfiguration: "Open configuration",
+    more: "More actions",
     undo: "Undo",
     apply: "Apply",
     preview: "Preview",
@@ -51,6 +55,8 @@ const LABELS = {
   "zh-CN": {
     cancel: "取消本次操作",
     configure: "配置",
+    openConfiguration: "打开配置",
+    more: "更多操作",
     undo: "还原",
     apply: "应用",
     preview: "预览",
@@ -63,6 +69,8 @@ const LABELS = {
   "zh-TW": {
     cancel: "取消本次操作",
     configure: "設定",
+    openConfiguration: "開啟設定",
+    more: "更多操作",
     undo: "還原",
     apply: "套用",
     preview: "預覽",
@@ -181,6 +189,86 @@ export const ChatInputPluginAction = ({
     locale,
   };
 
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    trigger: HTMLButtonElement;
+    identity: typeof identityRef.current;
+    contextRevision: number;
+  } | null>(null);
+  const menuRef = useRef(menu);
+  menuRef.current = menu;
+  const menuIsCurrent = (): boolean => {
+    const current = identityRef.current;
+    return (
+      !!menu &&
+      menuRef.current === menu &&
+      mountedRef.current &&
+      current.plugin === menu.identity.plugin &&
+      current.panel === menu.identity.panel &&
+      current.parametersKey === menu.identity.parametersKey &&
+      current.apiConfigIdentity === menu.identity.apiConfigIdentity &&
+      current.disabled === menu.identity.disabled &&
+      current.locale === menu.identity.locale &&
+      getPluginDraftContextRevision() === menu.contextRevision &&
+      pluginStore.getById(plugin.pluginId) === plugin &&
+      plugin.enabled
+    );
+  };
+  const closeMenu = (): void => {
+    menuRef.current = null;
+    setMenu(null);
+  };
+  useLayoutEffect(() => {
+    menuRef.current = null;
+    setMenu(null);
+  }, [
+    plugin,
+    panel,
+    parametersKey,
+    apiConfigIdentity,
+    disabled,
+    locale,
+    contextRevision,
+  ]);
+  const openMenu = (
+    trigger: HTMLButtonElement,
+    x?: number,
+    y?: number,
+  ): void => {
+    if (
+      !mountedRef.current ||
+      identityRef.current.plugin !== plugin ||
+      identityRef.current.panel !== panel ||
+      !plugin.enabled ||
+      pluginStore.getById(plugin.pluginId) !== plugin
+    )
+      return;
+    const rect = trigger.getBoundingClientRect();
+    const next = {
+      x: x ?? rect.left,
+      y: y ?? rect.bottom,
+      trigger,
+      identity: identityRef.current,
+      contextRevision: getPluginDraftContextRevision(),
+    };
+    menuRef.current = next;
+    setMenu(next);
+  };
+  const onMenuKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+  ): void => {
+    if (
+      event.key === "ContextMenu" ||
+      (event.shiftKey && event.key === "F10") ||
+      (event.altKey && event.key === "ArrowDown")
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      openMenu(event.currentTarget);
+    }
+  };
+
   const settleConfirmation = useCallback((accepted: boolean): void => {
     const pending = confirmationRef.current;
     confirmationRef.current = null;
@@ -208,7 +296,11 @@ export const ChatInputPluginAction = ({
     setBusy(false);
     setResult((previous) =>
       previous
-        ? { message: previous.message, preview: previous.preview }
+        ? {
+            message: previous.message,
+            preview: previous.preview,
+            details: previous.details,
+          }
         : null,
     );
     // Context changes keep only the copy-only preview; the toolbar stays free of
@@ -230,7 +322,11 @@ export const ChatInputPluginAction = ({
     setBusy(false);
     setResult((previous) =>
       previous
-        ? { message: previous.message, preview: previous.preview }
+        ? {
+            message: previous.message,
+            preview: previous.preview,
+            details: previous.details,
+          }
         : null,
     );
     // Cancelling also stays silent: the spinner simply stops.
@@ -288,6 +384,100 @@ export const ChatInputPluginAction = ({
         throw new Error("Plugin action result fields are invalid");
       }
     }
+    if (next?.details) {
+      const details = next.details;
+      if (
+        typeof details.originalText !== "string" ||
+        details.originalText.length > 100000 ||
+        (details.warnings !== undefined &&
+          (!Array.isArray(details.warnings) ||
+            details.warnings.length > 64 ||
+            details.warnings.some(
+              (w) => typeof w !== "string" || w.length > 2048,
+            )))
+      )
+        throw new Error("Invalid action details");
+      const report = details.contextReport;
+      if (
+        report &&
+        (!Array.isArray(report.sources) ||
+          report.sources.length > 64 ||
+          report.sources.some(
+            (source) =>
+              !source ||
+              typeof source.id !== "string" ||
+              typeof source.path !== "string" ||
+              source.path.length > 1024 ||
+              !Number.isInteger(source.startLine) ||
+              source.startLine < 1 ||
+              !Number.isInteger(source.endLine) ||
+              source.endLine < source.startLine ||
+              !["exact", "semantic", "mixed"].includes(source.matchKind) ||
+              !["fresh", "unknown"].includes(source.freshness) ||
+              !Number.isFinite(source.characters) ||
+              source.characters < 0 ||
+              typeof source.selected !== "boolean",
+          ) ||
+          !Array.isArray(report.warnings) ||
+          report.warnings.length > 64 ||
+          report.warnings.some(
+            (w) => typeof w !== "string" || w.length > 2048,
+          ) ||
+          typeof report.reason !== "string" ||
+          report.reason.length > 200 ||
+          !["used", "skipped", "degraded", "review_required"].includes(
+            report.outcome,
+          ) ||
+          !["fresh", "stale", "indexing", "unknown", "unavailable"].includes(
+            report.indexState,
+          ) ||
+          !["exact", "semantic", "mixed", "none"].includes(report.queryKind) ||
+          !Number.isFinite(report.characters) ||
+          report.characters < 0 ||
+          !Number.isFinite(report.elapsedMs) ||
+          report.elapsedMs < 0 ||
+          typeof report.cacheHit !== "boolean" ||
+          typeof report.truncated !== "boolean")
+      )
+        throw new Error("Invalid action context report");
+    }
+    if (next?.sourceSelection) {
+      const selection = next.sourceSelection;
+      if (
+        !Array.isArray(selection.sources) ||
+        selection.sources.length > 64 ||
+        !Array.isArray(selection.defaultSelectedIds) ||
+        selection.defaultSelectedIds.length > 16 ||
+        typeof selection.contextHandle !== "string" ||
+        !/^[a-zA-Z0-9_.:-]{1,200}$/.test(selection.contextHandle) ||
+        typeof selection.apply !== "function" ||
+        selection.sources.some(
+          (source) =>
+            !source ||
+            typeof source.id !== "string" ||
+            !/^[a-zA-Z0-9_.:-]{1,200}$/.test(source.id) ||
+            typeof source.path !== "string" ||
+            source.path.length > 1024 ||
+            !Number.isInteger(source.startLine) ||
+            source.startLine < 1 ||
+            !Number.isInteger(source.endLine) ||
+            source.endLine < source.startLine ||
+            !["exact", "semantic", "mixed"].includes(source.matchKind) ||
+            !["fresh", "unknown"].includes(source.freshness) ||
+            !Number.isFinite(source.characters) ||
+            source.characters < 0 ||
+            typeof source.selected !== "boolean",
+        ) ||
+        selection.defaultSelectedIds.some(
+          (id) =>
+            typeof id !== "string" ||
+            !selection.sources.some((source) => source.id === id),
+        ) ||
+        new Set(selection.sources.map((source) => source.id)).size !==
+          selection.sources.length
+      )
+        throw new Error("Invalid action source selection");
+    }
     setResult(next);
     setStatus(next?.message ?? "");
   };
@@ -307,7 +497,11 @@ export const ChatInputPluginAction = ({
         setStatus(error instanceof Error ? error.message : labels.failed);
         setResult((previous) =>
           previous
-            ? { message: previous.message, preview: previous.preview }
+            ? {
+                message: previous.message,
+                preview: previous.preview,
+                details: previous.details,
+              }
             : null,
         );
       }
@@ -320,12 +514,30 @@ export const ChatInputPluginAction = ({
       }
     }
   };
-  const start = (): void => {
+  const start = (menuActionId?: string, fromMenu = false): void => {
+    // Menu selections never cancel or preempt an in-flight run.
     if (busyRef.current) {
-      cancel();
+      if (!fromMenu) cancel();
       return;
     }
-    if (disabled || plugin.renderMode !== "esm" || !panel.chatInputAction)
+    const actionName =
+      menuActionId === undefined
+        ? panel.chatInputAction
+        : panel.chatInputMenuActions?.find((item) => item.id === menuActionId)
+            ?.action;
+    // Only this parent's normalized declarations can select an export.
+    if (
+      !mountedRef.current ||
+      identityRef.current.plugin !== plugin ||
+      identityRef.current.panel !== panel ||
+      disabled ||
+      !plugin.enabled ||
+      pluginStore.getById(plugin.pluginId) !== plugin ||
+      plugin.renderMode !== "esm" ||
+      !panel.chatInput ||
+      !panel.chatInputAction ||
+      !actionName
+    )
       return;
     invalidate();
     const capturedIdentity = identityRef.current;
@@ -379,6 +591,34 @@ export const ChatInputPluginAction = ({
           freshApi,
           controller.signal,
           () => run.executing && run.current() && busyRef.current,
+          (message) => confirm(run, message),
+          (phase) => {
+            const phases: Record<string, readonly [string, string, string]> = {
+              planning: [
+                "Planning project context",
+                "正在规划项目上下文",
+                "正在規劃專案上下文",
+              ],
+              searching: [
+                "Searching project sources",
+                "正在检索项目来源",
+                "正在檢索專案來源",
+              ],
+              checking: [
+                "Checking source freshness",
+                "正在核对来源时效",
+                "正在核對來源時效",
+              ],
+              optimizing: [
+                "Optimizing prompt",
+                "正在优化提示词",
+                "正在優化提示詞",
+              ],
+            };
+            const message =
+              phases[phase]?.[locale === "en" ? 0 : locale === "zh-CN" ? 1 : 2];
+            if (message) onStatus(run, message);
+          },
         );
         const module = await loadPluginModule({
           plugin,
@@ -388,10 +628,7 @@ export const ChatInputPluginAction = ({
           signal: controller.signal,
         });
         check(run);
-        const action = resolvePluginChatInputAction(
-          module,
-          panel.chatInputAction!,
-        );
+        const action = resolvePluginChatInputAction(module, actionName);
         // Arm the scoped AI/write API only after import and export resolution.
         run.executing = true;
         return action({
@@ -415,7 +652,11 @@ export const ChatInputPluginAction = ({
           operation as NonNullable<PluginChatInputActionResult["apply"]>
         )();
       await (operation as NonNullable<PluginChatInputActionResult["undo"]>)();
-      return { message: labels.undo };
+      return {
+        message: labels.undo,
+        preview: result?.preview,
+        details: result?.details,
+      };
     });
   };
   const copyPreview = async (): Promise<void> => {
@@ -438,6 +679,44 @@ export const ChatInputPluginAction = ({
     }
   };
 
+  const chooseMenuItem = (operation: () => void, executes = false): void => {
+    if (
+      !menuIsCurrent() ||
+      (executes && (busyRef.current || identityRef.current.disabled))
+    )
+      return;
+    const trigger = menu?.trigger;
+    closeMenu();
+    // Restore synchronously BEFORE the operation; never after it opens a Modal/panel.
+    if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    operation();
+  };
+  const menuOpen = menuIsCurrent();
+  const menuItems: ContextMenuItem[] = [
+    {
+      id: "host:default",
+      label: title,
+      disabled: busy || disabled,
+      onClick: () => chooseMenuItem(() => start(undefined, true), true),
+    },
+    ...(panel.chatInputMenuActions ?? []).map((item): ContextMenuItem => ({
+      id: `action:${item.id}`,
+      label: resolveLocalized(item.title, locale),
+      icon: item.icon ? (
+        <PluginIcon pluginId={plugin.pluginId} icon={item.icon} size={14} />
+      ) : undefined,
+      disabled: busy || disabled,
+      onClick: () => chooseMenuItem(() => start(item.id, true), true),
+    })),
+    {
+      id: "host:configure",
+      label: labels.openConfiguration,
+      icon: <Settings size={14} />,
+      separator: true,
+      onClick: () => chooseMenuItem(openConfiguration),
+    },
+  ];
+
   return (
     <div
       style={{
@@ -453,8 +732,20 @@ export const ChatInputPluginAction = ({
           type="button"
           aria-label={busy ? labels.cancel : title}
           title={busy ? labels.cancel : title}
-          disabled={!busy && disabled}
-          onClick={start}
+          aria-disabled={!busy && disabled}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          style={!busy && disabled ? { opacity: 0.5 } : undefined}
+          onClick={() => {
+            closeMenu();
+            start();
+          }}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            openMenu(event.currentTarget, event.clientX, event.clientY);
+          }}
+          onKeyDown={onMenuKeyDown}
         >
           {busy ? (
             <Loader2 size={15} className="spin" />
@@ -467,6 +758,35 @@ export const ChatInputPluginAction = ({
           )}
         </button>
       </Tooltip>
+      <Tooltip content={`${labels.more}: ${title}`}>
+        <button
+          className="toolbar-btn"
+          type="button"
+          aria-label={`${labels.more}: ${title}`}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={(event) => openMenu(event.currentTarget)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            openMenu(event.currentTarget, event.clientX, event.clientY);
+          }}
+          onKeyDown={onMenuKeyDown}
+        >
+          <ChevronDown size={11} />
+        </button>
+      </Tooltip>
+      {menuOpen && menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={menuItems}
+          onClose={closeMenu}
+          keyboardNavigation
+          returnFocusTo={menu.trigger}
+          ariaLabel={`${labels.more}: ${title}`}
+        />
+      )}
       {showSettings && (
         <Tooltip content={`${labels.configure}: ${panelTitle}`}>
           <button
@@ -511,7 +831,24 @@ export const ChatInputPluginAction = ({
           {status}
         </span>
       )}
-      {result?.undo && (
+      {!busy && result && (result.details || result.sourceSelection) && (
+        <PromptContextReview
+          result={result}
+          locale={locale}
+          disabled={busy || disabled || !runRef.current?.current()}
+          isCurrent={() => !!runRef.current?.current()}
+          apply={(ids) => {
+            const run = runRef.current;
+            const selection = result.sourceSelection;
+            if (run && selection && !busyRef.current && run.current())
+              void perform(run, async () => {
+                check(run);
+                return selection.apply(ids);
+              });
+          }}
+        />
+      )}
+      {!busy && result?.undo && (
         <button
           className="toolbar-btn"
           type="button"
@@ -524,7 +861,7 @@ export const ChatInputPluginAction = ({
           {labels.undo}
         </button>
       )}
-      {typeof result?.preview === "string" && (
+      {!busy && typeof result?.preview === "string" && (
         <details>
           <summary style={{ cursor: "pointer", fontSize: 12 }}>
             {labels.preview}
@@ -577,7 +914,7 @@ export const ChatInputPluginAction = ({
           </div>
         </details>
       )}
-      {result?.apply && result.preview === undefined && (
+      {!busy && result?.apply && result.preview === undefined && (
         <button
           className="toolbar-btn"
           type="button"

@@ -216,7 +216,7 @@ export const createPluginApi = async (params: {
         subscribeMetadata(plugin, locale, domain, listener, options ?? {}),
       domains: () => describeMetadataDomains(plugin),
     },
-    ai: createPluginAiApi(plugin),
+    ai: await createPluginAiApi(plugin),
     write: createWriteApi(plugin, locale),
     storage,
     assets: {

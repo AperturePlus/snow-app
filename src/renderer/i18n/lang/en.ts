@@ -2033,6 +2033,7 @@ export const en = {
     "Gemini: aspect ratio (16:9) or image size (1K/2K/4K). OpenAI: e.g. 1024x1024",
   "settings.imagegenDefaultQuality": "Default quality",
   "settings.imagegenQualityAuto": "Auto",
+  "settings.imagegenOutputGroup": "Output settings",
   "settings.imagegenOutputFormat": "Output format",
   "settings.imagegenFormatDefault": "Default (png)",
   "settings.imagegenWebSearch": "Google Search grounding",
@@ -6095,6 +6096,9 @@ export const en = {
     "Declared in the script metadata header (@snow-privacy).",
   "plugins.privacy.docHint":
     "Field and action reference: the built-in doc ~/.snowapp/docs/en/3-reference/6-plugin-metadata-domains.md",
+  "plugins.scopes.projectContext": "Project code context",
+  "plugins.scopes.desc.projectContext":
+    "Read selected project source snippets for user-requested prompt optimization; requires separate host authorization.",
   "plugins.scopes.apiKeys": "API keys",
   "plugins.scopes.privacyConfig": "Privacy config",
   "plugins.scopes.systemPrompts": "System prompts",

@@ -20,6 +20,8 @@ use crate::storage::services::chat_conversations::ChatContextMessage;
 pub fn tool_calls_as_anthropic_blocks(tool_calls_json: &str) -> Vec<Value> {
     normalize_tool_calls(tool_calls_json)
         .into_iter()
+        // Anthropic still requires ids, even for legacy Gemini history.
+        .filter(|entry| !entry.id.is_empty())
         .map(|entry| {
             serde_json::json!({
                 "type": "tool_use",
@@ -64,6 +66,8 @@ pub fn tool_calls_as_gemini_parts(tool_calls_json: &str) -> Vec<Value> {
 pub fn tool_calls_as_chat_completions(tool_calls_json: &str) -> Vec<Value> {
     normalize_tool_calls(tool_calls_json)
         .into_iter()
+        // Chat Completions cannot correlate results with an id-less call.
+        .filter(|entry| !entry.id.is_empty())
         .map(|entry| {
             let arguments =
                 serde_json::to_string(&entry.input).unwrap_or_else(|_| "{}".to_string());
@@ -288,7 +292,11 @@ pub(crate) fn normalize_tool_calls(tool_calls_json: &str) -> Vec<NormalizedToolC
                 })
                 .unwrap_or("")
                 .to_string();
-            if id.is_empty() {
+            // Native Gemini functionCall parts legitimately omit ids; other
+            // formats still require an id for correlation with their results.
+            let is_native_gemini = call.get("type").is_none()
+                && call.get("functionCall").is_some_and(Value::is_object);
+            if id.is_empty() && !is_native_gemini {
                 return None;
             }
 
@@ -411,12 +419,14 @@ pub fn remove_invalid_snow_tool_calls(messages: &mut [ChatContextMessage]) {
                 let Ok(Value::Array(calls)) = serde_json::from_str::<Value>(raw) else {
                     continue;
                 };
-                let normalized = normalize_tool_calls(raw);
                 let filtered: Vec<Value> = calls
                     .into_iter()
-                    .enumerate()
-                    .filter_map(|(index, call)| {
-                        let Some(entry) = normalized.get(index) else {
+                    .filter_map(|call| {
+                        // Normalize this item alone: skipped/unknown entries must
+                        // never shift the validation of a later Gemini call.
+                        let normalized =
+                            normalize_tool_calls(&serde_json::json!([&call]).to_string());
+                        let Some(entry) = normalized.first() else {
                             return Some(call);
                         };
                         let is_valid = snow_tool_call_has_required_arguments(entry);
@@ -561,7 +571,9 @@ pub fn ensure_tool_pairing(messages: &mut Vec<ChatContextMessage>) {
         if role == "assistant" {
             if let Some(ref raw) = msg.tool_calls_json {
                 for (id, _name) in extract_tool_call_entries(raw) {
-                    all_call_ids.insert(id);
+                    if !id.is_empty() {
+                        all_call_ids.insert(id);
+                    }
                 }
             }
         } else if role == "tool" {
@@ -584,7 +596,7 @@ pub fn ensure_tool_pairing(messages: &mut Vec<ChatContextMessage>) {
                 .map(|raw| {
                     extract_tool_call_entries(raw)
                         .iter()
-                        .any(|(id, _)| !all_result_ids.contains(id))
+                        .any(|(id, _)| !id.is_empty() && !all_result_ids.contains(id))
                 })
                 .unwrap_or(false)
     });
@@ -619,7 +631,10 @@ pub fn ensure_tool_pairing(messages: &mut Vec<ChatContextMessage>) {
                         .into_iter()
                         .filter(|call| {
                             let id = extract_call_id_from_json(call);
-                            !id.is_empty() && all_result_ids.contains(&id)
+                            let is_idless_gemini = id.is_empty()
+                                && call.get("type").is_none()
+                                && call.get("functionCall").is_some_and(Value::is_object);
+                            is_idless_gemini || (!id.is_empty() && all_result_ids.contains(&id))
                         })
                         .collect();
 
@@ -754,7 +769,7 @@ mod tests {
             message(
                 "assistant",
                 Some(
-                    r#"[{"functionCall":{"name":"filesystem-read","args":{"filePath":"README.md"}}},{"functionCall":{"name":"filesystem-read","args":{}}}]"#,
+                    r#"[null,{"functionCall":{"name":"filesystem-read","args":{"filePath":"README.md"}}},{"functionCall":{"name":"filesystem-read","args":{}}}]"#,
                 ),
                 None,
             ),
@@ -777,6 +792,44 @@ mod tests {
             serde_json::from_str(messages[1].tool_results_json.as_deref().unwrap()).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0]["result"], "README");
+
+        let calls = messages[0].tool_calls_json.as_deref().unwrap();
+        assert_eq!(
+            tool_calls_as_gemini_parts(calls),
+            vec![serde_json::json!({
+                "functionCall": {
+                    "name": "filesystem-read",
+                    "args": { "filePath": "README.md" }
+                }
+            })]
+        );
+        assert!(tool_calls_as_anthropic_blocks(calls).is_empty());
+        assert!(tool_calls_as_chat_completions(calls).is_empty());
+
+        // Orphan-id cleanup must not erase the surviving native Gemini pair.
+        let mut orphan = message(
+            "assistant",
+            Some(
+                r#"[{"id":"orphan","functionCall":{"name":"filesystem-read","args":{"filePath":"README.md"}}}]"#,
+            ),
+            None,
+        );
+        orphan.content.clear();
+        messages.push(orphan);
+        ensure_tool_pairing(&mut messages);
+        assert_eq!(messages.len(), 2);
+        assert_eq!(
+            extract_tool_call_entries(messages[0].tool_calls_json.as_deref().unwrap()),
+            vec![(String::new(), "filesystem-read".to_string())]
+        );
+        assert_eq!(
+            parse_tool_results_json(messages[1].tool_results_json.as_deref().unwrap()),
+            vec![(
+                "filesystem-read".to_string(),
+                String::new(),
+                "README".to_string()
+            )]
+        );
     }
 
     #[test]

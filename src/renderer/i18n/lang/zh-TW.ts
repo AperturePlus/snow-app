@@ -1941,6 +1941,7 @@ export const zhTW = {
     "Gemini：比例（16:9）或影像大小（1K/2K/4K）。OpenAI：如 1024x1024",
   "settings.imagegenDefaultQuality": "預設品質",
   "settings.imagegenQualityAuto": "自動",
+  "settings.imagegenOutputGroup": "輸出設定",
   "settings.imagegenOutputFormat": "輸出格式",
   "settings.imagegenFormatDefault": "預設（png）",
   "settings.imagegenWebSearch": "Google 搜尋聯網",
@@ -5747,6 +5748,9 @@ export const zhTW = {
   "plugins.privacy.sourceScript": "宣告位置：腳本標頭的 @snow-privacy。",
   "plugins.privacy.docHint":
     "欄位與動作清單見內建文件 ~/.snowapp/docs/zh-CN/3-参考手册/6-插件元数据域参考.md",
+  "plugins.scopes.projectContext": "專案程式碼上下文",
+  "plugins.scopes.desc.projectContext":
+    "僅為使用者主動的提示詞優化讀取所選專案程式碼片段，需宿主另行授權。",
   "plugins.scopes.apiKeys": "API 金鑰",
   "plugins.scopes.privacyConfig": "隱私設定",
   "plugins.scopes.systemPrompts": "系統提示詞",

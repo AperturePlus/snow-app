@@ -55,12 +55,13 @@ impl Drop for StreamGuard {
 }
 
 #[napi(
-    ts_args_type = "request: PromptOptimizationRequest, onChunk: (chunk: ResponsesApiStreamChunk) => void",
+    ts_args_type = "request: PromptOptimizationRequest, onChunk: (chunk: ResponsesApiStreamChunk) => void, onProgress?: (phase: string) => void",
     ts_return_type = "Promise<PromptOptimizationResult>"
 )]
 pub async fn optimize_prompt(
     request: PromptOptimizationRequest,
     on_chunk: ResponsesApiStreamCallback,
+    on_progress: Option<crate::api::prompt_context::ProgressCallback>,
 ) -> Result<PromptOptimizationResult> {
     let token = streams()
         .lock()
@@ -72,6 +73,73 @@ pub async fn optimize_prompt(
     tokio::select! {
         biased;
         _ = token.cancelled() => Err(Error::from_reason("Prompt optimization cancelled")),
-        result = optimize_prompt_stream(request, on_chunk, token.clone()) => result,
+        result = crate::api::ephemeral::scope(optimize_prompt_stream(request, on_chunk, token.clone(), on_progress)) => result,
     }
+}
+
+#[napi]
+pub fn get_prompt_context_status(
+    binding_json: String,
+    api_profile: Option<String>,
+    model: Option<String>,
+    options_json: Option<String>,
+) -> Result<String> {
+    crate::api::ephemeral::scope_sync(|| {
+        crate::api::prompt_context::access(
+            &binding_json,
+            api_profile.as_deref(),
+            model.as_deref(),
+            options_json.as_deref(),
+            None,
+            None,
+        )
+    })
+}
+#[napi]
+pub fn grant_prompt_context_access(
+    binding_json: String,
+    api_profile: Option<String>,
+    model: Option<String>,
+    options_json: Option<String>,
+    authorization_ticket: Option<String>,
+) -> Result<String> {
+    crate::api::ephemeral::scope_sync(|| {
+        crate::api::prompt_context::access(
+            &binding_json,
+            api_profile.as_deref(),
+            model.as_deref(),
+            options_json.as_deref(),
+            Some(true),
+            authorization_ticket.as_deref(),
+        )
+    })
+}
+#[napi]
+pub fn revoke_prompt_context_access(
+    binding_json: String,
+    api_profile: Option<String>,
+    model: Option<String>,
+    options_json: Option<String>,
+) -> Result<bool> {
+    crate::api::ephemeral::scope_sync(|| {
+        crate::api::prompt_context::access(
+            &binding_json,
+            api_profile.as_deref(),
+            model.as_deref(),
+            options_json.as_deref(),
+            Some(false),
+            None,
+        )
+    })
+    .map(|_| true)
+}
+#[napi]
+pub fn get_prompt_context_source_preview(
+    context_handle: String,
+    source_id: String,
+    owner_id: String,
+) -> Result<String> {
+    crate::api::ephemeral::scope_sync(|| {
+        crate::api::prompt_context::preview(&context_handle, &source_id, &owner_id)
+    })
 }

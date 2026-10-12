@@ -3,6 +3,17 @@ import type {
   PromptOptimizationResult,
 } from "../../preload/types/promptOptimization";
 
+export type NativePromptOptimizationRequest = Omit<
+  PromptOptimizationRequest,
+  "bindingHandle" | "codebaseContext"
+> & { projectContextJson?: string; projectBindingJson?: string };
+export type NativePromptOptimizationResult = {
+  content: string;
+  contextReportJson?: string;
+  contextHandle?: string;
+  reviewRequired?: boolean;
+  warningsJson?: string;
+};
 export type AppStorageInfo = {
   directoryPath: string;
   databasePath: string;
@@ -2682,9 +2693,34 @@ export type NativeBridge = {
   preparePromptOptimization: (streamId: string) => boolean;
   abortPromptOptimization: (streamId: string) => boolean;
   optimizePrompt: (
-    request: PromptOptimizationRequest,
+    request: NativePromptOptimizationRequest,
     onChunk: (chunk: ResponsesApiStreamChunk) => void,
-  ) => Promise<PromptOptimizationResult>;
+    onProgress?: (phase: string) => void,
+  ) => Promise<NativePromptOptimizationResult>;
+  getPromptContextStatus?: (
+    bindingJson: string,
+    apiProfile?: string,
+    model?: string,
+    optionsJson?: string,
+  ) => Promise<string>;
+  grantPromptContextAccess?: (
+    bindingJson: string,
+    apiProfile?: string,
+    model?: string,
+    optionsJson?: string,
+    authorizationTicket?: string,
+  ) => Promise<string>;
+  revokePromptContextAccess?: (
+    bindingJson: string,
+    apiProfile?: string,
+    model?: string,
+    optionsJson?: string,
+  ) => Promise<boolean>;
+  getPromptContextSourcePreview?: (
+    contextHandle: string,
+    sourceId: string,
+    ownerId: string,
+  ) => Promise<string>;
   generateCommitMessage: (
     repoPath: string,
     onChunk: (chunk: ResponsesApiStreamChunk) => void,

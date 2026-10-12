@@ -38,6 +38,11 @@ type ApiModelComboboxProps = {
   previewBadgeText?: string;
   /** 已知模型徽章文案（如 "已弃用" / "Deprecated"）。 */
   deprecatedBadgeText?: string;
+  /**
+   * 可选的标签行右侧操作区（如「按模型 ID 填充能力」按钮）。
+   * 传入后标签与操作按钮同排渲染，避免调用方在外层重复写一遍标签。
+   */
+  labelAction?: React.ReactNode;
 };
 
 const MAX_VISIBLE_MODELS = 80;
@@ -60,6 +65,7 @@ export function ApiModelCombobox({
   knownModels,
   previewBadgeText,
   deprecatedBadgeText,
+  labelAction,
 }: ApiModelComboboxProps): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -167,7 +173,14 @@ export function ApiModelCombobox({
 
   return (
     <label className="api-settings-field api-model-combobox-field">
-      <span>{label}</span>
+      {labelAction ? (
+        <span className="api-model-combobox-label">
+          <span>{label}</span>
+          {labelAction}
+        </span>
+      ) : (
+        <span>{label}</span>
+      )}
       <div className="api-model-combobox" ref={rootRef}>
         <div className="api-model-combobox-input-wrap">
           {value.trim() ? (

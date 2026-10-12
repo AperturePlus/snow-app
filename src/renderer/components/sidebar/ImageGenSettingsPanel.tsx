@@ -1864,13 +1864,13 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
 
               {/* 当前活跃模型控制条 */}
               <div className="imagegen-model-actions-bar">
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div className="imagegen-model-actions-title">
                   <span style={{ color: "var(--text-muted)" }}>
                     {t("settings.imagegenActiveModelConfig", {
                       defaultValue: "Configuring:",
                     })}
                   </span>
-                  <strong>
+                  <strong title={activeModelItem.model || undefined}>
                     {activeModelItem.name?.trim() ||
                       activeModelItem.model?.trim() ||
                       "新模型"}
@@ -1957,51 +1957,44 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
 
               {/* 当前活跃模型的详细配置表单 */}
               <div className="api-settings-form-grid">
-                {/* 模型标识 ID */}
+                {/* 模型标识 ID：标签行由 ApiModelCombobox 统一渲染，
+                    右侧内联「按模型 ID 填充能力」，避免标签重复导致与右列错位 */}
                 <div className="api-settings-field">
-                  <span
-                    className="api-settings-field-label"
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: 8,
-                    }}
-                  >
-                    <span>
-                      {t("settings.imagegenModel", {
-                        defaultValue: "Model ID",
-                      })}
-                    </span>
-                    {capability ? (
-                      <button
-                        type="button"
-                        className="api-settings-form-btn secondary"
-                        style={{
-                          fontSize: 11,
-                          padding: "2px 8px",
-                          height: "auto",
-                          display: "inline-flex",
-                          alignItems: "center",
-                        }}
-                        onClick={fillCapabilityFromModel}
-                        disabled={draftSaving}
-                        title={t("settings.imagegenFillCapabilityHint", {
-                          defaultValue:
-                            "Overwrite default size / quality / thinking and supported ranges with the built-in capability profile for this model ID",
-                        })}
-                      >
-                        <Wand2 size={11} style={{ marginRight: 4 }} />
-                        {t("settings.imagegenFillCapability", {
-                          defaultValue: "Fill from model ID",
-                        })}
-                      </button>
-                    ) : null}
-                  </span>
                   <ApiModelCombobox
                     label={t("settings.imagegenModel", {
                       defaultValue: "Model ID",
                     })}
+                    labelAction={
+                      capability ? (
+                        <button
+                          type="button"
+                          className="api-settings-form-btn secondary"
+                          style={{
+                            fontSize: 11,
+                            padding: "1px 7px",
+                            height: "auto",
+                            display: "inline-flex",
+                            alignItems: "center",
+                          }}
+                          onClick={(event) => {
+                            // 按钮位于 ApiModelCombobox 的 <label> 内：阻止标签
+                            // 默认行为把点击转发给输入框（会误触发下拉列表）
+                            event.preventDefault();
+                            fillCapabilityFromModel();
+                          }}
+                          disabled={draftSaving}
+                          title={t("settings.imagegenFillCapabilityHint", {
+                            defaultValue:
+                              "Overwrite default size / quality / thinking and supported ranges with the built-in capability profile for this model ID",
+                          })}
+                        >
+                          <Wand2 size={11} style={{ marginRight: 4 }} />
+                          {t("settings.imagegenFillCapability", {
+                            defaultValue: "Fill from model ID",
+                          })}
+                        </button>
+                      ) : null
+                    }
                     value={activeModelItem.model}
                     placeholder={modelPlaceholder}
                     disabled={draftSaving}
@@ -2448,12 +2441,13 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
             </div>
           </section>
 
-          {/* 全局输出格式（仅 OpenAI 生效） */}
+          {/* 全局输出格式（仅 OpenAI 生效）：分组标题与字段名分开，
+              避免同一屏出现两个「输出格式」 */}
           {!isGemini ? (
             <section className="imagegen-group">
               <h4 className="imagegen-group-title">
-                {t("settings.imagegenOutputFormat", {
-                  defaultValue: "Output format",
+                {t("settings.imagegenOutputGroup", {
+                  defaultValue: "Output settings",
                 })}
               </h4>
               <div className="api-settings-form-grid">

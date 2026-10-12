@@ -144,6 +144,12 @@ const createUnavailableBridge = (): NativeBridge => {
     abortResponseStream: () => false,
     preparePromptOptimization: () => false,
     abortPromptOptimization: () => false,
+    // Keep optional context exports absent so capability checks do not treat
+    // synthesized rejection functions as real native support.
+    getPromptContextStatus: undefined,
+    grantPromptContextAccess: undefined,
+    revokePromptContextAccess: undefined,
+    getPromptContextSourcePreview: undefined,
     abortToolExecution: () => false,
     migrateCheckpointLayout: () => Promise.resolve(0),
     setRemoteControlRendererBridge: () => {},
@@ -155,7 +161,7 @@ const createUnavailableBridge = (): NativeBridge => {
         return Reflect.get(target, prop);
       }
       const value = (target as Record<string, unknown>)[prop];
-      if (value !== undefined) {
+      if (Object.hasOwn(target, prop)) {
         return value;
       }
       if (SYNC_UNAVAILABLE_METHODS.has(prop)) {

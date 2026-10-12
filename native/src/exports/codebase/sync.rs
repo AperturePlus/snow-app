@@ -607,3 +607,5 @@ pub async fn sync_codebase_changes(
 pub fn cancel_codebase_sync(project_id: String) -> bool {
     abort_sync(project_id.trim())
 }
+
+pub(crate) fn is_prompt_context_sync_active(project_id: &str) -> bool { SYNC_ABORT_FLAGS.lock().map(|flags| flags.as_ref().is_some_and(|f| f.contains_key(project_id))).unwrap_or(true) }
