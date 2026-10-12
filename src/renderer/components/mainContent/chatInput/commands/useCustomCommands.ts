@@ -33,5 +33,17 @@ export const useCustomCommands = (
     };
   }, [load]);
 
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      !window.snow?.onCustomCommandsChanged
+    ) {
+      return undefined;
+    }
+    return window.snow.onCustomCommandsChanged(() => {
+      void load();
+    });
+  }, [load]);
+
   return commands;
 };

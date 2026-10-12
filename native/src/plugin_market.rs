@@ -9,11 +9,12 @@
 //! 下载 zip -> SHA256 校验 -> 解压到临时目录 -> 校验 plugin.json 的 id ->
 //! 复用存储层 `install_plugin_with_source`（source_path 记录仓库地址）。
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use napi::bindgen_prelude::*;
 
@@ -50,6 +51,18 @@ const MAX_PLUGIN_ARCHIVE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_PLUGIN_EXTRACT_BYTES: u64 = 512 * 1024 * 1024;
 /// 用户脚本文件（.user.js）大小上限。
 const MAX_USERSCRIPT_BYTES: u64 = 10 * 1024 * 1024;
+
+/// 下载量统计缓存有效期：数据低频变化，长期复用可避开 GitHub 匿名限流
+/// （api.github.com 匿名调用 60 次/小时）。
+const MARKET_STATS_CACHE_TTL_SECS: u64 = 6 * 60 * 60;
+/// 单个仓库统计请求的超时上限。
+const MARKET_STATS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+/// 单次刷新的整体耗时上限：超时后直接返回已有结果，不让界面长时间等待。
+const MARKET_STATS_TOTAL_BUDGET: Duration = Duration::from_secs(40);
+/// GitHub Releases API 前缀。
+const GITHUB_API_RELEASES_PREFIX: &str = "https://api.github.com/repos/";
+
+static MARKET_STATS_MEMORY_CACHE: OnceLock<Mutex<Option<MarketStatsCache>>> = OnceLock::new();
 
 static REGISTRY_MEMORY_CACHE: OnceLock<Mutex<Option<(Instant, String)>>> = OnceLock::new();
 static REGISTRY_SHA_RESOLVE_BACKOFF_UNTIL: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
@@ -321,6 +334,318 @@ pub fn fetch_registry_blocking(force_refresh: bool) -> Result<String> {
     Err(Error::from_reason(format!(
         "Failed to fetch the plugin market index. Last error: {last_error}"
     )))
+}
+
+/// 下载量统计缓存：key 为 "owner/repo@tag"。
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+struct MarketStatsCache {
+    #[serde(default)]
+    fetched_at: u64,
+    #[serde(default)]
+    counts: BTreeMap<String, u64>,
+}
+
+/// 统计请求目标（渲染层按市场条目构造）。
+#[derive(serde::Deserialize)]
+struct MarketStatsTarget {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    repo: String,
+    #[serde(default)]
+    tag: String,
+    #[serde(default)]
+    asset: String,
+}
+
+/// 统计请求失败原因：限流 / 网络故障都立刻终止本轮并沿用缓存值。
+enum StatsFetchError {
+    Stop,
+}
+
+fn stats_memory_cache() -> &'static Mutex<Option<MarketStatsCache>> {
+    MARKET_STATS_MEMORY_CACHE.get_or_init(|| Mutex::new(None))
+}
+
+fn stats_cache_path() -> Result<PathBuf> {
+    Ok(marketplace_dir()?.join("stats.json"))
+}
+
+fn now_epoch_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0)
+}
+
+fn load_stats_cache() -> MarketStatsCache {
+    if let Ok(guard) = stats_memory_cache().lock() {
+        if let Some(cache) = guard.as_ref() {
+            return cache.clone();
+        }
+    }
+    let cache = stats_cache_path()
+        .ok()
+        .and_then(|path| fs::read_to_string(path).ok())
+        .and_then(|text| serde_json::from_str::<MarketStatsCache>(&text).ok())
+        .unwrap_or_default();
+    store_stats_cache(&cache);
+    cache
+}
+
+fn store_stats_cache(cache: &MarketStatsCache) {
+    if let Ok(mut guard) = stats_memory_cache().lock() {
+        *guard = Some(cache.clone());
+    }
+    let Ok(path) = stats_cache_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        if fs::create_dir_all(parent).is_err() {
+            return;
+        }
+    }
+    if let Ok(text) = serde_json::to_string(cache) {
+        let _ = fs::write(&path, text);
+    }
+}
+
+/// 解析 "https://github.com/owner/repo" 为 "owner/repo"。
+fn github_repo_slug(repo: &str) -> Option<String> {
+    let rest = repo
+        .trim()
+        .trim_end_matches('/')
+        .strip_prefix("https://github.com/")?;
+    let rest = rest.strip_suffix(".git").unwrap_or(rest);
+    let mut segments = rest.splitn(2, '/');
+    let owner = segments.next().filter(|segment| !segment.is_empty())?;
+    let name = segments.next().filter(|segment| !segment.is_empty())?;
+    if name.contains('/') {
+        return None;
+    }
+    Some(format!("{owner}/{name}"))
+}
+
+impl MarketStatsTarget {
+    /// 统计缓存键；非 GitHub 仓库或缺少 tag 的条目不参与统计。
+    fn cache_key(&self) -> Option<String> {
+        let slug = github_repo_slug(&self.repo)?;
+        let tag = self.tag.trim();
+        if tag.is_empty() {
+            return None;
+        }
+        Some(format!("{slug}@{tag}"))
+    }
+}
+
+/// GitHub token：优先 GITHUB_TOKEN，其次 GH_TOKEN（gh CLI 登录后写入的环境变量），
+/// 与内置 Skills 安装器 / Git 头像反查的既有约定一致；无 token 时匿名请求
+/// （限额 60 次/小时且按 IP 共享）。
+fn github_token() -> Option<String> {
+    std::env::var("GITHUB_TOKEN")
+        .or_else(|_| std::env::var("GH_TOKEN"))
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+/// 读取核心配额（rate_limit 接口不计入限额）：剩余不足时跳过本轮请求，
+/// 避免把额度浪费在注定失败的调用上。
+fn github_quota_available(
+    client: &reqwest::blocking::Client,
+    token: Option<&str>,
+    needed: usize,
+) -> bool {
+    let mut request = client
+        .get("https://api.github.com/rate_limit")
+        .timeout(MARKET_STATS_REQUEST_TIMEOUT);
+    if let Some(token) = token {
+        request = request.header("Authorization", format!("Bearer {token}"));
+    }
+    let Ok(response) = request.send() else {
+        return false;
+    };
+    if !response.status().is_success() {
+        return false;
+    }
+    let Ok(body) = response.text() else {
+        return false;
+    };
+    serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|parsed| {
+            parsed
+                .get("resources")
+                .and_then(|resources| resources.get("core"))
+                .and_then(|core| core.get("remaining"))
+                .and_then(serde_json::Value::as_u64)
+        })
+        .map(|remaining| remaining as usize >= needed)
+        .unwrap_or(true)
+}
+
+/// 单个仓库全部 Release 的资产下载量：tag -> [(资产名, 下载数)]。
+/// 一次请求覆盖该仓库的所有 tag（多个插件可能共用同一仓库）。
+fn fetch_repo_release_downloads(
+    client: &reqwest::blocking::Client,
+    slug: &str,
+    token: Option<&str>,
+) -> std::result::Result<BTreeMap<String, Vec<(String, u64)>>, StatsFetchError> {
+    let url = format!("{GITHUB_API_RELEASES_PREFIX}{slug}/releases?per_page=100");
+    let mut request = client
+        .get(&url)
+        .header("Accept", "application/vnd.github+json")
+        .timeout(MARKET_STATS_REQUEST_TIMEOUT);
+    if let Some(token) = token {
+        request = request.header("Authorization", format!("Bearer {token}"));
+    }
+    let response = request.send().map_err(|_| StatsFetchError::Stop)?;
+    let status = response.status();
+    if status.as_u16() == 404 {
+        return Ok(BTreeMap::new());
+    }
+    if !status.is_success() {
+        return Err(StatsFetchError::Stop);
+    }
+    let body = response.text().map_err(|_| StatsFetchError::Stop)?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&body).map_err(|_| StatsFetchError::Stop)?;
+    let Some(releases) = parsed.as_array() else {
+        return Ok(BTreeMap::new());
+    };
+    let mut result: BTreeMap<String, Vec<(String, u64)>> = BTreeMap::new();
+    for release in releases {
+        let Some(tag) = release.get("tag_name").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        let assets = release
+            .get("assets")
+            .and_then(serde_json::Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .map(|item| {
+                        (
+                            item.get("name")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or_default()
+                                .to_string(),
+                            item.get("download_count")
+                                .and_then(serde_json::Value::as_u64)
+                                .unwrap_or(0),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        result.insert(tag.to_string(), assets);
+    }
+    Ok(result)
+}
+
+/// 取资产的下载量：命中同名资产用该资产计数，否则汇总整个 Release。
+fn asset_download_count(assets: &[(String, u64)], asset: &str) -> u64 {
+    let wanted = asset.trim();
+    if !wanted.is_empty() {
+        if let Some((_, count)) = assets.iter().find(|(name, _)| name == wanted) {
+            return *count;
+        }
+    }
+    assets.iter().map(|(_, count)| *count).sum()
+}
+
+/// 拉取市场条目的下载量统计（blocking）。
+///
+/// `targets_json` 为 `[{id, repo, tag, asset}]`，返回
+/// `{"counts": {id: 下载量}, "limited": bool}` JSON 文本。数据源为各插件仓库
+/// Release 资产的 download_count（按仓库聚合请求，一次覆盖该仓库全部 tag）；
+/// 结果缓存 6 小时（内存 + `~/.snowapp/plugin-market/stats.json`）。有
+/// `GITHUB_TOKEN` / `GH_TOKEN` 时用认证请求（5000 次/小时），否则匿名请求
+/// （60 次/小时且按 IP 共享）——配额不足或网络故障时跳过本轮并沿用缓存，
+/// 通过 `limited` 告知渲染层，绝不让市场页面报错。
+pub fn fetch_market_stats_blocking(targets_json: &str, force_refresh: bool) -> Result<String> {
+    let targets: Vec<MarketStatsTarget> = serde_json::from_str(targets_json)
+        .map_err(|error| Error::from_reason(format!("Invalid market stats targets: {error}")))?;
+
+    let mut cache = load_stats_cache();
+    let now = now_epoch_secs();
+    let fresh =
+        cache.fetched_at > 0 && now.saturating_sub(cache.fetched_at) < MARKET_STATS_CACHE_TTL_SECS;
+
+    let mut pending: BTreeMap<String, Vec<&MarketStatsTarget>> = BTreeMap::new();
+    for target in &targets {
+        if target.id.trim().is_empty() {
+            continue;
+        }
+        let Some(key) = target.cache_key() else {
+            continue;
+        };
+        if force_refresh || !fresh || !cache.counts.contains_key(&key) {
+            let Some(slug) = github_repo_slug(&target.repo) else {
+                continue;
+            };
+            pending.entry(slug).or_default().push(target);
+        }
+    }
+
+    let mut limited = false;
+    if !pending.is_empty() {
+        let client = build_blocking_client()?;
+        let token = github_token();
+        if github_quota_available(&client, token.as_deref(), pending.len()) {
+            let deadline = Instant::now() + MARKET_STATS_TOTAL_BUDGET;
+            let mut completed = true;
+            for (slug, group) in pending {
+                if Instant::now() >= deadline {
+                    completed = false;
+                    break;
+                }
+                match fetch_repo_release_downloads(&client, &slug, token.as_deref()) {
+                    Ok(releases) => {
+                        for target in group {
+                            let tag = target.tag.trim();
+                            let count = releases
+                                .get(tag)
+                                .map(|assets| asset_download_count(assets, &target.asset))
+                                .unwrap_or(0);
+                            cache.counts.insert(format!("{slug}@{tag}"), count);
+                        }
+                    }
+                    Err(StatsFetchError::Stop) => {
+                        limited = true;
+                        completed = false;
+                        break;
+                    }
+                }
+            }
+            if completed {
+                cache.fetched_at = now;
+            }
+        } else {
+            limited = true;
+        }
+        store_stats_cache(&cache);
+    }
+
+    let mut counts = serde_json::Map::new();
+    for target in &targets {
+        if target.id.trim().is_empty() {
+            continue;
+        }
+        if let Some(key) = target.cache_key() {
+            if let Some(count) = cache.counts.get(&key) {
+                counts.insert(target.id.clone(), serde_json::Value::from(*count));
+            }
+        }
+    }
+
+    let mut output = serde_json::Map::new();
+    output.insert(
+        "counts".to_string(),
+        serde_json::Value::Object(counts),
+    );
+    output.insert("limited".to_string(), serde_json::Value::Bool(limited));
+    Ok(serde_json::Value::Object(output).to_string())
 }
 
 fn download_to_file(

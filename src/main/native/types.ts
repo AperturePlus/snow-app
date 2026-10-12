@@ -3107,6 +3107,11 @@ export type NativeBridge = {
   installPlugin: (sourceDir: string) => Promise<PluginRecord>;
   /** 拉取插件市场索引 JSON（forceRefresh 为 true 时跳过 Rust 侧缓存） */
   fetchPluginRegistry: (forceRefresh?: boolean) => Promise<string>;
+  /** 拉取市场条目下载量统计（GitHub Release 资产 download_count，Rust 侧带缓存） */
+  fetchPluginMarketStats: (
+    targets: string,
+    forceRefresh?: boolean,
+  ) => Promise<string>;
   /** 从插件市场下载并安装（或更新）插件（zip 下载 + SHA256 校验） */
   installPluginFromMarket: (
     pluginId: string,

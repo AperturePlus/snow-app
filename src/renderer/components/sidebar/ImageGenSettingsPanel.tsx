@@ -2417,6 +2417,7 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                     </button>
                   </div>
                   <textarea
+                    className="api-settings-field-textarea"
                     value={activeModelItem.customPrompt ?? ""}
                     onChange={(event) =>
                       updateActiveModelItem("customPrompt", event.target.value)
@@ -2428,11 +2429,6 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                     rows={3}
                     disabled={draftSaving}
                     spellCheck={false}
-                    style={{
-                      resize: "vertical",
-                      fontSize: 12,
-                      lineHeight: 1.5,
-                    }}
                   />
                   <small className="api-settings-field-hint">
                     {t("settings.imagegenCustomPromptHint", {
@@ -2897,7 +2893,7 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                               <BadgeCheck
                                 size={12}
                                 strokeWidth={2}
-                                className="imagegen-primary-badge-icon"
+                                style={{ color: "var(--accent-amber-text)" }}
                                 aria-label={t("settings.imagegenPrimaryBadge", {
                                   defaultValue: "Default primary model",
                                 })}

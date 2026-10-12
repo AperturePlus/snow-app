@@ -17,6 +17,23 @@ pub async fn fetch_plugin_registry(force_refresh: Option<bool>) -> napi::Result<
     .map_err(|error| Error::from_reason(format!("Fetch plugin registry task failed: {error}")))?
 }
 
+/// 拉取市场条目下载量统计（GitHub Release 资产 download_count）。
+///
+/// `targets` 为 `[{id, repo, tag, asset}]` JSON，返回 `{id: 下载量}` JSON；
+/// Rust 侧按仓库 + tag 缓存 6 小时，限流或网络故障时沿用缓存值。
+#[napi]
+pub async fn fetch_plugin_market_stats(
+    targets: String,
+    force_refresh: Option<bool>,
+) -> napi::Result<String> {
+    let force_refresh = force_refresh.unwrap_or(false);
+    tokio::task::spawn_blocking(move || {
+        crate::plugin_market::fetch_market_stats_blocking(&targets, force_refresh)
+    })
+    .await
+    .map_err(|error| Error::from_reason(format!("Fetch plugin market stats task failed: {error}")))?
+}
+
 /// 从插件市场下载并安装（或更新）插件：
 /// zip 下载 -> SHA256 校验 -> 解压 -> 校验 plugin.json id -> 存储层安装。
 #[napi]

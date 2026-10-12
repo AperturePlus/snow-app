@@ -19,6 +19,18 @@ export const getWebSearchService = (native: NativeBridge): WebSearchService => {
 };
 
 /**
+ * 应用退出时释放共享服务：关闭常驻的 headless 浏览器，
+ * 避免残留 renderer / gpu 等子进程。
+ */
+export const disposeWebSearchService = async (): Promise<void> => {
+  const service = instance;
+  instance = null;
+  if (service) {
+    await service.dispose();
+  }
+};
+
+/**
  * 执行 Rust 转发的 Web 搜索命令（puppeteer 驱动系统浏览器）。
  * 目前仅支持 websearch-search；未知操作返回错误。
  */

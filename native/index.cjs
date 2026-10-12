@@ -109,6 +109,7 @@ const requiredExports = [
   "pruneAppLogs",
   // 插件市场（索引拉取 / 从市场安装插件与脚本）
   "fetchPluginRegistry",
+  "fetchPluginMarketStats",
   "installPluginFromMarket",
   "installScriptFromMarket",
   // OAuth 登录（API 设置 → LLM 模型 → OAuth 登录；provider 由后端注册，可扩展）

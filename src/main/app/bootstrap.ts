@@ -42,6 +42,7 @@ import { startScheduledTaskWakeup } from "./scheduledTaskWakeup";
 import { stopRemoteControlServer } from "../remoteControl/remoteControlServer";
 import { initializeRemoteControl } from "../remoteControl/remoteControlLifecycle";
 import { remoteTunnelManager } from "../remoteControl/remoteTunnelManager";
+import { disposeWebSearchService } from "../websearch/webSearchRegistry";
 import { isInstallerQuitRequest } from "./installerQuit";
 import { sanitizeLauncherEnvironment } from "./launcherEnvironment";
 
@@ -299,7 +300,8 @@ export const bootstrapApplication = (): void => {
   let remoteShutdownComplete = false;
   let remoteShutdownPromise: Promise<void> | null = null;
 
-  // 退出前释放远控监听端口和隧道进程，并销毁宠物窗口。
+  // 退出前释放远控监听端口和隧道进程、关闭常驻的 headless 浏览器，
+  // 并销毁宠物窗口。
   app.on("before-quit", (event) => {
     disposePetWindow();
     if (remoteShutdownComplete) return;
@@ -308,6 +310,8 @@ export const bootstrapApplication = (): void => {
     remoteShutdownPromise ??= Promise.all([
       remoteTunnelManager.shutdown(),
       stopRemoteControlServer(),
+      // 联网搜索的浏览器实例不随父进程退出而结束，必须显式关闭。
+      disposeWebSearchService(),
       // 自动格式化已改为延迟执行：退出前把尚未落盘的格式化任务跑完。
       native.flushPendingFileFormats(),
       flushLogs(),

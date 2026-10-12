@@ -13177,12 +13177,15 @@ body.is-panel-resizing * {
 }
 
 /* Tooltip 摘要详情：固定宽度多行布局，覆盖默认 nowrap（fit-content 会让
-   长文本把 tooltip 撑成窄条，固定宽度才能正确换行截断） */
+   长文本把 tooltip 撑成窄条，固定宽度才能正确换行截断）。
+   宽度必须扣除 .tooltip 自身的内边距与边框（.tooltip 为 border-box 且
+   max-width: min(280px, 70vw)，padding 6px 10px、border 1px，共 22px），
+   否则内层按 280px 排版会横向溢出到圆角框之外。 */
 .md-source-tooltip {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  width: 280px;
+  width: min(258px, calc(70vw - 22px));
   white-space: normal;
   text-align: left;
 }
@@ -20471,9 +20474,9 @@ body.is-panel-resizing * {
 }
 
 .imagegen-model-tab.active {
-  background: var(--accent-color);
-  color: var(--on-solid);
-  border-color: var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 14%, transparent);
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent-color) 45%, transparent);
   font-weight: 500;
 }
 
@@ -20485,11 +20488,6 @@ body.is-panel-resizing * {
   color: var(--accent-amber-text);
   font-size: 12px;
   line-height: 1;
-}
-
-.imagegen-model-tab.active .imagegen-model-tab-star {
-  color: var(--on-solid);
-  opacity: 0.9;
 }
 
 .imagegen-model-tab-close {
@@ -20513,7 +20511,7 @@ body.is-panel-resizing * {
 
 .imagegen-model-tab-close:hover {
   opacity: 1;
-  background: var(--bg-active);
+  background: color-mix(in srgb, currentColor 24%, transparent);
 }
 
 .imagegen-model-actions-bar {
@@ -20548,11 +20546,6 @@ body.is-panel-resizing * {
   gap: 4px;
   color: var(--accent-amber-text);
   font-weight: 600;
-}
-
-/* 渠道列表「默认主模型」徽章图标：跟随主题的琥珀色文字色 */
-.imagegen-primary-badge-icon {
-  color: var(--accent-amber-text);
 }
 
 .imagegen-model-more-tag {
@@ -47723,6 +47716,11 @@ pre.file-viewer-code {
   flex: none;
 }
 
+/* 面板内原生复选框跟随主题强调色 */
+.imagegen-tab-page input[type="checkbox"] {
+  accent-color: var(--accent-color);
+}
+
 /* 汇总卡片区：与 API 设置页 api-settings-summary-grid 同构。
    4 列：渠道数 / 已启用 / 最大并发生成数 / 生成超时 */
 .imagegen-summary-grid {
@@ -47885,6 +47883,11 @@ pre.file-viewer-code {
   font-size: 10.5px;
   font-weight: 500;
   line-height: 1.45;
+}
+
+/* 弹窗内原生复选框跟随主题强调色 */
+.imagegen-editor input[type="checkbox"] {
+  accent-color: var(--accent-color);
 }
 
 .imagegen-editor-actions {
@@ -54776,6 +54779,16 @@ img.plugin-icon {
 
 .plugin-market-updated {
   margin-left: auto;
+}
+
+.plugin-market-downloads {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.plugin-market-stats-limited {
+  color: var(--accent-amber-text);
 }
 
 .plugin-market-installed {

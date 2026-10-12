@@ -176,3 +176,65 @@ export const isMarketEntryTooNew = (
   Boolean(entry.minAppVersion) &&
   Boolean(appVersion) &&
   compareMarketVersions(appVersion, entry.minAppVersion) < 0;
+
+/** 下载量统计请求目标（Rust 侧按仓库 + tag 查询 Release 资产下载数）。 */
+export type MarketStatsTarget = {
+  id: string;
+  repo: string;
+  tag: string;
+  asset: string;
+};
+
+/** 汇总统计请求目标：仅保留能解析出 GitHub Release 的条目。 */
+export const buildMarketStatsTargets = (
+  entries: MarketPluginEntry[],
+): MarketStatsTarget[] =>
+  entries
+    .filter(
+      (entry) =>
+        GITHUB_REPO_PATTERN.test(entry.repo) && entry.tag.trim() !== "",
+    )
+    .map((entry) => ({
+      id: entry.id,
+      repo: entry.repo,
+      tag: entry.tag,
+      asset: entry.asset,
+    }));
+
+/** 市场下载量统计结果：按条目 id 的下载量与是否受 GitHub 配额限制。 */
+export type MarketStats = {
+  counts: Record<string, number>;
+  limited: boolean;
+};
+
+/** 解析下载量统计 JSON；解析失败或非法值一律忽略。 */
+export const parseMarketStats = (text: string): MarketStats => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { counts: {}, limited: false };
+  }
+  if (!isRecord(parsed)) {
+    return { counts: {}, limited: false };
+  }
+  const rawCounts = isRecord(parsed.counts) ? parsed.counts : {};
+  const counts: Record<string, number> = {};
+  for (const [id, value] of Object.entries(rawCounts)) {
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+      counts[id] = Math.floor(value);
+    }
+  }
+  return { counts, limited: parsed.limited === true };
+};
+
+/** 下载量紧凑展示：1000 以下原样，千 / 百万分别用 k / M。 */
+export const formatMarketDownloads = (count: number): string => {
+  if (count < 1000) {
+    return String(count);
+  }
+  if (count < 1000000) {
+    return `${(count / 1000).toFixed(count < 10000 ? 1 : 0)}k`;
+  }
+  return `${(count / 1000000).toFixed(1)}M`;
+};

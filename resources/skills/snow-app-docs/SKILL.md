@@ -24,9 +24,10 @@ description: >-
   custom-headers/system-prompt/theme/language/permissions/lsp-config/buddy/
   subAgents/hooks/skills/logs/imagegen/personalization/apiProfiles/
   customHeaderSchemes/mcpServers/requestLogging/scheduledTasks/toolApproval/
-  usage/appSettings/privacy/codebase/keyboardShortcuts/workspace/plugins), including
-  project-scoped mcpServers/sensitiveCommands/subAgents/hooks/skills via
-  `projectId`, the read-only logs scope, imagegen multi-channel settings,
+  usage/appSettings/privacy/codebase/keyboardShortcuts/workspace/plugins/
+  customCommands), including
+  project-scoped mcpServers/sensitiveCommands/subAgents/hooks/skills/customCommands
+  via `projectId`, the read-only logs scope, imagegen multi-channel settings,
   masked secrets, and app-control-openSettings (21 settings pages).
 enable: true
 allowed-tools:
