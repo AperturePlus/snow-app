@@ -2974,6 +2974,10 @@ Full guide: ~/.snowapp/docs/zh-CN/2-使用指南/3-配置API密钥与模型.md (
         // 避免静默截断成负数写入损坏配置。
         let int_field = |key: &str| -> Option<i32> {
             if let Some(field) = value.get(key) {
+                // 显式 null = 清空该字段（retryBaseDelayMs 清空即回到指数退避）。
+                if field.is_null() {
+                    return None;
+                }
                 if let Some(number) = field.as_i64() {
                     return Some(
                         number.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32,

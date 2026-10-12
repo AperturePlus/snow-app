@@ -960,11 +960,17 @@ export function ApiSettingsFormFields({
             <input
               value={data.retryBaseDelayMs}
               onChange={changeField("retryBaseDelayMs")}
-              placeholder="3000"
+              placeholder="e.g. 3000"
               type="number"
               min={0}
               disabled={disabled}
             />
+            <small className="api-settings-hint-text">
+              {t("settings.apiRetryBaseDelayMsHint", {
+                defaultValue:
+                  "Set 0 for exponential backoff; above 0 waits a fixed interval",
+              })}
+            </small>
           </label>
           <label className="api-settings-field">
             <span>

@@ -2325,6 +2325,8 @@ export const en = {
   "settings.apiStreamIdleTimeout": "Stream idle timeout (s)",
   "settings.apiMaxRetries": "Max retries",
   "settings.apiRetryBaseDelayMs": "Retry delay (ms)",
+  "settings.apiRetryBaseDelayMsHint":
+    "Set 0 for exponential backoff (3s base, doubling, capped at 30s); a value above 0 waits that fixed interval before every retry.",
   "settings.apiPartialRetryMaxChars": "Partial output keep threshold (chars)",
   "settings.apiEnableAutoCompress": "Enable auto compress",
   "settings.apiAutoCompressThreshold": "Auto compress threshold",

@@ -2215,6 +2215,8 @@ export const zhTW = {
   "settings.apiStreamIdleTimeout": "串流閒置逾時（秒）",
   "settings.apiMaxRetries": "最大重試次數",
   "settings.apiRetryBaseDelayMs": "重試延遲（毫秒）",
+  "settings.apiRetryBaseDelayMsHint":
+    "留 0 使用指數退避（基數 3s，逐次翻倍，上限 30s）；填寫大於 0 的數值則每次重試固定等待該時長。",
   "settings.apiPartialRetryMaxChars": "中斷時保留部分輸出的閾值（字元）",
   "settings.apiEnableAutoCompress": "啟用自動壓縮",
   "settings.apiAutoCompressThreshold": "自動壓縮閾值",

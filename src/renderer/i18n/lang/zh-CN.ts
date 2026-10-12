@@ -2215,6 +2215,8 @@ export const zhCN = {
   "settings.apiStreamIdleTimeout": "流式空闲超时（秒）",
   "settings.apiMaxRetries": "最大重试次数",
   "settings.apiRetryBaseDelayMs": "重试延迟（毫秒）",
+  "settings.apiRetryBaseDelayMsHint":
+    "留 0 使用指数退避（基数 3s，逐次翻倍，上限 30s）；填写大于 0 的数值则每次重试固定等待该时长。",
   "settings.apiPartialRetryMaxChars": "中断时保留部分输出的阈值（字符）",
   "settings.apiEnableAutoCompress": "启用自动压缩",
   "settings.apiAutoCompressThreshold": "自动压缩阈值",

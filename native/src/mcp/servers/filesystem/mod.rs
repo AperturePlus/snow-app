@@ -173,7 +173,7 @@ impl McpService for FilesystemService {
                         "position": {
                             "type": "string",
                             "enum": ["before", "after"],
-                            "description": "Insert mode only (default before): insert before or right after targetLine."
+                            "description": "Insert mode only (default before): insert before or right after targetLine. Rejected in replace mode."
                         },
                         "deleteSource": {
                             "type": "boolean",

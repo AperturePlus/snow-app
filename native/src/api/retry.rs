@@ -36,7 +36,9 @@ pub fn apply_auxiliary_retries(config: &mut crate::storage::ApiConfigRecord) {
 
 pub struct RetryOptions {
     pub max_retries: u32,
-    pub base_delay_ms: u64,
+    /// 固定重试间隔（毫秒）。`Some` = 每次重试固定等待该值（不受 30s 上限约束）；
+    /// `None` = 档案留 0 或未填写，走指数退避（`DEFAULT_BASE_DELAY_MS × 2^attempt`，封顶 30s）。
+    pub retry_delay_ms: Option<u64>,
     /// mid-stream 中断时保留 partial 的纯文本阈值（字符数），来自 API 档案配置。
     pub partial_retry_max_chars: usize,
     pub retry_always: bool,
@@ -244,7 +246,7 @@ impl Default for RetryOptions {
     fn default() -> Self {
         Self {
             max_retries: DEFAULT_MAX_RETRIES,
-            base_delay_ms: DEFAULT_BASE_DELAY_MS,
+            retry_delay_ms: None,
             partial_retry_max_chars: DEFAULT_PARTIAL_RETRY_MAX_CHARS,
             retry_always: false,
             match_keywords: default_retry_keywords(),
@@ -263,10 +265,9 @@ impl RetryOptions {
             .filter(|&v| v > 0)
             .map(|v| v as u32)
             .unwrap_or(DEFAULT_MAX_RETRIES);
-        let base_delay_ms = retry_base_delay_ms
+        let retry_delay_ms = retry_base_delay_ms
             .filter(|&v| v > 0)
-            .map(|v| v as u64)
-            .unwrap_or(DEFAULT_BASE_DELAY_MS);
+            .map(|v| v as u64);
         let partial_retry_max_chars = partial_retry_max_chars
             .filter(|&v| v > 0)
             .map(|v| v as usize)
@@ -274,7 +275,7 @@ impl RetryOptions {
         let (retry_always, match_keywords, retry_empty_response) = load_global_retry_policy();
         Self {
             max_retries,
-            base_delay_ms,
+            retry_delay_ms,
             partial_retry_max_chars,
             retry_always,
             match_keywords,
@@ -625,22 +626,27 @@ pub fn should_retry(error: &Error, attempt: u32, options: &RetryOptions) -> bool
 
 /// 第 `attempt` 次重试前的退避时长（毫秒）。
 ///
-/// 与 `wait_before_retry` 使用完全相同的公式（`base_delay_ms × 2^attempt`，
-/// 上限 30s），保证下发给前端做倒计时的时长与实际等待时间一致——两处算法
-/// 必须同源，否则倒计时会在到点后继续等待或提前归零。
+/// 档案填了大于 0 的固定间隔（`retry_delay_ms`）时直接使用该值，不做封顶；留 0 或
+/// 未填写时按 `DEFAULT_BASE_DELAY_MS × 2^attempt` 指数退避，上限 30s。与
+/// `wait_before_retry` 同源，保证下发给前端做倒计时的时长与实际等待时间一致——
+/// 两处算法必须同源，否则倒计时会在到点后继续等待或提前归零。
 pub fn retry_backoff_ms(options: &RetryOptions, attempt: u32) -> i64 {
     const MAX_BACKOFF_MS: u64 = 30_000;
-    let backoff = options.base_delay_ms.saturating_mul(1u64 << attempt.min(4));
-    backoff.min(MAX_BACKOFF_MS) as i64
+    match options.retry_delay_ms {
+        Some(delay) => delay.min(i64::MAX as u64) as i64,
+        None => DEFAULT_BASE_DELAY_MS
+            .saturating_mul(1u64 << attempt.min(4))
+            .min(MAX_BACKOFF_MS) as i64,
+    }
 }
 
 /// Wait for the retry delay, respecting the cancel token.
 ///
-/// The delay grows exponentially with the attempt count
-/// (`base_delay_ms × 2^attempt`, capped at 30s) so a recovering network gets
-/// progressively more time to come back before the retry budget is
-/// exhausted. `attempt` is the number of failures already seen (0 = first
-/// retry).
+/// The delay comes from `retry_backoff_ms`: a fixed value when the profile
+/// configures one, otherwise exponential growth (`base × 2^attempt`, capped at
+/// 30s) so a recovering network gets progressively more time to come back
+/// before the retry budget is exhausted. `attempt` is the number of failures
+/// already seen (0 = first retry).
 ///
 /// Returns after either the delay elapses or cancellation is observed. Stream
 /// collectors immediately restart their attempt loop, whose cancellation-first
@@ -907,7 +913,9 @@ where
                     &error.reason,
                     retry_backoff_ms(options, attempt),
                 );
-                std::thread::sleep(Duration::from_millis(options.base_delay_ms));
+                std::thread::sleep(Duration::from_millis(
+                    retry_backoff_ms(options, attempt).max(0) as u64,
+                ));
                 attempt += 1;
             }
         }

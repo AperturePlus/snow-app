@@ -133,10 +133,18 @@ fn apply_legacy_values(root: &mut Value, legacy: &LegacyConfigValues) {
         legacy.auto_compress_threshold,
     );
     snowcfg.insert("maxRetries".to_string(), json!(legacy.max_retries));
-    snowcfg.insert(
-        "retryDelayMs".to_string(),
-        json!(legacy.retry_base_delay_ms),
-    );
+    // legacy 列为 NOT NULL，0 是「档案留 0」的哨兵值：此时不覆盖 config_json 里
+    // 已显式写入的 null（留 0 = 指数退避），仅在该键缺失时补 null。
+    if legacy.retry_base_delay_ms > 0 {
+        snowcfg.insert(
+            "retryDelayMs".to_string(),
+            json!(legacy.retry_base_delay_ms),
+        );
+    } else {
+        snowcfg
+            .entry("retryDelayMs".to_string())
+            .or_insert(Value::Null);
+    }
     snowcfg.insert(
         "partialRetryMaxChars".to_string(),
         json!(legacy.partial_retry_max_chars),
@@ -181,7 +189,7 @@ fn default_config_json() -> String {
             "enableAutoCompress": true,
             "autoCompressThreshold": null,
             "maxRetries": 5,
-            "retryDelayMs": 3000,
+            "retryDelayMs": null,
             "partialRetryMaxChars": 1000,
             "systemPromptIdsJson": "",
             "customHeaderSchemeId": "",
@@ -488,7 +496,8 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
             let effective_stream_idle_timeout_sec = config.stream_idle_timeout_sec;
             let effective_auto_compress_threshold = config.auto_compress_threshold;
             let effective_max_retries = config.max_retries.unwrap_or(5);
-            let effective_retry_base_delay_ms = config.retry_base_delay_ms.unwrap_or(3000);
+            let effective_retry_base_delay_ms = config.retry_base_delay_ms.filter(|value| *value > 0);
+            let legacy_retry_base_delay_ms = effective_retry_base_delay_ms.unwrap_or(0);
             let effective_partial_retry_max_chars = config.partial_retry_max_chars.unwrap_or(1000);
 
             let mut canonical = parse_json_object(existing_config_json);
@@ -546,7 +555,7 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
             set_input_optional(
                 &mut *snowcfg,
                 "retryDelayMs",
-                Some(effective_retry_base_delay_ms),
+                effective_retry_base_delay_ms,
             );
             set_input_optional(
                 &mut *snowcfg,
@@ -673,7 +682,7 @@ pub fn upsert_api_config(database_path: &Path, config: &ApiConfigInput) -> Resul
                     config.enable_auto_compress as i32,
                     effective_auto_compress_threshold,
                     effective_max_retries,
-                    effective_retry_base_delay_ms,
+                    legacy_retry_base_delay_ms,
                     effective_partial_retry_max_chars,
                     config.system_prompt_ids_json,
                     config.custom_header_scheme_id,
@@ -737,7 +746,7 @@ fn insert_default_api_config(connection: &Connection) -> rusqlite::Result<()> {
            ) THEN NULL ELSE ?1 END,
            ?2, ?3, 1, ?4, 'auto', '', ?5, ?6, ?7, 1,
            '', 'auto', '', ?5, '', ?8, NULL, NULL, 1, NULL,
-           5, 3000, 1000, '', '', ?9, 'default',
+           5, 0, 1000, '', '', ?9, 'default',
            datetime('now', 'localtime'), datetime('now', 'localtime')
          ) ON CONFLICT(profile_name) DO NOTHING",
         params![

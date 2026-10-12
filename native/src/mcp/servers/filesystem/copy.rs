@@ -77,6 +77,16 @@ pub(super) fn execute(args: &Value) -> napi::Result<Value> {
         ));
     }
 
+    // 与 targetEndLine 对称：position 只在 insert 下有意义，replace 下静默吞掉会让
+    // 「想插到某行前后却写错 mode」的调用毫无痕迹，因此显式拒绝。
+    if mode == CopyMode::Replace && has_position(args) {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "position is only used with mode=\"insert\". Pass mode=\"insert\" to insert the lines before/after targetLine, or drop position to overwrite the targetLine..targetEndLine range."
+                .to_string(),
+        ));
+    }
+
     let source_document = read_document(&source_path, "sourceFilePath")?;
     let source_ends_with_newline = source_document.content.ends_with('\n');
     let source_elements = split_line_elements(&source_document.content);
@@ -718,5 +728,13 @@ fn parse_position(args: &Value) -> napi::Result<InsertPosition> {
             Status::InvalidArg,
             format!("position must be \"before\" or \"after\", received \"{other}\"."),
         )),
+    }
+}
+
+/// position 是否被显式传入（null / 空串视为未传，与 parse_position 的默认值口径一致）。
+fn has_position(args: &Value) -> bool {
+    match args.get("position").and_then(Value::as_str).map(str::trim) {
+        Some(value) => !value.is_empty(),
+        None => false,
     }
 }

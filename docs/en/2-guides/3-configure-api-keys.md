@@ -77,7 +77,7 @@ Some advanced parameters can be configured in the Runtime area of the UI (such a
 | `maxTokens`                     | Max tokens per generation                                             |
 | `streamIdleTimeoutSec`          | Stream response idle timeout (seconds)                                |
 | `maxRetries`                    | Max request retries                                                   |
-| `retryDelayMs`                  | Retry interval (milliseconds)                                         |
+| `retryDelayMs`                  | Retry interval (milliseconds); 0 uses exponential backoff             |
 | `showThinking`                  | Whether to show the thinking process                                  |
 | `chatThinking.reasoning_effort` | Reasoning effort (e.g. `max`)                                         |
 | `toolResultTokenLimit`          | Maximum percentage of the model context available to each tool result |
