@@ -1,4 +1,4 @@
-import { Copy, Loader2, Settings, Undo2, X } from "lucide-react";
+import { ChevronDown, Copy, Loader2, Settings, Undo2, X } from "lucide-react";
 import { PromptContextReview } from "./PromptContextReview";
 import {
   useCallback,
@@ -30,6 +30,7 @@ import {
 } from "../../../plugins/pluginRuntime";
 import { pluginStore } from "../../../plugins/pluginStore";
 import type { PluginPanelDefinition, PluginView } from "../../../plugins/types";
+import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
 import { Modal } from "../../common/Modal";
 import { PluginIcon } from "../../common/PluginIcon";
 import { Tooltip } from "../../common/Tooltip";
@@ -40,6 +41,8 @@ const LABELS = {
   en: {
     cancel: "Cancel action",
     configure: "Configure",
+    openConfiguration: "Open configuration",
+    more: "More actions",
     undo: "Undo",
     apply: "Apply",
     preview: "Preview",
@@ -52,6 +55,8 @@ const LABELS = {
   "zh-CN": {
     cancel: "取消本次操作",
     configure: "配置",
+    openConfiguration: "打开配置",
+    more: "更多操作",
     undo: "还原",
     apply: "应用",
     preview: "预览",
@@ -64,6 +69,8 @@ const LABELS = {
   "zh-TW": {
     cancel: "取消本次操作",
     configure: "設定",
+    openConfiguration: "開啟設定",
+    more: "更多操作",
     undo: "還原",
     apply: "套用",
     preview: "預覽",
@@ -180,6 +187,86 @@ export const ChatInputPluginAction = ({
     apiConfigIdentity,
     disabled,
     locale,
+  };
+
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    trigger: HTMLButtonElement;
+    identity: typeof identityRef.current;
+    contextRevision: number;
+  } | null>(null);
+  const menuRef = useRef(menu);
+  menuRef.current = menu;
+  const menuIsCurrent = (): boolean => {
+    const current = identityRef.current;
+    return (
+      !!menu &&
+      menuRef.current === menu &&
+      mountedRef.current &&
+      current.plugin === menu.identity.plugin &&
+      current.panel === menu.identity.panel &&
+      current.parametersKey === menu.identity.parametersKey &&
+      current.apiConfigIdentity === menu.identity.apiConfigIdentity &&
+      current.disabled === menu.identity.disabled &&
+      current.locale === menu.identity.locale &&
+      getPluginDraftContextRevision() === menu.contextRevision &&
+      pluginStore.getById(plugin.pluginId) === plugin &&
+      plugin.enabled
+    );
+  };
+  const closeMenu = (): void => {
+    menuRef.current = null;
+    setMenu(null);
+  };
+  useLayoutEffect(() => {
+    menuRef.current = null;
+    setMenu(null);
+  }, [
+    plugin,
+    panel,
+    parametersKey,
+    apiConfigIdentity,
+    disabled,
+    locale,
+    contextRevision,
+  ]);
+  const openMenu = (
+    trigger: HTMLButtonElement,
+    x?: number,
+    y?: number,
+  ): void => {
+    if (
+      !mountedRef.current ||
+      identityRef.current.plugin !== plugin ||
+      identityRef.current.panel !== panel ||
+      !plugin.enabled ||
+      pluginStore.getById(plugin.pluginId) !== plugin
+    )
+      return;
+    const rect = trigger.getBoundingClientRect();
+    const next = {
+      x: x ?? rect.left,
+      y: y ?? rect.bottom,
+      trigger,
+      identity: identityRef.current,
+      contextRevision: getPluginDraftContextRevision(),
+    };
+    menuRef.current = next;
+    setMenu(next);
+  };
+  const onMenuKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+  ): void => {
+    if (
+      event.key === "ContextMenu" ||
+      (event.shiftKey && event.key === "F10") ||
+      (event.altKey && event.key === "ArrowDown")
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      openMenu(event.currentTarget);
+    }
   };
 
   const settleConfirmation = useCallback((accepted: boolean): void => {
@@ -427,12 +514,30 @@ export const ChatInputPluginAction = ({
       }
     }
   };
-  const start = (): void => {
+  const start = (menuActionId?: string, fromMenu = false): void => {
+    // Menu selections never cancel or preempt an in-flight run.
     if (busyRef.current) {
-      cancel();
+      if (!fromMenu) cancel();
       return;
     }
-    if (disabled || plugin.renderMode !== "esm" || !panel.chatInputAction)
+    const actionName =
+      menuActionId === undefined
+        ? panel.chatInputAction
+        : panel.chatInputMenuActions?.find((item) => item.id === menuActionId)
+            ?.action;
+    // Only this parent's normalized declarations can select an export.
+    if (
+      !mountedRef.current ||
+      identityRef.current.plugin !== plugin ||
+      identityRef.current.panel !== panel ||
+      disabled ||
+      !plugin.enabled ||
+      pluginStore.getById(plugin.pluginId) !== plugin ||
+      plugin.renderMode !== "esm" ||
+      !panel.chatInput ||
+      !panel.chatInputAction ||
+      !actionName
+    )
       return;
     invalidate();
     const capturedIdentity = identityRef.current;
@@ -523,10 +628,7 @@ export const ChatInputPluginAction = ({
           signal: controller.signal,
         });
         check(run);
-        const action = resolvePluginChatInputAction(
-          module,
-          panel.chatInputAction!,
-        );
+        const action = resolvePluginChatInputAction(module, actionName);
         // Arm the scoped AI/write API only after import and export resolution.
         run.executing = true;
         return action({
@@ -577,6 +679,44 @@ export const ChatInputPluginAction = ({
     }
   };
 
+  const chooseMenuItem = (operation: () => void, executes = false): void => {
+    if (
+      !menuIsCurrent() ||
+      (executes && (busyRef.current || identityRef.current.disabled))
+    )
+      return;
+    const trigger = menu?.trigger;
+    closeMenu();
+    // Restore synchronously BEFORE the operation; never after it opens a Modal/panel.
+    if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    operation();
+  };
+  const menuOpen = menuIsCurrent();
+  const menuItems: ContextMenuItem[] = [
+    {
+      id: "host:default",
+      label: title,
+      disabled: busy || disabled,
+      onClick: () => chooseMenuItem(() => start(undefined, true), true),
+    },
+    ...(panel.chatInputMenuActions ?? []).map((item): ContextMenuItem => ({
+      id: `action:${item.id}`,
+      label: resolveLocalized(item.title, locale),
+      icon: item.icon ? (
+        <PluginIcon pluginId={plugin.pluginId} icon={item.icon} size={14} />
+      ) : undefined,
+      disabled: busy || disabled,
+      onClick: () => chooseMenuItem(() => start(item.id, true), true),
+    })),
+    {
+      id: "host:configure",
+      label: labels.openConfiguration,
+      icon: <Settings size={14} />,
+      separator: true,
+      onClick: () => chooseMenuItem(openConfiguration),
+    },
+  ];
+
   return (
     <div
       style={{
@@ -592,8 +732,20 @@ export const ChatInputPluginAction = ({
           type="button"
           aria-label={busy ? labels.cancel : title}
           title={busy ? labels.cancel : title}
-          disabled={!busy && disabled}
-          onClick={start}
+          aria-disabled={!busy && disabled}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          style={!busy && disabled ? { opacity: 0.5 } : undefined}
+          onClick={() => {
+            closeMenu();
+            start();
+          }}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            openMenu(event.currentTarget, event.clientX, event.clientY);
+          }}
+          onKeyDown={onMenuKeyDown}
         >
           {busy ? (
             <Loader2 size={15} className="spin" />
@@ -606,6 +758,35 @@ export const ChatInputPluginAction = ({
           )}
         </button>
       </Tooltip>
+      <Tooltip content={`${labels.more}: ${title}`}>
+        <button
+          className="toolbar-btn"
+          type="button"
+          aria-label={`${labels.more}: ${title}`}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={(event) => openMenu(event.currentTarget)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            openMenu(event.currentTarget, event.clientX, event.clientY);
+          }}
+          onKeyDown={onMenuKeyDown}
+        >
+          <ChevronDown size={11} />
+        </button>
+      </Tooltip>
+      {menuOpen && menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={menuItems}
+          onClose={closeMenu}
+          keyboardNavigation
+          returnFocusTo={menu.trigger}
+          ariaLabel={`${labels.more}: ${title}`}
+        />
+      )}
       {showSettings && (
         <Tooltip content={`${labels.configure}: ${panelTitle}`}>
           <button
