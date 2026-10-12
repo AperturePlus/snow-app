@@ -13161,12 +13161,15 @@ body.is-panel-resizing * {
 }
 
 /* Tooltip 摘要详情：固定宽度多行布局，覆盖默认 nowrap（fit-content 会让
-   长文本把 tooltip 撑成窄条，固定宽度才能正确换行截断） */
+   长文本把 tooltip 撑成窄条，固定宽度才能正确换行截断）。
+   宽度必须扣除 .tooltip 自身的内边距与边框（.tooltip 为 border-box 且
+   max-width: min(280px, 70vw)，padding 6px 10px、border 1px，共 22px），
+   否则内层按 280px 排版会横向溢出到圆角框之外。 */
 .md-source-tooltip {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  width: 280px;
+  width: min(258px, calc(70vw - 22px));
   white-space: normal;
   text-align: left;
 }

@@ -24,6 +24,11 @@ import type { SearchEngine, SearchResponse, SearchResult } from "./types";
 const PROXY_BROWSER_SETTING_CODE = "proxy_browser_settings";
 const DEFAULT_SEARCH_ENGINE = "duckduckgo";
 const DEFAULT_MAX_RESULTS = 10;
+/**
+ * 搜索结束后的空闲时长：超过该时间没有新的搜索，就关闭 headless 浏览器，
+ * 释放其占用的内存与整棵子进程树（浏览器常驻成本远高于重新启动）。
+ */
+const IDLE_CLOSE_MS = 3 * 60 * 1000;
 /** 屏蔽比例达到该阈值时，把被屏蔽结果与规则回传给 AI 供其选择性补充。 */
 const BLOCKED_REPORT_THRESHOLD = 0.5;
 /** 回传的被屏蔽结果上限，避免 token 膨胀。 */
@@ -54,12 +59,16 @@ export class WebSearchService {
   private browserProcess: ChildProcess | null = null;
   // Windows 手动模式使用独立 profile，避免锁文件冲突
   private userDataDir: string | undefined;
+  // 空闲回收：空闲计时器与进行中的搜索计数（并发搜索时不得关闭浏览器）
+  private idleTimer: NodeJS.Timeout | null = null;
+  private activeSearches = 0;
+  private disposed = false;
 
   constructor(private native: NativeBridge) {
     if (process.platform === "win32") {
       this.userDataDir = join(
         tmpdir(),
-        `snow-app-puppeteer-profile-${process.pid}`
+        `snow-app-puppeteer-profile-${process.pid}`,
       );
     }
   }
@@ -68,7 +77,7 @@ export class WebSearchService {
   private async loadSettings(): Promise<ProxyBrowserSettingsJson> {
     try {
       const raw = await this.native.getSystemSettingValue(
-        PROXY_BROWSER_SETTING_CODE
+        PROXY_BROWSER_SETTING_CODE,
       );
       if (raw) {
         return JSON.parse(raw) as ProxyBrowserSettingsJson;
@@ -115,7 +124,7 @@ export class WebSearchService {
         this.executablePath = findBrowserExecutable();
         if (!this.executablePath) {
           throw new Error(
-            "No system browser found. Please install Chrome or Edge browser, or configure browser path in Proxy and browser settings."
+            "No system browser found. Please install Chrome or Edge browser, or configure browser path in Proxy and browser settings.",
           );
         }
       }
@@ -160,7 +169,7 @@ export class WebSearchService {
   /** Windows：手动 spawn headless 浏览器进程并通过 DevTools WebSocket 连接。 */
   private async launchBrowserManual(
     executablePath: string,
-    args: string[]
+    args: string[],
   ): Promise<Browser> {
     const debugPort = 9300 + Math.floor(Math.random() * 100);
 
@@ -201,13 +210,13 @@ export class WebSearchService {
 
     if (spawnErrorRef.error) {
       throw new Error(
-        `Failed to spawn browser process: ${spawnErrorRef.error.message}. Path: ${executablePath}`
+        `Failed to spawn browser process: ${spawnErrorRef.error.message}. Path: ${executablePath}`,
       );
     }
     if (!wsEndpoint) {
       this.killBrowserProcess();
       throw new Error(
-        `Browser launched but DevTools endpoint was not reachable on port ${debugPort} after ${maxRetries} retries. Path: ${executablePath}`
+        `Browser launched but DevTools endpoint was not reachable on port ${debugPort} after ${maxRetries} retries. Path: ${executablePath}`,
       );
     }
 
@@ -216,11 +225,16 @@ export class WebSearchService {
   }
 
   /** 读取本地调试端口的 DevTools WebSocket 地址。 */
-  private async getBrowserWSEndpoint(debugPort: number): Promise<string | null> {
+  private async getBrowserWSEndpoint(
+    debugPort: number,
+  ): Promise<string | null> {
     try {
-      const response = await fetch(`http://127.0.0.1:${debugPort}/json/version`, {
-        signal: AbortSignal.timeout(500),
-      });
+      const response = await fetch(
+        `http://127.0.0.1:${debugPort}/json/version`,
+        {
+          signal: AbortSignal.timeout(500),
+        },
+      );
       if (!response.ok) return null;
       const data = (await response.json()) as { webSocketDebuggerUrl?: string };
       return data.webSocketDebuggerUrl ?? null;
@@ -229,20 +243,59 @@ export class WebSearchService {
     }
   }
 
+  /** Windows 兜底：结束浏览器主进程及其整棵子进程树。 */
   private killBrowserProcess(): void {
-    if (!this.browserProcess) return;
-    try {
-      if (!this.browserProcess.killed) {
-        this.browserProcess.kill();
+    const child = this.browserProcess;
+    if (!child) return;
+    this.browserProcess = null;
+
+    if (child.killed || child.exitCode !== null) return;
+
+    if (process.platform === "win32" && child.pid) {
+      try {
+        // 直接 kill 只结束主进程，会残留 renderer / gpu 等子进程。
+        spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+          stdio: "ignore",
+          windowsHide: true,
+        }).unref();
+        return;
+      } catch {
+        // 回退到普通 kill
       }
+    }
+
+    try {
+      child.kill();
     } catch {
       // 进程可能已退出
     }
-    this.browserProcess = null;
+  }
+
+  /** 取消待触发的空闲回收。 */
+  private clearIdleTimer(): void {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+  }
+
+  /** 搜索结束：无进行中的搜索时，安排一次空闲回收。 */
+  private scheduleIdleClose(): void {
+    this.clearIdleTimer();
+    if (this.disposed || this.activeSearches > 0) return;
+
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      if (this.activeSearches > 0) return;
+      void this.closeBrowser();
+    }, IDLE_CLOSE_MS);
+    // 空闲计时器不应阻止进程退出。
+    this.idleTimer.unref();
   }
 
   /** 关闭浏览器实例。 */
   async closeBrowser(): Promise<void> {
+    this.clearIdleTimer();
     if (this.browserClosePromise) {
       return this.browserClosePromise;
     }
@@ -274,6 +327,13 @@ export class WebSearchService {
     this.browser = null;
   }
 
+  /** 应用退出时调用：停止空闲回收并关闭浏览器，避免残留 headless 进程。 */
+  async dispose(): Promise<void> {
+    this.disposed = true;
+    this.clearIdleTimer();
+    await this.closeBrowser();
+  }
+
   private async closePage(page: Page | null): Promise<void> {
     if (!page || page.isClosed()) return;
     try {
@@ -286,7 +346,9 @@ export class WebSearchService {
   private resolveEngine(id: string | undefined): SearchEngine {
     const engineId = (id ?? "").trim().toLowerCase();
     const engine = BUILT_IN_ENGINES.find((e) => e.id === engineId);
-    return engine ?? BUILT_IN_ENGINES.find((e) => e.id === DEFAULT_SEARCH_ENGINE)!;
+    return (
+      engine ?? BUILT_IN_ENGINES.find((e) => e.id === DEFAULT_SEARCH_ENGINE)!
+    );
   }
 
   /** 执行搜索并返回结构化结果（自动过滤命中屏蔽规则的结果）。 */
@@ -295,6 +357,10 @@ export class WebSearchService {
     let page: Page | null = null;
 
     try {
+      if (this.disposed) {
+        throw new Error("Web search service has been disposed");
+      }
+      this.activeSearches++;
       const settings = await this.loadSettings();
       const engine = this.resolveEngine(settings.searchEngine);
 
@@ -302,13 +368,9 @@ export class WebSearchService {
       page = await browser.newPage();
       await page.setUserAgent(USER_AGENT);
 
-const results = await engine.search(page, query, limit);
-      const {
-        filtered,
-        blockedCount,
-        blockedResults,
-        blockedPatterns,
-      } = this.applyBlockedRules(results, settings.blockedPatterns ?? []);
+      const results = await engine.search(page, query, limit);
+      const { filtered, blockedCount, blockedResults, blockedPatterns } =
+        this.applyBlockedRules(results, settings.blockedPatterns ?? []);
 
       const response: SearchResponse = {
         query,
@@ -336,14 +398,17 @@ const results = await engine.search(page, query, limit);
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`Web search failed: ${message}`);
     } finally {
+      this.activeSearches = Math.max(0, this.activeSearches - 1);
       await this.closePage(page);
+      // 浏览器实例常驻会持续占用内存，空闲后主动回收。
+      this.scheduleIdleClose();
     }
   }
 
-/** 按屏蔽规则（正则列表）过滤搜索结果，返回过滤后的结果与屏蔽数量。 */
+  /** 按屏蔽规则（正则列表）过滤搜索结果，返回过滤后的结果与屏蔽数量。 */
   private applyBlockedRules(
     results: SearchResult[],
-    patterns: string[]
+    patterns: string[],
   ): {
     filtered: SearchResult[];
     blockedCount: number;
@@ -380,7 +445,7 @@ const results = await engine.search(page, query, limit);
         // 非标准 URL 直接匹配原文
       }
       return compiled.some((regex) =>
-        candidates.some((candidate) => regex.test(candidate))
+        candidates.some((candidate) => regex.test(candidate)),
       );
     };
 
