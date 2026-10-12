@@ -571,6 +571,20 @@ export const registerWorkspaceHandlers = (native: NativeBridge): void => {
   );
 
   ipcMain.handle(
+    "workspace-directories:search-file-contents",
+    (_event, dirPath: unknown, query: unknown) => {
+      if (typeof dirPath !== "string" || !dirPath.trim()) {
+        throw new Error("Directory path is required");
+      }
+      if (typeof query !== "string" || !query.trim()) {
+        return [];
+      }
+
+      return native.searchFileContents(dirPath.trim(), query.trim());
+    },
+  );
+
+  ipcMain.handle(
     "workspace-directories:search-files-by-agent",
     (event, query: unknown, workspacePath: unknown, streamId: unknown) => {
       if (typeof query !== "string" || !query.trim()) {

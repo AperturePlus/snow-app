@@ -26533,6 +26533,7 @@ body.is-panel-resizing * {
 .file-chip {
   margin: 0 2px;
   user-select: none;
+  max-width: 240px;
 }
 .file-chip[contenteditable="false"] {
   cursor: default;
@@ -28036,6 +28037,56 @@ body.is-panel-resizing * {
 
 .mention-entry.selected .mention-entry-path {
   color: var(--text-tertiary);
+}
+
+.mention-entry.has-lines {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.mention-entry-lines {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 42px;
+  margin-top: 1px;
+}
+
+.mention-entry-line {
+  display: flex;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.mention-entry.selected .mention-entry-line {
+  color: var(--text-tertiary);
+}
+
+.mention-entry-line-number {
+  flex-shrink: 0;
+  min-width: 20px;
+  text-align: right;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.mention-entry.selected .mention-entry-line-number {
+  color: var(--text-muted);
+}
+
+.mention-entry-line-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mention-entry-line-more {
+  font-size: 10.5px;
+  color: var(--text-muted);
 }
 
 .file-mention-footer {

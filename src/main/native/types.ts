@@ -2145,6 +2145,10 @@ export type NativeBridge = {
   readFileContent: (filePath: string) => Promise<FileContentResult>;
   writeFileContent: (filePath: string, content: string) => Promise<void>;
   searchFiles: (rootDir: string, query: string) => Promise<FileSearchResult[]>;
+  searchFileContents: (
+    rootDir: string,
+    query: string,
+  ) => Promise<FileSearchResult[]>;
   searchFilesByAgent: (
     query: string,
     workspacePath: string,

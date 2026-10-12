@@ -242,6 +242,19 @@ pub fn search_files(
     services::fs_explorer::search_files_linked(&root_dir, &query, &linked_roots)
 }
 
+pub fn search_file_contents(
+    root_dir: String,
+    query: String,
+) -> Result<Vec<services::fs_explorer::FileSearchResult>> {
+    let linked_roots =
+        resolve_linked_project_roots_for_path(root_dir.clone()).unwrap_or_default();
+
+    if linked_roots.is_empty() {
+        return services::fs_explorer::search_file_contents(&root_dir, &query);
+    }
+    services::fs_explorer::search_file_contents_linked(&root_dir, &query, &linked_roots)
+}
+
 pub fn read_file_content(file_path: String) -> Result<services::fs_explorer::FileContentResult> {
     services::fs_explorer::read_file_content(&file_path)
 }

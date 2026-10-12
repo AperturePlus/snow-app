@@ -318,6 +318,15 @@ export const workspaceApi = {
   },
   searchFiles: (dirPath: string, query: string): Promise<FileSearchResult[]> =>
     ipcRenderer.invoke("workspace-directories:search-files", dirPath, query),
+  searchFileContents: (
+    dirPath: string,
+    query: string,
+  ): Promise<FileSearchResult[]> =>
+    ipcRenderer.invoke(
+      "workspace-directories:search-file-contents",
+      dirPath,
+      query,
+    ),
   searchFilesByAgent: (
     query: string,
     workspacePath: string,

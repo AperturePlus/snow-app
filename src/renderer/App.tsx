@@ -52,7 +52,7 @@ const SIDEBAR_MAX_WIDTH = 420;
 const SIDEBAR_DEFAULT_WIDTH = 248;
 const RIGHT_PANEL_MIN_WIDTH = 280;
 const RIGHT_PANEL_MAX_WIDTH = 640;
-const RIGHT_PANEL_DEFAULT_WIDTH = 380;
+const RIGHT_PANEL_DEFAULT_WIDTH = 320;
 // 右面板拖宽越过最大宽度此距离进入"待全屏区"，持续拖拽保持 500ms 后出现
 // 遮罩提示；此后不回拉、松开鼠标即进入全屏。
 const RIGHT_PANEL_FULLSCREEN_OVERDRAG = 56;

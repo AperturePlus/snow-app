@@ -29,6 +29,7 @@ import type { UserMessageProps } from "../utils/types";
 import {
   extractUrlHost,
   formatAnnotationLabel,
+  formatFileChipLinesLabel,
   formatFileLinesLabel,
   formatLinesStr,
   parseContentSegments,
@@ -574,8 +575,11 @@ export const UserMessage = memo(
                 !tag.isDirectory && tag.lines && tag.lines.length > 0
                   ? formatLinesStr(tag.lines)
                   : "";
-              const fileDisplayName = linesStr
-                ? `${tag.name}:${linesStr}`
+              const chipLinesLabel = tag.isDirectory
+                ? ""
+                : formatFileChipLinesLabel(tag.lines);
+              const fileDisplayName = chipLinesLabel
+                ? `${tag.name}:${chipLinesLabel}`
                 : tag.name;
               const fileChipTitle = linesStr
                 ? `${tag.path}:${linesStr}`

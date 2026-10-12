@@ -225,6 +225,25 @@ export const formatLinesStr = (lines: number[]): string => {
   return parts.join(",");
 };
 
+const FILE_CHIP_LINES_MAX_CHARS = 24;
+
+/**
+ * chip 展示用的行号文本：行号过多时只保留前两段并省略，避免 chip 被
+ * 长行号列表撑开（完整行号仍保留在 chip title 与编码标签里）。
+ */
+export const formatFileChipLinesLabel = (
+  lines: number[] | undefined,
+): string => {
+  if (!lines || lines.length === 0) {
+    return "";
+  }
+  const linesStr = formatLinesStr(lines);
+  if (!linesStr || linesStr.length <= FILE_CHIP_LINES_MAX_CHARS) {
+    return linesStr;
+  }
+  return `${linesStr.split(",").slice(0, 2).join(",")}…`;
+};
+
 /**
  * 解析行号字符串（支持区间格式 "L7-L9,L47" 与枚举格式 "L7,L8"）
  * 回到行号数组 [7,8,9,47]。无效项被忽略。
@@ -934,10 +953,9 @@ export const summarizeContentAsPlainText = (content: string): string => {
       parts.push(`/${segment.tag.name}`);
     } else {
       const { tag } = segment;
-      const linesStr =
-        !tag.isDirectory && tag.lines && tag.lines.length > 0
-          ? formatLinesStr(tag.lines)
-          : "";
+      const linesStr = tag.isDirectory
+        ? ""
+        : formatFileChipLinesLabel(tag.lines);
       parts.push(linesStr ? `${tag.name}:${linesStr}` : tag.name);
     }
   }
@@ -999,10 +1017,9 @@ export const getChipDisplayLabel = (segment: ChipSegment): string => {
       );
     default: {
       const { tag } = segment;
-      const linesStr =
-        !tag.isDirectory && tag.lines && tag.lines.length > 0
-          ? formatLinesStr(tag.lines)
-          : "";
+      const linesStr = tag.isDirectory
+        ? ""
+        : formatFileChipLinesLabel(tag.lines);
       return linesStr ? `${tag.name}:${linesStr}` : tag.name;
     }
   }
@@ -1027,7 +1044,12 @@ export const createChipHtml = (tag: FileTag): string => {
   const linesAttr = linesStr
     ? ` data-file-lines="${escapeHtml(linesStr)}"`
     : "";
-  const displayName = linesStr ? `${tag.name}:${linesStr}` : tag.name;
+  const chipLinesLabel = tag.isDirectory
+    ? ""
+    : formatFileChipLinesLabel(tag.lines);
+  const displayName = chipLinesLabel
+    ? `${tag.name}:${chipLinesLabel}`
+    : tag.name;
   return `<span class="file-chip" contenteditable="false" data-file-tag="true" data-file-path="${escapeHtml(
     tag.path,
   )}" data-file-name="${escapeHtml(tag.name)}" data-file-is-dir="${

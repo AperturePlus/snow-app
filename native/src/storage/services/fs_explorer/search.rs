@@ -301,6 +301,7 @@ fn search_dir_recursive(
     query_lower: &str,
     results: Arc<Mutex<Vec<FileSearchResult>>>,
     counter: Arc<AtomicUsize>,
+    content_only: bool,
     depth: usize,
 ) {
     if counter.load(Ordering::Relaxed) >= MAX_RESULTS || depth > MAX_DEPTH {
@@ -333,7 +334,7 @@ fn search_dir_recursive(
                 continue;
             }
 
-            if name.to_lowercase().contains(query_lower) {
+            if !content_only && name.to_lowercase().contains(query_lower) {
                 let rel = full_path
                     .strip_prefix(root_dir)
                     .unwrap_or(&full_path)
@@ -361,7 +362,13 @@ fn search_dir_recursive(
             // `context-compaction-message` inside a source file).
             let line_matches = collect_line_matches(&full_path, query_lower);
 
-            if name_matched || !line_matches.is_empty() {
+            let matched = if content_only {
+                !line_matches.is_empty()
+            } else {
+                name_matched || !line_matches.is_empty()
+            };
+
+            if matched {
                 let rel = full_path
                     .strip_prefix(root_dir)
                     .unwrap_or(&full_path)
@@ -408,6 +415,7 @@ fn search_dir_recursive(
                     &query_clone,
                     results_clone,
                     counter_clone,
+                    content_only,
                     depth + 1,
                 );
             }));
@@ -420,6 +428,18 @@ fn search_dir_recursive(
 }
 
 pub fn search_files(root_dir: &str, query: &str) -> Result<Vec<FileSearchResult>> {
+    search_files_with_mode(root_dir, query, false)
+}
+
+pub fn search_file_contents(root_dir: &str, query: &str) -> Result<Vec<FileSearchResult>> {
+    search_files_with_mode(root_dir, query, true)
+}
+
+fn search_files_with_mode(
+    root_dir: &str,
+    query: &str,
+    content_only: bool,
+) -> Result<Vec<FileSearchResult>> {
     let root_path = Path::new(root_dir);
 
     if !root_path.exists() {
@@ -441,7 +461,7 @@ pub fn search_files(root_dir: &str, query: &str) -> Result<Vec<FileSearchResult>
     // last "/" locates the directory, and its children are listed (filtered
     // by the trailing name query when present). This lets "@prompt/" surface
     // the directory itself plus the files inside it.
-    if query_lower.contains('/') {
+    if !content_only && query_lower.contains('/') {
         return Ok(search_files_by_path(root_path, &query_lower));
     }
 
@@ -461,12 +481,17 @@ pub fn search_files(root_dir: &str, query: &str) -> Result<Vec<FileSearchResult>
         &query_lower,
         Arc::clone(&results),
         Arc::clone(&counter),
+        content_only,
         0,
     );
 
     let mut final_results = results.lock().unwrap().drain(..).collect::<Vec<_>>();
 
-    sort_search_results(&mut final_results);
+    if content_only {
+        sort_content_results(&mut final_results);
+    } else {
+        sort_search_results(&mut final_results);
+    }
     final_results.truncate(MAX_RESULTS);
 
     Ok(final_results)
@@ -479,14 +504,31 @@ pub fn search_files_linked(
     query: &str,
     roots: &[crate::storage::LinkedProjectRoot],
 ) -> Result<Vec<FileSearchResult>> {
+    search_files_linked_with_mode(root_dir, query, roots, false)
+}
+
+pub fn search_file_contents_linked(
+    root_dir: &str,
+    query: &str,
+    roots: &[crate::storage::LinkedProjectRoot],
+) -> Result<Vec<FileSearchResult>> {
+    search_files_linked_with_mode(root_dir, query, roots, true)
+}
+
+fn search_files_linked_with_mode(
+    root_dir: &str,
+    query: &str,
+    roots: &[crate::storage::LinkedProjectRoot],
+    content_only: bool,
+) -> Result<Vec<FileSearchResult>> {
     let primary = Path::new(root_dir);
-    let mut merged = search_files(root_dir, query)?;
+    let mut merged = search_files_with_mode(root_dir, query, content_only)?;
 
     for root in roots {
         if root.path.trim().is_empty() || Path::new(&root.path) == primary {
             continue;
         }
-        let mut items = match search_files(&root.path, query) {
+        let mut items = match search_files_with_mode(&root.path, query, content_only) {
             Ok(items) => items,
             // 兄弟根不可读（被移除 / 权限变化）时跳过，不影响主根结果。
             Err(_) => continue,
@@ -504,10 +546,24 @@ pub fn search_files_linked(
 
     let mut seen = std::collections::HashSet::new();
     merged.retain(|item| seen.insert(item.path.clone()));
-    sort_search_results(&mut merged);
+    if content_only {
+        sort_content_results(&mut merged);
+    } else {
+        sort_search_results(&mut merged);
+    }
     merged.truncate(MAX_RESULTS);
 
     Ok(merged)
+}
+
+fn sort_content_results(results: &mut [FileSearchResult]) {
+    results.sort_by(|a, b| {
+        let by_lines = b.line_matches.len().cmp(&a.line_matches.len());
+        if by_lines != std::cmp::Ordering::Equal {
+            return by_lines;
+        }
+        a.name.cmp(&b.name)
+    });
 }
 
 /// Sort search results: directories first, then entries whose name matched,

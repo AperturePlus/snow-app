@@ -18,6 +18,7 @@ import { useI18n } from "../../../i18n";
 import {
   extractUrlHost,
   formatAnnotationLabel,
+  formatFileChipLinesLabel,
   formatFileLinesLabel,
   formatLinesStr,
   parseContentSegments,
@@ -320,7 +321,12 @@ const renderSegments = (content: string): React.ReactNode => {
       !tag.isDirectory && tag.lines && tag.lines.length > 0
         ? formatLinesStr(tag.lines)
         : "";
-    const displayName = linesStr ? `${tag.name}:${linesStr}` : tag.name;
+    const chipLinesLabel = tag.isDirectory
+      ? ""
+      : formatFileChipLinesLabel(tag.lines);
+    const displayName = chipLinesLabel
+      ? `${tag.name}:${chipLinesLabel}`
+      : tag.name;
     const chipTitle = linesStr ? `${tag.path}:${linesStr}` : tag.path;
     return (
       <span key={index} className="user-message-file-chip" title={chipTitle}>

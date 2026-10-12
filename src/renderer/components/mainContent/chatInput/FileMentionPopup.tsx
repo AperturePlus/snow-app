@@ -198,11 +198,21 @@ const getPathSegments = (query: string): string[] => {
     .filter((segment) => segment.length > 0);
 };
 
-const toFileTag = (entry: FileSearchResult): FileTag => ({
-  path: entry.path,
-  name: entry.name,
-  isDirectory: entry.isDirectory,
-});
+const toFileTag = (entry: FileSearchResult, withLines = false): FileTag => {
+  const lines =
+    withLines && !entry.isDirectory
+      ? entry.lineMatches.map((match) => match.line)
+      : [];
+  const tag: FileTag = {
+    path: entry.path,
+    name: entry.name,
+    isDirectory: entry.isDirectory,
+  };
+  if (lines.length > 0) {
+    tag.lines = lines;
+  }
+  return tag;
+};
 
 const toSkillTag = (skill: SkillDefinition): SkillTag => ({
   skillId: skill.id,
@@ -306,6 +316,8 @@ export const FileMentionPopup = forwardRef<
   // `@!技能关键词`：感叹号前缀表示 Skills 搜索模式。
   const isSkillMode = query.trim().startsWith("!");
   const skillQuery = isSkillMode ? query.trim().slice(1).trim() : "";
+  const isContentMode = query.trim().startsWith("@");
+  const contentQuery = isContentMode ? query.trim().slice(1).trim() : "";
   // 关联项目组（合集）的本地成员根：未关联的项目不提供 `@:目录` 指令。
   const linkedDirectories = useMemo(
     () =>
@@ -528,6 +540,63 @@ export const FileMentionPopup = forwardRef<
       };
     }
 
+    if (isContentMode) {
+      ++loadSeqRef.current;
+      setIsLoadingInitial(false);
+
+      if (!searchRoot || isSshPath(searchRoot.path) || !contentQuery) {
+        ++searchSeqRef.current;
+        setIsSearching(false);
+        setIsAgentPending(false);
+        setEntries([]);
+        setSelectedIndex(0);
+        setAgentProgress([]);
+        setAgentError(false);
+        lastQueryRef.current = "";
+        return;
+      }
+
+      if (searchKey === lastQueryRef.current) {
+        return;
+      }
+      lastQueryRef.current = searchKey;
+
+      setIsSearching(true);
+      const seq = ++searchSeqRef.current;
+
+      searchTimerRef.current = setTimeout(async () => {
+        if (seq !== searchSeqRef.current) {
+          return;
+        }
+
+        try {
+          const results = await window.snow.searchFileContents(
+            searchRoot.path,
+            contentQuery,
+          );
+
+          if (seq !== searchSeqRef.current) {
+            return;
+          }
+
+          setEntries(results);
+          setIsSearching(false);
+          setSelectedIndex(0);
+        } catch {
+          if (seq === searchSeqRef.current) {
+            setEntries([]);
+            setIsSearching(false);
+          }
+        }
+      }, 150);
+
+      return () => {
+        if (searchTimerRef.current) {
+          clearTimeout(searchTimerRef.current);
+        }
+      };
+    }
+
     // `@:` 目录模式：尚未选定工作目录时只展示目录选择列表，不执行搜索。
     if (directoryScope && !scopedDirectory) {
       ++searchSeqRef.current;
@@ -678,6 +747,8 @@ export const FileMentionPopup = forwardRef<
     directoryScope,
     scopedDirectory,
     projectId,
+    isContentMode,
+    contentQuery,
   ]);
 
   // 路径导航：从查询文本解析当前浏览的路径段（用于面包屑与 ← 返回）
@@ -689,7 +760,7 @@ export const FileMentionPopup = forwardRef<
   // 路径模式下（查询以 "/" 结尾，如 "src/renderer/"），后端会同时返回
   // "当前目录本身"与其子项；过滤掉目录本身，使面板呈现"已进入目录内容"的效果。
   const displayEntries = useMemo(() => {
-    if (!searchQuery.endsWith("/")) {
+    if (isContentMode || !searchQuery.endsWith("/")) {
       return entries;
     }
     const currentRel = searchQuery.replace(/\/+$/, "").toLowerCase();
@@ -698,7 +769,7 @@ export const FileMentionPopup = forwardRef<
       const rel = getRelativePath(entry.path, rootPath).toLowerCase();
       return rel !== currentRel;
     });
-  }, [entries, searchQuery, searchRoot]);
+  }, [entries, searchQuery, searchRoot, isContentMode]);
 
   // `@:` 目录模式下尚未选定目录时，列出关联项目组的成员目录。
   const directoryOptions = useMemo(() => {
@@ -767,11 +838,14 @@ export const FileMentionPopup = forwardRef<
 
       const checkedEntries = entries.filter((e) => checkedPaths.has(e.path));
       if (checkedEntries.length > 0 && !checkedPaths.has(entry.path)) {
-        onSelectBatch([...checkedEntries.map(toFileTag), toFileTag(entry)]);
+        onSelectBatch([
+          ...checkedEntries.map((e) => toFileTag(e, isContentMode)),
+          toFileTag(entry, isContentMode),
+        ]);
       } else if (checkedPaths.has(entry.path)) {
-        onSelectBatch(checkedEntries.map(toFileTag));
+        onSelectBatch(checkedEntries.map((e) => toFileTag(e, isContentMode)));
       } else {
-        onSelect(toFileTag(entry));
+        onSelect(toFileTag(entry, isContentMode));
       }
       onClose();
     },
@@ -784,6 +858,7 @@ export const FileMentionPopup = forwardRef<
       onNavigateTo,
       searchRoot,
       buildNavigateTarget,
+      isContentMode,
     ],
   );
 
@@ -806,7 +881,7 @@ export const FileMentionPopup = forwardRef<
     }
     const checkedEntries = entries.filter((e) => checkedPaths.has(e.path));
     if (checkedEntries.length > 0) {
-      onSelectBatch(checkedEntries.map(toFileTag));
+      onSelectBatch(checkedEntries.map((e) => toFileTag(e, isContentMode)));
       onClose();
       return;
     }
@@ -815,7 +890,7 @@ export const FileMentionPopup = forwardRef<
       return;
     }
     // Enter 直接选择（插入引用），与文件一致；进入目录请用 → 或点击。
-    onSelect(toFileTag(entry));
+    onSelect(toFileTag(entry, isContentMode));
     onClose();
   }, [
     displayEntries,
@@ -830,6 +905,7 @@ export const FileMentionPopup = forwardRef<
     onSelect,
     onSelectBatch,
     onClose,
+    isContentMode,
   ]);
 
   useImperativeHandle(
@@ -1042,7 +1118,7 @@ export const FileMentionPopup = forwardRef<
 
   const handleEntryDragStart = useCallback(
     (event: React.DragEvent<HTMLDivElement>, entry: FileSearchResult) => {
-      const tag = toFileTag(entry);
+      const tag = toFileTag(entry, isContentMode);
       if (onDragStart) {
         onDragStart(event, tag);
       } else {
@@ -1050,7 +1126,7 @@ export const FileMentionPopup = forwardRef<
         event.dataTransfer.effectAllowed = "copy";
       }
     },
-    [onDragStart],
+    [onDragStart, isContentMode],
   );
 
   const isNaturalLanguage = searchQuery.startsWith("?");
@@ -1065,6 +1141,11 @@ export const FileMentionPopup = forwardRef<
         : t("fileMention.searching");
     }
     if (entries.length === 0) {
+      if (isContentMode) {
+        return contentQuery
+          ? t("fileMention.contentNoResults")
+          : t("fileMention.contentHint");
+      }
       if (isNaturalLanguage && agentError) {
         return t("fileMention.aiError");
       }
@@ -1089,6 +1170,8 @@ export const FileMentionPopup = forwardRef<
     naturalLanguageQuery,
     agentError,
     isAgentPending,
+    isContentMode,
+    contentQuery,
     t,
   ]);
 
@@ -1295,13 +1378,14 @@ export const FileMentionPopup = forwardRef<
                 const displayPath = rootLabel
                   ? stripRootNamePrefix(entry.relativePath, rootLabel.name)
                   : entry.relativePath.replace(/\\/g, "/");
+                const showLines = isContentMode && entry.lineMatches.length > 0;
                 return (
                   <div
                     key={entry.path}
                     data-mention-index={index}
                     className={`mention-entry ${isSelected ? "selected" : ""} ${
                       isChecked ? "checked" : ""
-                    }`}
+                    } ${showLines ? "has-lines" : ""}`}
                     draggable
                     onDragStart={(e) => handleEntryDragStart(e, entry)}
                     onClick={() => handleSelectEntry(entry)}
@@ -1329,6 +1413,31 @@ export const FileMentionPopup = forwardRef<
                         className="mention-entry-enter"
                         aria-hidden
                       />
+                    )}
+                    {showLines && (
+                      <span className="mention-entry-lines">
+                        {entry.lineMatches.slice(0, 3).map((match) => (
+                          <span
+                            className="mention-entry-line"
+                            key={match.line}
+                            title={`${entry.path}:${match.line}`}
+                          >
+                            <span className="mention-entry-line-number">
+                              {match.line}
+                            </span>
+                            <span className="mention-entry-line-text">
+                              {match.text.trim()}
+                            </span>
+                          </span>
+                        ))}
+                        {entry.lineMatches.length > 3 && (
+                          <span className="mention-entry-line-more">
+                            {t("fileMention.moreMatches", {
+                              values: { count: entry.lineMatches.length - 3 },
+                            })}
+                          </span>
+                        )}
+                      </span>
                     )}
                   </div>
                 );
