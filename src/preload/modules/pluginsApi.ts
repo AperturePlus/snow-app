@@ -23,6 +23,12 @@ export const pluginsApi = {
   /** 拉取插件市场索引 JSON（Rust 侧负责镜像降级与缓存）。 */
   fetchPluginRegistry: (forceRefresh?: boolean): Promise<string> =>
     ipcRenderer.invoke("plugins:market-registry", forceRefresh === true),
+  /** 拉取市场条目下载量统计（Rust 侧负责 GitHub API 拉取与缓存）。 */
+  fetchPluginMarketStats: (
+    targets: string,
+    forceRefresh?: boolean,
+  ): Promise<string> =>
+    ipcRenderer.invoke("plugins:market-stats", targets, forceRefresh === true),
   /** 从插件市场安装（或更新）插件：下载 zip、校验 SHA256 后复用目录安装链路。 */
   installPluginFromMarket: (payload: {
     pluginId: string;

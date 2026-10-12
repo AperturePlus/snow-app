@@ -54744,6 +54744,16 @@ img.plugin-icon {
   margin-left: auto;
 }
 
+.plugin-market-downloads {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.plugin-market-stats-limited {
+  color: var(--accent-amber-text);
+}
+
 .plugin-market-installed {
   display: inline-flex;
   align-items: center;

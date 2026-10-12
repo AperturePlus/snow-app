@@ -13,6 +13,7 @@ import { useI18n } from "../../i18n";
 import { resolveLocalized, resolvePluginIcon } from "../../plugins/manifest";
 import {
   buildMarketDownloadUrl,
+  formatMarketDownloads,
   hasMarketUpdate,
   isMarketEntryTooNew,
   PLUGIN_MARKET_REPO_URL,
@@ -209,6 +210,19 @@ export const PluginMarketPanel = (): React.JSX.Element => {
         >
           {PLUGIN_MARKET_REPO_URL.replace("https://github.com/", "")}
         </button>
+        {market.statsLimited ? (
+          <span
+            className="plugin-market-stats-limited"
+            title={t("plugins.market.statsLimitedHint", {
+              defaultValue:
+                "GitHub API rate limit reached. Set the GITHUB_TOKEN or GH_TOKEN environment variable to raise the quota.",
+            })}
+          >
+            {t("plugins.market.statsLimited", {
+              defaultValue: "Download counts unavailable",
+            })}
+          </span>
+        ) : null}
         {market.updatedAt ? (
           <span className="plugin-market-updated">
             {t("plugins.market.updatedAt", {
@@ -273,6 +287,7 @@ export const PluginMarketPanel = (): React.JSX.Element => {
             hasMarketUpdate(installed.version, entry.version);
           const isCurrent = installed !== null && !isUpdate;
           const entryBusy = busyId === entry.id;
+          const downloads = market.stats[entry.id];
           return (
             <div className="plugins-item plugin-market-item" key={entry.id}>
               <div className="plugins-item-head">
@@ -370,6 +385,17 @@ export const PluginMarketPanel = (): React.JSX.Element => {
                       values: { version: entry.minAppVersion },
                       defaultValue: "Requires app v{{version}} or newer",
                     })}
+                  </span>
+                ) : null}
+                {typeof downloads === "number" ? (
+                  <span
+                    className="plugin-market-downloads"
+                    title={t("plugins.market.downloads", {
+                      defaultValue: "Downloads",
+                    })}
+                  >
+                    <Download size={11} strokeWidth={1.8} />
+                    {formatMarketDownloads(downloads)}
                   </span>
                 ) : null}
                 <button

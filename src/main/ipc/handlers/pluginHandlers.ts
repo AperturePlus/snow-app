@@ -96,6 +96,19 @@ export const registerPluginHandlers = (native: NativeBridge): void => {
   );
 
   ipcMain.handle(
+    "plugins:market-stats",
+    (_event, targets: unknown, forceRefresh: unknown): Promise<string> => {
+      if (!isNonEmptyString(targets)) {
+        return Promise.resolve("{}");
+      }
+      return native.fetchPluginMarketStats(
+        targets.trim(),
+        forceRefresh === true,
+      );
+    },
+  );
+
+  ipcMain.handle(
     "plugins:market-install",
     async (event, payload: unknown): Promise<PluginRecord> => {
       if (payload === null || typeof payload !== "object") {

@@ -1,6 +1,11 @@
 import { useSyncExternalStore } from "react";
 
-import { parseMarketRegistry, type MarketPluginEntry } from "./market";
+import {
+  buildMarketStatsTargets,
+  parseMarketRegistry,
+  parseMarketStats,
+  type MarketPluginEntry,
+} from "./market";
 
 export type MarketStoreStatus = "idle" | "loading" | "ready" | "error";
 
@@ -8,6 +13,8 @@ export type MarketStoreState = {
   status: MarketStoreStatus;
   error: string | null;
   entries: MarketPluginEntry[];
+  stats: Record<string, number>;
+  statsLimited: boolean;
   updatedAt: string;
   appVersion: string;
 };
@@ -16,17 +23,46 @@ let state: MarketStoreState = {
   status: "idle",
   error: null,
   entries: [],
+  stats: {},
+  statsLimited: false,
   updatedAt: "",
   appVersion: "",
 };
 
 const listeners = new Set<() => void>();
 let inflight: Promise<void> | null = null;
+let statsRequestId = 0;
 
 const commit = (partial: Partial<MarketStoreState>): void => {
   state = { ...state, ...partial };
   for (const listener of listeners) {
     listener();
+  }
+};
+
+/** 下载量统计单独拉取：失败不影响市场列表展示。 */
+const loadStats = async (
+  entries: MarketPluginEntry[],
+  forceRefresh: boolean,
+): Promise<void> => {
+  const requestId = ++statsRequestId;
+  const targets = buildMarketStatsTargets(entries);
+  if (targets.length === 0) {
+    commit({ stats: {}, statsLimited: false });
+    return;
+  }
+  try {
+    const text = await window.snow.fetchPluginMarketStats(
+      JSON.stringify(targets),
+      forceRefresh,
+    );
+    if (requestId !== statsRequestId) {
+      return;
+    }
+    const stats = parseMarketStats(text);
+    commit({ stats: stats.counts, statsLimited: stats.limited });
+  } catch {
+    // 统计不可用时保持已有数据
   }
 };
 
@@ -50,6 +86,7 @@ const load = async (forceRefresh: boolean): Promise<void> => {
       appVersion,
       error: null,
     });
+    void loadStats(registry.plugins, forceRefresh);
   } catch (error) {
     commit({
       status: "error",

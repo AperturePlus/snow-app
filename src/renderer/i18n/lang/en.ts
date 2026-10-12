@@ -5970,6 +5970,10 @@ export const en = {
   "plugins.market.install": "Install",
   "plugins.market.installing": "Installing…",
   "plugins.market.installed": "Installed",
+  "plugins.market.downloads": "Downloads",
+  "plugins.market.statsLimited": "Download counts unavailable",
+  "plugins.market.statsLimitedHint":
+    "GitHub API rate limit reached (60 requests/hour anonymously, shared per IP). Set the GITHUB_TOKEN or GH_TOKEN environment variable to raise the quota.",
   "plugins.market.update": "Update",
   "plugins.market.updateHint": "Installed v{{from}} → v{{to}}",
   "plugins.market.confirmTitle": "Install plugin",
@@ -6019,6 +6023,10 @@ export const en = {
   "plugins.installing": "Installing…",
   "plugins.installDialogTitle": "Select plugin folder",
   "plugins.refresh": "Refresh",
+  "plugins.updateAll": "Update all ({{count}})",
+  "plugins.updateAllHint": "{{count}} plugin(s) have a newer version",
+  "plugins.updatingAll": "Updating {{done}}/{{total}}…",
+  "plugins.updateAllFailed": "{{count}} plugin(s) failed to update",
   "plugins.loading": "Loading…",
   "plugins.empty": "No plugins installed yet",
   "plugins.createHint":

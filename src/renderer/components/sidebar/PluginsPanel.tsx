@@ -63,6 +63,10 @@ export const PluginsPanel = ({
   const market = useMarketStore();
   const { buildFromContent } = useChatConversationContext();
   const [busyPluginId, setBusyPluginId] = useState<string | null>(null);
+  const [updateAllProgress, setUpdateAllProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
   const [isInstalling, setIsInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingUninstall, setPendingUninstall] = useState<PluginView | null>(
@@ -86,6 +90,22 @@ export const PluginsPanel = ({
   );
   const isEmpty = state.status === "ready" && state.plugins.length === 0;
   const createBoxOpen = createOpen ?? isEmpty;
+
+  // 可批量更新的插件（市场有更高版本且满足最低应用版本要求）。
+  const updatablePlugins = useMemo(() => {
+    const targets: { plugin: PluginView; entry: MarketPluginEntry }[] = [];
+    for (const plugin of state.plugins) {
+      const entry = findMarketEntry(market.entries, plugin.pluginId, "plugin");
+      if (!entry || !hasMarketUpdate(plugin.version, entry.version)) {
+        continue;
+      }
+      if (isMarketEntryTooNew(entry, market.appVersion)) {
+        continue;
+      }
+      targets.push({ plugin, entry });
+    }
+    return targets;
+  }, [market.appVersion, market.entries, state.plugins]);
 
   // 进入页面时拉取最新插件清单（侧栏徽标只关心数量，清单随页面加载）。
   useEffect(() => {
@@ -188,6 +208,37 @@ export const PluginsPanel = ({
     },
     [],
   );
+
+  // 依次更新所有可更新插件，失败的条目计入汇总提示。
+  const handleUpdateAll = useCallback(async () => {
+    const targets = updatablePlugins;
+    if (targets.length === 0 || updateAllProgress) {
+      return;
+    }
+    setError(null);
+    setUpdateAllProgress({ done: 0, total: targets.length });
+    let failed = 0;
+    for (let index = 0; index < targets.length; index += 1) {
+      const target = targets[index];
+      setBusyPluginId(target.plugin.pluginId);
+      try {
+        await pluginStore.installFromMarket(target.entry);
+      } catch {
+        failed += 1;
+      }
+      setUpdateAllProgress({ done: index + 1, total: targets.length });
+    }
+    setBusyPluginId(null);
+    setUpdateAllProgress(null);
+    if (failed > 0) {
+      setError(
+        t("plugins.updateAllFailed", {
+          values: { count: failed },
+          defaultValue: "{{count}} plugin(s) failed to update",
+        }),
+      );
+    }
+  }, [t, updatablePlugins, updateAllProgress]);
 
   const confirmUninstall = useCallback(async () => {
     if (!pendingUninstall) {
@@ -372,6 +423,39 @@ export const PluginsPanel = ({
                         {t("plugins.refresh", { defaultValue: "Refresh" })}
                       </span>
                     </button>
+                    {updatablePlugins.length > 0 && (
+                      <button
+                        className="plugins-toolbar-btn primary"
+                        type="button"
+                        disabled={updateAllProgress !== null}
+                        title={t("plugins.updateAllHint", {
+                          values: { count: updatablePlugins.length },
+                          defaultValue:
+                            "{{count}} plugin(s) have a newer version",
+                        })}
+                        onClick={() => void handleUpdateAll()}
+                      >
+                        {updateAllProgress ? (
+                          <Loader2 size={14} className="spin" />
+                        ) : (
+                          <Download size={14} strokeWidth={1.8} />
+                        )}
+                        <span>
+                          {updateAllProgress
+                            ? t("plugins.updatingAll", {
+                                values: {
+                                  done: updateAllProgress.done,
+                                  total: updateAllProgress.total,
+                                },
+                                defaultValue: "Updating {{done}}/{{total}}…",
+                              })
+                            : t("plugins.updateAll", {
+                                values: { count: updatablePlugins.length },
+                                defaultValue: "Update all ({{count}})",
+                              })}
+                        </span>
+                      </button>
+                    )}
                     <button
                       className={`plugins-toolbar-btn${
                         createBoxOpen ? " active" : ""
