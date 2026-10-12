@@ -56,6 +56,18 @@ export const configApi = {
     ipcRenderer.invoke("custom-commands:upsert", item),
   deleteCustomCommand: (commandId: string): Promise<void> =>
     ipcRenderer.invoke("custom-commands:delete", commandId),
+  /** 自定义命令被 AI 侧改动（config-set / config-delete 的 customCommands 作用域）后由主进程广播。 */
+  onCustomCommandsChanged: (callback: () => void): (() => void) => {
+    const handler = (): void => {
+      callback();
+    };
+
+    ipcRenderer.on("customCommands:changed", handler);
+
+    return () => {
+      ipcRenderer.removeListener("customCommands:changed", handler);
+    };
+  },
   listMcpServerConfigs: (): Promise<McpServerConfigRecord[]> =>
     ipcRenderer.invoke("mcp-server-configs:list"),
   upsertMcpServerConfig: (

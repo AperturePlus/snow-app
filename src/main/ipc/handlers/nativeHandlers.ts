@@ -1185,6 +1185,14 @@ export const registerNativeHandlers = (native: NativeBridge): void => {
           refreshUserscriptSyncStore(native);
           safeSend(event.sender, "userscripts:changed");
         }
+        // 自定义命令（config-set / config-delete 的 customCommands 作用域）：
+        // AI 写库后渲染层的命令面板与 / 菜单无从感知，广播后统一刷新。
+        if (
+          (toolName === "config-set" || toolName === "config-delete") &&
+          readConfigScope(argsJson) === "customCommands"
+        ) {
+          safeSend(event.sender, "customCommands:changed");
+        }
         return result;
       } finally {
         for (const executionId of remoteExecutionIds) {
