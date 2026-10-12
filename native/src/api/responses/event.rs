@@ -195,10 +195,11 @@ fn bounded_provider_detail(value: &str, max_bytes: usize) -> String {
 
 fn redact_provider_detail(value: &str) -> String {
     const PATTERNS: &[(&str, &str)] = &[
-        // Cookie values include every semicolon-separated pair and folded line.
+        // Sensitive HTTP headers include the full authentication value and
+        // every cookie pair, including folded lines and unknown auth schemes.
         // Without a trustworthy line boundary, discard the entire remainder.
         (
-            r#"(?im)(\b(?:set-cookie|cookie)\b(?:\\?[\"'])?[ \t]*[:=][ \t]*)[^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*"#,
+            r#"(?im)(\b(?:proxy-authorization|authorization|set-cookie|cookie)\b(?:\\?[\"'])?[ \t]*[:=][ \t]*)[^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*"#,
             "${1}[REDACTED]",
         ),
         // Never echo structured request bodies or encrypted reasoning fragments.

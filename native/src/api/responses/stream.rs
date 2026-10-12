@@ -188,6 +188,12 @@ impl ResponsesAttemptState {
                 .content_chunks
                 .iter()
                 .all(|text| text.trim().is_empty())
+            // Terminal-only text has not reached content_chunks yet. Inspect
+            // the same snapshot reader as finalization without clearing tools.
+            && self
+                .completed_response
+                .as_ref()
+                .is_none_or(|response| extract_output_text(response).is_empty())
             && self.tool_calls.is_empty()
             && self.streaming_tool_items.is_empty()
             && self.tool_parse_errors.is_empty()
