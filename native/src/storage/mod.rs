@@ -65,6 +65,7 @@ static LSP_CONFIG_RECONCILE_INIT: Once = Once::new();
 static LSP_CONFIG_NORMALIZE_INIT: Once = Once::new();
 
 pub fn initialize_app_storage() -> Result<AppStorageInfo> {
+    crate::utils::panic_hook::install_panic_hook();
     let database_path = ensure_database_file()?;
     let storage_dir = paths::app_storage_dir()?;
 

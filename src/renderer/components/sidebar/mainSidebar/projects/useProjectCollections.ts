@@ -5,14 +5,12 @@ import { useI18n } from "../../../../i18n";
 
 type UseProjectCollectionsOptions = {
   activeDirectoryId?: string;
-  activeConversationId?: string;
   setDirectoryError: (message: string | null) => void;
   setIsSavingDirectory: (saving: boolean) => void;
 };
 
 export function useProjectCollections({
   activeDirectoryId,
-  activeConversationId,
   setDirectoryError,
   setIsSavingDirectory,
 }: UseProjectCollectionsOptions) {
@@ -61,8 +59,10 @@ export function useProjectCollections({
     return ids;
   }, [collections]);
 
-  const lastAutoExpandSignatureRef = useRef<string | null>(null);
+  const lastAutoExpandKeyRef = useRef<string | null>(null);
 
+  // 只在「激活的项目」或其合集归属变化时自动展开：会话切换（如切换项目时会话被重选）
+  // 不再参与判断，否则用户手动收起的合集会被重新展开。
   useEffect(() => {
     if (!activeDirectoryId) {
       return;
@@ -75,11 +75,11 @@ export function useProjectCollections({
     if (containingCollectionIds.length === 0) {
       return;
     }
-    const signature = `${activeDirectoryId}:${activeConversationId ?? ""}:${containingCollectionIds.join(",")}`;
-    if (lastAutoExpandSignatureRef.current === signature) {
+    const key = `${activeDirectoryId}:${containingCollectionIds.join(",")}`;
+    if (lastAutoExpandKeyRef.current === key) {
       return;
     }
-    lastAutoExpandSignatureRef.current = signature;
+    lastAutoExpandKeyRef.current = key;
     setExpandedCollectionIds((prev) => {
       let changed = false;
       const next = new Set(prev);
@@ -91,7 +91,7 @@ export function useProjectCollections({
       }
       return changed ? next : prev;
     });
-  }, [activeConversationId, activeDirectoryId, collections]);
+  }, [activeDirectoryId, collections]);
 
   const handleToggleCollectionExpanded = (collectionId: string): void => {
     setExpandedCollectionIds((prev) => {

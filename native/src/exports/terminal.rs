@@ -510,6 +510,53 @@ fn read_registry_path() -> Option<String> {
     }
 }
 
+/// 以登录 + 交互方式运行一段 shell 代码并返回 stdout。
+///
+/// 交互式 shell 可能在 .zshrc / config.fish 中往 stdout 打印额外内容
+///（motd、nvm 提示等），调用方需自行从输出里提取目标行。
+#[cfg(not(target_os = "windows"))]
+async fn probe_login_shell(shell: &str, script: &str) -> Option<String> {
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        tokio::process::Command::new(shell)
+            .args(["-l", "-i", "-c", script])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output(),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(output)) if output.status.success() => {
+            Some(String::from_utf8_lossy(&output.stdout).to_string())
+        }
+        _ => None,
+    }
+}
+
+/// 取最后一个非空行（去掉首尾空白）。启动脚本的噪音输出在前，结果行在后。
+#[cfg(not(target_os = "windows"))]
+fn last_non_empty_line(output: &str) -> Option<String> {
+    output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .last()
+        .map(str::to_string)
+}
+
+/// 从 `env` 输出中提取指定变量的值（`KEY=VALUE` 逐行）。
+#[cfg(not(target_os = "windows"))]
+fn extract_env_value(output: &str, key: &str) -> Option<String> {
+    output.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix(key)
+            .and_then(|rest| rest.strip_prefix('='))
+            .map(str::to_string)
+    })
+}
+
 pub(crate) async fn resolve_login_path() -> Option<String> {
     #[cfg(target_os = "windows")]
     {
@@ -541,35 +588,21 @@ pub(crate) async fn resolve_login_path() -> Option<String> {
 
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
 
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            tokio::process::Command::new(&shell)
-                .args(["-l", "-i", "-c", "echo $PATH"])
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::null())
-                .output(),
-        )
-        .await;
+        // 不能解析 `echo $PATH`：fish 的 PATH 是列表变量，echo 会把每个元素
+        // 当作独立参数按空格拼接（`/a /b /c`），注入子进程后所有命令都
+        // command not found。printenv / env 读取的是 shell 真正导出到环境中的
+        // 值，在所有 shell 里都是冒号分隔的序列化形式（env 兜底 printenv 缺失）。
+        let mut probed = probe_login_shell(&shell, "printenv PATH")
+            .await
+            .and_then(|stdout| last_non_empty_line(&stdout));
+        if probed.is_none() {
+            probed = probe_login_shell(&shell, "env")
+                .await
+                .and_then(|stdout| extract_env_value(&stdout, "PATH"));
+        }
 
-        let path = match result {
-            Ok(Ok(output)) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                // 交互式 shell 可能会在 .zshrc 中往 stdout 打印额外内容
-                //（如 motd、nvm 提示等），echo $PATH 不一定在第一行。
-                // 取最后一个非空行作为 PATH 值。
-                let path = stdout
-                    .lines()
-                    .map(str::trim)
-                    .filter(|line| !line.is_empty())
-                    .last()
-                    .unwrap_or("")
-                    .to_string();
-                if path.is_empty() {
-                    return None;
-                }
-                path
-            }
+        let path = match probed {
+            Some(path) if !path.is_empty() => path,
             _ => return None,
         };
 

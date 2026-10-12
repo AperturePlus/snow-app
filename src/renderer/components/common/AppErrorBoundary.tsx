@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { useI18n } from "../../i18n";
+import { writeRendererLog } from "../../utils/rendererLog";
 
 // ---------------------------------------------------------------------------
 // 动态分包加载失败的自愈机制：自动 reload 恢复，5 秒内超 2 次则停止，
@@ -47,8 +48,8 @@ export const isChunkLoadError = (error: unknown): boolean => {
     error instanceof Error
       ? error.message
       : typeof error === "string"
-      ? error
-      : "";
+        ? error
+        : "";
 
   return (
     message.includes("Failed to fetch dynamically imported module") ||
@@ -187,6 +188,14 @@ export class AppErrorBoundary extends Component<
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
     console.error("AppErrorBoundary caught error:", error, info.componentStack);
+
+    writeRendererLog("ERROR", {
+      module: "renderer/AppErrorBoundary",
+      func: "componentDidCatch",
+      message: "React render error caught",
+      error: `${error.name}: ${error.message}`,
+      context: (info.componentStack ?? "").slice(0, 4000),
+    });
 
     if (isChunkLoadError(error)) {
       requestChunkRecoveryReload();
