@@ -31,6 +31,7 @@ export const SENSITIVE_SCOPES = [
   "plugins",
   "terminal",
   "filesystem",
+  "projectContext",
   "window",
   "storage",
   "updater",

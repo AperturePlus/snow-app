@@ -661,7 +661,7 @@ fn apply_matches(text: &str, matches: Vec<SensitiveMatch>) -> String {
     masked_text
 }
 
-fn mask_local(text: &str) -> String {
+pub(crate) fn mask_local(text: &str) -> String {
     let matches = collect_local_sensitive_matches(text);
     apply_matches(text, matches)
 }

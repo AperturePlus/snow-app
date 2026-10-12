@@ -15,6 +15,8 @@ type DraftHost = {
   projectId: string;
   sessionKey: string;
   conversationId: string | null;
+  worktreeId?: string;
+  worktreeMode?: boolean;
   blocked: boolean;
   restoreContent: (content: string) => void;
 };
@@ -130,10 +132,66 @@ const consume = (
   return token;
 };
 
+export const getPluginProjectBinding = (
+  pluginId: string,
+  draftToken?: string,
+  draft?: string,
+): {
+  pluginId: string;
+  projectId: string;
+  sessionKey: string;
+  conversationId?: string;
+  worktreeId?: string;
+  worktreeMode?: boolean;
+} | null => {
+  if (
+    !draftToken &&
+    draft === undefined &&
+    (!host || !host.element.isConnected)
+  )
+    return null;
+  let current: DraftHost;
+  try {
+    current = requireHost();
+  } catch {
+    throw new DOMException("Draft context unavailable", "AbortError");
+  }
+  if (draftToken !== undefined) {
+    const token = tokens.get(draftToken);
+    if (
+      !token ||
+      token.pluginId !== pluginId ||
+      token.kind !== "draft" ||
+      token.expiresAt <= Date.now() ||
+      token.host !== current ||
+      token.revision !== revisionOf(current) ||
+      token.expected !== readEditableContent(current.element)
+    )
+      throw new DOMException(
+        "Draft changed or project context expired",
+        "AbortError",
+      );
+    if (draft !== undefined && draft !== splitDraftText(token.original).text)
+      throw new Error("Draft does not match captured text");
+  } else if (draft !== undefined)
+    throw new Error("Captured draft token required");
+  if (!current.projectId) return null;
+  if (!current.sessionKey)
+    throw new DOMException("Draft session unavailable", "AbortError");
+  return {
+    pluginId,
+    projectId: current.projectId,
+    sessionKey: current.sessionKey,
+    conversationId: current.conversationId ?? undefined,
+    worktreeId: current.worktreeId,
+    worktreeMode: current.worktreeMode,
+  };
+};
 export const capturePluginDraft = (
   pluginId: string,
 ): {
   draftToken: string;
+  projectId: string;
   inputText: string;
   text: string;
   conversationId: string | null;
@@ -150,6 +208,7 @@ export const capturePluginDraft = (
   });
   return {
     draftToken,
+    projectId: current.projectId,
     inputText,
     text: splitDraftText(inputText).text,
     conversationId: current.conversationId,

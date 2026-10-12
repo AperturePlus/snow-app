@@ -4,11 +4,18 @@ import type { NativeBridge, ResponsesApiStreamChunk } from "../../native/types";
 import type { PromptOptimizationRequest } from "../../../preload/types/promptOptimization";
 import { storageReady } from "../../app/storageReady";
 import { safeSend } from "../../utils/safeSend";
+import {
+  createPromptContextHost,
+  validateCodebaseOptions,
+  contextString,
+} from "./promptContextHost";
+import { sanitizePromptOptimizationResult } from "./promptContextResult";
 
 type OptimizationStream = {
   nativeId: string;
   cancelled: boolean;
   prepared: boolean;
+  enhanced: boolean;
   wakeCancellation: () => void;
 };
 
@@ -16,6 +23,22 @@ const validateRequest = (value: unknown): PromptOptimizationRequest => {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Invalid optimization request");
   const input = value as Record<string, unknown>;
+  const allowed = [
+    "streamId",
+    "draft",
+    "conversationId",
+    "apiProfile",
+    "model",
+    "contextRounds",
+    "includeContext",
+    "optimizationInstructions",
+    "bindingHandle",
+    "codebaseContext",
+    "contextHandle",
+    "selectedSourceIds",
+  ];
+  if (Object.keys(input).some((key) => !allowed.includes(key)))
+    throw new Error("Unknown optimization field");
   if (
     typeof input.streamId !== "string" ||
     !input.streamId.trim() ||
@@ -37,7 +60,11 @@ const validateRequest = (value: unknown): PromptOptimizationRequest => {
   };
   for (const key of ["conversationId", "apiProfile", "model"] as const) {
     if (input[key] !== undefined) {
-      if (typeof input[key] !== "string" || input[key].length > 512)
+      if (
+        typeof input[key] !== "string" ||
+        input[key].length > 512 ||
+        /[\x00-\x1f]/.test(input[key])
+      )
         throw new Error(`Invalid ${key}`);
       request[key] = input[key].trim() || undefined;
     }
@@ -62,11 +89,44 @@ const validateRequest = (value: unknown): PromptOptimizationRequest => {
   if (input.contextRounds !== undefined) {
     if (
       typeof input.contextRounds !== "number" ||
-      !Number.isInteger(input.contextRounds)
+      !Number.isInteger(input.contextRounds) ||
+      input.contextRounds < 0
     )
       throw new Error("Invalid contextRounds");
-    request.contextRounds = Math.min(10, Math.max(1, input.contextRounds));
+    request.contextRounds = Math.min(10, input.contextRounds);
   }
+  request.codebaseContext = validateCodebaseOptions(input.codebaseContext);
+  const id = (value: unknown, optional = false): string | undefined => {
+    const text = contextString(value, optional);
+    if (text !== undefined && !/^[a-zA-Z0-9_.:-]{1,200}$/.test(text))
+      throw new Error("Invalid context identifier");
+    return text;
+  };
+  request.bindingHandle = id(input.bindingHandle, true);
+  request.contextHandle = id(input.contextHandle, true);
+  if (input.selectedSourceIds !== undefined) {
+    if (
+      !Array.isArray(input.selectedSourceIds) ||
+      input.selectedSourceIds.length > 16 ||
+      !request.contextHandle
+    )
+      throw new Error("Invalid source selection");
+    request.selectedSourceIds = [
+      ...new Set(input.selectedSourceIds.map((value) => id(value)!)),
+    ];
+  }
+  if (
+    request.contextHandle &&
+    (!request.codebaseContext || request.codebaseContext.mode === "off")
+  )
+    throw new Error("Source review options changed");
+  if (
+    (request.contextHandle ||
+      request.selectedSourceIds ||
+      (request.codebaseContext && request.codebaseContext.mode !== "off")) &&
+    !request.bindingHandle
+  )
+    throw new Error("Project context binding required");
   return request;
 };
 
@@ -81,6 +141,10 @@ export const registerPromptOptimizationHandlers = (
     state.wakeCancellation();
     if (state.prepared) native.abortPromptOptimization(state.nativeId);
   };
+  const contextHost = createPromptContextHost(native, (sender) => {
+    for (const stream of owners.get(sender)?.values() ?? [])
+      if (stream.enhanced) cancel(stream);
+  });
   ipcMain.handle("prompt:optimization:abort", (event, streamId: unknown) => {
     if (typeof streamId !== "string") return false;
     const state = owners.get(event.sender)?.get(streamId);
@@ -110,6 +174,9 @@ export const registerPromptOptimizationHandlers = (
       nativeId: randomUUID(),
       cancelled: false,
       prepared: false,
+      enhanced:
+        !!request.contextHandle ||
+        !!(request.codebaseContext && request.codebaseContext.mode !== "off"),
       wakeCancellation,
     };
     streams.set(request.streamId, state);
@@ -134,8 +201,26 @@ export const registerPromptOptimizationHandlers = (
       if (!native.preparePromptOptimization(state.nativeId))
         throw new Error("Optimization stream unavailable");
       state.prepared = true;
+      const { bindingHandle, codebaseContext, ...baseline } = request;
+      const enhanced = codebaseContext && codebaseContext.mode !== "off";
+      const binding =
+        enhanced || request.contextHandle || bindingHandle
+          ? await contextHost.requireBinding(sender, bindingHandle)
+          : undefined;
+      if (request.contextHandle && binding)
+        contextHost.requireSelection(sender, request.contextHandle, binding);
+      if (state.enhanced && !contextHost.capability())
+        throw new Error("Project context unavailable");
+      if (state.cancelled) throw new Error("Prompt optimization cancelled");
       const result = await native.optimizePrompt(
-        { ...request, streamId: state.nativeId },
+        {
+          ...baseline,
+          streamId: state.nativeId,
+          projectContextJson: enhanced
+            ? JSON.stringify(codebaseContext)
+            : undefined,
+          projectBindingJson: binding?.json,
+        },
         (chunk: ResponsesApiStreamChunk) => {
           if (
             streams.get(request.streamId) === state &&
@@ -149,9 +234,23 @@ export const registerPromptOptimizationHandlers = (
             });
           }
         },
+        (phase: string) => {
+          if (
+            !state.cancelled &&
+            !sender.isDestroyed() &&
+            /^[a-z_]{1,64}$/.test(phase)
+          )
+            safeSend(sender, "prompt:optimization:progress", {
+              streamId: request.streamId,
+              phase,
+            });
+        },
       );
       if (state.cancelled) throw new Error("Prompt optimization cancelled");
-      return { content: result.content };
+      const output = sanitizePromptOptimizationResult(result);
+      if (output.contextHandle && binding)
+        contextHost.rememberSources(sender, output.contextHandle, binding);
+      return output;
     } catch {
       // Provider errors can echo request bodies or credentials. Never log them
       // or forward them across IPC, even when request logging is enabled.

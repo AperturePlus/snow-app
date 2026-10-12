@@ -104,7 +104,7 @@ pub async fn embed_batch(config: &EmbeddingConfig, inputs: &[String]) -> Result<
 
 /// Resolve the default model name for the given embedding type when the user
 /// has not explicitly configured one.
-fn resolve_default_model(config: &EmbeddingConfig) -> String {
+pub(crate) fn resolve_default_model(config: &EmbeddingConfig) -> String {
     if !config.model_name.is_empty() {
         return config.model_name.clone();
     }

@@ -694,6 +694,8 @@ export const ChatInputView = ({
       projectId: projectId ?? conversationDirectoryId ?? "",
       sessionKey: sessionViewKey ?? "",
       conversationId: activeConversationId ?? null,
+      worktreeId: pendingWorktreeId ?? undefined,
+      worktreeMode,
       blocked: isCompacting,
       restoreContent,
     });
@@ -703,6 +705,8 @@ export const ChatInputView = ({
     conversationDirectoryId,
     sessionViewKey,
     activeConversationId,
+    pendingWorktreeId,
+    worktreeMode,
     isCompacting,
     restoreContent,
   ]);

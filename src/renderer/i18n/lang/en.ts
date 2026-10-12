@@ -6056,6 +6056,8 @@ export const en = {
     "Declared in the script metadata header (@snow-privacy).",
   "plugins.privacy.docHint":
     "Field and action reference: the built-in doc ~/.snowapp/docs/en/3-reference/6-plugin-metadata-domains.md",
+  "plugins.scopes.projectContext": "Project code context",
+  "plugins.scopes.desc.projectContext": "Read selected project source snippets for user-requested prompt optimization; requires separate host authorization.",
   "plugins.scopes.apiKeys": "API keys",
   "plugins.scopes.privacyConfig": "Privacy config",
   "plugins.scopes.systemPrompts": "System prompts",

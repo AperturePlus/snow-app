@@ -134,6 +134,15 @@ fn watchers() -> &'static Mutex<HashMap<String, WatcherHandle>> {
     WATCHERS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Read-only event fingerprint; None means no reliable live watcher exists.
+pub(crate) fn prompt_context_change_fingerprint(project_id: &str) -> Option<String> {
+    let watchers=watchers().lock().ok()?;
+    let handle=watchers.get(project_id)?;
+    let state=handle.debounce_state.lock().ok()?;
+    if state.stopped { return None; }
+    Some(format!("{:?}",state.last_event))
+}
+
 /// Start watching a project directory for codebase-relevant file changes.
 ///
 /// Events are filtered using the same rules as `file_scanner::scan_project`

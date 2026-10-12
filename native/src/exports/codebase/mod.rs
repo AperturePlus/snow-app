@@ -94,3 +94,5 @@ pub struct CodebaseIndexedFilePage {
     pub page: i32,
     pub page_size: i32,
 }
+
+pub(crate) use sync::is_prompt_context_sync_active;

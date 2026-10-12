@@ -1,11 +1,27 @@
 import type { PluginRuntimeApi, PluginWriteApi } from "./pluginApi";
 import { WRITE_ACTION_IDS } from "./writes";
+import {
+  authorizePluginProjectContext,
+  type PromptContextReport,
+  type PromptContextSource,
+} from "./pluginAi";
 
 export type PluginChatInputActionResult = {
   message?: string;
   preview?: string;
   apply?: () => Promise<PluginChatInputActionResult>;
   undo?: () => Promise<void>;
+  details?: {
+    originalText: string;
+    contextReport?: PromptContextReport;
+    warnings?: string[];
+  };
+  sourceSelection?: {
+    sources: PromptContextSource[];
+    defaultSelectedIds: string[];
+    contextHandle: string;
+    apply: (sourceIds: string[]) => Promise<PluginChatInputActionResult>;
+  };
 };
 
 export type PluginChatInputActionContext = {
@@ -31,6 +47,8 @@ export const scopePluginActionApi = (
   api: PluginRuntimeApi,
   signal: AbortSignal,
   isCurrent: () => boolean,
+  hostConfirm?: (message: string) => Promise<boolean>,
+  hostProgress?: (phase: string) => void,
 ): PluginRuntimeApi => {
   const check = (): void => {
     assertPluginActionActive(signal);
@@ -61,15 +79,69 @@ export const scopePluginActionApi = (
     write: write as PluginWriteApi,
     ai: api.ai.optimizePrompt
       ? {
+          ...api.ai,
+          ...(api.ai.getProjectContext
+            ? {
+                getProjectContext: async (options) => {
+                  check();
+                  const result = await api.ai.getProjectContext!(options);
+                  check();
+                  return result;
+                },
+              }
+            : {}),
+          ...(api.ai.revokeProjectContextAccess
+            ? {
+                revokeProjectContextAccess: async (options) => {
+                  check();
+                  const result =
+                    await api.ai.revokeProjectContextAccess!(options);
+                  check();
+                  return result;
+                },
+              }
+            : {}),
           optimizePrompt: async (options) => {
             check();
-            const result = await api.ai.optimizePrompt!({
+            const combined = options.signal
+              ? AbortSignal.any([signal, options.signal])
+              : signal;
+            const snapshot = {
               ...options,
-              signal: options.signal
-                ? AbortSignal.any([signal, options.signal])
-                : signal,
+              signal: combined,
+              codebaseContext: options.codebaseContext
+                ? structuredClone(options.codebaseContext)
+                : undefined,
+              selectedSourceIds: options.selectedSourceIds
+                ? [...options.selectedSourceIds]
+                : undefined,
+            };
+            await authorizePluginProjectContext(
+              api.ai,
+              snapshot,
+              async (message) => {
+                check();
+                assertPluginActionActive(combined);
+                const accepted = hostConfirm
+                  ? await hostConfirm(message)
+                  : false;
+                check();
+                assertPluginActionActive(combined);
+                return accepted;
+              },
+            );
+            check();
+            assertPluginActionActive(combined);
+            const result = await api.ai.optimizePrompt!({
+              ...snapshot,
+              onProgress: (phase) => {
+                if (!combined.aborted && isCurrent()) {
+                  hostProgress?.(phase);
+                  options.onProgress?.(phase);
+                }
+              },
               onChunk: (delta) => {
-                if (!signal.aborted && isCurrent()) options.onChunk?.(delta);
+                if (!combined.aborted && isCurrent()) options.onChunk?.(delta);
               },
             });
             check();

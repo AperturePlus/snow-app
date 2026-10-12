@@ -239,6 +239,7 @@ const SENSITIVE_SCOPES: &[&str] = &[
     "personalization",
     "conversations",
     "messages",
+    "projectContext",
     "memos",
     "memory",
     "scheduledTasks",

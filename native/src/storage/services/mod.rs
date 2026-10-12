@@ -19,6 +19,7 @@ pub mod custom_header_schemes;
 pub mod diff_review_comments;
 pub mod file_review_annotations;
 pub mod file_scanner;
+pub(crate) mod prompt_context_policy;
 pub mod file_watcher;
 pub mod fs_explorer;
 pub mod git;

@@ -5697,6 +5697,8 @@ export const zhCN = {
   "plugins.privacy.sourceScript": "声明位置：脚本元数据头的 @snow-privacy。",
   "plugins.privacy.docHint":
     "各域字段与写动作清单见内置文档 ~/.snowapp/docs/zh-CN/3-参考手册/6-插件元数据域参考.md",
+  "plugins.scopes.projectContext": "项目代码上下文",
+  "plugins.scopes.desc.projectContext": "仅为用户主动的提示词优化读取所选项目代码片段，需宿主另行授权。",
   "plugins.scopes.apiKeys": "API 密钥",
   "plugins.scopes.privacyConfig": "隐私配置",
   "plugins.scopes.systemPrompts": "系统提示词",

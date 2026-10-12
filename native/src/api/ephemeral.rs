@@ -24,6 +24,13 @@ macro_rules! diagnostic {
 }
 pub(crate) use diagnostic;
 
+pub fn scope_sync<T>(call: impl FnOnce() -> T) -> T {
+    EPHEMERAL.sync_scope(true, call)
+}
+pub async fn scope<T>(future: impl Future<Output = T>) -> T {
+    EPHEMERAL.scope(true, future).await
+}
+
 pub async fn run<T, F, Fut>(mut request: ResponsesApiRequest, call: F) -> T
 where
     F: FnOnce(ResponsesApiRequest) -> Fut,
