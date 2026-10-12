@@ -24,12 +24,11 @@ use crate::api::config::resolve_advanced_model;
 use crate::api::conversation::{
     prepare_context_request, resolve_request_tools_optional, ConversationContextRequest,
 };
-use crate::api::retry::{
-    classify_final_stream_warning, resolve_empty_response_terminal, resolve_stream_idle_timeout_sec,
-    FinalStreamWarningDisposition,
-    RetryOptions,
-};
 use crate::api::responses::stream::RESPONSES_FAILED_NO_REASON;
+use crate::api::retry::{
+    classify_final_stream_warning, resolve_empty_response_terminal,
+    resolve_stream_idle_timeout_sec, FinalStreamWarningDisposition, RetryOptions,
+};
 use crate::storage::services::app_logs::{
     log_api_error, log_api_warning, maybe_log_api_request_for_conversation,
     maybe_log_api_response_for_conversation,
@@ -500,14 +499,21 @@ async fn create_response_async(
         || !streamed_response.thinking.is_empty()
         || streamed_response.tool_calls_json != "[]"
         || streamed_response.reasoning_items_json != "[]";
-    // 空响应重试预算耗尽：把「正常收尾但零载荷」显式标记为 empty_response /
-    // retry_exhausted，避免落库后与正常完成同形（前端与日志都无从分辨）。
-    let (terminal_reason, terminal_outcome) = resolve_empty_response_terminal(
-        &streamed_response.status,
-        streamed_response.interruption_reason,
-        streamed_response.recovery_outcome,
-        has_response_payload,
-    );
+    // A classified provider failure must keep its actual recovery outcome;
+    // zero output does not turn a policy rejection into exhausted empty retries.
+    let (terminal_reason, terminal_outcome) = if streamed_response.status == "failed" {
+        (
+            streamed_response.interruption_reason,
+            streamed_response.recovery_outcome,
+        )
+    } else {
+        resolve_empty_response_terminal(
+            &streamed_response.status,
+            streamed_response.interruption_reason,
+            streamed_response.recovery_outcome,
+            has_response_payload,
+        )
+    };
     let interruption_reason = terminal_reason.map(|reason| reason.as_code().to_string());
     let recovery_outcome = terminal_outcome.map(|outcome| outcome.as_code().to_string());
 
@@ -523,11 +529,16 @@ async fn create_response_async(
         }
     }
 
-    match classify_final_stream_warning(
-        &streamed_response.status,
-        streamed_response.interruption_reason,
-        has_response_payload,
-    ) {
+    let final_warning = if streamed_response.status == "failed" {
+        FinalStreamWarningDisposition::None
+    } else {
+        classify_final_stream_warning(
+            &streamed_response.status,
+            streamed_response.interruption_reason,
+            has_response_payload,
+        )
+    };
+    match final_warning {
         FinalStreamWarningDisposition::TransportInterrupted(reason) => {
             log_api_warning(
                 &database_path,
@@ -563,11 +574,8 @@ async fn create_response_async(
         FinalStreamWarningDisposition::None => {}
     }
 
-    // 上游以 `response.failed` / `error` 明确收尾时，既不算传输中断也不触发
-    // 重试，`classify_final_stream_warning` 会落到 None 分支。此前这种失败在
-    // app_logs 里完全无痕（事后只能反查 usage_records 的 status='failed'）。
-    // 这里补一条 WARN，把上游给出的失败原因留痕；上游没给可读原因时用兜底文案，
-    // 保证「failed 却查不到任何记录」不再发生。
+    // Failures have their own diagnostic, including the actual recovery stop
+    // reason and shared retry-probe count; never describe them as empty output.
     if streamed_response.status == "failed" {
         let failure_reason = streamed_response
             .failure_reason
@@ -578,7 +586,7 @@ async fn create_response_async(
             "create_response_stream_with_context",
             "AI response stream failed",
             &format!(
-                "provider=openai, request_method=responses, reason={}, model={}, status={}, conversation_id={}, response_id={}, content_chars={}, thinking_chars={}, duration_ms={}",
+                "provider=openai, request_method=responses, reason={}, model={}, status={}, conversation_id={}, response_id={}, content_chars={}, thinking_chars={}, duration_ms={}, stop_reason={}, outcome={}, retry_attempts={}",
                 failure_reason,
                 model,
                 streamed_response.status,
@@ -587,6 +595,9 @@ async fn create_response_async(
                 streamed_response.content.chars().count(),
                 streamed_response.thinking.chars().count(),
                 streamed_response.total_duration_ms,
+                streamed_response.failure_stop_reason.unwrap_or("unknown"),
+                recovery_outcome.as_deref().unwrap_or(""),
+                retry_probe.attempts(),
             ),
         )
         .await;

@@ -15,14 +15,15 @@ use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
 
-use crate::api::common::{emit_stream_chunk, emit_tool_args_probe, ThinkingStreamTracker};
 use crate::api::common::StreamSink;
+use crate::api::common::{emit_stream_chunk, emit_tool_args_probe, ThinkingStreamTracker};
 use crate::api::responses::ResponsesApiStreamChunk;
 use crate::api::retry::{
-    attempt_has_payload, decide_stream_recovery, should_retry, should_retry_empty_response, retry_backoff_ms,
-    log_retry_attempt, stream_idle_timeout_error, visible_content_char_count, wait_before_retry,
-    RetryOptions, StreamAttemptProgress, StreamEndCause, StreamInterruptionReason,
-    StreamRecoveryDecision, StreamRecoveryOutcome, EMPTY_RESPONSE_RETRY_ERROR,
+    attempt_has_payload, decide_stream_recovery, log_retry_attempt, retry_backoff_ms, should_retry,
+    should_retry_empty_response, stream_idle_timeout_error, visible_content_char_count,
+    wait_before_retry, RetryOptions, StreamAttemptProgress, StreamEndCause,
+    StreamInterruptionReason, StreamRecoveryDecision, StreamRecoveryOutcome,
+    EMPTY_RESPONSE_RETRY_ERROR,
 };
 use crate::api::sse::{read_sse_stream_until_terminal, SseStreamEnd};
 use crate::storage::services::chat_conversations::ChatTokenUsage;
@@ -50,10 +51,9 @@ pub(super) struct StreamingResponseResult {
     pub status: String,
     pub interruption_reason: Option<StreamInterruptionReason>,
     pub recovery_outcome: Option<StreamRecoveryOutcome>,
-    /// 上游以 `response.failed` / `error` 明确收尾时的失败原因（取自
-    /// `response.error`）。这类终态既不算传输中断也不重试，此前在日志里完全
-    /// 无痕；这里把它带出来供调用方落一条 WARN 留痕。
+    /// Bounded, redacted reason of a provider failure after recovery stops.
     pub failure_reason: Option<String>,
+    pub failure_stop_reason: Option<&'static str>,
     pub token_usage: ChatTokenUsage,
     pub tool_calls_json: String,
     pub tool_parse_errors: Vec<String>,
@@ -78,7 +78,42 @@ pub(super) struct ResponsesAttemptState {
     completed_response: Option<Value>,
     stream_completed_normally: bool,
     reasoning_stream_mode: HashMap<u64, crate::api::responses::event::ReasoningStreamMode>,
-    failure_reason: Option<String>,
+    failure_reason: Option<super::event::ResponsesFailure>,
+    failure_stop_reason: Option<&'static str>,
+    replay_unsafe: bool,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum ProviderFailureRecovery {
+    Retry,
+    Finish {
+        outcome: StreamRecoveryOutcome,
+        reason: &'static str,
+    },
+}
+
+/// Hosted/unknown tools and background requests cannot be safely replayed here.
+pub(super) fn request_allows_failure_retry(payload: &Value) -> bool {
+    payload.get("background").and_then(Value::as_bool) != Some(true)
+        && payload.get("tools").is_none_or(|tools| {
+            tools.is_null()
+                || tools.as_array().is_some_and(|items| {
+                    items
+                        .iter()
+                        .all(|tool| tool.get("type").and_then(Value::as_str) == Some("function"))
+                })
+        })
+}
+
+pub(super) fn failure_log_endpoint(endpoint: &str) -> String {
+    let Ok(mut url) = url::Url::parse(endpoint) else {
+        return "[redacted endpoint]".to_string();
+    };
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
+    url.set_query(None);
+    url.set_fragment(None);
+    url.to_string()
 }
 
 impl Default for ResponsesAttemptState {
@@ -98,6 +133,8 @@ impl Default for ResponsesAttemptState {
             stream_completed_normally: false,
             reasoning_stream_mode: HashMap::new(),
             failure_reason: None,
+            failure_stop_reason: None,
+            replay_unsafe: false,
         }
     }
 }
@@ -121,6 +158,7 @@ impl ResponsesAttemptState {
             &mut self.stream_completed_normally,
             &mut self.reasoning_stream_mode,
             &mut self.failure_reason,
+            &mut self.replay_unsafe,
         );
         (content_delta, thinking_delta, tool_args_delta_out)
     }
@@ -143,12 +181,97 @@ impl ResponsesAttemptState {
         )
     }
 
+    pub(super) fn failure_replay_safe(&self, request_replay_safe: bool) -> bool {
+        request_replay_safe
+            && !self.replay_unsafe
+            && self
+                .content_chunks
+                .iter()
+                .all(|text| text.trim().is_empty())
+            && self.tool_calls.is_empty()
+            && self.streaming_tool_items.is_empty()
+            && self.tool_parse_errors.is_empty()
+    }
+
+    /// Separate failure recovery from normal payload/terminal semantics.
+    /// Call before finalization clears pending tool fragments.
+    pub(super) fn failure_recovery(
+        &self,
+        attempt: u32,
+        options: &RetryOptions,
+        request_replay_safe: bool,
+    ) -> Option<ProviderFailureRecovery> {
+        if self.response_status != "failed" {
+            return None;
+        }
+        let stop = |reason, outcome| Some(ProviderFailureRecovery::Finish { outcome, reason });
+        if self
+            .failure_reason
+            .as_ref()
+            .is_some_and(super::event::ResponsesFailure::retry_vetoed)
+        {
+            return stop("non_retriable_failure", StreamRecoveryOutcome::NonRetriable);
+        }
+        let Some(policy_reason) = self
+            .failure_reason
+            .as_ref()
+            .and_then(super::event::ResponsesFailure::retry_policy_reason)
+        else {
+            return stop("non_retriable_failure", StreamRecoveryOutcome::NonRetriable);
+        };
+        if !self.failure_replay_safe(request_replay_safe) {
+            return stop("unsafe_to_replay", StreamRecoveryOutcome::NonRetriable);
+        }
+        // Normalize only a known transport error for existing policy keywords;
+        // preserve the provider's redacted reason for diagnostics/custom keywords.
+        let normalized = Error::from_reason(policy_reason.to_string());
+        let original = Error::from_reason(self.failure_reason());
+        if !crate::api::retry::is_retriable_error(&normalized, options)
+            && !crate::api::retry::is_retriable_error(&original, options)
+        {
+            return stop("retry_policy_disabled", StreamRecoveryOutcome::NonRetriable);
+        }
+        if attempt >= options.max_retries {
+            return stop("retry_exhausted", StreamRecoveryOutcome::RetryExhausted);
+        }
+        Some(ProviderFailureRecovery::Retry)
+    }
+
+    pub(super) fn failure_reason(&self) -> String {
+        self.failure_reason
+            .as_ref()
+            .map(super::event::ResponsesFailure::reason)
+            .unwrap_or_else(|| RESPONSES_FAILED_NO_REASON.to_string())
+    }
+
+    pub(super) fn failure_is_transport(&self) -> bool {
+        self.failure_reason
+            .as_ref()
+            .and_then(super::event::ResponsesFailure::retry_policy_reason)
+            .is_some()
+    }
+
+    pub(super) fn finish_failure(
+        &mut self,
+        outcome: StreamRecoveryOutcome,
+        reason: &'static str,
+    ) -> (
+        Option<StreamInterruptionReason>,
+        Option<StreamRecoveryOutcome>,
+    ) {
+        self.finalize_provider_terminal();
+        self.failure_stop_reason = Some(reason);
+        (None, Some(outcome))
+    }
+
     /// 取消收尾：标记 cancelled 并丢弃未完成的工具状态。
     pub(super) fn finish_cancelled(&mut self) {
         self.response_status = String::from("cancelled");
         self.tool_calls.clear();
         self.streaming_tool_items.clear();
         self.tool_parse_errors.clear();
+        self.failure_reason = None;
+        self.failure_stop_reason = None;
     }
 
     pub(super) fn finalize_provider_terminal(
@@ -194,7 +317,8 @@ impl ResponsesAttemptState {
             // 失败终态：保留 failure_reason 交给调用方留痕；上游没给出可读原因时
             // 用兜底文案，避免出现「failed 却无任何线索」的空日志。
             if self.failure_reason.is_none() {
-                self.failure_reason = Some(RESPONSES_FAILED_NO_REASON.to_string());
+                self.failure_reason =
+                    Some(super::event::ResponsesFailure::from_event(&Value::Null));
             }
             (None, None)
         } else {
@@ -234,8 +358,8 @@ pub(super) fn finalize_transport_interruption(
     )
 }
 
-/// 取消早于任何事件到达时的结果（连接阶段被取消）。SSE 与 WebSocket 传输共用，
-/// 保证两条路径返回完全一致的字段。
+/// 连接阶段、或已丢弃失败尝试后的取消结果。SSE 与 WebSocket 传输共用，
+/// 不回传旧尝试的输出、usage 或失败元数据，保留整个请求的耗时/思考统计。
 pub(super) fn cancelled_stream_result(
     thinking_tracker: &ThinkingStreamTracker,
     stream_start: std::time::Instant,
@@ -250,6 +374,7 @@ pub(super) fn cancelled_stream_result(
         interruption_reason: None,
         recovery_outcome: None,
         failure_reason: None,
+        failure_stop_reason: None,
         token_usage: ChatTokenUsage {
             input_tokens: 0,
             output_tokens: 0,
@@ -289,8 +414,8 @@ pub(super) fn finalize_attempt_result(
     let thinking = attempt_state.thinking_chunks.join("").trim().to_string();
     let tool_calls_json =
         serde_json::to_string(&attempt_state.tool_calls).unwrap_or_else(|_| "[]".to_string());
-    let reasoning_items_json = serde_json::to_string(&attempt_state.reasoning_items)
-        .unwrap_or_else(|_| "[]".to_string());
+    let reasoning_items_json =
+        serde_json::to_string(&attempt_state.reasoning_items).unwrap_or_else(|_| "[]".to_string());
 
     StreamingResponseResult {
         id: attempt_state.response_id.clone(),
@@ -301,7 +426,11 @@ pub(super) fn finalize_attempt_result(
         status: attempt_state.response_status.clone(),
         interruption_reason,
         recovery_outcome,
-        failure_reason: attempt_state.failure_reason.clone(),
+        failure_reason: attempt_state
+            .failure_reason
+            .as_ref()
+            .map(super::event::ResponsesFailure::reason),
+        failure_stop_reason: attempt_state.failure_stop_reason,
         token_usage: attempt_state.token_usage,
         tool_calls_json,
         tool_parse_errors: attempt_state.tool_parse_errors.clone(),
@@ -331,9 +460,15 @@ pub(super) async fn collect_streaming_response(
     let mut ttft_ms: i64 = 0;
 
     let idle_timeout = Duration::from_secs(stream_idle_timeout_sec);
+    let failure_retry_safe = request_allows_failure_retry(&payload);
+    let retry_endpoint = failure_log_endpoint(endpoint);
 
     macro_rules! retry_empty_attempt {
         () => {{
+            retry_empty_attempt!("empty_response", EMPTY_RESPONSE_RETRY_ERROR);
+        }};
+        ($cause:expr, $error:expr) => {{
+            let retry_error = ($error).to_string();
             on_chunk.call(
                 ResponsesApiStreamChunk {
                     content_delta: String::new(),
@@ -342,7 +477,7 @@ pub(super) async fn collect_streaming_response(
                     thinking: String::new(),
                     retrying: true,
                     retry_attempt: Some((attempt + 1) as i32),
-                    retry_error: Some(EMPTY_RESPONSE_RETRY_ERROR.to_string()),
+                    retry_error: Some(retry_error.clone()),
                     stream_token_count: stream_token_count as i64,
                     thinking_token_count: thinking_tracker.token_count as i64,
                     thinking_duration_ms: thinking_tracker.duration_ms(),
@@ -354,21 +489,29 @@ pub(super) async fn collect_streaming_response(
                 ThreadsafeFunctionCallMode::NonBlocking,
             );
 
-            // 空响应重试同样留痕：事后可对账「是否重试过、重试了几次」。
             log_retry_attempt(
                 &database_path,
                 "create_response_stream_with_context",
                 "openai",
                 "responses",
-                "empty_response",
+                $cause,
                 attempt,
-                endpoint,
-                EMPTY_RESPONSE_RETRY_ERROR,
+                &retry_endpoint,
+                &retry_error,
                 retry_backoff_ms(retry_options, attempt),
             )
             .await;
 
-            wait_before_retry(retry_options, cancel_token, attempt).await?;
+            match wait_before_retry(retry_options, cancel_token, attempt).await {
+                Ok(()) => {}
+                Err(_) if cancel_token.is_cancelled() => {
+                    return Ok(cancelled_stream_result(&thinking_tracker, stream_start));
+                }
+                Err(error) => return Err(error),
+            }
+            if cancel_token.is_cancelled() {
+                return Ok(cancelled_stream_result(&thinking_tracker, stream_start));
+            }
             attempt += 1;
         }};
     }
@@ -561,13 +704,30 @@ pub(super) async fn collect_streaming_response(
             break 'attempt_loop (attempt_state, None, None);
         }
 
-        // Provider terminal wins over transport recovery. All terminal variants
-        // preserve their Provider result after pending streaming tool fragments
-        // are discarded.
+        // A failed event closes this stream, but an identified transport failure
+        // may replay a safe attempt. Decide before terminal cleanup drops tools.
+        if let Some(recovery) =
+            attempt_state.failure_recovery(attempt, retry_options, failure_retry_safe)
+        {
+            match recovery {
+                ProviderFailureRecovery::Retry => {
+                    retry_empty_attempt!("provider_error", attempt_state.failure_reason());
+                    continue 'attempt_loop;
+                }
+                ProviderFailureRecovery::Finish { outcome, reason } => {
+                    let (failure_reason, failure_outcome) =
+                        attempt_state.finish_failure(outcome, reason);
+                    break 'attempt_loop (attempt_state, failure_reason, failure_outcome);
+                }
+            }
+        }
+
+        // Normal provider terminals retain their existing completion semantics.
         if let SseStreamEnd::ProviderTerminal = &stream_end {
             let (terminal_interruption_reason, terminal_recovery_outcome) =
                 attempt_state.finalize_provider_terminal();
-            if terminal_interruption_reason.is_none()
+            if attempt_state.response_status == "completed"
+                && terminal_interruption_reason.is_none()
                 && should_retry_empty_response(attempt, retry_options, attempt_state.has_payload())
             {
                 retry_empty_attempt!();
@@ -605,7 +765,8 @@ pub(super) async fn collect_streaming_response(
             StreamRecoveryDecision::FinishProviderResult => {
                 let (provider_reason, provider_outcome) =
                     attempt_state.finalize_provider_terminal();
-                if provider_reason.is_none()
+                if attempt_state.response_status == "completed"
+                    && provider_reason.is_none()
                     && should_retry_empty_response(
                         attempt,
                         retry_options,

@@ -4,10 +4,171 @@
 
 use std::collections::HashMap;
 
+use regex::Regex;
 use serde_json::{json, Value};
 
-use crate::api::common::read_first_i64;
+use crate::api::common::{read_first_i64, truncate_utf8_safe};
 use crate::storage::services::chat_conversations::ChatTokenUsage;
+
+/// Small, bounded error metadata; never retain the full error object in diagnostics.
+#[derive(Debug, Clone)]
+pub(super) struct ResponsesFailure {
+    code: Option<String>,
+    error_type: Option<String>,
+    message: String,
+    transport_failure: bool,
+    retry_veto: bool,
+}
+
+impl ResponsesFailure {
+    pub(super) fn from_event(event: &Value) -> Self {
+        let response = event.get("response").unwrap_or(event);
+        // Inspect both error branches and every nested error before selecting
+        // bounded diagnostics. An inner transport code cannot hide an outer
+        // business rejection. Wrapper `type` describes the protocol event only.
+        let mut details = Vec::new();
+        for root in [response.get("error"), event.get("error")]
+            .into_iter()
+            .flatten()
+        {
+            let mut current = Some(root);
+            while let Some(detail) = current.filter(|value| !value.is_null()) {
+                details.push((detail, true));
+                current = detail.get("error");
+            }
+        }
+        details.extend([(response, false), (event, false)]);
+
+        const ALLOWED_CODES: &[&str] = &[
+            "",
+            "upstream_error",
+            "server_error",
+            "internal_error",
+            "upstream_http2_stream_error",
+            "websocket_connection_limit_reached",
+        ];
+        const ALLOWED_TYPES: &[&str] = &[
+            "",
+            "error",
+            "upstream_error",
+            "server_error",
+            "internal_error",
+            "http2_error",
+            "upstream_http2_stream_error",
+        ];
+        let allowed_identifier = |value: Option<&Value>, allowed: &[&str]| {
+            value.is_none_or(|value| {
+                value.is_null()
+                    || value.as_str().is_some_and(|text| {
+                        allowed.contains(&text.trim().to_ascii_lowercase().as_str())
+                    })
+            })
+        };
+        let identifiers_safe = details.iter().all(|(detail, error_object)| {
+            allowed_identifier(detail.get("code"), ALLOWED_CODES)
+                && (!error_object || allowed_identifier(detail.get("type"), ALLOWED_TYPES))
+        });
+        let transport_failure = identifiers_safe
+            && details.iter().any(|(detail, _)| {
+                let code = detail
+                    .get("code")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .trim()
+                    .to_ascii_lowercase();
+                matches!(
+                    code.as_str(),
+                    "upstream_http2_stream_error" | "websocket_connection_limit_reached"
+                ) || detail
+                    .as_str()
+                    .or_else(|| detail.get("message").and_then(Value::as_str))
+                    .is_some_and(|message| {
+                        message
+                            .trim()
+                            .trim_end_matches('.')
+                            .eq_ignore_ascii_case("Upstream HTTP/2 stream failed")
+                    })
+            });
+        // Preserve the global policy's strong cancellation veto from raw
+        // metadata: truncation/redaction must not erase it before normalization.
+        let retry_veto = details.iter().any(|(detail, error_object)| {
+            [
+                detail.as_str(),
+                detail.get("message").and_then(Value::as_str),
+                detail.get("code").and_then(Value::as_str),
+                if *error_object {
+                    detail.get("type").and_then(Value::as_str)
+                } else {
+                    None
+                },
+            ]
+            .into_iter()
+            .flatten()
+            .any(|text| {
+                let lower = text.to_ascii_lowercase();
+                lower.contains("aborted") || lower.contains("cancel")
+            })
+        });
+        let field = |key: &str, error_objects_only: bool| {
+            details.iter().find_map(|(detail, error_object)| {
+                if error_objects_only && !error_object {
+                    return None;
+                }
+                detail.get(key).and_then(|value| match value {
+                    Value::String(text) if !text.trim().is_empty() => Some(text.clone()),
+                    Value::Number(number) => Some(number.to_string()),
+                    _ => None,
+                })
+            })
+        };
+        let message = details
+            .iter()
+            .find_map(|(detail, _)| {
+                detail
+                    .as_str()
+                    .or_else(|| detail.get("message").and_then(Value::as_str))
+                    .filter(|text| !text.trim().is_empty())
+            })
+            .map(|text| bounded_provider_detail(text, 768))
+            .unwrap_or_else(|| {
+                "Responses stream failed without a readable error payload".to_string()
+            });
+        Self {
+            code: field("code", false).map(|text| bounded_provider_detail(&text, 128)),
+            error_type: field("type", true).map(|text| bounded_provider_detail(&text, 128)),
+            message,
+            transport_failure,
+            retry_veto,
+        }
+    }
+
+    pub(super) fn code(&self) -> Option<&str> {
+        self.code.as_deref()
+    }
+
+    pub(super) fn reason(&self) -> String {
+        let mut parts = vec![self.message.clone()];
+        for part in [self.code.as_ref(), self.error_type.as_ref()]
+            .into_iter()
+            .flatten()
+        {
+            if !parts.contains(part) {
+                parts.push(part.clone());
+            }
+        }
+        parts.join(" / ")
+    }
+
+    pub(super) fn retry_vetoed(&self) -> bool {
+        self.retry_veto
+    }
+
+    /// Classify raw error layers, never the independently selected diagnostics.
+    /// Recovery must also check `retry_vetoed` before positive policy matching.
+    pub(super) fn retry_policy_reason(&self) -> Option<&'static str> {
+        self.transport_failure.then_some("network stream error")
+    }
+}
 
 /// Which representation of a reasoning item's text has been seen for one
 /// `output_index`. The full-text stream and the summary stream are two
@@ -19,7 +180,69 @@ pub(super) enum ReasoningStreamMode {
     FullText,
     Summary,
 }
+fn bounded_provider_detail(value: &str, max_bytes: usize) -> String {
+    // Redact first: collapsing whitespace would erase HTTP header boundaries.
+    let redacted = redact_provider_detail(value)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if redacted.len() <= max_bytes {
+        return redacted;
+    }
+    let visible = truncate_utf8_safe(&redacted, max_bytes.saturating_sub(3));
+    format!("{visible}...")
+}
 
+fn redact_provider_detail(value: &str) -> String {
+    const PATTERNS: &[(&str, &str)] = &[
+        // Cookie values include every semicolon-separated pair and folded line.
+        // Without a trustworthy line boundary, discard the entire remainder.
+        (
+            r#"(?im)(\b(?:set-cookie|cookie)\b(?:\\?[\"'])?[ \t]*[:=][ \t]*)[^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*"#,
+            "${1}[REDACTED]",
+        ),
+        // Never echo structured request bodies or encrypted reasoning fragments.
+        (
+            r#"(?is)(\b(?:encrypted[_-]?content|encrypted[_-]?reasoning|request[_-]?body|body|payload|prompt|input|contents?)\b(?:\\?[\"'])?[ \t]*[:=][ \t]*).*"#,
+            "${1}[REDACTED]",
+        ),
+        (r"\bsk-[A-Za-z0-9_-]{16,}\b", "[REDACTED]"),
+        (
+            r"\b(?:ya29\.[A-Za-z0-9._~-]{12,}|gAAAAA[A-Za-z0-9_-]{24,})\b",
+            "[REDACTED]",
+        ),
+        (
+            r"\beyJ[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b",
+            "[REDACTED]",
+        ),
+        (r"(?i)(https?://)[^/\s@]+:[^/\s@]+@", "${1}[REDACTED]@"),
+        (
+            r"(?i)\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{4,}",
+            "${1} [REDACTED]",
+        ),
+        (
+            r#"(?i)([?&](?:api[_-]?key|key|token|access[_-]?token|refresh[_-]?token|secret|password|authorization|signature)=)[^&\s\"'<>]+"#,
+            "${1}[REDACTED]",
+        ),
+        (
+            r#"(?i)([\"']?(?:api[_-]?key|token|access[_-]?token|refresh[_-]?token|secret|password|authorization)[\"']?\s*[:=]\s*[\"'])([^\"']*)([\"'])"#,
+            "${1}[REDACTED]${3}",
+        ),
+        (
+            r#"(?i)(\b(?:api[_-]?key|token|access[_-]?token|refresh[_-]?token|secret|password|authorization)\b\s*[:=]\s*)[^\s,;&}\]\"'\[]+"#,
+            "${1}[REDACTED]",
+        ),
+    ];
+
+    PATTERNS
+        .iter()
+        .fold(value.to_string(), |redacted, (pattern, replacement)| {
+            Regex::new(pattern)
+                .expect("provider redaction regex")
+                .replace_all(&redacted, *replacement)
+                .into_owned()
+        })
+}
 // ---------------------------------------------------------------------------
 // SSE block parsing
 // ---------------------------------------------------------------------------
@@ -51,7 +274,8 @@ pub(super) fn process_responses_sse_event_block(
     completed_response: &mut Option<Value>,
     stream_completed_normally: &mut bool,
     reasoning_stream_mode: &mut HashMap<u64, ReasoningStreamMode>,
-    failure_reason: &mut Option<String>,
+    failure_reason: &mut Option<ResponsesFailure>,
+    replay_unsafe: &mut bool,
 ) -> (String, String) {
     let mut content_delta_out = String::new();
     let mut thinking_delta_out = String::new();
@@ -78,6 +302,41 @@ pub(super) fn process_responses_sse_event_block(
             .and_then(Value::as_str)
             .unwrap_or_default();
 
+        // Latch output/tool activity before terminal cleanup can erase it.
+        // Reasoning alone is safe to discard for an identified transport failure.
+        if event_type.starts_with("response.function_call")
+            || event_type.starts_with("response.custom_tool_call")
+            || matches!(
+                event_type,
+                "response.output_text.delta" | "response.output_text.done"
+            ) && event
+                .get("delta")
+                .or_else(|| event.get("text"))
+                .and_then(Value::as_str)
+                .is_some_and(|text| !text.is_empty())
+            || matches!(
+                event_type,
+                "response.output_item.added" | "response.output_item.done"
+            ) && event
+                .get("item")
+                .and_then(|item| item.get("type"))
+                .and_then(Value::as_str)
+                != Some("reasoning")
+            || event
+                .get("response")
+                .and_then(|response| response.get("output"))
+                .is_some_and(|output| {
+                    !output.is_null()
+                        && !output.as_array().is_some_and(|items| {
+                            items.iter().all(|item| {
+                                item.get("type").and_then(Value::as_str) == Some("reasoning")
+                            })
+                        })
+                })
+        {
+            *replay_unsafe = true;
+        }
+
         match event_type {
             "response.output_text.delta" => {
                 let content_delta = read_stream_text_delta(event.get("delta"));
@@ -93,7 +352,10 @@ pub(super) fn process_responses_sse_event_block(
             // thinking block only appears after the entire response has
             // finished rendering.
             "response.reasoning_text.delta" => {
-                let index = event.get("output_index").and_then(Value::as_u64).unwrap_or(0);
+                let index = event
+                    .get("output_index")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
                 // The summary is a re-statement of the full text. If a summary
                 // was already counted for this index, counting the full text
                 // too would duplicate the thinking block regardless of the
@@ -108,9 +370,11 @@ pub(super) fn process_responses_sse_event_block(
                     }
                 }
             }
-            "response.reasoning_summary_text.delta"
-            | "response.reasoning_summary.delta" => {
-                let index = event.get("output_index").and_then(Value::as_u64).unwrap_or(0);
+            "response.reasoning_summary_text.delta" | "response.reasoning_summary.delta" => {
+                let index = event
+                    .get("output_index")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
                 // Mutual exclusion with the full-text stream (and, for the two
                 // summary event names, with each other): only the first
                 // representation wins for a given output index.
@@ -231,22 +495,24 @@ pub(super) fn process_responses_sse_event_block(
                         read_response_string(response, "id").unwrap_or_else(|| response_id.clone());
                     *response_model = read_response_string(response, "model")
                         .unwrap_or_else(|| response_model.clone());
-                    if let Some(status) = read_response_string(response, "status").filter(|status| {
-                        matches!(status.as_str(), "completed" | "incomplete" | "failed")
-                    }) {
+                    if let Some(status) =
+                        read_response_string(response, "status").filter(|status| {
+                            matches!(status.as_str(), "completed" | "incomplete" | "failed")
+                        })
+                    {
                         *response_status = status;
                     }
-                    // 上游以 `response.failed` 明确收尾时，失败原因只存在于
-                    // `response.error` 里。此前这里只取 id / model / status / usage，
-                    // 原因被直接丢弃，导致 app_logs 完全无痕（事后只能反查
-                    // usage_records 的 status='failed'）。这里显式提取出来交给调用方。
+                    // Classify the complete envelope so response.error and a
+                    // sibling event.error can both veto unsafe transport replay.
                     if *response_status == "failed" {
-                        if let Some(reason) = extract_response_failure_reason(response) {
-                            *failure_reason = Some(reason);
-                        }
+                        *failure_reason = extract_response_failure_reason(&event)
+                            .or_else(|| Some(ResponsesFailure::from_event(&event)));
                     }
                     *token_usage = extract_token_usage(response);
                     *completed_response = Some(response.clone());
+                }
+                if *response_status == "failed" && failure_reason.is_none() {
+                    *failure_reason = Some(ResponsesFailure::from_event(&event));
                 }
             }
             "error" => {
@@ -255,14 +521,9 @@ pub(super) fn process_responses_sse_event_block(
                 // and stop.
                 *stream_completed_normally = true;
                 *response_status = String::from("failed");
-                let message = event
-                    .get("message")
-                    .and_then(Value::as_str)
-                    .unwrap_or("Responses stream failed");
-                // Store the error message so the caller can surface it.
-                *completed_response = Some(json!({"error": message}));
-                // 与 `response.failed` 同样留痕：`error` 事件本身就是失败终态。
-                *failure_reason = Some(message.to_string());
+                let failure = ResponsesFailure::from_event(&event);
+                *completed_response = Some(json!({"error": failure.reason()}));
+                *failure_reason = Some(failure);
             }
             _ => {}
         }
@@ -416,61 +677,15 @@ pub(super) fn collect_text_values(value: &Value, chunks: &mut Vec<String>) {
     }
 }
 
-/// Read the failure reason of a `response.failed` payload.
-///
-/// The Responses API reports a failed terminal in `response.error`, which is
-/// either a plain string or an object carrying `message` / `code` / `type`.
-/// This mirrors `read_message_field`'s tolerance so a relay that reshapes the
-/// envelope still yields a usable reason. Returns `None` when the payload
-/// carries no readable text, so callers can fall back to a generic marker
-/// instead of logging an empty reason.
-pub(super) fn extract_response_failure_reason(response: &Value) -> Option<String> {
-    let error = response.get("error")?;
-
-    let mut candidates: Vec<String> = Vec::new();
-    match error {
-        Value::String(text) => candidates.push(text.clone()),
-        Value::Object(object) => {
-            for key in ["message", "code", "type"] {
-                if let Some(text) = object
-                    .get(key)
-                    .and_then(Value::as_str)
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                {
-                    candidates.push(text.to_string());
-                }
-            }
-            // Some relays nest the real cause one level deeper.
-            if let Some(nested) = object.get("error") {
-                for key in ["message", "code", "type"] {
-                    if let Some(text) = nested
-                        .get(key)
-                        .and_then(Value::as_str)
-                        .map(str::trim)
-                        .filter(|value| !value.is_empty())
-                    {
-                        candidates.push(text.to_string());
-                    }
-                }
-            }
-        }
-        _ => {}
-    }
-
-    if candidates.is_empty() {
-        return None;
-    }
-
-    // De-duplicate while preserving order so a relay echoing the same text in
-    // several fields does not produce a noisy, repetitive log line.
-    let mut unique: Vec<String> = Vec::new();
-    for candidate in candidates {
-        if !unique.iter().any(|existing| existing == &candidate) {
-            unique.push(candidate);
-        }
-    }
-    Some(unique.join(" / "))
+/// Read bounded, redacted metadata from the complete failed-event envelope.
+/// The caller supplies a generic failure when both error fields are absent/null.
+pub(super) fn extract_response_failure_reason(event: &Value) -> Option<ResponsesFailure> {
+    let response = event.get("response").unwrap_or(event);
+    response
+        .get("error")
+        .filter(|error| !error.is_null())
+        .or_else(|| event.get("error").filter(|error| !error.is_null()))?;
+    Some(ResponsesFailure::from_event(event))
 }
 
 // ---------------------------------------------------------------------------
