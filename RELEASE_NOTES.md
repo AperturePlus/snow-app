@@ -1,5 +1,33 @@
 # Release Notes
 
+## v0.4.23
+
+## New Features
+
+- **App Task Manager**: a new right-panel tab lists the app's processes (main, renderer, GPU, utility, child) with CPU, memory and thread counts refreshed every second, plus search, sorting and an "end process" action behind a confirmation.
+- **Search File Contents with `@@`**: `@@keyword` in the chat input searches file contents instead of names, and a picked reference carries the matched line ranges.
+- **Input-Bar Plugin Submenu**: a panel can contribute up to 8 submenu items to its chat-input Action, opened by right-click, the "more" button or the keyboard (Shift+F10 / ContextMenu / Alt+ArrowDown) with full keyboard navigation.
+- **Custom Commands Config Domain**: custom slash commands gain a `config` domain (list / get / set / delete) for plugins, with the `/` menu and the settings panel refreshing immediately.
+- **Plugin Market Download Counts**: market entries show their download count, with a clear notice when the GitHub API quota is exhausted.
+- **Tool Rejection Notice**: a rejected tool call keeps a persistent bar on its card showing the rejection reason (or that the user gave none).
+
+## Improvements
+
+- The retry interval can be a fixed duration per API profile; leaving it 0 keeps the exponential backoff (capped at 30s).
+- Prompt optimization can optionally use the current project's code as context — opt-in, bounded, sources reviewed before rewriting, never sent automatically.
+- Sub-agents and Workflow nodes inherit the thinking strength chosen in the parent conversation's input bar, falling back to the profile default when the tier is unsupported.
+- Responses: recognizable transient upstream stream errors are safely recovered, and auth headers are fully redacted from diagnostics.
+- Global crash capture covers main-process uncaught errors, renderer rejections and Rust panics (with backtrace) written to disk, and pending logs are flushed on exit.
+- Plugins can be updated in bulk from the plugins panel, and the non-destructive confirmation button no longer uses the danger color.
+- Image generation settings: unified model labels and checkboxes, theme-following colors, no duplicated labels or column misalignment.
+
+## Bug Fixes
+
+- Fixed Gemini tool history dropping calls without an ID, which lost their parameter cleanup and result retention.
+- Fixed the web-search headless browser staying resident forever: it now closes after 3 minutes idle, releasing its memory and the whole child process tree.
+- Fixed image generation styles referencing undefined CSS variables (hover feedback and warning banners could be invisible).
+- Fixed the send button staying disabled while a compaction is running.
+
 ## v0.4.22
 
 ## New Features
