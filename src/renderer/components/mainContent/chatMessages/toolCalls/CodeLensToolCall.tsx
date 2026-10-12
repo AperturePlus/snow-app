@@ -16,6 +16,7 @@ import { useI18n } from "../../../../i18n";
 import type { ToolCallInfo } from "../utils/conversationTypes";
 import { ToolCallNode } from "./shared/ToolCallNode";
 import { localizeToolError } from "./shared/toolErrorDisplay";
+import { parseToolRejection } from "./shared/toolRejection";
 
 type CodeLensToolCallProps = {
   toolCall: ToolCallInfo;
@@ -298,6 +299,11 @@ export const CodeLensToolCall = ({
 
   const isRunning = toolCall.status === "running";
   const hasError = parsedResult.type === "error";
+  // 拒绝场景的说明由卡片下方的拒绝提示条承载，这里不再回退到"未找到符号"。
+  const isRejected = useMemo(
+    () => parseToolRejection(toolCall.result) !== null,
+    [toolCall.result],
+  );
   const effectiveStatus = hasError ? "error" : toolCall.status;
 
   const badgeName = operation
@@ -490,7 +496,7 @@ export const CodeLensToolCall = ({
               <XCircle size={14} aria-hidden="true" />
               <span>
                 {localizeToolError(t, parsedResult.message) ||
-                  t("toolCall.codelens.noSymbolFound")}
+                  (isRejected ? "" : t("toolCall.codelens.noSymbolFound"))}
               </span>
             </div>
           )
@@ -601,7 +607,7 @@ export const CodeLensToolCall = ({
               <XCircle size={14} aria-hidden="true" />
               <span>
                 {localizeToolError(t, parsedResult.message) ||
-                  t("toolCall.codelens.noSymbolFound")}
+                  (isRejected ? "" : t("toolCall.codelens.noSymbolFound"))}
               </span>
             </div>
           )

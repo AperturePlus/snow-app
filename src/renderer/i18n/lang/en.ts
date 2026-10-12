@@ -1803,6 +1803,8 @@ export const en = {
     "Duplicate-read protection: tools were disabled for this recovery round, but the model still requested a tool call, so nothing was executed.",
   "toolCall.common.arguments": "Arguments",
   "toolCall.common.result": "Result",
+  "toolCall.rejection.title": "Rejected",
+  "toolCall.rejection.noReason": "No reason provided by the user",
   "toolCall.common.charCount": "{{count}} characters",
   "toolCall.common.error": "Execution error",
   "toolCall.common.copyOutput": "Copy terminal output",

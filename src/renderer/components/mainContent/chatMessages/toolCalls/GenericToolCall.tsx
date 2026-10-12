@@ -337,6 +337,10 @@ export const GenericToolCall = ({
       const errMsg = rawErrorCode
         ? localizeToolError(t, rawErrorCode)
         : t("toolCall.common.error", { defaultValue: "执行异常" });
+      // 拒绝场景由卡片下方的拒绝提示条统一说明，这里不再重复出徽标。
+      if (!errMsg) {
+        return null;
+      }
       return (
         <span
           className="tool-call-codelens-count tool-call-codelens-count-error"

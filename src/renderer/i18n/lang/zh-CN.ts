@@ -1716,6 +1716,8 @@ export const zhCN = {
     "重复读取保护：本轮为恢复请求已禁用工具，但模型仍请求调用工具，因此未执行任何工具。",
   "toolCall.common.arguments": "参数",
   "toolCall.common.result": "结果",
+  "toolCall.rejection.title": "已拒绝",
+  "toolCall.rejection.noReason": "用户未填写拒绝理由",
   "toolCall.common.charCount": "{{count}} 字符",
   "toolCall.common.error": "执行异常",
   "toolCall.common.copyOutput": "复制终端输出内容",

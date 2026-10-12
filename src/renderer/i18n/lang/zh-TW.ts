@@ -1717,6 +1717,8 @@ export const zhTW = {
     "重複讀取保護：本輪為恢復請求已停用工具，但模型仍要求呼叫工具，因此未執行任何工具。",
   "toolCall.common.arguments": "參數",
   "toolCall.common.result": "結果",
+  "toolCall.rejection.title": "已拒絕",
+  "toolCall.rejection.noReason": "使用者未填寫拒絕理由",
   "toolCall.common.charCount": "{{count}} 字元",
   "toolCall.common.error": "執行異常",
   "toolCall.common.copyOutput": "複製終端輸出內容",

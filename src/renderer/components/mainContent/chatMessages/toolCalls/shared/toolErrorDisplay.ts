@@ -19,6 +19,9 @@ export const TOOL_ERROR_CODE_MESSAGE_KEYS: Record<string, string> = {
     "toolCall.duplicateReadonlyProtection.duplicateCall",
 };
 
+/** 已有专门 UI 承载的错误码（如拒绝理由提示条）：卡片内不再重复展示。 */
+const SILENT_ERROR_CODES = new Set(["TOOL_EXECUTION_DENIED"]);
+
 /**
  * 把工具错误码/错误消息转换为本地化展示文案。
  * 未收录的错误码原样返回，保证任意错误信息都不会丢失。
@@ -29,6 +32,10 @@ export const localizeToolError = (
 ): string => {
   const raw = message?.trim();
   if (!raw) {
+    return "";
+  }
+
+  if (SILENT_ERROR_CODES.has(raw)) {
     return "";
   }
 
