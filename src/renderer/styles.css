@@ -35490,6 +35490,18 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   color: #fff;
 }
 
+/* 非破坏性确认（安装/更新等）使用主色，避免误用危险色 */
+.confirm-dialog-btn.primary {
+  border: none;
+  background: var(--accent-color);
+  color: var(--on-solid);
+}
+
+.confirm-dialog-btn.primary:hover {
+  background: color-mix(in srgb, var(--accent-color) 88%, white);
+  color: var(--on-solid);
+}
+
 /* 关闭确认弹窗的「不再询问」勾选行（ConfirmDialog children 插槽） */
 .confirm-dialog-check {
   display: flex;

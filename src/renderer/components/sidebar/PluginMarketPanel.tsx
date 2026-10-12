@@ -410,7 +410,7 @@ export const PluginMarketPanel = (): React.JSX.Element => {
               {t("common.cancel", { defaultValue: "Cancel" })}
             </button>
             <button
-              className="confirm-dialog-btn confirm"
+              className="confirm-dialog-btn primary"
               type="button"
               disabled={isBusy || !pendingDownloadUrl}
               onClick={() => void confirmInstall()}
