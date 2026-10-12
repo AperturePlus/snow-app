@@ -5717,7 +5717,8 @@ export const zhTW = {
   "plugins.privacy.docHint":
     "欄位與動作清單見內建文件 ~/.snowapp/docs/zh-CN/3-参考手册/6-插件元数据域参考.md",
   "plugins.scopes.projectContext": "專案程式碼上下文",
-  "plugins.scopes.desc.projectContext": "僅為使用者主動的提示詞優化讀取所選專案程式碼片段，需宿主另行授權。",
+  "plugins.scopes.desc.projectContext":
+    "僅為使用者主動的提示詞優化讀取所選專案程式碼片段，需宿主另行授權。",
   "plugins.scopes.apiKeys": "API 金鑰",
   "plugins.scopes.privacyConfig": "隱私設定",
   "plugins.scopes.systemPrompts": "系統提示詞",

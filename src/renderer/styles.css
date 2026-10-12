@@ -7090,7 +7090,7 @@ body.is-panel-resizing * {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   background: var(--bg-primary);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.14);
+  box-shadow: var(--island-shadow);
 }
 
 .api-model-combobox-list {
@@ -17065,8 +17065,8 @@ body.is-panel-resizing * {
   margin-top: 8px;
   padding: 6px 10px;
   border-radius: var(--radius-sm);
-  background: var(--accent-yellow-bg, rgba(250, 204, 21, 0.16));
-  color: var(--accent-amber-text, #facc15);
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
   font-size: 12px;
   line-height: 1.5;
   word-break: break-all;
@@ -19476,7 +19476,7 @@ body.is-panel-resizing * {
 
 .tool-call-imagegen-edit-go:hover {
   background: var(--accent-blue-text);
-  color: #fff;
+  color: var(--on-solid);
 }
 
 .tool-call-imagegen-edit-go:disabled {
@@ -20315,13 +20315,17 @@ body.is-panel-resizing * {
 
 .imagegen-stream-segmented-btn:hover:not(:disabled) {
   color: var(--text-secondary);
+  background: var(--bg-hover);
 }
 
 .imagegen-stream-segmented-btn.active {
   background: var(--bg-primary);
   color: var(--text-primary);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  /* 选中态抬升：用极淡的当前文字色描边替代固定黑阴影，
+     浅色/深色与各预设主题下都成立 */
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
 
 .imagegen-stream-segmented-btn:disabled {
@@ -20461,15 +20465,15 @@ body.is-panel-resizing * {
 }
 
 .imagegen-model-tab:hover {
-  background: var(--hover-bg, rgba(255, 255, 255, 0.05));
+  background: var(--bg-hover);
   color: var(--text-primary);
   border-color: var(--border-light);
 }
 
 .imagegen-model-tab.active {
-  background: var(--accent-color, #3b82f6);
-  color: #fff;
-  border-color: var(--accent-color, #3b82f6);
+  background: var(--accent-color);
+  color: var(--on-solid);
+  border-color: var(--accent-color);
   font-weight: 500;
 }
 
@@ -20478,13 +20482,14 @@ body.is-panel-resizing * {
 }
 
 .imagegen-model-tab-star {
-  color: #eab308;
+  color: var(--accent-amber-text);
   font-size: 12px;
   line-height: 1;
 }
 
 .imagegen-model-tab.active .imagegen-model-tab-star {
-  color: #fef08a;
+  color: var(--on-solid);
+  opacity: 0.9;
 }
 
 .imagegen-model-tab-close {
@@ -20508,7 +20513,7 @@ body.is-panel-resizing * {
 
 .imagegen-model-tab-close:hover {
   opacity: 1;
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--bg-active);
 }
 
 .imagegen-model-actions-bar {
@@ -20523,11 +20528,6 @@ body.is-panel-resizing * {
   font-size: 11.5px;
 }
 
-.imagegen-model-primary-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: #eab308;
 /* 控制条左侧：当前配置模型名 + 主模型标记/设置按钮，长模型名截断不挤压右侧开关 */
 .imagegen-model-actions-title {
   display: flex;
@@ -20542,7 +20542,17 @@ body.is-panel-resizing * {
   white-space: nowrap;
 }
 
+.imagegen-model-primary-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent-amber-text);
   font-weight: 600;
+}
+
+/* 渠道列表「默认主模型」徽章图标：跟随主题的琥珀色文字色 */
+.imagegen-primary-badge-icon {
+  color: var(--accent-amber-text);
 }
 
 .imagegen-model-more-tag {
@@ -20551,7 +20561,7 @@ body.is-panel-resizing * {
   padding: 1px 6px;
   font-size: 10px;
   border-radius: 9999px;
-  background: var(--bg-tertiary, rgba(255, 255, 255, 0.08));
+  background: var(--bg-tertiary);
   border: 1px solid var(--border-subtle, var(--border-color));
   color: var(--text-muted);
 }
@@ -47937,7 +47947,7 @@ pre.file-viewer-code {
 /* 模型档位能力提示 */
 .imagegen-model-size-hint {
   display: block;
-  color: var(--accent-blue-text, var(--text-link, #4a9eff));
+  color: var(--accent-blue-text, var(--text-link));
   font-size: 10.5px;
   font-weight: 600;
   line-height: 1.45;
@@ -48448,7 +48458,7 @@ pre.file-viewer-code {
   padding: 4px;
   border-radius: var(--radius-sm);
   background: var(--bg-secondary);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--island-shadow);
 }
 
 .image-library-album-chip-wrap:hover .image-library-album-chip-actions {
@@ -49267,7 +49277,7 @@ pre.file-viewer-code {
   border: 1px solid var(--border-color);
   color: var(--text-primary);
   font-size: 12px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--island-shadow);
   animation: image-library-batch-in 0.18s ease;
   pointer-events: none;
 }
@@ -49386,17 +49396,11 @@ pre.file-viewer-code {
   padding: 10px 12px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
-  background: rgba(255, 255, 255, 0.88);
+  background: color-mix(in srgb, var(--bg-primary) 88%, transparent);
   color: var(--text-primary);
   font-size: 11px;
   overflow-y: auto;
   backdrop-filter: blur(4px);
-}
-
-/* 深色主题下恢复深色面板背景（文字为浅色变量，对比度正常） */
-:root[data-theme="dark"] .image-library-lightbox-details {
-  background: rgba(0, 0, 0, 0.72);
-  border-color: rgba(255, 255, 255, 0.08);
 }
 
 /* 详情面板头部（标题 + 收起/展开按钮） */

@@ -2897,7 +2897,7 @@ export function ImageGenSettingsPanel(): React.JSX.Element {
                               <BadgeCheck
                                 size={12}
                                 strokeWidth={2}
-                                style={{ color: "var(--accent, #eab308)" }}
+                                className="imagegen-primary-badge-icon"
                                 aria-label={t("settings.imagegenPrimaryBadge", {
                                   defaultValue: "Default primary model",
                                 })}
