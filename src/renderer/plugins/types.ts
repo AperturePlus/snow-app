@@ -43,7 +43,15 @@ export type SensitiveScope = (typeof SENSITIVE_SCOPES)[number];
 export const isSensitiveScope = (value: string): value is SensitiveScope =>
   (SENSITIVE_SCOPES as readonly string[]).includes(value);
 
-/** 插件面板定义（plugin.json 的 panels 项，已由 Rust 侧归一化）。 */
+/** Secondary actions share their parent panel's entry and runtime permissions. */
+export type PluginChatInputMenuAction = {
+  id: string;
+  action: string;
+  title: PluginLocalizedMap;
+  icon?: string;
+};
+
+/** 插件面板定义；renderer-only 贡献从保存的 manifestJson 补充。 */
 export type PluginPanelDefinition = {
   id: string;
   title: PluginLocalizedMap;
@@ -53,6 +61,7 @@ export type PluginPanelDefinition = {
   chatInput?: boolean;
   chatInputAction?: string;
   chatInputTitle?: PluginLocalizedMap;
+  chatInputMenuActions?: PluginChatInputMenuAction[];
   /** Configuration gear only; independent from the action and plugin enablement. */
   chatInputSettings?: { defaultVisible: boolean; storageKey: string };
 };

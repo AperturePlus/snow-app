@@ -1,6 +1,7 @@
 import type { Locale } from "../../shared/locale";
 import type { PluginRecord } from "../../preload/types/plugins";
 import type {
+  PluginChatInputMenuAction,
   PluginLocalizedMap,
   PluginMessageFooterDefinition,
   PluginPanelDefinition,
@@ -91,6 +92,74 @@ export const pickLocaleFile = (
   return locales.default ?? Object.values(locales)[0] ?? null;
 };
 
+const ACTION_EXPORT_NAME =
+  /^[$_\p{ID_Start}][$_\u200C\u200D\p{ID_Continue}]*$/u;
+const CONTRIBUTION_ID = /^[A-Za-z_][A-Za-z0-9_-]*$/;
+
+const normalizeChatInputMenuActions = (
+  value: unknown,
+): PluginChatInputMenuAction[] => {
+  if (!Array.isArray(value)) return [];
+  const result: PluginChatInputMenuAction[] = [];
+  const ids = new Set<string>();
+  // Bound work even when a manifest contains many invalid entries.
+  for (const item of value.slice(0, 32)) {
+    if (result.length === 8) break;
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    const id =
+      typeof record.id === "string" && record.id.length <= 64
+        ? record.id.trim()
+        : "";
+    const action =
+      typeof record.action === "string" && record.action.length <= 128
+        ? record.action.trim()
+        : "";
+    if (
+      !CONTRIBUTION_ID.test(id) ||
+      ids.has(id) ||
+      !ACTION_EXPORT_NAME.test(action) ||
+      record.entry !== undefined
+    )
+      continue;
+    const rawTitle = record.title;
+    const boundedTitle: PluginLocalizedMap = Object.create(null);
+    if (typeof rawTitle === "string" && rawTitle.length <= 256) {
+      boundedTitle.default = rawTitle;
+    } else if (
+      rawTitle &&
+      typeof rawTitle === "object" &&
+      !Array.isArray(rawTitle)
+    ) {
+      let scanned = 0;
+      for (const key in rawTitle) {
+        if (++scanned > 16) break;
+        if (
+          !Object.hasOwn(rawTitle, key) ||
+          key.length > 64 ||
+          key === "__proto__"
+        )
+          continue;
+        const text = (rawTitle as Record<string, unknown>)[key];
+        if (typeof text === "string" && text.length <= 256)
+          boundedTitle[key] = text;
+      }
+    }
+    const title = normalizeLocalizedMap(boundedTitle);
+    if (!Object.keys(title).length) continue;
+    ids.add(id);
+    result.push({
+      id,
+      action,
+      title,
+      ...(typeof record.icon === "string" && record.icon.length <= 256
+        ? { icon: record.icon.trim() }
+        : {}),
+    });
+  }
+  return result;
+};
+
 const normalizePanels = (value: unknown): PluginPanelDefinition[] => {
   if (!Array.isArray(value)) {
     return [];
@@ -110,9 +179,7 @@ const normalizePanels = (value: unknown): PluginPanelDefinition[] => {
       chatInput: record.chatInput === true,
       chatInputAction:
         typeof record.chatInputAction === "string" &&
-        /^[$_\p{ID_Start}][$_\u200C\u200D\p{ID_Continue}]*$/u.test(
-          record.chatInputAction.trim(),
-        )
+        ACTION_EXPORT_NAME.test(record.chatInputAction.trim())
           ? record.chatInputAction.trim()
           : "",
       chatInputTitle: normalizeLocalizedMap(record.chatInputTitle),
@@ -147,9 +214,9 @@ const normalizeMessageFooters = (
     // Only an omitted entry falls back; a supplied invalid path is rejected.
     const entry = value.entry === undefined ? record.entry : value.entry;
     if (
-      !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(id) ||
+      !CONTRIBUTION_ID.test(id) ||
       ids.has(id) ||
-      !/^[$_\p{ID_Start}][$_\u200C\u200D\p{ID_Continue}]*$/u.test(exportName) ||
+      !ACTION_EXPORT_NAME.test(exportName) ||
       typeof entry !== "string" ||
       !entry ||
       entry !== entry.trim() ||
@@ -184,20 +251,26 @@ const panelsWithSettings = (record: PluginRecord): PluginPanelDefinition[] => {
         item.id.trim() === panel.id,
     );
     const settings = raw?.chatInputSettings;
-    if (
-      !settings ||
-      typeof settings !== "object" ||
-      Array.isArray(settings) ||
-      typeof settings.storageKey !== "string" ||
-      !settings.storageKey.trim()
-    )
-      return panel;
+    // Menu parsing must not depend on a settings-gear preference being valid.
+    const chatInputMenuActions =
+      record.renderMode === "esm" && panel.chatInput && panel.chatInputAction
+        ? normalizeChatInputMenuActions(raw?.chatInputMenuActions)
+        : [];
+    const chatInputSettings =
+      settings &&
+      typeof settings === "object" &&
+      !Array.isArray(settings) &&
+      typeof settings.storageKey === "string" &&
+      settings.storageKey.trim()
+        ? {
+            defaultVisible: settings.defaultVisible !== false,
+            storageKey: settings.storageKey.trim(),
+          }
+        : undefined;
     return {
       ...panel,
-      chatInputSettings: {
-        defaultVisible: settings.defaultVisible !== false,
-        storageKey: settings.storageKey.trim(),
-      },
+      ...(chatInputMenuActions.length ? { chatInputMenuActions } : {}),
+      ...(chatInputSettings ? { chatInputSettings } : {}),
     };
   });
 };

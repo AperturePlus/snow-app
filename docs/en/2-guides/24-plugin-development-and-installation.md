@@ -215,6 +215,16 @@ Declare `panels[].chatInput: true` (boolean, default `false`) to show an enabled
 
 Optional generic `panels[].chatInputSettings: { defaultVisible?: boolean, storageKey: string }` controls only the ESM Action configuration gear. `defaultVisible` defaults to `true`; `false` hides it initially. Omitting this contribution retains the existing visible gear. `storageKey` must be non-empty. The host reads a **JSON boolean** from that plugin's private storage; valid values override the default, while missing/invalid values or read failures fall back to the manifest default. Save with `api.storage.setJson(storageKey, boolean)`: successful writes notify the plugin store's storage revision to refresh the toolbar **without replacing plugin / Action identities or cancelling optimization**. The contribution is read from saved `manifestJson`, without new native panel-normalization fields. Visibility changes neither the wand contribution nor plugin enablement and do not save unsaved optimization rules. Prompt Optimizer opts into a hidden gear and saves its switch independently and immediately. This requires the accompanying host build; no released version is confirmed, and installing a plugin does not upgrade the host.
 
+#### Secondary Actions on the same panel
+
+Optional `panels[].chatInputMenuActions: [{ id, action, title, icon? }]` applies only to ESM / `chatInput: true` panels with a main `chatInputAction`. The renderer reads it from saved `manifestJson`, independently of valid `chatInputSettings`. Secondary Actions **share their parent's entry, identity, private preferences and safe Action pipeline**; they cannot declare a different `entry` and add no panel, scope or authorization capability.
+
+The host retains at most 8 items and scans only the first 32. IDs must be unique within the panel, match `[A-Za-z_][A-Za-z0-9_-]*`, and have at most 64 raw characters. `action` shares the main Action's Unicode JS IdentifierName rule, with at most 128 raw characters. `title` accepts a string or localized map with a non-empty title; at most 16 language keys are scanned (keys up to 64, raw titles up to 256 characters). Optional `icon` is limited to 256 characters. Invalid, duplicate or entry-bearing items are ignored; empty / entirely invalid contributions fall back to the default Action and Open configuration.
+
+Left-click keeps the main Action, including click-to-cancel while running. Right-click, the discoverable More button, and `Shift+F10` / `ContextMenu` / `Alt+ArrowDown` on a focused trigger open the menu. Without draft text / API, execution items are disabled but More and Open configuration remain accessible. Up / Down, Home / End, Enter / Space, Escape, outside clicks and focus leaving are supported. Escape restores trigger focus; selecting an item restores focus before its operation, and cleanup never steals focus from a newly opened Modal / configuration control. Menu execution cannot start or preempt a busy run. Open configuration only opens the parent `panel.id`, without executing, cancelling or saving unsaved rules. Merely opening / closing the menu incurs no API request; each execution still reloads saved preferences and creates a fresh API. Project / session / plugin / parameter identity changes close the old menu and reject late selections.
+
+This contract is a local host-source capability requiring the accompanying host build and deployment, not confirmed released support. The currently running 0.4.22 package lacks this menu contract and the project-context Native exports. Installing a plugin does not upgrade the host; do not guess a `minAppVersion`. Older hosts ignore the field and retain one parent configuration panel and its original main Action. After removing a former second-panel declaration, users may need to close an already-open old tab once; the host does not silently rewrite panel storage or user data.
+
 `optimizationInstructions?: string` supplies an optional optimization meta prompt / strategy. Its raw value is limited to **8000 Unicode code points**, not UTF-16 code units; non-string / oversized values are rejected in renderer and backend. The backend trims surrounding whitespace and treats empty text as omitted, preserving older requests. Instructions occupy a separate trusted system section and cannot override fixed safety constraints. Never concatenate API secrets or attachment content into instructions.
 
 #### Generic input Action signature and interaction
@@ -223,11 +233,24 @@ Manifest panel example:
 
 ```json
 {
-  "id": "settings",
+  "id": "optimizer",
   "title": { "default": "Optimization strategy", "zh-CN": "优化策略" },
   "chatInput": true,
   "chatInputAction": "optimizeDraft",
   "chatInputTitle": { "default": "Optimize draft", "zh-CN": "优化草稿" },
+  "chatInputMenuActions": [
+    {
+      "id": "project-context",
+      "action": "optimizeDraftWithProjectContext",
+      "title": {
+        "default": "Optimize with project code (this run)",
+        "en": "Optimize with project code (this run)",
+        "zh-CN": "本次检索项目代码并优化",
+        "zh-TW": "本次檢索專案程式碼並優化"
+      },
+      "icon": "lucide:Search"
+    }
+  ],
   "icon": "lucide:WandSparkles"
 }
 ```
