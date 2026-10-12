@@ -7022,6 +7022,22 @@ body.is-panel-resizing * {
   position: relative;
 }
 
+/* 组合框标签行：标签 + 可选操作按钮（如「按模型 ID 填充能力」）同排两端对齐，
+   避免调用方在外层重复渲染一遍标签导致列高错位 */
+.api-model-combobox-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.api-model-combobox-label > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .api-model-combobox {
   position: relative;
   min-width: 0;
@@ -20512,6 +20528,20 @@ body.is-panel-resizing * {
   align-items: center;
   gap: 4px;
   color: #eab308;
+/* 控制条左侧：当前配置模型名 + 主模型标记/设置按钮，长模型名截断不挤压右侧开关 */
+.imagegen-model-actions-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.imagegen-model-actions-title > strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
   font-weight: 600;
 }
 

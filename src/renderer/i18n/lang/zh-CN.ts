@@ -1939,6 +1939,7 @@ export const zhCN = {
     "Gemini：比例（16:9）或图像大小（1K/2K/4K）。OpenAI：如 1024x1024",
   "settings.imagegenDefaultQuality": "默认质量",
   "settings.imagegenQualityAuto": "自动",
+  "settings.imagegenOutputGroup": "输出设置",
   "settings.imagegenOutputFormat": "输出格式",
   "settings.imagegenFormatDefault": "默认（png）",
   "settings.imagegenWebSearch": "谷歌搜索联网",

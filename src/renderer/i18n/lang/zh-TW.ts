@@ -1940,6 +1940,7 @@ export const zhTW = {
     "Gemini：比例（16:9）或影像大小（1K/2K/4K）。OpenAI：如 1024x1024",
   "settings.imagegenDefaultQuality": "預設品質",
   "settings.imagegenQualityAuto": "自動",
+  "settings.imagegenOutputGroup": "輸出設定",
   "settings.imagegenOutputFormat": "輸出格式",
   "settings.imagegenFormatDefault": "預設（png）",
   "settings.imagegenWebSearch": "Google 搜尋聯網",
