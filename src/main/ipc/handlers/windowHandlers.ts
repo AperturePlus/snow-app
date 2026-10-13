@@ -357,6 +357,12 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
     return win ? win.isAlwaysOnTop() : false;
   });
 
+  // 原生全屏（macOS 绿灯全屏）状态查询：渲染进程挂载时同步一次初始值。
+  ipcMain.handle("window:is-full-screen", (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    return win ? win.isFullScreen() : false;
+  });
+
   // 清除持久化的窗口尺寸/位置缓存（主题重置时一并调用），
   // 下次启动回退到默认窗口尺寸。
   ipcMain.handle("window:clear-state", async () => {

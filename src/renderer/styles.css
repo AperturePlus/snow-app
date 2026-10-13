@@ -355,6 +355,19 @@ body.is-panel-resizing * {
   padding: 0 16px;
 }
 
+/* ===== macOS 原生全屏顶栏 =====
+   系统在全屏时会隐藏红绿灯按钮，左侧卡片改渲染 LOGO（与 Windows 方案一致），
+   同时去掉红绿灯安全区留白与侧栏折叠合并布局的偏移，避免左侧空一块。 */
+.app-shell:not(.is-windows) .top-bar.is-native-fullscreen .top-bar-left {
+  padding: 0 16px;
+}
+
+.app-shell.sidebar-collapsed:not(.is-windows)
+  .top-bar.sidebar-collapsed.is-native-fullscreen
+  .top-bar-main-leading {
+  margin-left: 0;
+}
+
 .top-bar-logo {
   width: 32px;
   height: 32px;

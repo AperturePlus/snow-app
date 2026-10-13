@@ -79,6 +79,7 @@ export const TopBar = ({
   onOpenPluginPanel,
 }: TopBarProps): React.JSX.Element => {
   const isWindows = navigator.userAgent.includes("Win");
+  const isMacOS = navigator.userAgent.includes("Mac");
   const { t, locale } = useI18n();
   // 资源管理器显示位置偏好：仅“右侧面板”方案下提供 Plus 菜单入口。
   const [explorerPlacement, setExplorerPlacement] = useState(() =>
@@ -122,6 +123,8 @@ export const TopBar = ({
   const [isTodoPanelPinned, setIsTodoPanelPinned] = useState(false);
   // 窗口置顶（图钉）：挂载时从主进程同步真实状态。
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
+  // macOS 原生全屏：系统会隐藏红绿灯按钮，左侧改渲染 LOGO 填补空缺。
+  const [isNativeFullScreen, setIsNativeFullScreen] = useState(false);
   // 项目标签右键菜单：记录触发位置。
   const [branchContextMenu, setBranchContextMenu] = useState<{
     x: number;
@@ -454,6 +457,31 @@ export const TopBar = ({
     };
   }, []);
 
+  // 原生全屏状态：挂载时同步一次，之后由主进程在全屏切换时推送。
+  useEffect(() => {
+    if (!isMacOS) {
+      return;
+    }
+    let cancelled = false;
+    void window.snow
+      .isWindowFullScreen()
+      .then((fullScreen) => {
+        if (!cancelled) {
+          setIsNativeFullScreen(fullScreen);
+        }
+      })
+      .catch(() => {
+        // 查询失败保持非全屏态。
+      });
+    const dispose = window.snow.onWindowFullScreenChanged(
+      setIsNativeFullScreen,
+    );
+    return () => {
+      cancelled = true;
+      dispose();
+    };
+  }, [isMacOS]);
+
   const toggleAlwaysOnTop = (): void => {
     const next = !isAlwaysOnTop;
     setIsAlwaysOnTop(next);
@@ -744,7 +772,11 @@ export const TopBar = ({
     }
   };
 
-  const topBarLogo = isWindows ? <SnowLogo className="top-bar-logo" /> : null;
+  // macOS 原生全屏时红绿灯被系统隐藏，复用 Windows 的 LOGO 方案填补左侧空缺。
+  const topBarLogo =
+    isWindows || isNativeFullScreen ? (
+      <SnowLogo className="top-bar-logo" />
+    ) : null;
 
   const sidebarActions = (
     <div className="top-bar-sidebar-actions" aria-label="Sidebar actions">
@@ -848,7 +880,9 @@ export const TopBar = ({
         isRightPanelCollapsed ? " right-panel-collapsed" : ""
       }${isPlusMenuOpen ? " plus-menu-open" : ""}${
         isTodoPanelOpen ? " todo-panel-open" : ""
-      }${isTodoPanelInteractive ? " todo-panel-interactive" : ""}`}
+      }${isTodoPanelInteractive ? " todo-panel-interactive" : ""}${
+        isNativeFullScreen ? " is-native-fullscreen" : ""
+      }`}
       data-snow-anchor="topbar"
     >
       {isSidebarCollapsed ? null : (

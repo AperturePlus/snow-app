@@ -1416,6 +1416,9 @@ export const windowApi = {
     ipcRenderer.invoke("window:set-always-on-top", alwaysOnTop),
   isWindowAlwaysOnTop: (): Promise<boolean> =>
     ipcRenderer.invoke("window:is-always-on-top"),
+  /** 原生全屏（macOS 绿灯全屏）状态：全屏时系统隐藏红绿灯，顶栏改用 LOGO 填补。 */
+  isWindowFullScreen: (): Promise<boolean> =>
+    ipcRenderer.invoke("window:is-full-screen"),
   clearWindowState: (): Promise<void> =>
     ipcRenderer.invoke("window:clear-state"),
   /** 错误边界"重新加载"：由主进程强制刷新渲染进程（比 location.reload 可靠）。 */
@@ -1872,6 +1875,19 @@ export const windowApi = {
 
     return () => {
       ipcRenderer.removeListener("window:maximize-state-changed", handler);
+    };
+  },
+  onWindowFullScreenChanged: (
+    callback: (isFullScreen: boolean) => void,
+  ): (() => void) => {
+    const handler = (_event: IpcRendererEvent, isFullScreen: boolean): void => {
+      callback(isFullScreen);
+    };
+
+    ipcRenderer.on("window:full-screen-changed", handler);
+
+    return () => {
+      ipcRenderer.removeListener("window:full-screen-changed", handler);
     };
   },
   onCloseRequested: (callback: () => void): (() => void) => {

@@ -276,6 +276,18 @@ export const createWindow = (): BrowserWindow => {
     mainWindow.on("unmaximize", notifyMaximizeState);
   }
 
+  // 原生全屏状态广播：macOS 全屏时系统会隐藏红绿灯按钮，渲染进程据此
+  // 复用 Windows 的 LOGO 方案填补左侧空缺（退出全屏后自动还原）。
+  const notifyFullScreenState = (): void => {
+    safeSend(
+      mainWindow.webContents,
+      "window:full-screen-changed",
+      mainWindow.isFullScreen(),
+    );
+  };
+  mainWindow.on("enter-full-screen", notifyFullScreenState);
+  mainWindow.on("leave-full-screen", notifyFullScreenState);
+
   // Clean up PTY sessions before window is fully destroyed.
   // 所有平台关闭窗口时均需先经关闭行为处理器（询问/退出/最小化，见
   // windowHandlers.ts）：Windows/Linux 关闭即退出进程，macOS 关闭虽不退出
