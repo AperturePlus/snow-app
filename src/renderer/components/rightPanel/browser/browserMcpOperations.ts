@@ -8,6 +8,7 @@ import {
   type AxNode,
 } from "./browserAxSnapshot";
 import type { BrowserMcpCommandArgs } from "./browserMcpController";
+import { withCaptureRenderMode } from "./captureRenderMode";
 
 const TEXT_PREVIEW_LENGTH = 160;
 
@@ -1191,7 +1192,43 @@ const historyNavigation = async (
   };
 };
 
-const screenshot = async (
+type BrowserCaptureRequest = Parameters<
+  typeof window.snow.browserCaptureScreenshot
+>[1];
+type BrowserCaptureResult = Awaited<
+  ReturnType<typeof window.snow.browserCaptureScreenshot>
+>;
+
+const CAPTURE_ATTEMPTS = 3;
+const CAPTURE_RETRY_DELAY_MS = 300;
+const CAPTURE_TIMEOUT_HINT = "timed out";
+
+/** 渲染态刚切换时首帧可能尚未产出，超时后短暂等待再重试。 */
+const captureScreenshotWithRetry = async (
+  webContentsId: number,
+  request: BrowserCaptureRequest,
+): Promise<BrowserCaptureResult> => {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < CAPTURE_ATTEMPTS; attempt += 1) {
+    try {
+      return await window.snow.browserCaptureScreenshot(webContentsId, request);
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes(CAPTURE_TIMEOUT_HINT)) {
+        throw error;
+      }
+      await new Promise((resolve) =>
+        window.setTimeout(resolve, CAPTURE_RETRY_DELAY_MS),
+      );
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Browser screenshot failed");
+};
+
+const screenshotInRenderMode = async (
   webview: Electron.WebviewTag,
   instanceId: string,
   args: BrowserMcpCommandArgs,
@@ -1294,7 +1331,7 @@ const screenshot = async (
     elementInfo = target.element;
   }
 
-  const result = await window.snow.browserCaptureScreenshot(webContentsId, {
+  const result = await captureScreenshotWithRetry(webContentsId, {
     format,
     quality,
     fullPage,
@@ -1334,6 +1371,19 @@ const screenshot = async (
     ],
   };
 };
+
+/**
+ * 非激活浏览器 tab 的 webview 不产帧，截图会一直挂起；先临时进入渲染态
+ * （见 captureRenderMode）再执行，保证后台 tab 也能静默截图。
+ */
+const screenshot = (
+  webview: Electron.WebviewTag,
+  instanceId: string,
+  args: BrowserMcpCommandArgs,
+): Promise<unknown> =>
+  withCaptureRenderMode(instanceId, () =>
+    screenshotInRenderMode(webview, instanceId, args),
+  );
 
 const wait = async (
   webview: Electron.WebviewTag,

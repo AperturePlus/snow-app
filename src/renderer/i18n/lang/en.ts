@@ -4509,6 +4509,9 @@ export const en = {
     "Terminal control MCP is off for this project, so the agent cannot run commands in this terminal.",
   "panelMcpGate.enable": "Enable",
   "panelMcpGate.dismiss": "Dismiss this hint",
+  "panelMcpGate.dismissOnce": "Close",
+  "panelMcpGate.dismissAlways":
+    "Close and don't remind again (restored after restart)",
   "browser.moreActionsHint":
     "Screenshot, zoom, display size, clear data, send to agent and more",
   "browser.restoreToTabs": "Restore to tabs",
@@ -6242,7 +6245,7 @@ export const en = {
   "plugins.net.count": "{{matched}} / {{total}} capabilities",
   "plugins.net.badge": "No declaration",
   "plugins.net.fetchSummary":
-    "Sends an external HTTP request (http/https only): follows the app proxy settings, bypasses CORS, and sends no cookies. Timeout defaults to 30 s (max 120 s), response body limit 5 MB; network failures never throw and are reported in the error field.",
+    'Sends an external HTTP request (http/https only): follows the app proxy settings, bypasses CORS, and sends no cookies. Timeout defaults to 30 s (max 120 s), response body limit 5 MB of raw bytes; responseType "text" (default) decodes body as UTF-8, while "arraybuffer" returns the raw bytes as base64 in bodyBase64 so the plugin decodes them itself (e.g. GBK / GB18030). Network failures never throw and are reported in the error field.',
   "plugins.net.empty": "No matching network capability",
   "plugins.net.docHint":
     "Full reference: the built-in plugin development guide ~/.snowapp/docs/en/2-guides/24-plugin-development-and-installation.md",

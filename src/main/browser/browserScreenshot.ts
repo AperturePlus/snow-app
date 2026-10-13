@@ -36,6 +36,35 @@ const MIME_TYPES: Record<BrowserScreenshotFormat, string> = {
   webp: "image/webp",
 };
 
+// 页面不产帧（webview 被隐藏等）时 Page.captureScreenshot 永不返回，超时兜底
+// 避免工具调用一直 loading；调用方（渲染进程截图操作）据 timed out 重试。
+const CAPTURE_TIMEOUT_MS = 4_000;
+
+const captureWithTimeout = async (
+  contents: Electron.WebContents,
+  params: Record<string, unknown>,
+): Promise<{ data?: unknown }> => {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return (await Promise.race([
+      contents.debugger.sendCommand("Page.captureScreenshot", params),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(
+            new Error(
+              `Browser screenshot timed out after ${CAPTURE_TIMEOUT_MS}ms: the page produced no frame (the tab may not be rendering)`,
+            ),
+          );
+        }, CAPTURE_TIMEOUT_MS);
+      }),
+    ])) as { data?: unknown };
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+};
+
 export const captureBrowserScreenshot = async (
   webContentsId: number,
   request: BrowserScreenshotRequest,
@@ -63,10 +92,7 @@ export const captureBrowserScreenshot = async (
       scale: request.clip.scale ?? 1,
     };
   }
-  const result = (await contents.debugger.sendCommand(
-    "Page.captureScreenshot",
-    params,
-  )) as { data?: unknown };
+  const result = await captureWithTimeout(contents, params);
   if (typeof result.data !== "string" || result.data.length === 0) {
     throw new Error("Browser screenshot did not return image data");
   }

@@ -4237,6 +4237,8 @@ export const zhCN = {
     "当前项目未开启终端控制 MCP，Agent 无法在此终端执行命令。",
   "panelMcpGate.enable": "去开启",
   "panelMcpGate.dismiss": "关闭提示",
+  "panelMcpGate.dismissOnce": "关闭",
+  "panelMcpGate.dismissAlways": "关闭并不再提示（重启后恢复）",
   "browser.moreActionsHint": "截图、缩放、显示尺寸、清除数据、发送给 Agent 等",
   "browser.restoreToTabs": "还原为标签页",
   "browser.clearBrowsingData": "清除浏览数据",
@@ -5875,7 +5877,7 @@ export const zhCN = {
   "plugins.net.count": "{{matched}} / {{total}} 个能力",
   "plugins.net.badge": "无需声明",
   "plugins.net.fetchSummary":
-    "发起外部 HTTP 请求（仅 http/https）：跟随应用代理设置、无 CORS 限制、不携带 Cookie。超时默认 30 秒（上限 120 秒），响应体上限 5MB；网络层失败不抛异常，以结果里的 error 字段返回。",
+    '发起外部 HTTP 请求（仅 http/https）：跟随应用代理设置、无 CORS 限制、不携带 Cookie。超时默认 30 秒（上限 120 秒），响应体上限 5MB（按原始字节计）；responseType 缺省 "text"（宿主按 UTF-8 解码 body），传 "arraybuffer" 时原始字节以 base64 放在 bodyBase64、由插件自行解码（如 GBK / GB18030）。网络层失败不抛异常，以结果里的 error 字段返回。',
   "plugins.net.empty": "没有匹配的网络能力",
   "plugins.net.docHint":
     "完整说明见内置文档 ~/.snowapp/docs/zh-CN/2-使用指南/24-插件开发与安装.md",

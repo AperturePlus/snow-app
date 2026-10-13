@@ -109,7 +109,14 @@ export const PluginMetadataCatalog = ({
           defaultValue:
             "Sends an external HTTP request (http/https only): follows the app proxy settings, bypasses CORS, and sends no cookies.",
         }),
-        params: ["url", "method", "headers", "body", "timeoutMs"],
+        params: [
+          "url",
+          "method",
+          "headers",
+          "body",
+          "timeoutMs",
+          "responseType",
+        ],
       },
     ],
     [t],

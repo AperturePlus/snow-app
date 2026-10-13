@@ -1981,6 +1981,11 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
               className={`right-panel-tab-pane ${
                 activeTabId === tab.id ? "active" : ""
               }`}
+              data-browser-instance-id={
+                tab.type === "browser"
+                  ? (tab.data as BrowserTabData | undefined)?.instanceId
+                  : undefined
+              }
             >
               {renderTabContent(tab)}
             </div>

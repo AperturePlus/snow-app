@@ -293,19 +293,22 @@ export const registerPluginHandlers = (native: NativeBridge): void => {
       statusText: string;
       headers: Record<string, string>;
       body: string;
+      bodyBase64?: string;
       url: string;
       error: string | null;
     }> => {
       if (payload === null || typeof payload !== "object") {
         throw new Error("Invalid plugin http request payload");
       }
-      const { url, method, headers, body, timeoutMs } = payload as {
-        url?: unknown;
-        method?: unknown;
-        headers?: unknown;
-        body?: unknown;
-        timeoutMs?: unknown;
-      };
+      const { url, method, headers, body, timeoutMs, responseType } =
+        payload as {
+          url?: unknown;
+          method?: unknown;
+          headers?: unknown;
+          body?: unknown;
+          timeoutMs?: unknown;
+          responseType?: unknown;
+        };
       if (!isNonEmptyString(url) || !/^https?:\/\//i.test(url)) {
         throw new Error("Plugin http request url must be http(s)");
       }
@@ -367,6 +370,19 @@ export const registerPluginHandlers = (native: NativeBridge): void => {
             body: "",
             url: response.url,
             error: "Response body exceeds the 5MB limit",
+          };
+        }
+        // responseType 为 arraybuffer 时只回传原始字节（base64），由插件自行解码
+        if (responseType === "arraybuffer") {
+          return {
+            ok: response.ok,
+            status: response.status,
+            statusText: response.statusText,
+            headers: responseHeaders,
+            body: "",
+            bodyBase64: Buffer.from(buffer).toString("base64"),
+            url: response.url,
+            error: null,
           };
         }
         return {

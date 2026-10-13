@@ -45,6 +45,8 @@ export type PluginHttpRequestOptions = {
   headers?: Record<string, string>;
   body?: string;
   timeoutMs?: number;
+  /** text（默认）在宿主侧按 UTF-8 解码；arraybuffer 只回传原始字节的 base64 */
+  responseType?: "text" | "arraybuffer";
 };
 
 export type PluginHttpResponse = {
@@ -53,6 +55,8 @@ export type PluginHttpResponse = {
   statusText: string;
   headers: Record<string, string>;
   body: string;
+  /** responseType 为 arraybuffer 时返回，body 为空串 */
+  bodyBase64?: string;
   url: string;
   error: string | null;
 };

@@ -4190,6 +4190,8 @@ export const zhTW = {
     "目前專案未開啟終端控制 MCP，Agent 無法在此終端執行命令。",
   "panelMcpGate.enable": "去開啟",
   "panelMcpGate.dismiss": "關閉提示",
+  "panelMcpGate.dismissOnce": "關閉",
+  "panelMcpGate.dismissAlways": "關閉並不再提示（重新啟動後恢復）",
   "browser.moreActionsHint": "截圖、縮放、顯示尺寸、清除資料、傳送給 Agent 等",
   "browser.restoreToTabs": "還原為標籤頁",
   "browser.clearBrowsingData": "清除瀏覽資料",
@@ -5886,7 +5888,7 @@ export const zhTW = {
   "plugins.net.count": "{{matched}} / {{total}} 個能力",
   "plugins.net.badge": "無需宣告",
   "plugins.net.fetchSummary":
-    "發起外部 HTTP 請求（僅 http/https）：跟隨應用代理設定、無 CORS 限制、不攜帶 Cookie。逾時預設 30 秒（上限 120 秒），回應主體上限 5MB；網路層失敗不拋例外，以結果中的 error 欄位回傳。",
+    '發起外部 HTTP 請求（僅 http/https）：跟隨應用代理設定、無 CORS 限制、不攜帶 Cookie。逾時預設 30 秒（上限 120 秒），回應主體上限 5MB（按原始位元組計）；responseType 預設 "text"（宿主以 UTF-8 解碼 body），傳 "arraybuffer" 時原始位元組以 base64 放在 bodyBase64、由外掛自行解碼（如 GBK / GB18030）。網路層失敗不拋例外，以結果中的 error 欄位回傳。',
   "plugins.net.empty": "沒有符合的網路能力",
   "plugins.net.docHint":
     "完整說明見內建文件 ~/.snowapp/docs/zh-CN/2-使用指南/24-插件开发与安装.md",

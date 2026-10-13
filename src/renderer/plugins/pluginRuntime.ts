@@ -458,6 +458,7 @@ export const createIframePanel = async (params: {
               headers?: Record<string, string>;
               body?: string;
               timeoutMs?: number;
+              responseType?: "text" | "arraybuffer";
             };
             result = await api.net.fetch(url, options);
             break;
