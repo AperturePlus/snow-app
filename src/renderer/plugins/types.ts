@@ -74,6 +74,15 @@ export type PluginMessageFooterDefinition = {
   taskHistory?: boolean;
 };
 
+export type PluginToolCallRendererDefinition = {
+  id: string;
+  entry: string;
+  exportName: string;
+  tools: string[];
+  prefixes: string[];
+  priority: number;
+};
+
 /** 渲染层使用的插件视图模型（PluginRecord 解析后的形态）。 */
 export type PluginView = {
   pluginId: string;
@@ -88,6 +97,7 @@ export type PluginView = {
   entry: string;
   panels: PluginPanelDefinition[];
   messageFooters: PluginMessageFooterDefinition[];
+  toolCallRenderers: PluginToolCallRendererDefinition[];
   locales: Record<string, string>;
   styles: string[];
   privacy: SensitiveScope[];

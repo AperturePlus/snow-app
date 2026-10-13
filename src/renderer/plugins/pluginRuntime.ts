@@ -4,6 +4,7 @@ import type { Locale } from "../../shared/locale";
 import bridgeSource from "./pluginIframeBridge.js?raw";
 import type { PluginMetadataApi, PluginRuntimeApi } from "./pluginApi";
 import type { PluginMessageFooterApi } from "./pluginMessageFooter";
+import type { PluginToolCallApi } from "./pluginToolCall";
 import type { PluginChatInputAction } from "./pluginChatInputAction";
 import type { MetadataResponse, PluginView } from "./types";
 
@@ -126,7 +127,7 @@ export const injectPluginStyles = async (
 export const loadPluginModule = async (params: {
   plugin: PluginView;
   entry: string;
-  api: PluginRuntimeApi | PluginMessageFooterApi;
+  api: PluginRuntimeApi | PluginMessageFooterApi | PluginToolCallApi;
   locale: Locale;
   signal?: AbortSignal;
   isCurrent?: () => boolean;

@@ -19028,6 +19028,8 @@ body.is-panel-resizing * {
   background: var(--accent-blue-bg);
 }
 
+/* External tool-specific styles are supplied by renderer plugins. */
+
 /* ImageGen Tool Call */
 .tool-call-imagegen-body {
   gap: 10px;
@@ -21605,109 +21607,7 @@ body.is-panel-resizing * {
   color: var(--accent-green-text);
 }
 
-/* dbx：数据库工具卡片 */
-.tool-call-dbx-command {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  min-width: 0;
-  padding: 6px 9px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-tertiary);
-  font-size: 11.5px;
-  line-height: 1.5;
-}
-
-.tool-call-dbx-command > svg {
-  display: block;
-  flex-shrink: 0;
-  margin-top: 1px;
-  color: var(--accent-blue-text);
-}
-
-.tool-call-dbx-command code {
-  min-width: 0;
-  font-family: var(--font-mono);
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  word-break: break-all;
-  user-select: text;
-}
-
-.tool-call-dbx-table-wrap {
-  overflow: auto;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-}
-
-.tool-call-dbx-table {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 11px;
-}
-
-.tool-call-dbx-table th,
-.tool-call-dbx-table td {
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--border-light);
-  text-align: left;
-  white-space: nowrap;
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tool-call-dbx-table th {
-  position: sticky;
-  top: 0;
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  font-weight: 600;
-}
-
-.tool-call-dbx-table td {
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-}
-
-.tool-call-dbx-table tbody tr:hover td {
-  background: var(--bg-tertiary);
-}
-
-.tool-call-dbx-cell-null {
-  color: var(--text-tertiary);
-  font-style: italic;
-  opacity: 0.85;
-}
-
-.tool-call-dbx-empty {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  border: 1px dashed var(--border-light);
-  border-radius: var(--radius-sm);
-  font-size: 11.5px;
-  color: var(--text-tertiary);
-}
-
-.tool-call-dbx-empty > svg {
-  display: block;
-  flex-shrink: 0;
-  color: var(--text-tertiary);
-}
-
-.tool-call-dbx-table tr:last-child td {
-  border-bottom: none;
-}
-
-.tool-call-dbx-table-more {
-  padding: 4px 8px;
-  font-size: 10.5px;
-  color: var(--text-tertiary);
-  background: var(--bg-tertiary);
-  border-top: 1px solid var(--border-light);
-}
+/* Shared application-log styles remain in the host. */
 
 .tool-call-app-logs-body {
   gap: 8px;

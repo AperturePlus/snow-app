@@ -449,6 +449,71 @@ Legacy history without task-end metadata is not fabricated or migrated through c
 
 Code anchors: `src/renderer/components/mainContent/chatMessages/hooks/taskHistory.ts`, `useAgentLoop.ts`, `subAgentActivation.ts`, `native/src/storage/services/chat_conversations/task_history.rs`, `PluginMessageFooters.tsx`, and `src/renderer/plugins/pluginMessageFooter.ts`.
 
+### 6.3 External MCP tool-call renderer v1 (desktop ESM)
+
+> This is currently a local companion-host source capability, not a confirmed released version. Installing a plugin does not update the host. Only trusted `renderMode: "esm"` plugins declaring `messages` in `privacy` participate; no panel is required. Built-in specialized cards and approval/rejection UI retain precedence; plugins occupy only the former generic-card slot.
+
+```json
+{
+  "renderMode": "esm",
+  "entry": "index.js",
+  "privacy": { "scopes": ["messages"] },
+  "contributions": {
+    "toolCallRenderers": [
+      {
+        "id": "anysearch",
+        "prefixes": ["anysearch-", "anysearch_"],
+        "exportName": "renderAnysearch",
+        "priority": 10
+      }
+    ]
+  }
+}
+```
+
+Each item is `{ id, entry?, exportName, tools?, prefixes?, priority? }`. Only the first 16 items are scanned; duplicate IDs and invalid items are ignored. IDs have at most 64 characters (letter/underscore first, then letters/digits/underscore/hyphen); exports are valid JS identifiers with at most 128 characters. Omitted entry falls back to the plugin entry; explicit invalid paths are rejected. Entry has at most 256 characters and follows footer path safety rules. `tools` matches exact names; `prefixes` uses literal starts-with matching, never regex. Each list scans at most 32 values, deduplicates them and accepts at most 128 characters per value: letters/digits/underscore/hyphen, not a leading hyphen. Prefixes require at least three characters; empty values, wildcards and regex expressions are rejected. At least one valid selector is required. Priority defaults to 0 and accepts safe integers from -1000 through 1000. Selection compares exact matches first, longest prefix next, priority descending, plugin sortOrder ascending, then plugin ID and contribution ID lexically. One renderer is chosen; failure does not chain into another plugin.
+
+```js
+// Capture only React, never the global loading-time API.
+const React = window.SnowAppPlugin.React;
+
+export function renderAnysearch(api, context) {
+  if (api.ui.toolCallRendererVersion !== 1) return null;
+  return React.createElement(SearchCard, { api, context });
+}
+
+function SearchCard({ api, context }) {
+  const call = context.toolCall;
+  // Hooks belong in the returned subtree, not the renderer factory.
+  const [expanded, setExpanded] = React.useState(false);
+  return React.createElement(
+    api.ui.ToolCallNode,
+    {
+      toolName: call.name,
+      status: call.status,
+      displayName: api.t("search.title", { defaultValue: "Search" }),
+    },
+    React.createElement(
+      "button",
+      {
+        onClick: () => setExpanded(!expanded),
+      },
+      expanded ? call.result : api.t("toolCall.result"),
+    ),
+  );
+}
+```
+
+`render(api, context)` must synchronously return `ReactNode | null`, never a Promise; it must not call hooks directly. Hooks work inside the returned component subtree, rendered in the original React tree with theme and i18n context, not a separate root. Detect support with `api.ui.toolCallRendererVersion === 1`.
+
+Frozen context contains only `{ slot: "tool-call", conversationId?, messageId?, toolCall }`. The frozen tool snapshot explicitly selects `{ name, arguments, interactionId, status, result?, streamingStdout?, streamingStderr? }`, with status `pending | running | completed | error`. In this slot, `messages` grants only the current tool snapshot: no message body/thinking, authorization IDs, execution/session IDs or conversation enumeration. Raw protocol, persisted history and model-facing results remain unchanged; localization is display-only.
+
+The immutable lifecycle-scoped API contains only `id / version / locale / t / signal / ui / links`. `t(key, { defaultValue?, values? })` uses the plugin dictionary first, the host `useI18n().t` common dictionary next, then defaultValue/key; interpolation values are strings or numbers. UI provides shared `React`, `icon(name)`, the version flag, generic `ToolCallNode / DataTableViewer` components and `localizeToolError(t, message)`. Use these stable UI exports rather than importing host source files. `links.open(url, target?)` accepts only HTTP(S), with `browser` (default) or `external`, and must run on an explicit user click with active user activation. Browser navigation emits `browser:navigate` (an alias for the existing open-browser-tab event); external navigation uses the desktop's existing system-browser route. There is no AI, network, write, storage, metadata or `window.snow` API.
+
+Modules and dictionaries are lazily cached by plugin object, entry and locale. Concurrent cards share loading and one style lease per plugin; the last unmount removes styles. Each card owns its API/signal, never the first card's signal. Streaming state/argument updates render again without re-reading the module on each chunk. Tool identity, conversation/message/locale changes, disable/uninstall/record replacement after refresh, and virtualized unmount abort the lifecycle and discard late loads. Record replacement invalidates old caches. No match, loading/failure, thrown factory errors, null/Promise output and component render errors fall back to the generic card, protected by a local error boundary. The host does not log plugin error objects or tool arguments/results.
+
+**This restricted API is not a sandbox**: trusted ESM runs in the main renderer and can directly access page globals. Only obtain the React constant through the existing `window.SnowAppPlugin.React` bridge; do not capture the global API or manipulate DOM outside the slot. Existing plugin management controls enable/disable/refresh; rendering never automatically installs a plugin, executes tools or writes configuration.
+
 ### 7. Available metadata domains and privacy declarations
 
 A **domain-level** sensitive domain that is not declared in `privacy` comes back in `denied` as `{ reason: "privacy-declaration-missing", scope }` and is absent from `domains`. There are 36 domains: **see the [plugin metadata domain reference](../3-reference/6-plugin-metadata-domains.md) for the accepted parameters, every returned field, and typical uses of each domain**; the table below is the declaration overview:

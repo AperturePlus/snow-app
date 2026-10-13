@@ -6,6 +6,7 @@ import type {
   PluginMessageFooterDefinition,
   PluginPanelDefinition,
   PluginRenderMode,
+  PluginToolCallRendererDefinition,
   PluginView,
 } from "./types";
 import { isSensitiveScope } from "./types";
@@ -235,6 +236,85 @@ const normalizeMessageFooters = (
   return result;
 };
 
+const normalizeToolCallRenderers = (
+  record: PluginRecord,
+): PluginToolCallRendererDefinition[] => {
+  if (
+    record.renderMode !== "esm" ||
+    !Array.isArray(record.privacy) ||
+    !record.privacy.includes("messages")
+  )
+    return [];
+  const manifest = parseJson<unknown>(record.manifestJson, null);
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest))
+    return [];
+  const contributions = (manifest as Record<string, unknown>).contributions;
+  if (
+    !contributions ||
+    typeof contributions !== "object" ||
+    Array.isArray(contributions)
+  )
+    return [];
+  const items = (contributions as Record<string, unknown>).toolCallRenderers;
+  if (!Array.isArray(items)) return [];
+  const result: PluginToolCallRendererDefinition[] = [];
+  const ids = new Set<string>();
+  const selectors = (value: unknown, prefix: boolean): string[] => {
+    if (!Array.isArray(value)) return [];
+    return [
+      ...new Set(
+        value
+          .slice(0, 32)
+          .filter(
+            (item): item is string =>
+              typeof item === "string" &&
+              item.length <= 128 &&
+              item.length >= (prefix ? 3 : 1) &&
+              /^[A-Za-z0-9_][A-Za-z0-9_-]*$/.test(item),
+          ),
+      ),
+    ];
+  };
+  for (const item of items.slice(0, 16)) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const value = item as Record<string, unknown>;
+    const id =
+      typeof value.id === "string" && value.id.length <= 64
+        ? value.id.trim()
+        : "";
+    const exportName =
+      typeof value.exportName === "string" && value.exportName.length <= 128
+        ? value.exportName.trim()
+        : "";
+    const entry = value.entry === undefined ? record.entry : value.entry;
+    if (
+      !CONTRIBUTION_ID.test(id) ||
+      ids.has(id) ||
+      !ACTION_EXPORT_NAME.test(exportName) ||
+      typeof entry !== "string" ||
+      !entry ||
+      entry.length > 256 ||
+      entry !== entry.trim() ||
+      /[\\\x00-\x1f\x7f:%?#]/.test(entry) ||
+      entry.split("/").some((part) => !part || part === "." || part === "..")
+    )
+      continue;
+    const tools = selectors(value.tools, false);
+    const prefixes = selectors(value.prefixes, true);
+    if (!tools.length && !prefixes.length) continue;
+    const priority = value.priority === undefined ? 0 : value.priority;
+    if (
+      typeof priority !== "number" ||
+      !Number.isSafeInteger(priority) ||
+      Math.abs(priority) > 1000
+    )
+      continue;
+    ids.add(id);
+    result.push({ id, entry, exportName, tools, prefixes, priority });
+  }
+  return result;
+};
+
 // Read renderer-only contributions from the saved manifest: older native panel
 // normalization deliberately keeps only its known fields. No native upgrade needed.
 const panelsWithSettings = (record: PluginRecord): PluginPanelDefinition[] => {
@@ -290,6 +370,7 @@ export const parsePluginRecord = (record: PluginRecord): PluginView => ({
   entry: record.entry,
   panels: panelsWithSettings(record),
   messageFooters: normalizeMessageFooters(record),
+  toolCallRenderers: normalizeToolCallRenderers(record),
   locales: parseJson(record.locales, {}),
   styles: parseJson<string[]>(record.styles, []).filter(
     (item): item is string =>

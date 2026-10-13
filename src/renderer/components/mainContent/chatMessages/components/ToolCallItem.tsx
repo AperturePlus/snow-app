@@ -30,11 +30,11 @@ import {
   ConfigToolCall,
   AppLogsToolCall,
   AppControlToolCall,
-  DbxToolCall,
   MemoryToolCall,
   WorkflowToolCall,
   GenericToolCall,
 } from "../toolCalls";
+import { PluginToolCall } from "./PluginToolCall";
 import { ToolRejectionNotice } from "../toolCalls/shared/ToolRejectionNotice";
 import { parseToolRejection } from "../toolCalls/shared/toolRejection";
 
@@ -200,19 +200,19 @@ const renderToolCall = ({
     return <AppControlToolCall toolCall={toolCall} />;
   }
 
-  if (toolCall.name.startsWith("dbx-") || toolCall.name.startsWith("dbx_")) {
-    // 外部 MCP（DBX 桌面数据库应用）统一渲染，见 DbxToolCall 头部注释。
-    // 注意：外部 MCP 工具名可能被规范化为下划线风格（dbx_execute_query），
-    // 因此同时兼容连字符与下划线两种前缀。
-    return <DbxToolCall toolCall={toolCall} />;
-  }
-
   if (toolCall.name.startsWith("memory-")) {
     return <MemoryToolCall toolCall={toolCall} />;
   }
 
-  // 外部 MCP 工具与未被专用卡片捕获的工具，统一采用现代化增强型 GenericToolCall 渲染
-  return <GenericToolCall toolCall={toolCall} />;
+  // Plugins only occupy the generic slot, after every built-in safety UI.
+  return (
+    <PluginToolCall
+      toolCall={toolCall}
+      conversationId={conversationId}
+      messageId={messageId}
+      fallback={<GenericToolCall toolCall={toolCall} />}
+    />
+  );
 };
 
 export const ToolCallItem = memo(
