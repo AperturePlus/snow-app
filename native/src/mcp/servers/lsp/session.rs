@@ -32,6 +32,19 @@ const PUSH_TIMEOUT: Duration = Duration::from_secs(30);
 /// references 返回上限（§10 输出限制）。
 const MAX_REFERENCES: usize = 100;
 
+#[derive(Debug, Clone, Default)]
+#[napi_derive::napi(object)]
+pub struct LspResourceSnapshot {
+    pub pid: Option<u32>,
+    pub sampled_at_ms: i64,
+    /// Windows parent working set only; never presented as tree memory.
+    pub parent_memory_bytes: Option<f64>,
+    /// Cumulative CPU seconds (not CPU percent). Job CPU includes exited descendants.
+    pub parent_cpu_seconds: Option<f64>,
+    pub tree_cpu_seconds: Option<f64>,
+    pub tree_process_count: Option<u32>,
+}
+
 pub struct ServerSession {
     pub lang: String,
     pub project_root: PathBuf,
@@ -50,7 +63,7 @@ pub struct ServerSession {
     server_capabilities: lsp_types::ServerCapabilities,
     rename_previews: HashMap<String, RenamePreview>,
     /// 最近使用时间（unix 毫秒，原子更新供空闲回收 / LRU 淘汰）。
-    pub last_used_ms: AtomicU64,
+    pub last_used_ms: Arc<AtomicU64>,
     pub restart_count: u32,
     pub dead: bool,
     push_diagnostics: PushDiagnostics,
@@ -75,6 +88,42 @@ fn now_ms() -> u64 {
 }
 
 impl ServerSession {
+    pub(crate) fn resource_snapshot(&self) -> LspResourceSnapshot {
+        let mut result = LspResourceSnapshot {
+            pid: self.child.id(), sampled_at_ms: now_ms() as i64,
+            ..Default::default()
+        };
+        if let Some((cpu, count)) = self._process_tree_guard.accounting() {
+            result.tree_cpu_seconds = Some(cpu as f64 / 10_000_000.0);
+            result.tree_process_count = Some(count);
+        }
+        #[cfg(target_os = "windows")]
+        if let Some(handle) = self.child.raw_handle() {
+            use windows_sys::Win32::Foundation::FILETIME;
+            use windows_sys::Win32::System::Threading::GetProcessTimes;
+            use windows_sys::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+            // Borrow the live child handle, not OpenProcess(pid): avoids PID reuse.
+            let handle = handle as windows_sys::Win32::Foundation::HANDLE;
+            unsafe {
+                let mut counters: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
+                let size = std::mem::size_of_val(&counters) as u32;
+                counters.cb = size;
+                if GetProcessMemoryInfo(handle, &mut counters, size) != 0 {
+                    result.parent_memory_bytes = Some(counters.WorkingSetSize as f64);
+                }
+                let mut created: FILETIME = std::mem::zeroed();
+                let mut exited: FILETIME = std::mem::zeroed();
+                let mut kernel: FILETIME = std::mem::zeroed();
+                let mut user: FILETIME = std::mem::zeroed();
+                if GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user) != 0 {
+                    let ticks = |time: FILETIME| ((time.dwHighDateTime as u64) << 32) | time.dwLowDateTime as u64;
+                    result.parent_cpu_seconds = Some(ticks(kernel).saturating_add(ticks(user)) as f64 / 10_000_000.0);
+                }
+            }
+        }
+        result
+    }
+
     /// 完整有效配置比较（不使用易碰撞的短哈希作为会话身份）。
     pub(crate) fn matches_config(&self, config: &ServerConfig) -> bool {
         &self.config == config
@@ -91,9 +140,9 @@ impl ServerSession {
         super::capabilities::negotiated_tools(&self.server_capabilities)
     }
 
-    fn require_tool(&self, tool: &str) -> Result<(), LspError> {
+    fn require_tool(&self, tool: &str) -> Result<SessionActivity, LspError> {
         if self.negotiated_tools().iter().any(|name| name == tool) {
-            Ok(())
+            Ok(SessionActivity(self.last_used_ms.clone()))
         } else {
             Err(LspError::CapabilityNotSupported(
                 self.lang.clone(),
@@ -141,7 +190,7 @@ impl ServerSession {
             pull_diagnostics_supported: false,
             server_capabilities: lsp_types::ServerCapabilities::default(),
             rename_previews: HashMap::new(),
-            last_used_ms: AtomicU64::new(now_ms()),
+            last_used_ms: Arc::new(AtomicU64::new(now_ms())),
             restart_count,
             dead: false,
             push_diagnostics,
@@ -213,6 +262,7 @@ impl ServerSession {
 
     /// 同步磁盘快照。保存有界全文而非 mtime/size，避免同尺寸修改和哈希碰撞。
     pub async fn ensure_open(&mut self, path: &Path) -> Result<(), LspError> {
+        let _activity = SessionActivity(self.last_used_ms.clone());
         let canonical = tokio::fs::canonicalize(path).await.map_err(|error| {
             LspError::Internal(format!("resolve document path failed: {error}"))
         })?;
@@ -297,6 +347,7 @@ impl ServerSession {
                 &root,
                 &["ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts"],
             ),
+            "go" => find_project_entry(&root, &["go"]),
             "rust" => ["src/lib.rs", "src/main.rs", "lib.rs", "main.rs"]
                 .iter()
                 .map(|name| root.join(name))
@@ -315,7 +366,7 @@ impl ServerSession {
 
     /// 兼容旧入口；实际 workspace 查询随后检查上下文是否建立，失败不会伪装成功。
     pub async fn ensure_project_context(&mut self, project_root: &Path) {
-        if self.lang == "typescript" && self.opened_files.is_empty() {
+        if matches!(self.lang.as_str(), "typescript" | "go") && self.opened_files.is_empty() {
             self.warmup(project_root).await;
         }
     }
@@ -334,7 +385,7 @@ impl ServerSession {
 
     /// hover 查询。
     pub async fn hover(&mut self, path: &Path, line: u32, column: u32) -> Result<Value, LspError> {
-        self.require_tool("hover")?;
+        let _activity = self.require_tool("hover")?;
         let result = client::hover(&mut self.socket, path, line, column, HOVER_TIMEOUT).await?;
         self.touch();
         match result {
@@ -354,7 +405,7 @@ impl ServerSession {
         line: u32,
         column: u32,
     ) -> Result<Value, LspError> {
-        self.require_tool("goto")?;
+        let _activity = self.require_tool("goto")?;
         let response =
             client::goto_definition(&mut self.socket, path, line, column, REQUEST_TIMEOUT).await?;
         self.touch();
@@ -370,7 +421,7 @@ impl ServerSession {
         column: u32,
         include_declaration: bool,
     ) -> Result<Value, LspError> {
-        self.require_tool("references")?;
+        let _activity = self.require_tool("references")?;
         let locations = client::references(
             &mut self.socket,
             path,
@@ -403,7 +454,7 @@ impl ServerSession {
 
     /// documentSymbol 查询（树形大纲：name/kind/detail/range/children）。
     pub async fn document_symbols(&mut self, path: &Path) -> Result<Value, LspError> {
-        self.require_tool("symbols")?;
+        let _activity = self.require_tool("symbols")?;
         let response = client::document_symbols(&mut self.socket, path, REQUEST_TIMEOUT).await?;
         self.touch();
         Ok(format::symbols_to_value(&self.lang, response))
@@ -419,7 +470,7 @@ impl ServerSession {
         dry_run: bool,
         preview_id: Option<&str>,
     ) -> Result<Value, LspError> {
-        self.require_tool("rename")?;
+        let _activity = self.require_tool("rename")?;
         let target = tokio::fs::canonicalize(path)
             .await
             .map_err(|error| LspError::Internal(error.to_string()))?;
@@ -517,7 +568,7 @@ impl ServerSession {
         line: u32,
         column: u32,
     ) -> Result<Value, LspError> {
-        self.require_tool("type-definition")?;
+        let _activity = self.require_tool("type-definition")?;
         let response =
             client::type_definition(&mut self.socket, path, line, column, REQUEST_TIMEOUT).await?;
         self.touch();
@@ -532,7 +583,7 @@ impl ServerSession {
         line: u32,
         column: u32,
     ) -> Result<Value, LspError> {
-        self.require_tool("implementation")?;
+        let _activity = self.require_tool("implementation")?;
         let response =
             client::implementation(&mut self.socket, path, line, column, REQUEST_TIMEOUT).await?;
         self.touch();
@@ -549,7 +600,7 @@ impl ServerSession {
         line: u32,
         column: u32,
     ) -> Result<Value, LspError> {
-        self.require_tool("call-hierarchy")?;
+        let _activity = self.require_tool("call-hierarchy")?;
         let items =
             client::prepare_call_hierarchy(&mut self.socket, path, line, column, REQUEST_TIMEOUT)
                 .await?;
@@ -587,7 +638,7 @@ impl ServerSession {
         line: u32,
         column: u32,
     ) -> Result<Value, LspError> {
-        self.require_tool("type-hierarchy")?;
+        let _activity = self.require_tool("type-hierarchy")?;
         let items =
             client::prepare_type_hierarchy(&mut self.socket, path, line, column, REQUEST_TIMEOUT)
                 .await?;
@@ -613,23 +664,62 @@ impl ServerSession {
 
     /// workspaceSymbol 内部完整响应；显示限额仅在工具入口实施。
     pub async fn workspace_symbols(&mut self, query: &str) -> Result<Value, LspError> {
-        self.require_tool("workspace-symbols")?;
+        let _activity = self.require_tool("workspace-symbols")?;
         self.prepare_workspace().await?;
         let response = client::workspace_symbols(&mut self.socket, query, REQUEST_TIMEOUT).await?;
         self.touch();
-        Ok(format::workspace_symbols_to_value(
-            &self.lang,
-            query,
-            &self.project_root,
-            response,
-        ))
+        let mut value =
+            format::workspace_symbols_to_value(&self.lang, query, &self.project_root, response);
+        if self.lang == "go" && self.opened_files.is_empty() {
+            value["incomplete"] = json!(true);
+            value["warnings"] = json!([{"error":
+                "Go workspace context unavailable: no readable Go entry was opened; supply filePath"
+            }]);
+        }
+        Ok(value)
+    }
+
+    /// Establish the requested logical Go root, not merely any sibling already
+    /// opened by a shared process. Successful contexts recover normal responses.
+    pub(crate) async fn workspace_symbols_for_root(
+        &mut self,
+        query: &str,
+        logical_root: &Path,
+    ) -> Result<Value, LspError> {
+        let mut warning = None;
+        if self.lang == "go" {
+            let root = logical_root.to_path_buf();
+            let opened: Vec<_> = self.opened_files.keys().cloned().collect();
+            match tokio::task::spawn_blocking(move || go_query_entry(&root, &opened)).await {
+                Ok((Some(entry), incomplete)) => {
+                    if let Err(error) = self.ensure_open(&entry).await {
+                        warning = Some(format!("Go requested-root didOpen failed: {error:?}"));
+                    } else if incomplete {
+                        warning = Some("Go requested-root entry scan was incomplete (budget/depth/unreadable entry)".into());
+                    }
+                }
+                Ok((None, _)) => warning = Some("No readable Go entry in the requested logical root; supply filePath or retry after fixing the workspace".into()),
+                Err(_) => warning = Some("Go requested-root entry scan failed".into()),
+            }
+        }
+        let mut value = self.workspace_symbols(query).await?;
+        if let Some(warning) = warning {
+            value["incomplete"] = json!(true);
+            let warning = json!({"workspaceRoot":logical_root,"error":warning});
+            if let Some(warnings) = value["warnings"].as_array_mut() {
+                warnings.push(warning);
+            } else {
+                value["warnings"] = json!([warning]);
+            }
+        }
+        Ok(value)
     }
 
     /// 项目级诊断（LSP 3.17 workspace/diagnostic pull）：一次返回全项目诊断。
     /// 服务器不支持该能力（Ok(None)）→ 明确能力错误，由入口归入 warnings。
     /// 输出上限：max_files 文件 × 200 诊断/文件（防输出爆炸，M4/R3.2）。
     pub async fn workspace_diagnostics(&mut self, max_files: usize) -> Result<Value, LspError> {
-        self.require_tool("workspace-diagnostics")?;
+        let _activity = self.require_tool("workspace-diagnostics")?;
         self.prepare_workspace().await?;
         let result = client::workspace_diagnostics(&mut self.socket, PUSH_TIMEOUT).await?;
         self.touch();
@@ -701,7 +791,7 @@ impl ServerSession {
     /// 不读取持久诊断缓存：单文件mtime无法证明依赖/配置未变化。
     /// 每次同步已开文件并请求新诊断，保存请求快照用于等待完成后的复核。
     pub async fn prepare_diagnostics(&mut self, path: &Path) -> Result<PrepareResult, LspError> {
-        self.require_tool("diagnostics")?;
+        let _activity = self.require_tool("diagnostics")?;
         let canonical = tokio::fs::canonicalize(path).await.map_err(|error| {
             LspError::Internal(format!("resolve document path failed: {error}"))
         })?;
@@ -729,7 +819,8 @@ impl ServerSession {
                     let current_version = self.opened_files.get(path).copied().unwrap_or(1);
                     value["documentVersion"] = json!(current_version);
                     value["diagnosticSource"] = json!("push-cache");
-                    value["pushVersionVerified"] = json!(latest.version == Some(current_version) || latest.version.is_none());
+                    value["pushVersionVerified"] =
+                        json!(latest.version == Some(current_version) || latest.version.is_none());
                     value["status"] = json!("complete");
                     self.touch();
                     return Ok(PrepareResult::Cached(value));
@@ -759,7 +850,8 @@ impl ServerSession {
             self.push_diagnostics.lock().await.remove(&key);
             client::did_change(&mut self.socket, path, v, &text).await?;
             self.opened_files.insert(path.to_path_buf(), v);
-            self.opened_contents.insert(path.to_path_buf(), text.clone());
+            self.opened_contents
+                .insert(path.to_path_buf(), text.clone());
             v
         };
 
@@ -798,7 +890,7 @@ impl ServerSession {
         let lang = self.lang.clone();
         let command = self.config.command.clone();
         let snapshots = pending.snapshots.clone();
-        let lease = DiagnosticLease::new(self.diagnostic_leases.clone());
+        let lease = DiagnosticLease::new(self.diagnostic_leases.clone(), self.last_used_ms.clone());
         tokio::spawn(async move {
             let _lease = lease;
             let (items, warnings, source, push_version_verified) = collect_fresh_diagnostics(
@@ -844,7 +936,7 @@ impl ServerSession {
 
     /// 标记最近使用（供空闲回收 / LRU 淘汰）。
     pub fn touch(&self) {
-        self.last_used_ms.store(now_ms(), Ordering::Relaxed);
+        self.last_used_ms.fetch_max(now_ms(), Ordering::Release);
     }
 
     /// 查询子进程是否已退出（同步、非阻塞）：返回退出码；`None` = 仍在运行。
@@ -854,6 +946,11 @@ impl ServerSession {
             Ok(Some(status)) => status.code(),
             _ => None,
         }
+    }
+
+    /// 仅供回收记账，信号退出同样视为已退出，查询失败则保守保留容量。
+    pub(crate) fn process_exited(&mut self) -> bool {
+        matches!(self.child.try_wait(), Ok(Some(_)))
     }
 
     /// 优雅关闭：shutdown → 等待退出（≤3s）→ kill 兜底。
@@ -878,17 +975,34 @@ impl ServerSession {
     }
 }
 
+/// 只持有时间戳，不持有会话；成功、失败、取消均以操作结束时间开始计算空闲。
+#[must_use]
+struct SessionActivity(Arc<AtomicU64>);
+impl Drop for SessionActivity {
+    fn drop(&mut self) {
+        self.0.fetch_max(now_ms(), Ordering::Release);
+    }
+}
+
 /// 在任务创建前取得租约，任务完成/取消/未轮询即被丢弃都会归还。
-struct DiagnosticLease(Arc<AtomicU64>);
+struct DiagnosticLease {
+    counter: Arc<AtomicU64>,
+    activity: SessionActivity,
+}
 impl DiagnosticLease {
-    fn new(counter: Arc<AtomicU64>) -> Self {
+    fn new(counter: Arc<AtomicU64>, last_used_ms: Arc<AtomicU64>) -> Self {
         counter.fetch_add(1, Ordering::AcqRel);
-        Self(counter)
+        Self {
+            counter,
+            activity: SessionActivity(last_used_ms),
+        }
     }
 }
 impl Drop for DiagnosticLease {
     fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::AcqRel);
+        // 必须先更新时间再归还租约，避免 reaper 看到旧时间和零租约的窗口。
+        self.activity.0.fetch_max(now_ms(), Ordering::Release);
+        self.counter.fetch_sub(1, Ordering::AcqRel);
     }
 }
 
@@ -995,6 +1109,28 @@ async fn collect_fresh_diagnostics(
     }
 }
 
+fn go_query_entry(root: &Path, opened: &[PathBuf]) -> (Option<PathBuf>, bool) {
+    let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let module = root.join("go.mod").is_file();
+    let suitable = |path: &Path| {
+        path.starts_with(&root)
+            && path.extension().is_some_and(|ext| ext == "go")
+            && std::fs::metadata(path)
+                .is_ok_and(|meta| meta.is_file() && meta.len() <= MAX_FILE_SIZE)
+            && (!module
+                || super::detect::find_lang_root(&root, path.parent(), "go").as_ref()
+                    == Some(&root))
+    };
+    if let Some(path) = opened.iter().find(|path| suitable(path)) {
+        return (Some(path.clone()), false);
+    }
+    let inventory = super::detect::scan_project_inventory(&root, 6);
+    (
+        inventory.files.into_iter().find(|path| suitable(path)),
+        inventory.incomplete,
+    )
+}
+
 /// 寻找代表性 JS/TS 入口；有界扫描、不跟随链接、不进入依赖和构建目录。
 fn find_project_entry(project_root: &Path, extensions: &[&str]) -> Option<PathBuf> {
     let matches = |path: &Path| {
@@ -1051,6 +1187,28 @@ mod context_tests {
         let plain = find_project_entry(root, &["ts", "tsx"]);
         assert!(dotted.is_some());
         assert_eq!(dotted, plain);
+        let fixture = std::env::temp_dir().join(format!("lsp-go-context-{}", uuid::Uuid::new_v4()));
+        let a = fixture.join("a");
+        let b = fixture.join("b");
+        for module in [&a, &b] {
+            std::fs::create_dir_all(module).unwrap();
+            std::fs::write(
+                module.join("go.mod"),
+                "module example.test/context\ngo 1.18\n",
+            )
+            .unwrap();
+        }
+        std::fs::write(b.join("b.go"), "package b\n").unwrap();
+        let opened_sibling = std::fs::canonicalize(b.join("b.go")).unwrap();
+        assert!(go_query_entry(&a, &[opened_sibling.clone()]).0.is_none());
+        // A later successful requested-root entry recovers, not sticky partial.
+        std::fs::write(a.join("a.go"), "package a\n").unwrap();
+        let (entry, partial) = go_query_entry(&a, &[opened_sibling]);
+        assert!(!partial);
+        assert_eq!(entry, Some(std::fs::canonicalize(a.join("a.go")).unwrap()));
+        let entry = entry.unwrap();
+        assert_eq!(go_query_entry(&a, &[entry.clone()]), (Some(entry), false));
+        std::fs::remove_dir_all(fixture).unwrap();
     }
 
     #[test]
@@ -1559,10 +1717,16 @@ mod rename_snapshot_tests {
     #[test]
     fn diagnostic_lease_is_released_even_without_polling() {
         let counter = Arc::new(AtomicU64::new(0));
-        let lease = DiagnosticLease::new(counter.clone());
+        let last_used = Arc::new(AtomicU64::new(1));
+        let lease = DiagnosticLease::new(counter.clone(), last_used.clone());
         assert_eq!(counter.load(Ordering::Acquire), 1);
+        assert_eq!(last_used.load(Ordering::Acquire), 1);
         drop(lease);
         assert_eq!(counter.load(Ordering::Acquire), 0);
+        assert!(last_used.load(Ordering::Acquire) > 1);
+        last_used.store(1, Ordering::Release);
+        drop(SessionActivity(last_used.clone()));
+        assert!(last_used.load(Ordering::Acquire) > 1);
     }
 }
 

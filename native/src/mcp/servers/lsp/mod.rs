@@ -33,6 +33,7 @@ mod workspace_queries;
 
 // Workspace-aware exposure is consumed through prompt_context.
 pub use probe::{probe_commands, ProbeResult};
+pub(crate) use session::LspResourceSnapshot;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};

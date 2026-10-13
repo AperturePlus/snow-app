@@ -1,5 +1,6 @@
 import { ipcMain } from "electron";
 import { spawn } from "node:child_process";
+import { isAbsolute, win32 } from "node:path";
 import type { NativeBridge } from "../../native/types";
 import {
   normalizeSystemPromptItem,
@@ -124,6 +125,17 @@ const validateSubAgentTools = async (
 };
 
 export const registerConfigHandlers = (native: NativeBridge): void => {
+  ipcMain.handle("lsp-resource-policy:get", async () =>
+    JSON.parse(await native.getLspResourcePolicy()),
+  );
+  ipcMain.handle("lsp-resource-policy:set", async (_event, value: unknown) => {
+    // Rust validates types, ranges and unknown fields before any persistence.
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new Error("LSP resource policy must be an object");
+    }
+    await native.setLspResourcePolicy(JSON.stringify(value));
+    return JSON.parse(await native.getLspResourcePolicy());
+  });
   // ===== System Prompts =====
   ipcMain.handle("system-prompts:list", () => native.listSystemPrompts());
   ipcMain.handle("system-prompts:upsert", async (_event, item: unknown) => {
@@ -334,6 +346,65 @@ export const registerConfigHandlers = (native: NativeBridge): void => {
         lang.trim(),
         typeof clearCache === "boolean" ? clearCache : true,
       );
+    },
+  );
+  // Exact physical-session management; never route to project-prefix APIs.
+  ipcMain.handle(
+    "lsp-session:manage-exact",
+    async (_event, target: unknown, action: unknown) => {
+      if (action !== "stop" && action !== "restart") {
+        throw new Error("LSP action must be 'stop' or 'restart'");
+      }
+      if (!target || typeof target !== "object" || Array.isArray(target)) {
+        throw new Error("LSP session target must be an object");
+      }
+      const raw = target as Record<string, unknown>;
+      if (
+        typeof raw.lang !== "string" ||
+        !raw.lang.trim() ||
+        raw.lang.includes("\0")
+      ) {
+        throw new Error("LSP target language is required");
+      }
+      if (
+        typeof raw.projectRoot !== "string" ||
+        !raw.projectRoot.trim() ||
+        raw.projectRoot.includes("\0") ||
+        !isAbsolute(raw.projectRoot) ||
+        (process.platform === "win32"
+          ? !win32.isAbsolute(raw.projectRoot) ||
+            !/^(?:[a-z]:[\\/]|\\\\\?\\[a-z]:[\\/])/i.test(raw.projectRoot)
+          : raw.projectRoot.startsWith("//"))
+      ) {
+        throw new Error("LSP target root must be a local absolute path");
+      }
+      if (
+        typeof raw.expectedPid !== "number" ||
+        !Number.isSafeInteger(raw.expectedPid) ||
+        raw.expectedPid <= 0 ||
+        raw.expectedPid > 0xffffffff ||
+        typeof raw.expectedRestartCount !== "number" ||
+        !Number.isSafeInteger(raw.expectedRestartCount) ||
+        raw.expectedRestartCount < 0 ||
+        raw.expectedRestartCount > 0xffffffff
+      ) {
+        throw new Error(
+          "LSP target requires a positive PID and non-negative restart count (u32 integers)",
+        );
+      }
+      const result = await native.manageLspSession(
+        JSON.stringify({
+          lang: raw.lang.trim(),
+          projectRoot: raw.projectRoot,
+          expectedPid: raw.expectedPid,
+          expectedRestartCount: raw.expectedRestartCount,
+        }),
+        action,
+      );
+      if (action === "stop") return null;
+      if (!result)
+        throw new Error("LSP restart did not return a session status");
+      return result;
     },
   );
   // 安装语言服务器：执行配置表中的 installCommand。

@@ -39,6 +39,22 @@ impl ProcessTreeGuard {
         }
     }
 
+    /// Read-only Windows Job accounting: cumulative CPU includes terminated
+    /// descendants; active count is a snapshot. No job/unsupported OS => unavailable.
+    pub fn accounting(&self) -> Option<(u64, u32)> {
+        #[cfg(target_os = "windows")]
+        {
+            use windows_sys::Win32::System::JobObjects::{QueryInformationJobObject, JobObjectBasicAccountingInformation, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION};
+            let job = self.job?;
+            let mut info: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION = unsafe { std::mem::zeroed() };
+            let ok = unsafe { QueryInformationJobObject(job, JobObjectBasicAccountingInformation, &mut info as *mut _ as *mut _, std::mem::size_of_val(&info) as u32, std::ptr::null_mut()) };
+            if ok == 0 { return None; }
+            return Some(((info.TotalUserTime as u64).saturating_add(info.TotalKernelTime as u64), info.ActiveProcesses));
+        }
+        #[cfg(not(target_os = "windows"))]
+        { None }
+    }
+
     /// 终止整棵进程树并记录结果（与析构等价）。
     pub fn terminate(&mut self) {
         #[cfg(target_os = "windows")]

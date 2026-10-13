@@ -222,6 +222,56 @@ fn coalesce_typescript_roots(roots: Vec<PathBuf>) -> (Vec<PathBuf>, usize) {
     (retained, covered)
 }
 
+/// Rebase Go responses to the caller's scope, not the shared session folder.
+/// Unresolvable paths are surfaced as partial coverage, never silently accepted.
+pub(super) fn scope_go_response(value: &mut Value, requested_root: &Path, diagnostics: bool) {
+    let key = if diagnostics { "files" } else { "symbols" };
+    let reported_total = value["total"].as_u64().unwrap_or(0);
+    let mut uncertain = false;
+    let root = std::fs::canonicalize(requested_root).ok();
+    let Some(items) = value.get_mut(key).and_then(Value::as_array_mut) else {
+        value["incomplete"] = json!(true);
+        return;
+    };
+    let was_clipped = reported_total > items.len() as u64;
+    items.retain_mut(|item| {
+        let path = item["filePath"]
+            .as_str()
+            .and_then(|raw| std::fs::canonicalize(raw).ok());
+        match (root.as_ref(), path) {
+            (Some(root), Some(path)) => {
+                let included = path.starts_with(root);
+                if included && !diagnostics {
+                    item["inProject"] = json!(true);
+                }
+                included
+            }
+            _ => {
+                uncertain = true;
+                false
+            }
+        }
+    });
+    let count = items.len();
+    // Preserve upstream truncation/partial flags; filtering cannot prove that
+    // missing results were all outside the request scope.
+    value["count"] = json!(count);
+    value["total"] = json!(count);
+    if was_clipped {
+        value["incomplete"] = json!(true);
+        value["truncated"] = json!(true);
+    }
+    if uncertain {
+        value["incomplete"] = json!(true);
+        let warning = json!({"error":"Some Go result paths could not be resolved within the requested workspace"});
+        if let Some(warnings) = value["warnings"].as_array_mut() {
+            warnings.push(warning);
+        } else {
+            value["warnings"] = json!([warning]);
+        }
+    }
+}
+
 async fn query(args: &Value, project_id: Option<&str>, diagnostics: bool) -> napi::Result<Value> {
     let query_started = Instant::now();
     let trace = NEXT_QUERY_TRACE.fetch_add(1, Ordering::Relaxed);
@@ -327,9 +377,12 @@ async fn query(args: &Value, project_id: Option<&str>, diagnostics: bool) -> nap
                 lock_ms = locking.elapsed().as_millis();
                 let searching = Instant::now();
                 let response = if diagnostics {
+                    if server.lang == "go" {
+                        guard.warmup(&lang_root).await;
+                    }
                     guard.workspace_diagnostics(limit).await
                 } else {
-                    guard.workspace_symbols(&query).await
+                    guard.workspace_symbols_for_root(&query, &lang_root).await
                 };
                 search_ms = searching.elapsed().as_millis();
                 response
@@ -352,7 +405,8 @@ async fn query(args: &Value, project_id: Option<&str>, diagnostics: bool) -> nap
                 format!("trace={trace} op={operation} language={} root={root_label} sessionMs={session_ms} sessionNew={started:?} lockWaitMs={lock_ms} searchMs={search_ms} totalMs={} outcome={outcome}", server.lang, root_started.elapsed().as_millis()),
             );
             match result {
-                Ok(value) => {
+                Ok(mut value) => {
+                    if server.lang == "go" { scope_go_response(&mut value, &root, diagnostics); }
                     successful_roots += 1;
                     languages.insert(server.lang.clone());
                     if incomplete(&value) {
@@ -472,5 +526,29 @@ mod tests {
         );
         assert_eq!(a["diagnostics"].as_array().unwrap().len(), 2);
         assert!(a.get("summary").is_none());
+
+        // A shared Go process must not turn a member-scoped request into a
+        // sibling search; preserve upstream incompleteness after filtering.
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let inside = root.join("Cargo.toml");
+        let outside = root.parent().unwrap().join("package.json");
+        let mut symbols = json!({"symbols":[
+            {"name":"inside","filePath":inside,"inProject":false},
+            {"name":"sibling","filePath":outside,"inProject":true}
+        ],"total":2,"incomplete":true});
+        scope_go_response(&mut symbols, root, false);
+        assert_eq!(symbols["total"], 1);
+        assert_eq!(symbols["symbols"][0]["name"], "inside");
+        assert_eq!(symbols["symbols"][0]["inProject"], true);
+        assert_eq!(symbols["incomplete"], true);
+        let mut diagnostics =
+            json!({"files":[{"filePath":inside},{"filePath":outside}],"truncated":true});
+        scope_go_response(&mut diagnostics, root, true);
+        assert_eq!(diagnostics["files"].as_array().unwrap().len(), 1);
+        assert_eq!(diagnostics["truncated"], true);
+        let mut unknown = json!({"symbols":[{"name":"missing"}]});
+        scope_go_response(&mut unknown, root, false);
+        assert_eq!(unknown["incomplete"], true);
+        assert!(!unknown["warnings"].as_array().unwrap().is_empty());
     }
 }

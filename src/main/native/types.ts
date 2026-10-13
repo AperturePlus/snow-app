@@ -778,6 +778,7 @@ export type ProjectStackDetection = {
 
 /** 语言服务器会话运行时状态（native ServerManager 内存态快照，实时轮询用）。 */
 export type LspSessionStatus = {
+  resources?: import("../../preload/types/lsp").LspResourceSnapshot | null;
   /** 语言标识（rust / typescript / python ...） */
   lang: string;
   /** 会话项目根目录（绝对路径） */
@@ -2195,6 +2196,8 @@ export type NativeBridge = {
     projectId: string,
     serverId: string,
   ) => Promise<void>;
+  getLspResourcePolicy: () => Promise<string>;
+  setLspResourcePolicy: (policyJson: string) => Promise<void>;
   listLspServerConfigs: () => Promise<LspServerConfigRecord[]>;
   upsertLspServerConfig: (item: LspServerConfigInput) => Promise<void>;
   deleteLspServerConfig: (lang: string) => Promise<void>;
@@ -2224,6 +2227,11 @@ export type NativeBridge = {
     projectId: string,
     lang: string,
   ) => Promise<LspSessionStatus>;
+  /** 精准管理已登记物理会话，不执行项目根前缀操作。 */
+  manageLspSession: (
+    targetJson: string,
+    action: string,
+  ) => Promise<LspSessionStatus | null | undefined>;
   /** 手动停止指定项目和语言的 LSP 会话（释放进程与内存）。 */
   stopLspSession: (projectId: string, lang: string) => Promise<boolean>;
   /** 手动重启指定项目和语言的 LSP 会话，可选清理持久化诊断缓存。 */

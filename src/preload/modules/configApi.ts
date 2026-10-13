@@ -14,6 +14,7 @@ import type {
   LspServerConfigInput,
   LspServerConfigRecord,
   LspSessionStatus,
+  LspSessionTarget,
   McpServerConfigInput,
   McpServerConfigRecord,
   ProjectMcpServerConfigRecord,
@@ -30,6 +31,12 @@ import type {
 } from "../types";
 
 export const configApi = {
+  getLspResourcePolicy: (): Promise<import("../types/lsp").LspResourcePolicy> =>
+    ipcRenderer.invoke("lsp-resource-policy:get"),
+  setLspResourcePolicy: (
+    policy: import("../types/lsp").LspResourcePolicy,
+  ): Promise<import("../types/lsp").LspResourcePolicy> =>
+    ipcRenderer.invoke("lsp-resource-policy:set", policy),
   listSystemPrompts: (): Promise<SystemPromptItemRecord[]> =>
     ipcRenderer.invoke("system-prompts:list"),
   upsertSystemPrompt: (item: SystemPromptItemInput): Promise<void> =>
@@ -122,6 +129,12 @@ export const configApi = {
     lang: string,
   ): Promise<LspSessionStatus> =>
     ipcRenderer.invoke("lsp-session:start", projectId, lang),
+  /** 管理确认时的单个物理会话；共享它的逻辑项目会一起受影响。 */
+  manageLspSession: (
+    target: LspSessionTarget,
+    action: "stop" | "restart",
+  ): Promise<LspSessionStatus | null> =>
+    ipcRenderer.invoke("lsp-session:manage-exact", target, action),
   /** 手动停止指定项目和语言的 LSP 会话（释放进程与内存）。 */
   stopLspSession: (projectId: string, lang: string): Promise<boolean> =>
     ipcRenderer.invoke("lsp-session:stop", projectId, lang),

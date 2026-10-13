@@ -2,7 +2,7 @@
 //!
 //! - 会话粒度 = (语言, 项目根)：同项目同语言单进程，多项目各自进程（§7.2）
 //! - 懒加载：首次工具调用才 spawn（§7.1）
-//! - 空闲回收：超过 idle_timeout 的会话在下次调用时回收
+//! - 空闲回收：周期巡检与新建路径共用安全回收判断
 //! - 崩溃后重建；首次/后续启动失败按完整配置身份指数退避
 //! - 并发上限：max_sessions（跨项目合计），超限 LRU 淘汰
 
@@ -29,6 +29,8 @@ const MAX_SESSIONS: usize = 5;
 /// 冷启动 + flycheck 首次 10-30s，频繁回收后重复支付冷启动成本；调大后会话
 /// 更常驻。进程数上限仍由 MAX_SESSIONS + LRU 兜底，内存风险可控。
 const IDLE_TIMEOUT: Duration = Duration::from_secs(1800);
+/// 巡检粒度，不改变空闲阈值；使用 sleep 避免运行时暂停后的补偿突发。
+const IDLE_REAP_INTERVAL: Duration = Duration::from_secs(60);
 /// 崩溃连续重启上限（§7.3）。
 const MAX_BACKOFF: Duration = Duration::from_secs(300);
 /// 同 key 并发 spawn 占位等待的轮询间隔（M1/R3.1）：等待者以 Notify 唤醒为主、
@@ -39,9 +41,39 @@ const START_WAIT_POLL: Duration = Duration::from_millis(200);
 /// 占位者完成（成功/失败）必然 notify，轮次远达不到上限。
 const MAX_START_WAIT_ROUNDS: u32 = 750;
 
+/// Global resource policy; absent fields preserve the historical defaults.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResourcePolicy {
+    pub max_sessions: usize,
+    pub idle_timeout_secs: u64,
+    pub max_concurrent_starts: usize,
+}
+impl Default for ResourcePolicy {
+    fn default() -> Self {
+        Self { max_sessions: MAX_SESSIONS, idle_timeout_secs: IDLE_TIMEOUT.as_secs(), max_concurrent_starts: 2 }
+    }
+}
+impl ResourcePolicy {
+    pub fn validate(&self) -> napi::Result<()> {
+        if !(1..=32).contains(&self.max_sessions)
+            || !(60..=86400).contains(&self.idle_timeout_secs)
+            || !(1..=8).contains(&self.max_concurrent_starts) {
+            return Err(napi::Error::from_reason("LSP resource policy: maxSessions 1..32, idleTimeoutSecs 60..86400, maxConcurrentStarts 1..8 (integers)"));
+        }
+        Ok(())
+    }
+    fn load() -> Self {
+        crate::storage::get_system_setting_value("lsp_resource_policy".into())
+            .ok().flatten().and_then(|raw| serde_json::from_str::<Self>(&raw).ok())
+            .filter(|policy| policy.validate().is_ok()).unwrap_or_default()
+    }
+}
+
 /// 会话状态快照（供前端状态徽章实时展示；查询时动态检测进程退出）。
 #[derive(Debug, Clone)]
 pub struct SessionStatus {
+    pub resources: Option<super::session::LspResourceSnapshot>,
     pub lang: String,
     pub project_root: String,
     /// `running` | `dead` | `exited`（进程已退出但会话未标记）。
@@ -110,52 +142,217 @@ impl Drop for StartingLease {
     }
 }
 
-/// 尚在关闭的进程仍占容量；Drop覆盖启动任务取消路径。
+/// 关闭被取消时保留会话所有权和容量，下一轮巡检（包括新 runtime）继续关闭。
+type DeferredRetirements = Arc<std::sync::Mutex<Vec<Arc<Mutex<ServerSession>>>>>;
+
 struct RetiringSession {
     session: Arc<Mutex<ServerSession>>,
     count: Arc<AtomicUsize>,
+    deferred: DeferredRetirements,
 }
 impl RetiringSession {
-    fn new(session: Arc<Mutex<ServerSession>>, count: Arc<AtomicUsize>) -> Self {
+    fn new(
+        session: Arc<Mutex<ServerSession>>,
+        count: Arc<AtomicUsize>,
+        deferred: DeferredRetirements,
+    ) -> Self {
         count.fetch_add(1, Ordering::AcqRel);
-        Self { session, count }
+        Self {
+            session,
+            count,
+            deferred,
+        }
     }
 }
 impl Drop for RetiringSession {
     fn drop(&mut self) {
-        self.count.fetch_sub(1, Ordering::AcqRel);
+        let exited = self
+            .session
+            .try_lock()
+            .is_ok_and(|mut session| session.process_exited());
+        if exited {
+            self.count.fetch_sub(1, Ordering::AcqRel);
+        } else {
+            self.deferred
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .push(self.session.clone());
+        }
     }
+}
+
+/// A fully started process awaiting publication still needs retirement if the
+/// caller is cancelled while acquiring table locks. Partial initialize failure
+/// continues to use ServerSession's existing process-tree Drop protection.
+struct UnpublishedSession<'a> {
+    session: &'a Arc<Mutex<ServerSession>>,
+    manager: &'a ServerManager,
+    published: bool,
+}
+impl Drop for UnpublishedSession<'_> {
+    fn drop(&mut self) {
+        if !self.published {
+            drop(RetiringSession::new(
+                self.session.clone(), self.manager.retiring.clone(),
+                self.manager.deferred_retirements.clone(),
+            ));
+        }
+    }
+}
+
+#[derive(Clone)]
+struct RootAlias {
+    owner: PathBuf,
+    instance: std::sync::Weak<Mutex<ServerSession>>,
+}
+
+/// Confirmed identity of a registered physical session (never a logical root).
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SessionTarget {
+    pub lang: String,
+    pub project_root: String,
+    pub expected_pid: u32,
+    pub expected_restart_count: u32,
+}
+
+/// Keep the actual effective configuration and its originating scope bound to
+/// the concrete instance. Exact restart must not choose global config or detect
+/// a different language root merely because the UI does not carry projectId.
+#[derive(Clone)]
+struct SessionOrigin {
+    instance: std::sync::Weak<Mutex<ServerSession>>,
+    config: ServerConfig,
+    project_id: String,
 }
 
 pub struct ServerManager {
     sessions: Mutex<HashMap<SessionKey, Arc<Mutex<ServerSession>>>>,
+    session_origins: Mutex<HashMap<SessionKey, SessionOrigin>>,
+    /// Successful acquisitions only; config and concrete instance are part of
+    /// the binding. Historical paths never control a replacement process.
+    root_aliases: Mutex<HashMap<FailureKey, RootAlias>>,
     /// 并发 spawn 占位（M1/R3.1）：key -> Notify。同一 key 同时只有一个 spawn
     /// 者；等待者克隆 Notify 后在锁外等待，占位者完成（成功/失败）后
     /// notify_waiters 唤醒，重试段 1 直接复用会话。
     starting: Arc<Mutex<HashMap<SessionKey, Arc<Notify>>>>,
     /// 有效配置快照（project_id → configs；空 key = 全局）。
     configs: RwLock<HashMap<String, Vec<ServerConfig>>>,
-    max_sessions: usize,
-    idle_timeout: Duration,
+    policy: std::sync::RwLock<ResourcePolicy>,
     failures: Mutex<HashMap<FailureKey, StartupFailure>>,
     retiring: Arc<AtomicUsize>,
+    deferred_retirements: DeferredRetirements,
+    /// 只在不存在活跃任务时启动；已结束 runtime 的句柄可在下次访问时替换。
+    idle_reaper: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl ServerManager {
-    /// 全局单例。
+    pub fn resource_policy(&self) -> ResourcePolicy {
+        *self.policy.read().unwrap_or_else(|error| error.into_inner())
+    }
+
+    pub async fn save_resource_policy(self: &Arc<Self>, policy: ResourcePolicy) -> napi::Result<()> {
+        policy.validate()?;
+        // Once persistence starts, cancellation must not leave disk/runtime divergent.
+        // Serialize saves and admission; already admitted work is grandfathered.
+        let admission = self.starting.clone().lock_owned().await;
+        let manager = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let _admission = admission;
+            crate::storage::set_system_setting("LSP resource policy".into(), "lsp_resource_policy".into(),
+                serde_json::to_string(&policy).map_err(|error| napi::Error::from_reason(error.to_string()))?)?;
+            *manager.policy.write().unwrap_or_else(|error| error.into_inner()) = policy;
+            Ok(())
+        }).await.map_err(|error| napi::Error::from_reason(error.to_string()))?
+    }
+
+    /// 全局单例；同步调用无 runtime 时只初始化，不创建异步任务。
     pub fn instance() -> &'static Arc<ServerManager> {
         static INSTANCE: OnceLock<Arc<ServerManager>> = OnceLock::new();
-        INSTANCE.get_or_init(|| {
+        let manager = INSTANCE.get_or_init(|| {
             Arc::new(ServerManager {
                 sessions: Mutex::new(HashMap::new()),
+                session_origins: Mutex::new(HashMap::new()),
+                root_aliases: Mutex::new(HashMap::new()),
                 starting: Arc::new(Mutex::new(HashMap::new())),
                 configs: RwLock::new(HashMap::new()),
-                max_sessions: MAX_SESSIONS,
-                idle_timeout: IDLE_TIMEOUT,
+                policy: std::sync::RwLock::new(ResourcePolicy::load()),
                 failures: Mutex::new(HashMap::new()),
                 retiring: Arc::new(AtomicUsize::new(0)),
+                deferred_retirements: Arc::new(std::sync::Mutex::new(Vec::new())),
+                idle_reaper: std::sync::Mutex::new(None),
             })
-        })
+        });
+        manager.ensure_idle_reaper();
+        manager
+    }
+
+    fn ensure_idle_reaper(self: &Arc<Self>) {
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let mut task = self
+            .idle_reaper
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if task.as_ref().is_some_and(|task| !task.is_finished()) {
+            return;
+        }
+        let manager = Arc::downgrade(self);
+        *task = Some(runtime.spawn(async move {
+            loop {
+                // 弱引用跨越等待；不固定任何会话，也不形成 manager/task 所有权环。
+                let Some(manager) = manager.upgrade() else {
+                    break;
+                };
+                manager.reap_idle_sessions().await;
+                drop(manager);
+                tokio::time::sleep(IDLE_REAP_INTERVAL).await;
+            }
+        }));
+    }
+
+    async fn reap_idle_sessions(&self) {
+        let victims = {
+            // 与启动路径保持同一锁序；只在锁内判断、移除和登记容量。
+            let mut sessions = self.sessions.lock().await;
+            let starting = self.starting.lock().await;
+            self.reclaim_idle_keys(&sessions)
+                .into_iter()
+                .filter(|key| !starting.contains_key(key))
+                .filter_map(|key| sessions.remove(&key))
+                .map(|session| {
+                    RetiringSession::new(
+                        session,
+                        self.retiring.clone(),
+                        self.deferred_retirements.clone(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        if !victims.is_empty() {
+            eprintln!("[lsp] idle reaper retiring {} session(s)", victims.len());
+        }
+        // Snapshot the entire old queue before awaiting. A failed guard may
+        // requeue itself, but cannot starve another entry in this same pass.
+        let deferred = self
+            .deferred_retirements
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .drain(..)
+            .map(|session| RetiringSession {
+                session,
+                count: self.retiring.clone(),
+                deferred: self.deferred_retirements.clone(),
+            })
+            .collect::<Vec<_>>();
+        for victim in deferred {
+            victim.session.lock().await.shutdown().await;
+        }
+        for victim in victims {
+            victim.session.lock().await.shutdown().await;
+        }
+        let _ = self.live_root_aliases().await;
     }
 
     /// 从表重载配置（每次工具调用执行，支持热更新；按 project 区分有效配置）。
@@ -197,7 +394,55 @@ impl ServerManager {
             .unwrap_or_default()
     }
 
-    /// 提示词/工具暴露只读健康快照，绝不启动服务器。各锁顺序获取、互不嵌套。
+    async fn live_root_aliases(&self) -> HashMap<FailureKey, RootAlias> {
+        let sessions = self.sessions.lock().await;
+        let mut aliases = self.root_aliases.lock().await;
+        aliases.retain(|(lang, _, _), alias| {
+            sessions
+                .get(&(lang.clone(), alias.owner.clone()))
+                .is_some_and(|current| same_instance(&alias.instance, current))
+        });
+        aliases.clone()
+    }
+
+    async fn register_root_alias(
+        &self,
+        logical_root: &Path,
+        physical_key: &FailureKey,
+        session: &Arc<Mutex<ServerSession>>,
+    ) {
+        // Same lock order as pruning; registration cannot resurrect an alias
+        // after stop/replacement has removed its instance from the table.
+        let sessions = self.sessions.lock().await;
+        if !sessions
+            .get(&(physical_key.0.clone(), physical_key.1.clone()))
+            .is_some_and(|current| Arc::ptr_eq(current, session))
+        {
+            return;
+        }
+        let mut aliases = self.root_aliases.lock().await;
+        aliases.retain(|(lang, _, _), alias| {
+            sessions
+                .get(&(lang.clone(), alias.owner.clone()))
+                .is_some_and(|current| same_instance(&alias.instance, current))
+        });
+        let key = (
+            physical_key.0.clone(),
+            logical_root.to_path_buf(),
+            physical_key.2.clone(),
+        );
+        aliases.insert(
+            key,
+            RootAlias {
+                owner: physical_key.1.clone(),
+                instance: Arc::downgrade(session),
+            },
+        );
+    }
+
+    /// Health reads never run Go or discover new ownership. Unknown/cold roots
+    /// retain the static capability estimate; only established same-config
+    /// aliases may select a negotiated session.
     pub async fn tool_availability(
         &self,
         config: &ServerConfig,
@@ -206,28 +451,31 @@ impl ServerManager {
         if !config.enabled {
             return Some(Vec::new());
         }
-        let physical = match tokio::fs::canonicalize(root).await {
-            Ok(root) => root,
-            Err(_) => return Some(Vec::new()),
-        };
-        let failure_key = (config.lang.clone(), physical.clone(), config.fingerprint());
-        let blocked = self
+        let logical = tokio::fs::canonicalize(root).await.ok()?;
+        let aliases = self.live_root_aliases().await;
+        let fingerprint = config.fingerprint();
+        let alias = aliases.get(&(config.lang.clone(), logical.clone(), fingerprint.clone()));
+        let physical = alias.map(|alias| alias.owner.clone()).unwrap_or(logical);
+        let failure_key = (config.lang.clone(), physical.clone(), fingerprint);
+        if self
             .failures
             .lock()
             .await
             .get(&failure_key)
-            .is_some_and(|f| Instant::now() < f.retry_at);
-        if blocked {
+            .is_some_and(|failure| Instant::now() < failure.retry_at)
+        {
             return Some(Vec::new());
         }
         let session = self
             .sessions
             .lock()
             .await
-            .get(&(config.lang.clone(), physical))
-            .cloned();
-        let Some(session) = session else { return None };
-        let mut guard = session.lock().await;
+            .get(&(config.lang.clone(), physical.clone()))
+            .cloned()?;
+        if alias.is_some_and(|alias| !same_instance(&alias.instance, &session)) {
+            return None;
+        }
+        let mut guard = session.try_lock().ok()?;
         if !guard.matches_config(config) {
             return None;
         }
@@ -369,7 +617,11 @@ impl ServerManager {
             .map_err(|error| {
                 LspError::Internal(format!("resolve workspace root failed: {error}"))
             })?;
-        let project_root = physical_root.as_path();
+        // Resolve before taking any lifecycle lock; member and workspace requests
+        // therefore contend for the same startup placeholder and capacity slot.
+        let logical_root = physical_root;
+        let physical_root = super::detect::session_root(&config, &logical_root).await;
+        // Alias publication is deferred until a concrete instance was acquired.
         let key: SessionKey = (lang.to_string(), physical_root.clone());
         let failure_key = (
             lang.to_string(),
@@ -407,6 +659,8 @@ impl ServerManager {
                         .get(&key)
                         .is_some_and(|current| Arc::ptr_eq(current, &session));
                     if current {
+                        self.register_root_alias(&logical_root, &failure_key, &session)
+                            .await;
                         return Ok((session, false));
                     }
                     continue;
@@ -434,7 +688,11 @@ impl ServerManager {
                     return Err(LspError::ServerFailed("configuration changed while requests hold the session; retry when they finish".into()));
                 }
                 if let Some(old) = table.remove(&key) {
-                    victims.push(RetiringSession::new(old, self.retiring.clone()));
+                    victims.push(RetiringSession::new(
+                        old,
+                        self.retiring.clone(),
+                        self.deferred_retirements.clone(),
+                    ));
                 }
             }
             let mut table = self.sessions.lock().await;
@@ -454,9 +712,29 @@ impl ServerManager {
                 tokio::select! { _ = notify.notified() => {}, _ = tokio::time::sleep(START_WAIT_POLL) => {} }
                 continue;
             }
+            let policy = self.resource_policy();
+            // Same-key callers already wait above; different cold starts are bounded
+            // before selecting any victims. This path cannot evict useful warm sessions.
+            if starting.len() >= policy.max_concurrent_starts {
+                drop(starting);
+                drop(table);
+                if wait_rounds >= MAX_START_WAIT_ROUNDS {
+                    return Err(LspError::RequestTimeout("waiting for LSP cold-start budget".into()));
+                }
+                wait_rounds += 1;
+                tokio::time::sleep(START_WAIT_POLL).await;
+                continue;
+            }
             for idle in self.reclaim_idle_keys(&table) {
+                if starting.contains_key(&idle) {
+                    continue;
+                }
                 if let Some(session) = table.remove(&idle) {
-                    victims.push(RetiringSession::new(session, self.retiring.clone()));
+                    victims.push(RetiringSession::new(
+                        session,
+                        self.retiring.clone(),
+                        self.deferred_retirements.clone(),
+                    ));
                 }
             }
             // 本次待关闭victim可让本次预留替代它，其他启动者仍必须计入这些进程。
@@ -466,11 +744,14 @@ impl ServerManager {
                     .retiring
                     .load(Ordering::Acquire)
                     .saturating_sub(victims.len())
-                >= self.max_sessions
+                >= policy.max_sessions
             {
                 let victim = table
                     .iter()
                     .filter_map(|(key, session)| {
+                        if starting.contains_key(key) {
+                            return None;
+                        }
                         Self::reclaimable_last_used(session).map(|used| (key.clone(), used))
                     })
                     .min_by_key(|(_, used)| *used)
@@ -481,7 +762,11 @@ impl ServerManager {
                     ));
                 };
                 if let Some(session) = table.remove(&victim) {
-                    victims.push(RetiringSession::new(session, self.retiring.clone()));
+                    victims.push(RetiringSession::new(
+                        session,
+                        self.retiring.clone(),
+                        self.deferred_retirements.clone(),
+                    ));
                 }
             }
             let notify = Arc::new(Notify::new());
@@ -503,59 +788,42 @@ impl ServerManager {
         // 先 shutdown victim（优雅关闭 → 等待 → kill 兜底；锁外执行，避免
         // ≤3s/个的关闭时间阻塞其他会话访问，M1/R3.1）。
         for victim in victims {
-            victim.session.lock().await.shutdown().await;
-            // 先关闭，再归还retiring容量。
+            let mut session = victim.session.lock().await;
+            session.shutdown().await;
+            if !session.process_exited() {
+                return Err(LspError::ServerFailed(
+                    "LSP process has not exited after shutdown; capacity remains reserved, retry later".into(),
+                ));
+            }
+            drop(session);
+            // 先确认进程退出，再归还容量；失败/取消由 Drop 交给巡检继续关闭。
             drop(victim);
         }
 
-        // config 已在快速路径前按当前作用域校验；启动使用同一快照。
-
-        // 安装检查（§8.6）：enabled 但命令不在 PATH → 明确降级错误
-        //    （附 installCommand 建议），避免 spawn ENOENT 的模糊失败。
-        //    仅首次启动会话时探测一次；已有会话直接复用（段 1），无开销。
-        if !super::probe::is_command_installed(&config.command) {
-            let error =
-                LspError::ServerMissing(config.command.clone(), config.install_command.clone());
-            self.record_start_failure(&failure_key, &error).await;
-            self.release_starting(&key, own_notify.as_ref()).await;
-            return Err(error);
-        }
-
-        // 启动会话（懒加载；spawn + initialize 30-120s 全程不持 sessions 锁，
-        // restart_count 为崩溃重建计数）。
-        let session = match ServerSession::start(lang, project_root, config, restart_count).await {
-            Ok(session) => Arc::new(Mutex::new(session)),
+        let origin = SessionOrigin {
+            instance: std::sync::Weak::new(),
+            config: config.clone(),
+            project_id: config_key,
+        };
+        let session = match self
+            .start_reserved_session(&key, config, restart_count, &failure_key)
+            .await
+        {
+            Ok(session) => session,
             Err(error) => {
-                self.record_start_failure(&failure_key, &error).await;
                 self.release_starting(&key, own_notify.as_ref()).await;
                 return Err(error);
             }
         };
 
-        // 锁内插入 + 释放占位 + 唤醒等待者（顺序：先 insert 后移除占位——等待者
-        // 重试段 1 时直接复用会话）。own_notify 与 map 中占位不一致（占位已被
-        // 接管）时不插入：防双会话竞争，本次会话随 Arc 释放被 Drop 回收（进程
-        // 树由 kill_on_drop + ProcessTreeGuard 兜底清理）。
-        let inserted = {
-            // 同一锁序内确认占位所有权、插入会话并释放占位，消除检查后被接管的窗口。
-            let mut sessions = self.sessions.lock().await;
-            let mut starting = self.starting.lock().await;
-            let owns = match (own_notify.as_ref(), starting.get(&key)) {
-                (Some(own), Some(current)) => Arc::ptr_eq(own, current),
-                _ => false,
-            };
-            if owns {
-                sessions.insert(key.clone(), session.clone());
-                starting.remove(&key);
-            }
-            owns
-        };
-        if !inserted {
-            session.lock().await.shutdown().await;
-            return Err(LspError::ServerFailed(
-                "LSP startup was superseded; retry the request".into(),
-            ));
-        }
+        self.publish_reserved_session(
+            &key,
+            own_notify.as_ref().expect("startup placeholder owned"),
+            &session,
+            origin,
+            Vec::new(),
+        )
+        .await?;
         self.failures
             .lock()
             .await
@@ -563,7 +831,76 @@ impl ServerManager {
         if let Some(notify) = own_notify {
             notify.notify_waiters();
         }
+        self.register_root_alias(&logical_root, &failure_key, &session)
+            .await;
         Ok((session, true))
+    }
+
+    /// Caller owns a StartingLease. Reuse probe/spawn/failure handling without
+    /// root discovery, capacity eviction, or any project-prefix mutation.
+    async fn start_reserved_session(
+        &self,
+        key: &SessionKey,
+        config: ServerConfig,
+        restart_count: u32,
+        failure_key: &FailureKey,
+    ) -> Result<Arc<Mutex<ServerSession>>, LspError> {
+        let result = if !super::probe::is_command_installed(&config.command) {
+            Err(LspError::ServerMissing(config.command.clone(), config.install_command.clone()))
+        } else {
+            ServerSession::start(&key.0, &key.1, config, restart_count)
+                .await
+                .map(|session| Arc::new(Mutex::new(session)))
+        };
+        if let Err(error) = &result {
+            self.record_start_failure(failure_key, error).await;
+        }
+        result
+    }
+
+    async fn publish_reserved_session(
+        &self,
+        key: &SessionKey,
+        notify: &Arc<Notify>,
+        session: &Arc<Mutex<ServerSession>>,
+        mut origin: SessionOrigin,
+        aliases_to_rebind: Vec<FailureKey>,
+    ) -> Result<(), LspError> {
+        let mut unpublished = UnpublishedSession { session, manager: self, published: false };
+        let inserted = {
+            // The same order as admission/reaping: sessions -> starting. Metadata
+            // is only acquired after these locks, never in the reverse order.
+            let mut sessions = self.sessions.lock().await;
+            let mut starting = self.starting.lock().await;
+            let mut origins = self.session_origins.lock().await;
+            let mut aliases = self.root_aliases.lock().await;
+            let owns = starting.get(key).is_some_and(|current| Arc::ptr_eq(current, notify));
+            if owns && !sessions.contains_key(key) {
+                origins.retain(|key, origin| sessions.get(key)
+                    .is_some_and(|current| same_instance(&origin.instance, current)));
+                origin.instance = Arc::downgrade(session);
+                origins.insert(key.clone(), origin);
+                sessions.insert(key.clone(), session.clone());
+                for alias_key in aliases_to_rebind {
+                    aliases.insert(alias_key, RootAlias {
+                        owner: key.1.clone(),
+                        instance: Arc::downgrade(session),
+                    });
+                }
+                starting.remove(key);
+                unpublished.published = true;
+                true
+            } else {
+                false
+            }
+        };
+        if !inserted {
+            session.lock().await.shutdown().await;
+            // The unpublished guard keeps failed/cancelled shutdown in retirement.
+            return Err(LspError::ServerFailed("LSP startup was superseded; replacement was not published".into()));
+        }
+        notify.notify_waiters();
+        Ok(())
     }
 
     /// 释放 starting 占位并唤醒等待者（M1）。仅占位所有者执行；占位已被接管
@@ -599,7 +936,7 @@ impl ServerManager {
         &self,
         sessions: &HashMap<SessionKey, Arc<Mutex<ServerSession>>>,
     ) -> Vec<SessionKey> {
-        let idle_ms = self.idle_timeout.as_millis() as u64;
+        let idle_ms = self.resource_policy().idle_timeout_secs * 1000;
         sessions
             .iter()
             .filter_map(|(key, session)| {
@@ -644,6 +981,7 @@ impl ServerManager {
             ("running".to_string(), None)
         };
         SessionStatus {
+            resources: Some(guard.resource_snapshot()),
             lang: lang.to_string(),
             project_root: project_root.display().to_string(),
             status,
@@ -672,6 +1010,19 @@ impl ServerManager {
             ),
             None => None,
         };
+        let aliases = self.live_root_aliases().await;
+        let in_scope = |lang: &str, root: &Path, session: Option<&Arc<Mutex<ServerSession>>>| {
+            normalized_filter.as_deref().is_none_or(|filter| {
+                root.starts_with(filter)
+                    || aliases.iter().any(|((l, logical, _), alias)| {
+                        l == lang
+                            && logical.starts_with(filter)
+                            && alias.owner == root
+                            && session
+                                .is_some_and(|current| same_instance(&alias.instance, current))
+                    })
+            })
+        };
         let handles: Vec<(SessionKey, Arc<Mutex<ServerSession>>)> = self
             .sessions
             .lock()
@@ -681,10 +1032,7 @@ impl ServerManager {
             .collect();
         let mut statuses = Vec::with_capacity(handles.len());
         for ((lang, root), session) in handles {
-            if normalized_filter
-                .as_deref()
-                .is_some_and(|filter| !root.starts_with(filter))
-            {
+            if !in_scope(&lang, &root, Some(&session)) {
                 continue;
             }
             let sampled = match session.try_lock() {
@@ -701,16 +1049,17 @@ impl ServerManager {
                 }
                 statuses.push(status);
             } else {
-                statuses.push(SessionStatus { lang, project_root:root.display().to_string(),status:"running".into(),
+                statuses.push(SessionStatus { resources: None, lang, project_root:root.display().to_string(),status:"running".into(),
                     restart_count:0,last_used_ms:0,error:Some("session busy; process state was not sampled (not an index-readiness guarantee)".into()) });
             }
         }
         let failures = self.failures.lock().await.clone();
         for ((lang, root, _), failure) in failures {
-            if normalized_filter
-                .as_deref()
-                .is_some_and(|filter| !root.starts_with(filter))
-            {
+            let observed = failure
+                .observed_crash
+                .as_ref()
+                .and_then(std::sync::Weak::upgrade);
+            if !in_scope(&lang, &root, observed.as_ref()) {
                 continue;
             }
             if let Some(status) = statuses
@@ -718,7 +1067,8 @@ impl ServerManager {
                 .find(|status| status.lang == lang && Path::new(&status.project_root) == root)
             {
                 if status.status != "running" {
-                    status.restart_count = failure.count;
+                    // Keep the concrete generation used by exact confirmation;
+                    // failure/backoff count belongs in the error text, not identity.
                     status.error = Some(format!(
                         "crashed {} time(s); retryAfterEpochMs={}; {}",
                         failure.count, failure.retry_at_ms, failure.message
@@ -727,6 +1077,7 @@ impl ServerManager {
                 continue;
             }
             statuses.push(SessionStatus {
+                resources: None,
                 lang,
                 project_root: root.display().to_string(),
                 status: "dead".into(),
@@ -746,6 +1097,126 @@ impl ServerManager {
         statuses
     }
 
+    /// Exact task-manager operation. The physical key must already exist; no
+    /// alias/root detection and no unrelated idle/LRU victim is selected.
+    pub async fn manage_session_exact(
+        &self,
+        target: &SessionTarget,
+        action: &str,
+    ) -> Result<Option<SessionStatus>, LspError> {
+        let invalid = |message: &str| LspError::ServerFailed(message.into());
+        if !matches!(action, "stop" | "restart") {
+            return Err(invalid("LSP action must be 'stop' or 'restart'"));
+        }
+        let requested_root = Path::new(&target.project_root);
+        if target.lang.trim().is_empty() || target.lang != target.lang.trim()
+            || target.lang.contains('\0') || target.project_root.trim().is_empty()
+            || target.project_root.contains('\0') || !requested_root.is_absolute()
+            || target.expected_pid == 0
+        {
+            return Err(invalid("LSP target requires a language, local absolute root and positive PID"));
+        }
+        #[cfg(windows)]
+        if !matches!(requested_root.components().next(), Some(std::path::Component::Prefix(prefix))
+            if matches!(prefix.kind(), std::path::Prefix::Disk(_) | std::path::Prefix::VerbatimDisk(_)))
+        {
+            return Err(invalid("LSP target root must be a local absolute drive path"));
+        }
+        #[cfg(not(windows))]
+        if target.project_root.starts_with("//") {
+            return Err(invalid("LSP target root must be a local absolute path"));
+        }
+        let root = tokio::fs::canonicalize(requested_root).await
+            .map_err(|_| invalid("LSP target root is unavailable; refresh the session list"))?;
+        let key = (target.lang.clone(), root);
+        // All awaits that acquire lifecycle metadata happen before identity
+        // validation. After validation, lease + extraction are synchronous.
+        let mut sessions = self.sessions.lock().await;
+        let mut starting = self.starting.lock().await;
+        if starting.contains_key(&key) {
+            return Err(invalid("LSP session is starting or being managed; retry later"));
+        }
+        let session = sessions.get(&key).cloned()
+            .ok_or_else(|| invalid("LSP session disappeared; refresh the session list"))?;
+        let mut origins = self.session_origins.lock().await;
+        let mut aliases = self.root_aliases.lock().await;
+        let mut guard = session.try_lock()
+            .map_err(|_| invalid("LSP session is busy; retry when requests finish"))?;
+        if Arc::strong_count(&session) != 2 || guard.active_diagnostics() > 0 {
+            return Err(invalid("LSP session has active or queued requests; retry when they finish"));
+        }
+        if guard.process_exited() || guard.resource_snapshot().pid != Some(target.expected_pid)
+            || guard.restart_count != target.expected_restart_count
+        {
+            return Err(invalid("LSP session identity changed or PID is unavailable; refresh and confirm again"));
+        }
+        let origin = origins.get(&key).filter(|origin| same_instance(&origin.instance, &session))
+            .cloned().ok_or_else(|| invalid("LSP session origin changed; refresh and confirm again"))?;
+        if !guard.matches_config(&origin.config) {
+            return Err(invalid("LSP session configuration identity changed; refresh and confirm again"));
+        }
+        let restart_count = if action == "restart" {
+            let policy = self.resource_policy();
+            if starting.len() >= policy.max_concurrent_starts
+                || sessions.len() + starting.len() + self.retiring.load(Ordering::Acquire) > policy.max_sessions
+            {
+                return Err(invalid("LSP startup/capacity budget is busy; retry later (no other session was stopped)"));
+            }
+            let configs = self.configs.try_read()
+                .map_err(|_| invalid("LSP configuration is being refreshed; retry later"))?;
+            if !configs.get(&origin.project_id).is_some_and(|configs| configs.iter()
+                .any(|config| config.enabled && *config == origin.config))
+            {
+                return Err(invalid("LSP effective configuration changed; use settings to start with the new configuration"));
+            }
+            guard.restart_count.checked_add(1)
+                .ok_or_else(|| invalid("LSP restart count exhausted"))?
+        } else {
+            guard.restart_count
+        };
+        let failure_key = (key.0.clone(), key.1.clone(), origin.config.fingerprint());
+        let aliases_to_rebind = aliases.iter()
+            .filter(|((lang, _, _), alias)| lang == &key.0 && alias.owner == key.1
+                && same_instance(&alias.instance, &session))
+            .map(|(key, _)| key.clone()).collect::<Vec<_>>();
+        let notify = Arc::new(Notify::new());
+        starting.insert(key.clone(), notify.clone());
+        let _lease = StartingLease { key: key.clone(), notify: notify.clone(), starting: self.starting.clone() };
+        // Table lock and concrete instance guard protect the confirmation-to-
+        // extraction transition. Later replacements can never become victims.
+        let victim = RetiringSession::new(
+            sessions.remove(&key).expect("confirmed physical session is registered"),
+            self.retiring.clone(), self.deferred_retirements.clone(),
+        );
+        origins.remove(&key);
+        for alias_key in &aliases_to_rebind { aliases.remove(alias_key); }
+        drop(aliases);
+        drop(origins);
+        drop(starting);
+        drop(sessions);
+        guard.shutdown().await;
+        let exited = guard.process_exited();
+        drop(guard);
+        drop(session);
+        drop(victim); // Cancellation/failure keeps capacity in deferred retirement.
+        if !exited {
+            return Err(invalid("LSP process has not exited after shutdown; retirement remains reserved, retry later"));
+        }
+        self.failures.lock().await.remove(&failure_key);
+        if action == "stop" {
+            return Ok(None);
+        }
+        let replacement = self.start_reserved_session(&key, origin.config.clone(), restart_count, &failure_key).await?;
+        let status = {
+            let mut guard = replacement.lock().await;
+            Self::build_session_status(&key.0, &key.1, &mut guard)
+        };
+        self.publish_reserved_session(&key, &notify, &replacement, origin, aliases_to_rebind).await?;
+        // Status was sampled on our replacement before publication; no await
+        // after publication can accidentally report a later replacement instance.
+        Ok(Some(status))
+    }
+
     /// 手动停止指定 (语言 × 项目根) 的所有运行中会话。
     ///
     /// 在锁内将匹配的会话从 sessions 中移除，在锁外优雅 shutdown（≤3s，超时 kill）。
@@ -755,17 +1226,36 @@ impl ServerManager {
             .await
             .unwrap_or_else(|_| project_root.to_path_buf());
         let project_root = normalized_root.as_path();
+        // Stopping a member explicitly stops its shared physical session too.
+        // This is recorded ownership, not an arbitrary ancestor-prefix match.
+        let aliases = self.live_root_aliases().await;
         let victims: Vec<(SessionKey, RetiringSession)> = {
             let mut sessions = self.sessions.lock().await;
             let keys_to_remove: Vec<SessionKey> = sessions
-                .keys()
-                .filter(|(l, root)| l == lang && root.starts_with(project_root))
-                .cloned()
+                .iter()
+                .filter(|((l, root), session)| {
+                    l == lang
+                        && (root.starts_with(project_root)
+                            || aliases.iter().any(|((alias_lang, logical, _), alias)| {
+                                alias_lang == lang
+                                    && logical.starts_with(project_root)
+                                    && alias.owner == *root
+                                    && same_instance(&alias.instance, session)
+                            }))
+                })
+                .map(|(key, _)| key.clone())
                 .collect();
             let mut list = Vec::with_capacity(keys_to_remove.len());
             for key in keys_to_remove {
                 if let Some(session) = sessions.remove(&key) {
-                    list.push((key, RetiringSession::new(session, self.retiring.clone())));
+                    list.push((
+                        key,
+                        RetiringSession::new(
+                            session,
+                            self.retiring.clone(),
+                            self.deferred_retirements.clone(),
+                        ),
+                    ));
                 }
             }
             list
@@ -800,7 +1290,8 @@ impl ServerManager {
 
         let session = self.get_or_start(lang, &target_root, project_id).await?;
         let mut guard = session.lock().await;
-        Ok(Self::build_session_status(lang, &target_root, &mut guard))
+        let actual_root = guard.project_root.clone();
+        Ok(Self::build_session_status(lang, &actual_root, &mut guard))
     }
 
     /// 重启指定 (语言 × 项目根) 的 LSP 会话，可选清理该项目前缀的持久化诊断缓存。
@@ -811,14 +1302,26 @@ impl ServerManager {
         project_id: Option<&str>,
         clear_cache: bool,
     ) -> Result<SessionStatus, LspError> {
-        self.stop_session(lang, project_root).await;
+        self.reload_configs(project_id)
+            .await
+            .map_err(|error| LspError::Internal(error.to_string()))?;
+        let config = self
+            .configs(project_id)
+            .await
+            .into_iter()
+            .find(|config| config.lang == lang && config.enabled)
+            .ok_or_else(|| LspError::NotConfigured(lang.into()))?;
         let physical = tokio::fs::canonicalize(project_root)
             .await
             .unwrap_or_else(|_| project_root.to_path_buf());
-        self.failures
-            .lock()
-            .await
-            .retain(|(l, root, _), _| l != lang || !root.starts_with(&physical));
+        let logical = super::detect::find_lang_root(&physical, None, lang)
+            .unwrap_or_else(|| physical.clone());
+        let owner = super::detect::session_root(&config, &logical).await;
+        let fingerprint = config.fingerprint();
+        self.stop_session(lang, project_root).await;
+        self.failures.lock().await.retain(|(l, root, fp), _| {
+            l != lang || fp != &fingerprint || !(root.starts_with(&physical) || root == &owner)
+        });
 
         if clear_cache {
             if let Ok(storage_info) = crate::storage::initialize_app_storage() {
@@ -872,6 +1375,106 @@ mod health_tests {
             starting.try_lock().unwrap().get(&key).unwrap(),
             &new
         ));
+
+        // 同一巡检任务只启动一次；无 runtime 安全，旧 runtime 结束后可重建。
+        let manager = Arc::new(ServerManager {
+            sessions: Mutex::new(HashMap::new()),
+            session_origins: Mutex::new(HashMap::new()),
+            root_aliases: Mutex::new(HashMap::new()),
+            starting: Arc::new(Mutex::new(HashMap::new())),
+            configs: RwLock::new(HashMap::new()),
+            policy: std::sync::RwLock::new(ResourcePolicy::default()),
+            failures: Mutex::new(HashMap::new()),
+            retiring: Arc::new(AtomicUsize::new(0)),
+            deferred_retirements: Arc::new(std::sync::Mutex::new(Vec::new())),
+            idle_reaper: std::sync::Mutex::new(None),
+        });
+        manager.ensure_idle_reaper();
+        assert!(manager.idle_reaper.lock().unwrap().is_none());
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let first_id = {
+            let _entered = runtime.enter();
+            manager.ensure_idle_reaper();
+            let id = manager.idle_reaper.lock().unwrap().as_ref().unwrap().id();
+            manager.ensure_idle_reaper();
+            assert_eq!(
+                id,
+                manager.idle_reaper.lock().unwrap().as_ref().unwrap().id()
+            );
+            id
+        };
+        drop(runtime); // 包含尚未被 poll 的任务取消。
+        assert!(manager
+            .idle_reaper
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .is_finished());
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let fixture =
+                std::env::temp_dir().join(format!("lsp-health-cold-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(fixture.join("member")).unwrap();
+            std::fs::write(fixture.join("go.work"), "go 1.18\nuse ./member\n").unwrap();
+            std::fs::write(
+                fixture.join("member/go.mod"),
+                "module example.test/health\ngo 1.18\n",
+            )
+            .unwrap();
+            let root = std::fs::canonicalize(fixture.join("member")).unwrap();
+            let cfg = ServerConfig {
+                lang: "go".into(),
+                command: "gopls".into(),
+                args: vec![],
+                file_extensions: vec!["go".into()],
+                install_command: None,
+                initialization_options: None,
+                enabled: true,
+            };
+            let key = ("go".into(), root.clone(), cfg.fingerprint());
+            let other = ("go".into(), root.clone(), "other-config".into());
+            for key in [key, other] {
+                manager.root_aliases.lock().await.insert(
+                    key,
+                    RootAlias {
+                        owner: fixture.clone(),
+                        instance: std::sync::Weak::new(),
+                    },
+                );
+            }
+            assert_eq!(manager.root_aliases.lock().await.len(), 2);
+            let probes = super::super::detect::GO_JSON_CALLS.load(Ordering::Relaxed);
+            assert_eq!(manager.tool_availability(&cfg, &root).await, None);
+            assert_eq!(
+                super::super::detect::GO_JSON_CALLS.load(Ordering::Relaxed),
+                probes
+            );
+            assert!(manager.root_aliases.lock().await.is_empty());
+            assert_eq!(manager.stop_session("go", &root).await, 0);
+            std::fs::remove_dir_all(fixture).unwrap();
+            manager.ensure_idle_reaper();
+            assert_ne!(
+                first_id,
+                manager.idle_reaper.lock().unwrap().as_ref().unwrap().id()
+            );
+            tokio::task::yield_now().await;
+            assert!(!manager
+                .idle_reaper
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .is_finished());
+        });
+        drop(runtime);
+        assert_eq!(Arc::strong_count(&manager), 1);
     }
 
     #[test]
@@ -892,14 +1495,97 @@ mod health_tests {
         let weak = Arc::downgrade(&first);
         assert!(same_instance(&weak, &first));
         assert!(!same_instance(&weak, &Arc::new(())));
+        // A live old handle is not authority over a replacement at the same key.
+        let replacement = Arc::new(());
+        assert!(!same_instance(&weak, &replacement));
+        drop(first);
+        assert!(!same_instance(&weak, &replacement));
+        assert!(weak.upgrade().is_none());
         let retry = Instant::now();
         assert!(!(retry + Duration::from_millis(1) < retry));
     }
     #[test]
     fn exponential_backoff_is_bounded() {
+        let defaults: ResourcePolicy = serde_json::from_str("{}").unwrap();
+        assert_eq!(defaults.max_sessions, 5);
+        assert_eq!(defaults.idle_timeout_secs, 1800);
+        assert_eq!(defaults.max_concurrent_starts, 2);
+        assert!(defaults.validate().is_ok());
+        for raw in [
+            r#"{"maxSessions":0}"#, r#"{"maxSessions":33}"#,
+            r#"{"idleTimeoutSecs":59}"#, r#"{"idleTimeoutSecs":86401}"#,
+            r#"{"maxConcurrentStarts":0}"#, r#"{"maxConcurrentStarts":9}"#,
+        ] {
+            assert!(serde_json::from_str::<ResourcePolicy>(raw).unwrap().validate().is_err());
+        }
+        for raw in [r#"{"maxSessions":1.5}"#, r#"{"maxSessions":-1}"#, r#"{"other":2}"#, r#"{"maxSessions":null}"#] {
+            assert!(serde_json::from_str::<ResourcePolicy>(raw).is_err());
+        }
+        let bounds: ResourcePolicy = serde_json::from_str(r#"{"maxSessions":32,"idleTimeoutSecs":86400,"maxConcurrentStarts":8}"#).unwrap();
+        assert!(bounds.validate().is_ok());
         assert_eq!(failure_delay(1), Duration::from_secs(5));
         assert_eq!(failure_delay(2), Duration::from_secs(10));
         assert_eq!(failure_delay(u32::MAX), MAX_BACKOFF);
+        let manager = ServerManager {
+            sessions: Mutex::new(HashMap::new()),
+            session_origins: Mutex::new(HashMap::new()),
+            root_aliases: Mutex::new(HashMap::new()),
+            starting: Arc::new(Mutex::new(HashMap::new())),
+            configs: RwLock::new(HashMap::new()),
+            policy: std::sync::RwLock::new(ResourcePolicy::default()),
+            failures: Mutex::new(HashMap::new()),
+            retiring: Arc::new(AtomicUsize::new(0)),
+            deferred_retirements: Arc::new(std::sync::Mutex::new(Vec::new())),
+            idle_reaper: std::sync::Mutex::new(None),
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let root = std::fs::canonicalize(env!("CARGO_MANIFEST_DIR")).unwrap();
+            let config = ServerConfig {
+                lang: "go".into(),
+                command: "gopls".into(),
+                args: vec![],
+                file_extensions: vec!["go".into()],
+                install_command: None,
+                initialization_options: None,
+                enabled: true,
+            };
+            let key = (config.lang.clone(), root.clone(), config.fingerprint());
+            let probes = super::super::detect::GO_JSON_CALLS.load(Ordering::Relaxed);
+            assert_eq!(manager.tool_availability(&config, &root).await, None);
+            manager
+                .record_start_failure(&key, &LspError::ServerFailed("fixture".into()))
+                .await;
+            // A failed startup has no session or alias, but its exact root/config
+            // must still suppress capabilities throughout the retry window.
+            assert_eq!(
+                manager.tool_availability(&config, &root).await,
+                Some(Vec::new())
+            );
+            assert!(manager.root_aliases.lock().await.is_empty());
+            let mut changed = config.clone();
+            changed.args.push("serve".into());
+            assert_eq!(manager.tool_availability(&changed, &root).await, None);
+            assert_eq!(
+                manager.tool_availability(&config, &root.join("src")).await,
+                None
+            );
+            manager
+                .failures
+                .lock()
+                .await
+                .get_mut(&key)
+                .unwrap()
+                .retry_at = Instant::now();
+            assert_eq!(manager.tool_availability(&config, &root).await, None);
+            assert_eq!(
+                super::super::detect::GO_JSON_CALLS.load(Ordering::Relaxed),
+                probes
+            );
+        });
     }
     #[test]
     fn failure_keys_include_physical_root_and_config() {
