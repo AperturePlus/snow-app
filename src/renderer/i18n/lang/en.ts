@@ -1769,9 +1769,12 @@ export const en = {
   "toolNames.workflow-workflow-generate": "Generate workflow",
   "toolNames.workflow-workflow-resume": "Resume workflow",
   "toolCall.duplicateReadonlyProtection.duplicateCall":
-    "Duplicate-read protection: this read-only call repeated an already completed call with identical arguments and unchanged file/Git state, so the earlier result was reused instead of running again.",
+    "Repeated read aborted: this read-only call was repeatedly requested 3+ times with identical parameters and unchanged state. Aborted to prevent loop. Please proceed using existing context.",
   "toolCall.duplicateReadonlyProtection.toolsDisabled":
     "Duplicate-read protection: tools were disabled for this recovery round, but the model still requested a tool call, so nothing was executed.",
+  "toolCall.common.fromCache": "Reused",
+  "toolCall.common.fromCacheHint":
+    "Reused prior result for identical call without re-reading physical file",
   "toolCall.common.arguments": "Arguments",
   "toolCall.common.result": "Result",
   "toolCall.rejection.title": "Rejected",

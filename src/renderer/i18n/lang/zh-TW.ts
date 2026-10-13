@@ -1683,9 +1683,12 @@ export const zhTW = {
   "toolNames.workflow-workflow-generate": "產生工作流程",
   "toolNames.workflow-workflow-resume": "恢復工作流程",
   "toolCall.duplicateReadonlyProtection.duplicateCall":
-    "重複讀取保護：此唯讀呼叫與本次執行中已完成的呼叫參數完全相同，且檔案與 Git 狀態皆未變更，已直接沿用先前的結果，未重複執行。",
+    "重複讀取攔截：此唯讀呼叫已連續多次請求完全相同參數且目標皆未變更，已中止重複執行以防止死循環。請直接利用上下文已有結果推進任務。",
   "toolCall.duplicateReadonlyProtection.toolsDisabled":
     "重複讀取保護：本輪為恢復請求已停用工具，但模型仍要求呼叫工具，因此未執行任何工具。",
+  "toolCall.common.fromCache": "已復用",
+  "toolCall.common.fromCacheHint":
+    "已復用先前相同調用的讀取結果，未重複讀取實體檔案",
   "toolCall.common.arguments": "參數",
   "toolCall.common.result": "結果",
   "toolCall.rejection.title": "已拒絕",

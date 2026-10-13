@@ -1682,9 +1682,12 @@ export const zhCN = {
   "toolNames.workflow-workflow-generate": "生成工作流",
   "toolNames.workflow-workflow-resume": "恢复工作流",
   "toolCall.duplicateReadonlyProtection.duplicateCall":
-    "重复读取保护：该只读调用与本次运行中已完成的调用参数完全相同，且文件与 Git 状态均未变化，已直接复用此前结果，未重复执行。",
+    "重复读取拦截：该只读调用已连续多次请求完全相同参数且目标未发生任何变化，已中止重复执行以防止死循环。请直接利用上下文已有结果推进任务。",
   "toolCall.duplicateReadonlyProtection.toolsDisabled":
     "重复读取保护：本轮为恢复请求已禁用工具，但模型仍请求调用工具，因此未执行任何工具。",
+  "toolCall.common.fromCache": "已复用",
+  "toolCall.common.fromCacheHint":
+    "已复用此前相同调用的读取结果，未重复读取物理文件",
   "toolCall.common.arguments": "参数",
   "toolCall.common.result": "结果",
   "toolCall.rejection.title": "已拒绝",

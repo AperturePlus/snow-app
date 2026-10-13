@@ -469,8 +469,29 @@ export const GenericToolCall = ({
       }
     }
 
+    if (toolCall.fromCache) {
+      return (
+        <span
+          className="tool-call-cache-badge"
+          title={t("toolCall.common.fromCacheHint", {
+            defaultValue: "已复用此前相同调用的读取结果，未重复读取物理文件",
+          })}
+        >
+          {t("toolCall.common.fromCache", { defaultValue: "已复用" })}
+        </span>
+      );
+    }
+
     return null;
-  }, [toolCall.status, hasError, parsedResult, tableData, markdownText, t]);
+  }, [
+    toolCall.status,
+    toolCall.fromCache,
+    hasError,
+    parsedResult,
+    tableData,
+    markdownText,
+    t,
+  ]);
 
   const handleCopyResult = (e: React.MouseEvent) => {
     e.stopPropagation();

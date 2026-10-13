@@ -84,6 +84,8 @@ export type ToolCallInfo = {
   interactionId: string;
   status: "pending" | "running" | "completed" | "error";
   result?: string;
+  /** 该只读调用是否命中缓存复用（未重复执行物理调用）。 */
+  fromCache?: boolean;
   streamingStdout?: string;
   streamingStderr?: string;
   /** 生图工具（imagegen-generate）流式预览图，按 index 排序。 */

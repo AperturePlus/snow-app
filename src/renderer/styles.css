@@ -17049,6 +17049,18 @@ body.is-panel-resizing * {
   flex-shrink: 0;
 }
 
+.tool-call-cache-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  border: 1px solid var(--border-subtle, transparent);
+}
+
 .tool-call-error {
   display: flex;
   align-items: center;
