@@ -1,4 +1,21 @@
 export const en = {
+  "lsp.resources.title": "Global LSP resource budget & processes",
+  "lsp.resources.policyHint":
+    "Applies across projects without sharing semantic state. Defaults: 5 sessions, 1800s idle, 2 cold starts. Lower limits never interrupt active requests/startups; later admissions use the new budget. Idle sessions are checked every 60s.",
+  "lsp.resources.maxSessions": "Maximum sessions",
+  "lsp.resources.idleTimeoutSecs": "Idle timeout (seconds)",
+  "lsp.resources.maxConcurrentStarts": "Concurrent cold starts",
+  "lsp.resources.save": "Save resource policy",
+  "lsp.resources.unavailable": "Unavailable / not sampled",
+  "lsp.resources.sampleHint":
+    "Samples every 5s while open. Windows parent memory is working set (not tree memory). CPU is cumulative seconds, NOT percentage; tree CPU is Windows Job accounting including exited descendants. Tree memory is unavailable. Unsupported OS, missing Job, failed queries or busy sessions show unavailable, never a fabricated zero.",
+  "lsp.resources.stale": "Refresh failed; retained samples may be stale.",
+  "lsp.resources.empty": "No session snapshots available.",
+  "lsp.resources.memory": "Parent memory",
+  "lsp.resources.parentCpu": "Parent CPU total",
+  "lsp.resources.treeCpu": "Tree CPU total",
+  "lsp.resources.processes": "Active Job processes",
+  "lsp.resources.sampled": "Sampled at",
   "settings.busySendBehavior": "Send behavior while busy",
   "settings.busySendBehaviorInfo":
     "Queue waits for the current task to finish; steer is handled at the next available boundary. Use the alternate shortcut to switch for one send.",
@@ -4806,6 +4823,107 @@ export const en = {
   "taskManager.loadError": "Failed to read process information",
   "taskManager.empty": "No processes to display",
   "taskManager.sortBy": "Sort by {{column}}",
+  "taskManager.search": "Search name / PID / project / language",
+  "taskManager.filter": "Process filter",
+  "taskManager.all": "All",
+  "taskManager.visibleTotals": "Totals for filtered processes",
+  "taskManager.visibleProcesses": "Filtered processes",
+  "taskManager.visibleMemory": "Memory total",
+  "taskManager.visibleCpu": "CPU total",
+  "taskManager.autoSampling": "Auto sampling",
+  "taskManager.paused": "Sampling paused",
+  "taskManager.lastSnapshot": "Process snapshot {{time}}",
+  "taskManager.processStale": "Process snapshot stale",
+  "taskManager.stale": "Stale",
+  "taskManager.accounting":
+    "Totals cover filtered rows, deduplicated by PID. Each row shows its own usage; parents and children are counted once each. Memory uses binary units. CPU is interval percentage; * means some processes lack a baseline.",
+  "taskManager.budgetTitle": "Global LSP resource budget",
+  "taskManager.sessionsTitle": "LSP sessions · {{count}}",
+  "taskManager.sessionAccounting":
+    "Sessions update every 5s. Group totals sum own-process samples in the current filter, not cumulative Job accounting that includes exited descendants.",
+  "taskManager.lspStale":
+    "Session data unavailable or stale. Historical status is retained, but PID ownership is not inferred. The process list can still refresh independently.",
+  "taskManager.session.running": "Running",
+  "taskManager.session.dead": "Stopped",
+  "taskManager.session.exited": "Exited",
+  "taskManager.session.stale": "Status stale",
+  "taskManager.restarts": "{{count}} restarts",
+  "taskManager.visibleGroup": "Filtered process total · {{count}}",
+  "taskManager.unlinkedSession":
+    "No confirmed process ownership in this filter. Exited, unsampled or mismatched PIDs are not inferred.",
+  "taskManager.parentPid": "Parent PID {{pid}}",
+  "taskManager.sessionRoot": "Session parent",
+  "taskManager.sessionChild": "Descendant of session {{pid}}",
+  "taskManager.ownCpu": "Own CPU",
+  "taskManager.ownMemory": "Own memory",
+  "taskManager.processChanged":
+    "Process identity changed or snapshot is stale. Refresh and confirm again.",
+  "taskManager.endNamedProcess": "End {{name}} (PID {{pid}})",
+  "taskManager.processTable": "Application processes and LSP ownership",
+  "taskManager.loading": "Reading process snapshot",
+  "taskManager.loadingBudget": "Loading resource budget…",
+  "taskManager.savingBudget": "Saving…",
+  "taskManager.budgetSaved": "Resource policy saved.",
+  "taskManager.budgetLoadError":
+    "Failed to load resource budget. Please retry.",
+  "taskManager.budgetSaveError":
+    "Save not confirmed. Draft retained; verify the current policy before retrying.",
+  "taskManager.trendTitle": "Short-term usage · Last 60 seconds",
+  "taskManager.trendHint":
+    "Only own-process totals in the current filter, up to 120 points. Search, LSP or project scope changes clear history. Pauses, hidden windows, failed samples and intervals over 2.5s create gaps. Incomplete CPU baselines remain unknown, never zero-filled.",
+  "taskManager.trendUnknown": "Unknown / gap",
+  "taskManager.trendEmpty": "Waiting for a new process sample in this scope.",
+  "taskManager.trendChartLabel":
+    "{{metric}} · Own-process totals in the current filter, last 60 seconds, latest {{value}}",
+  "taskManager.trendScale": "Vertical scale maximum {{value}}",
+  "taskManager.viewMode": "Process view",
+  "taskManager.listView": "List",
+  "taskManager.treeView": "Process tree",
+  "taskManager.expandAll": "Expand all",
+  "taskManager.collapseAll": "Collapse all",
+  "taskManager.treeHint":
+    "The tree includes filtered results only. Missing parents, orphans and cycles are promoted to roots; no context rows from other projects are added. Collapsing descendants does not change filtered totals.",
+  "taskManager.expandProcess": "Expand children of {{name}} (PID {{pid}})",
+  "taskManager.collapseProcess": "Collapse children of {{name}} (PID {{pid}})",
+  "taskManager.projectScope": "Project scope",
+  "taskManager.allProjects": "All projects",
+  "taskManager.clearProject": "Clear project",
+  "taskManager.selectedProject": "Current project: {{project}}",
+  "taskManager.filterProject": "Filter project {{project}}",
+  "taskManager.stopSession": "Stop session",
+  "taskManager.restartSession": "Restart session",
+  "taskManager.sessionActionHint":
+    "Actions target the exact language and physical project-root session, never a project-path prefix. Only running sessions with a verified current identity can be managed.",
+  "taskManager.sessionActionUnavailable":
+    "Session identity is unverified or not running. Stop/restart disabled; check or start it on the LSP configuration page. No session will be created for an arbitrary root.",
+  "taskManager.sessionActionConfirm":
+    "{{action}}: {{lang}}\nPhysical project root: {{root}}\nPID: {{pid}}\nThis interrupts the entire physical session and all requests sharing it. PID and restart count will be revalidated; sibling project roots are not affected.",
+  "taskManager.sessionChanged":
+    "The session changed, exited or could not be verified. Action refused; refresh and confirm again.",
+  "taskManager.sessionResultUnconfirmed":
+    "Session operation result not confirmed. Refresh to verify its status.",
+  "taskManager.sessionActionFailed":
+    "Session operation failed. Refresh to verify its status.",
+  "taskManager.alertTitle": "Sustained usage alerts",
+  "taskManager.alertEnabled": "Enabled",
+  "taskManager.alertDisabled": "Off by default",
+  "taskManager.alertEnable": "Enable inline alerts for the current filter",
+  "taskManager.alertHint":
+    "Own-process totals in the current filter only; preferences live in this panel. CPU and memory have independent continuity clocks. Gaps, pauses, hidden windows, failures and scope/threshold changes reset them. No automatic termination, network messages or system notifications.",
+  "taskManager.alertCpu": "CPU threshold (%)",
+  "taskManager.alertMemory": "Memory threshold (MiB)",
+  "taskManager.alertDuration": "Duration (seconds)",
+  "taskManager.alertInvalid":
+    "Invalid thresholds: CPU 0–100%, memory 1–1048576 MiB, integer duration 3–120 seconds.",
+  "taskManager.alertRules":
+    "Notify after CPU ≥ {{cpu}}% or memory ≥ {{memory}} MiB independently persists for {{duration}} seconds.",
+  "taskManager.alertMonitoring":
+    "Waiting for and checking new continuous valid samples; missing CPU does not stop the independent memory clock.",
+  "taskManager.alertWaiting":
+    "Sampling paused or scope unknown; continuity clocks reset.",
+  "taskManager.alertTriggered":
+    "Current-filter {{metric}} reached {{threshold}} for {{duration}} seconds. Advisory only; no automatic action.",
+  "taskManager.dismissAlert": "Dismiss this alert",
   "taskManager.colName": "Name",
   "taskManager.colType": "Type",
   "taskManager.colPid": "PID",
