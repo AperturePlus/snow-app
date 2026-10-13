@@ -862,7 +862,10 @@ export const zhCN = {
   "toolCall.bash.cancelled": "已停止",
   "toolCall.bash.countdown": "{{seconds}}s",
   "toolCall.bash.interactive": "交互式",
-  "toolCall.bash.interactivePlaceholder": "输入内容并按回车键...",
+  "toolCall.bash.interactivePlaceholder":
+    "输入内容后按回车键发送，留空按回车 = 发送一个回车键...",
+  "toolCall.bash.interactiveSendInput": "发送输入内容",
+  "toolCall.bash.interactiveSendEnter": "发送回车键",
   "toolCall.bash.kill": "终止",
   "toolCall.bash.killing": "终止中...",
   "toolCall.bash.killTitle": "终止正在运行的命令，无需等待超时",

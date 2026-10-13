@@ -863,7 +863,10 @@ export const zhTW = {
   "toolCall.bash.cancelled": "已停止",
   "toolCall.bash.countdown": "{{seconds}}秒",
   "toolCall.bash.interactive": "互動式",
-  "toolCall.bash.interactivePlaceholder": "輸入內容並按 Enter 鍵...",
+  "toolCall.bash.interactivePlaceholder":
+    "輸入內容後按 Enter 鍵送出，留空按 Enter = 送出一個 Enter 鍵...",
+  "toolCall.bash.interactiveSendInput": "送出輸入內容",
+  "toolCall.bash.interactiveSendEnter": "送出 Enter 鍵",
   "toolCall.bash.status.pending": "等待中",
   "toolCall.bash.status.running": "執行中",
   "toolCall.bash.status.completed": "已完成",

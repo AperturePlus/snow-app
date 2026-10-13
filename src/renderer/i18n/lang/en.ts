@@ -919,7 +919,10 @@ export const en = {
   "toolCall.bash.cancelled": "stopped",
   "toolCall.bash.countdown": "{{seconds}}s",
   "toolCall.bash.interactive": "interactive",
-  "toolCall.bash.interactivePlaceholder": "Type input and press Enter...",
+  "toolCall.bash.interactivePlaceholder":
+    "Type input and press Enter to send; empty + Enter sends a bare Return...",
+  "toolCall.bash.interactiveSendInput": "Send input",
+  "toolCall.bash.interactiveSendEnter": "Send Return key",
   "toolCall.bash.kill": "Stop",
   "toolCall.bash.killing": "Stopping...",
   "toolCall.bash.killTitle":

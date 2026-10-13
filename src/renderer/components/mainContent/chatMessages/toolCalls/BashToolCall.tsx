@@ -4,6 +4,7 @@ import {
   AlertCircle,
   Check,
   Copy,
+  CornerDownLeft,
   FileText,
   Info,
   Send,
@@ -276,6 +277,10 @@ export const BashToolCall = ({
   const [sendError, setSendError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // 空输入（含纯空白）发送的是纯回车键，等价于在真实终端里敲回车，
+  // 用于 input()/pause 这类只等回车的交互式命令；按钮图标随之切换。
+  const isInputBlank = inputValue.trim().length === 0;
+
   // Auto-focus the input when the interactive session becomes available
   useEffect(() => {
     if (canSendInput && inputRef.current) {
@@ -284,7 +289,7 @@ export const BashToolCall = ({
   }, [canSendInput]);
 
   const handleSendInput = useCallback(async () => {
-    if (!interactiveSessionId || !inputValue.trim() || isSending) {
+    if (!interactiveSessionId || isSending) {
       return;
     }
     setIsSending(true);
@@ -767,11 +772,24 @@ export const BashToolCall = ({
                 />
                 <button
                   className="tool-call-bash-interactive-send"
-                  disabled={isSending || !inputValue.trim()}
+                  disabled={isSending}
                   onClick={() => void handleSendInput()}
+                  title={
+                    isInputBlank
+                      ? t("toolCall.bash.interactiveSendEnter", {
+                          defaultValue: "Send Return key",
+                        })
+                      : t("toolCall.bash.interactiveSendInput", {
+                          defaultValue: "Send input",
+                        })
+                  }
                   type="button"
                 >
-                  <Send size={13} />
+                  {isInputBlank ? (
+                    <CornerDownLeft size={13} aria-hidden="true" />
+                  ) : (
+                    <Send size={13} aria-hidden="true" />
+                  )}
                 </button>
               </div>
             </div>
