@@ -55635,17 +55635,9 @@ img.plugin-icon {
   --tree-sticky-row-height: 28px;
 }
 
-.sidebar-tree-list > :first-child {
-  margin-top: 2px;
-}
-
 .tree-collection-node {
   display: flex;
   flex-direction: column;
-}
-
-.tree-collection-node.expanded {
-  margin-bottom: 2px;
 }
 
 .section-heading-group {
