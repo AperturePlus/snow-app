@@ -29,10 +29,25 @@ type Match = {
 };
 const compareText = (a: string, b: string): number =>
   a < b ? -1 : a > b ? 1 : 0;
+
+// LRU/Map memoization cache for tool renderer selection to avoid recalculating matches on every message render
+const rendererMatchCache = new Map<string, Match | undefined>();
+const MAX_MATCH_CACHE_SIZE = 1000;
+
+export const clearPluginToolCallMatchCache = (): void => {
+  rendererMatchCache.clear();
+};
+
 const selectRenderer = (
   plugins: PluginView[],
   name: string,
 ): Match | undefined => {
+  // Compute cache key combining enabled plugins revision and tool name
+  const cacheKey = `${plugins.map((p) => `${p.pluginId}:${p.version}:${p.enabled ? 1 : 0}:${p.toolCallRenderers.length}`).join("|")}::${name}`;
+  if (rendererMatchCache.has(cacheKey)) {
+    return rendererMatchCache.get(cacheKey);
+  }
+
   const matches: Match[] = [];
   for (const plugin of plugins) {
     if (
@@ -57,7 +72,7 @@ const selectRenderer = (
         });
     }
   }
-  return matches.sort(
+  const result = matches.sort(
     (a, b) =>
       Number(b.exact) - Number(a.exact) ||
       b.prefixLength - a.prefixLength ||
@@ -66,6 +81,12 @@ const selectRenderer = (
       compareText(a.plugin.pluginId, b.plugin.pluginId) ||
       compareText(a.definition.id, b.definition.id),
   )[0];
+
+  if (rendererMatchCache.size >= MAX_MATCH_CACHE_SIZE) {
+    rendererMatchCache.clear();
+  }
+  rendererMatchCache.set(cacheKey, result);
+  return result;
 };
 
 type Loaded = {

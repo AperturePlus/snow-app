@@ -68,10 +68,14 @@ type ChatInputToolbarProps = ComponentProps<typeof ModelSelector> &
     commandTriggerRef: RefObject<HTMLButtonElement | null>;
     isCommandOpen: boolean;
     handleToggleCommand: () => void;
+    sessionKey?: string;
+    conversationId?: string | null;
   };
 
 export const ChatInputToolbar = ({
   projectId,
+  sessionKey,
+  conversationId,
   plusMenuSections,
   commandTriggerRef,
   isCommandOpen,
@@ -268,6 +272,8 @@ export const ChatInputToolbar = ({
       </div>
       <div className="toolbar-right">
         <ChatInputPluginButtons
+          sessionKey={sessionKey}
+          conversationId={conversationId}
           parametersKey={JSON.stringify([
             modelSelectorProps.selectedApiProfile,
             modelSelectorProps.selectedModel,

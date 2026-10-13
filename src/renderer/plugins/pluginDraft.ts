@@ -3,6 +3,7 @@ import {
   replaceDraftText,
   splitDraftText,
 } from "../components/mainContent/chatInput/fileTagUtils";
+import { persistSessionDraft } from "../components/mainContent/chatInput/chatInputDraftBridge";
 
 const revisions = new WeakMap<HTMLElement, number>();
 /** Called synchronously for every controller write, even A -> B -> A in one render. */
@@ -61,7 +62,10 @@ const TOKEN_TTL_MS = 5 * 60 * 1000;
 /** Re-register on project/session changes; streaming or compaction are not draft changes. */
 export const registerPluginDraftHost = (next: DraftHost): (() => void) => {
   host = next;
-  tokens.clear();
+  const now = Date.now();
+  for (const [key, token] of tokens) {
+    if (token.expiresAt <= now) tokens.delete(key);
+  }
   const observer = new MutationObserver((records) => {
     if (records.length) markPluginDraftChanged(next.element);
   });
@@ -79,7 +83,6 @@ export const registerPluginDraftHost = (next: DraftHost): (() => void) => {
     observers.delete(next);
     if (host === next) {
       host = null;
-      tokens.clear();
       notifyContextChanged();
     }
   };
@@ -115,16 +118,8 @@ const consume = (
     throw new Error("Draft token is invalid or expired");
   }
   tokens.delete(key);
-  const current = requireHost();
-  if (
-    token.expiresAt <= Date.now() ||
-    token.host !== current ||
-    token.revision !== revisionOf(current) ||
-    token.expected !== readEditableContent(current.element)
-  ) {
-    throw new Error(
-      "Draft changed or input session switched; capture the draft again",
-    );
+  if (token.expiresAt <= Date.now()) {
+    throw new Error("Draft token is expired");
   }
   return token;
 };
@@ -141,37 +136,38 @@ export const getPluginProjectBinding = (
   worktreeId?: string;
   worktreeMode?: boolean;
 } | null => {
-  if (
-    !draftToken &&
-    draft === undefined &&
-    (!host || !host.element.isConnected)
-  )
-    return null;
-  let current: DraftHost;
-  try {
-    current = requireHost();
-  } catch {
-    throw new DOMException("Draft context unavailable", "AbortError");
-  }
   if (draftToken !== undefined) {
     const token = tokens.get(draftToken);
     if (
       !token ||
       token.pluginId !== pluginId ||
       token.kind !== "draft" ||
-      token.expiresAt <= Date.now() ||
-      token.host !== current ||
-      token.revision !== revisionOf(current) ||
-      token.expected !== readEditableContent(current.element)
-    )
+      token.expiresAt <= Date.now()
+    ) {
       throw new DOMException(
         "Draft changed or project context expired",
         "AbortError",
       );
+    }
     if (draft !== undefined && draft !== splitDraftText(token.original).text)
       throw new Error("Draft does not match captured text");
-  } else if (draft !== undefined)
-    throw new Error("Captured draft token required");
+    return {
+      pluginId,
+      projectId: token.host.projectId,
+      sessionKey: token.host.sessionKey,
+      conversationId: token.host.conversationId ?? undefined,
+      worktreeId: token.host.worktreeId,
+      worktreeMode: token.host.worktreeMode,
+    };
+  }
+  if (draft === undefined && (!host || !host.element.isConnected)) return null;
+  let current: DraftHost;
+  try {
+    current = requireHost();
+  } catch {
+    throw new DOMException("Draft context unavailable", "AbortError");
+  }
+  if (draft !== undefined) throw new Error("Captured draft token required");
   if (!current.projectId) return null;
   if (!current.sessionKey)
     throw new DOMException("Draft session unavailable", "AbortError");
@@ -220,12 +216,26 @@ export const applyPluginDraft = (
   if (typeof text !== "string") throw new Error("text must be a string");
   const token = consume(pluginId, draftToken, "draft");
   const content = replaceDraftText(token.original, text);
-  token.host.restoreContent(content);
+  const current = host;
+  const isForeground =
+    current &&
+    current.element.isConnected &&
+    current.sessionKey === token.host.sessionKey;
+
+  if (isForeground) {
+    current.restoreContent(content);
+  }
+  persistSessionDraft(
+    token.host.sessionKey,
+    token.host.conversationId,
+    content,
+  );
+
   const restoreToken = issue({
     pluginId,
-    host: token.host,
-    revision: revisionOf(token.host),
-    expected: readEditableContent(token.host.element),
+    host: isForeground ? current : token.host,
+    revision: isForeground ? revisionOf(current) : 0,
+    expected: content,
     original: token.original,
     kind: "restore",
   });
@@ -237,6 +247,19 @@ export const restorePluginDraft = (
   restoreToken: unknown,
 ): { restored: true } => {
   const token = consume(pluginId, restoreToken, "restore");
-  token.host.restoreContent(token.original);
+  const current = host;
+  const isForeground =
+    current &&
+    current.element.isConnected &&
+    current.sessionKey === token.host.sessionKey;
+
+  if (isForeground) {
+    current.restoreContent(token.original);
+  }
+  persistSessionDraft(
+    token.host.sessionKey,
+    token.host.conversationId,
+    token.original,
+  );
   return { restored: true };
 };

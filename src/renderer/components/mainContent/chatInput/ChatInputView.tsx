@@ -938,6 +938,8 @@ export const ChatInputView = ({
             }}
           />
           <ChatInputToolbar
+            sessionKey={sessionViewKey ?? ""}
+            conversationId={activeConversationId ?? null}
             projectId={projectId}
             plusMenuSections={plusMenuSections}
             commandTriggerRef={commandTriggerRef}

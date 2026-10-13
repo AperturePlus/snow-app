@@ -29,6 +29,12 @@ import {
   resolvePluginChatInputAction,
 } from "../../../plugins/pluginRuntime";
 import { pluginStore } from "../../../plugins/pluginStore";
+import {
+  getSessionActionTask,
+  subscribeSessionActionTask,
+  setSessionActionTask,
+  abortSessionActionTask,
+} from "../../../plugins/pluginChatInputActionStore";
 import type { PluginPanelDefinition, PluginView } from "../../../plugins/types";
 import { ContextMenu, type ContextMenuItem } from "../../common/ContextMenu";
 import { Modal } from "../../common/Modal";
@@ -90,12 +96,16 @@ type ActionRun = {
 type Confirmation = { message: string; resolve: (accepted: boolean) => void };
 
 export const ChatInputPluginAction = ({
+  sessionKey = "",
+  conversationId = null,
   plugin,
   panel,
   disabled,
   parametersKey,
   apiConfigIdentity,
 }: {
+  sessionKey?: string;
+  conversationId?: string | null;
   plugin: PluginView;
   panel: PluginPanelDefinition;
   disabled: boolean;
@@ -161,11 +171,27 @@ export const ChatInputPluginAction = ({
     getPluginDraftContextRevision,
     getPluginDraftContextRevision,
   );
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("");
+  const initialTask = sessionKey ? getSessionActionTask(sessionKey) : undefined;
+  const [busy, setBusy] = useState(initialTask?.busy ?? false);
+  const [status, setStatus] = useState(initialTask?.status ?? "");
   const [result, setResult] = useState<PluginChatInputActionResult | null>(
-    null,
+    initialTask?.result ?? null,
   );
+
+  useEffect(() => {
+    if (!sessionKey) return;
+    const sync = () => {
+      const task = getSessionActionTask(sessionKey);
+      if (task) {
+        setBusy((prev) => (prev !== task.busy ? task.busy : prev));
+        busyRef.current = task.busy;
+        setStatus((prev) => (prev !== task.status ? task.status : prev));
+        setResult((prev) => (prev !== task.result ? task.result : prev));
+      }
+    };
+    sync();
+    return subscribeSessionActionTask(sessionKey, sync);
+  }, [sessionKey]);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const runRef = useRef<ActionRun | null>(null);
   const busyRef = useRef(false);
@@ -287,25 +313,25 @@ export const ChatInputPluginAction = ({
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      invalidate();
+      settleConfirmation(false);
     };
-  }, [invalidate]);
+  }, [settleConfirmation]);
   useLayoutEffect(() => {
     const hadRun = runRef.current !== null;
-    invalidate();
-    setBusy(false);
-    setResult((previous) =>
-      previous
-        ? {
-            message: previous.message,
-            preview: previous.preview,
-            details: previous.details,
-          }
-        : null,
-    );
-    // Context changes keep only the copy-only preview; the toolbar stays free of
-    // status sentences, so no stale notice is left behind.
-    if (hadRun) setStatus("");
+    if (hadRun) {
+      invalidate();
+      setBusy(false);
+      setResult((previous) =>
+        previous
+          ? {
+              message: previous.message,
+              preview: previous.preview,
+              details: previous.details,
+            }
+          : null,
+      );
+      setStatus("");
+    }
   }, [
     plugin,
     panel,
@@ -313,11 +339,13 @@ export const ChatInputPluginAction = ({
     apiConfigIdentity,
     disabled,
     locale,
-    contextRevision,
     invalidate,
   ]);
 
   const cancel = (): void => {
+    if (sessionKey) {
+      abortSessionActionTask(sessionKey);
+    }
     invalidate();
     setBusy(false);
     setResult((previous) =>
@@ -345,7 +373,15 @@ export const ChatInputPluginAction = ({
       throw new DOMException("Action context changed", "AbortError");
   };
   const onStatus = (run: ActionRun, message: string): void => {
-    if (busyRef.current && run.current() && typeof message === "string")
+    if (sessionKey) {
+      setSessionActionTask(sessionKey, { status: message });
+    }
+    if (
+      busyRef.current &&
+      run.current() &&
+      typeof message === "string" &&
+      mountedRef.current
+    )
       setStatus(message);
   };
   const confirm = async (run: ActionRun, message: string): Promise<boolean> => {
@@ -478,8 +514,17 @@ export const ChatInputPluginAction = ({
       )
         throw new Error("Invalid action source selection");
     }
-    setResult(next);
-    setStatus(next?.message ?? "");
+    if (sessionKey) {
+      setSessionActionTask(sessionKey, {
+        busy: false,
+        status: next?.message ?? "",
+        result: next,
+      });
+    }
+    if (mountedRef.current) {
+      setResult(next);
+      setStatus(next?.message ?? "");
+    }
   };
   const perform = async (
     run: ActionRun,
@@ -488,27 +533,42 @@ export const ChatInputPluginAction = ({
   ): Promise<void> => {
     run.executing = activate;
     busyRef.current = true;
-    setBusy(true);
+    if (mountedRef.current) setBusy(true);
+    if (sessionKey) {
+      setSessionActionTask(sessionKey, { busy: true });
+    }
     try {
       check(run);
       finish(run, await operation());
     } catch (error) {
       if (run.current()) {
-        setStatus(error instanceof Error ? error.message : labels.failed);
-        setResult((previous) =>
-          previous
-            ? {
-                message: previous.message,
-                preview: previous.preview,
-                details: previous.details,
-              }
-            : null,
-        );
+        const errorMsg = error instanceof Error ? error.message : labels.failed;
+        if (sessionKey) {
+          setSessionActionTask(sessionKey, {
+            busy: false,
+            status: errorMsg,
+          });
+        }
+        if (mountedRef.current) {
+          setStatus(errorMsg);
+          setResult((previous) =>
+            previous
+              ? {
+                  message: previous.message,
+                  preview: previous.preview,
+                  details: previous.details,
+                }
+              : null,
+          );
+        }
       }
     } finally {
       run.executing = false;
-      if (runRef.current === run && mountedRef.current) {
-        busyRef.current = false;
+      busyRef.current = false;
+      if (sessionKey) {
+        setSessionActionTask(sessionKey, { busy: false });
+      }
+      if (mountedRef.current) {
         setBusy(false);
         settleConfirmation(false);
       }
@@ -541,23 +601,29 @@ export const ChatInputPluginAction = ({
       return;
     invalidate();
     const capturedIdentity = identityRef.current;
-    const capturedContext = getPluginDraftContextRevision();
     const controller = new AbortController();
+    const task = sessionKey
+      ? setSessionActionTask(sessionKey, {
+          conversationId,
+          pluginId: plugin.pluginId,
+          panelId: panel.id,
+          actionName,
+          controller,
+          busy: true,
+          status: "",
+          result: null,
+          isAborted: false,
+        })
+      : null;
+
     const run: ActionRun = {
       controller,
       executing: false,
       current: () =>
-        mountedRef.current &&
-        runRef.current === run &&
         !controller.signal.aborted &&
-        getPluginDraftContextRevision() === capturedContext &&
+        !task?.isAborted &&
         identityRef.current.plugin === capturedIdentity.plugin &&
         identityRef.current.panel === capturedIdentity.panel &&
-        identityRef.current.parametersKey === capturedIdentity.parametersKey &&
-        identityRef.current.apiConfigIdentity ===
-          capturedIdentity.apiConfigIdentity &&
-        identityRef.current.locale === capturedIdentity.locale &&
-        !identityRef.current.disabled &&
         pluginStore.getById(plugin.pluginId) === plugin &&
         plugin.enabled,
     };
@@ -642,9 +708,20 @@ export const ChatInputPluginAction = ({
     );
   };
   const useResult = (kind: "apply" | "undo"): void => {
-    const run = runRef.current;
-    const operation = result?.[kind];
-    if (!run || !operation || busyRef.current || !run.current()) return;
+    const task = sessionKey ? getSessionActionTask(sessionKey) : undefined;
+    const activeResult = result ?? task?.result ?? null;
+    const operation = activeResult?.[kind];
+    if (!operation || busyRef.current) return;
+    let run = runRef.current;
+    if (!run) {
+      const controller = new AbortController();
+      run = {
+        controller,
+        executing: true,
+        current: () => true,
+      };
+      runRef.current = run;
+    }
     void perform(run, async () => {
       check(run);
       if (kind === "apply")
@@ -652,10 +729,13 @@ export const ChatInputPluginAction = ({
           operation as NonNullable<PluginChatInputActionResult["apply"]>
         )();
       await (operation as NonNullable<PluginChatInputActionResult["undo"]>)();
+      if (sessionKey) {
+        setSessionActionTask(sessionKey, { result: null, status: "" });
+      }
       return {
         message: labels.undo,
-        preview: result?.preview,
-        details: result?.details,
+        preview: activeResult?.preview,
+        details: activeResult?.details,
       };
     });
   };

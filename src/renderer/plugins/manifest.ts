@@ -264,7 +264,7 @@ const normalizeToolCallRenderers = (
     return [
       ...new Set(
         value
-          .slice(0, 32)
+          .slice(0, 128)
           .filter(
             (item): item is string =>
               typeof item === "string" &&
@@ -275,7 +275,7 @@ const normalizeToolCallRenderers = (
       ),
     ];
   };
-  for (const item of items.slice(0, 16)) {
+  for (const item of items.slice(0, 64)) {
     if (!item || typeof item !== "object" || Array.isArray(item)) continue;
     const value = item as Record<string, unknown>;
     const id =

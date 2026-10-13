@@ -9,10 +9,14 @@ import { rightPanelEvents } from "../../rightPanel/rightPanelEvents";
 
 /** Declarative panel launcher only: does not send a message or invoke AI. */
 export const ChatInputPluginButtons = ({
+  sessionKey,
+  conversationId,
   disabled,
   parametersKey,
   apiConfigIdentity,
 }: {
+  sessionKey?: string;
+  conversationId?: string | null;
   disabled: boolean;
   parametersKey: string;
   apiConfigIdentity: unknown;
@@ -38,6 +42,8 @@ export const ChatInputPluginButtons = ({
                 return (
                   <ChatInputPluginAction
                     key={`${plugin.pluginId}:${panel.id}`}
+                    sessionKey={sessionKey}
+                    conversationId={conversationId}
                     plugin={plugin}
                     panel={panel}
                     disabled={disabled}
