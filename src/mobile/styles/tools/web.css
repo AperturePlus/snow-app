@@ -6,6 +6,7 @@
  *   .tc-web-params / .tc-web-flags           参数行与徽章行
  *   .tc-web-item*                            搜索结果条目（标题 / URL / 摘要）
  *   .tc-web-page*                            页面信息卡（抓取结果 / 浏览器）
+ *   .tc-web-cap*                             Anysearch 子领域能力条目与参数列表
  *   .tc-web-op* / .tc-web-chip               浏览器操作行与实例徽章
  *   .tc-web-images / .tc-web-img*            图片网格与不可达占位
  *   .tc-web-row* / .tc-web-sub / .tc-web-sev 列表行（控制台 / 网络 / Cookie / 无障碍）
@@ -239,6 +240,59 @@
   border-left: 2px solid rgba(255, 114, 123, 0.55);
 }
 
+/* ── Anysearch 子领域能力条目（外部 MCP） ────────────────────────────────── */
+.tc-web-cap {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.tc-web-cap-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.tc-web-cap-desc {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.tc-web-cap-params {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.tc-web-cap-param {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.tc-web-cap-param-name {
+  flex: 0 0 auto;
+  font:
+    10.5px/1.5 "SFMono-Regular",
+    Consolas,
+    monospace;
+  color: var(--blue);
+  overflow-wrap: anywhere;
+}
+.tc-web-cap-param-desc {
+  min-width: 0;
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
 /* ── 提示 / 空态 / 错误 ──────────────────────────────────────────────────── */
 .tc-web-note,
 .tc-web-empty,
@@ -366,7 +420,8 @@
 
 /* ── 浅色主题（变量已覆盖大部分，这里只修亮色文字与浅底） ─────────────────── */
 html[data-theme="light"] .tc-web-item,
-html[data-theme="light"] .tc-web-page {
+html[data-theme="light"] .tc-web-page,
+html[data-theme="light"] .tc-web-cap {
   background: rgba(15, 23, 42, 0.02);
 }
 html[data-theme="light"] .tc-web-item-title,
