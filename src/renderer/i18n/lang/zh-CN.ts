@@ -2167,6 +2167,8 @@ export const zhCN = {
   "settings.apiDisplayName": "显示名称",
   "settings.apiBaseUrl": "Base URL",
   "settings.apiBaseUrlMode": "Base URL 模式",
+  "settings.apiBaseUrlModeAuto": "自动",
+  "settings.apiBaseUrlModeCustom": "自定义",
   "settings.apiKey": "API Key",
   "settings.apiRequestMethod": "请求方式",
   "settings.apiResponsesVerbosity": "Responses 输出详细度",

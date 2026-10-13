@@ -2168,6 +2168,8 @@ export const zhTW = {
   "settings.apiDisplayName": "顯示名稱",
   "settings.apiBaseUrl": "Base URL",
   "settings.apiBaseUrlMode": "Base URL 模式",
+  "settings.apiBaseUrlModeAuto": "自動",
+  "settings.apiBaseUrlModeCustom": "自訂",
   "settings.apiKey": "API Key",
   "settings.apiRequestMethod": "請求方式",
   "settings.apiResponsesVerbosity": "Responses 輸出詳細度",

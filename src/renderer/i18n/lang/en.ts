@@ -2276,6 +2276,8 @@ export const en = {
   "settings.apiDisplayName": "Display name",
   "settings.apiBaseUrl": "Base URL",
   "settings.apiBaseUrlMode": "Base URL mode",
+  "settings.apiBaseUrlModeAuto": "Auto",
+  "settings.apiBaseUrlModeCustom": "Custom",
   "settings.apiKey": "API key",
   "settings.apiRequestMethod": "Request method",
   "settings.apiResponsesVerbosity": "Responses verbosity",

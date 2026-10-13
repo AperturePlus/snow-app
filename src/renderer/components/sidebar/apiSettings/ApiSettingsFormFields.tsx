@@ -350,8 +350,18 @@ export function ApiSettingsFormFields({
             <CustomSelect
               value={data.baseUrlMode}
               options={[
-                { value: "auto", label: "auto" },
-                { value: "custom", label: "custom" },
+                {
+                  value: "auto",
+                  label: t("settings.apiBaseUrlModeAuto", {
+                    defaultValue: "Auto",
+                  }),
+                },
+                {
+                  value: "custom",
+                  label: t("settings.apiBaseUrlModeCustom", {
+                    defaultValue: "Custom",
+                  }),
+                },
               ]}
               onChange={(value) => onChange("baseUrlMode", value)}
               disabled={disabled}
