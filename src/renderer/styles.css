@@ -1215,6 +1215,9 @@ body.is-panel-resizing * {
 
 .sidebar-collapse-inner {
   min-height: 0;
+  /* 必须允许收缩：否则 grid 自动轨道的最小尺寸会按内容的 min-content 计算，
+     长标题会把整行撑破并给外层挤出横向滚动条 */
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -4579,7 +4582,8 @@ body.is-panel-resizing * {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 2px 0;
+  /* 顶部不留 padding：否则吸顶悬浮层与其下方滚动内容之间会露出细缝 */
+  padding: 0 0 2px;
 }
 
 .explorer-tree:focus {
@@ -4667,6 +4671,37 @@ body.is-panel-resizing * {
 .explorer-tree-row:not(:hover) .explorer-tree-size,
 .explorer-tree-row:not(:hover) .explorer-tree-loading {
   opacity: 0;
+}
+
+/* 已展开的目录行：在自己所在的层级位置吸顶（top / z-index 由行内联按层级给出，
+   越浅的层 z-index 越高，被顶出的深层行才会从上层下面滑过）。
+   上级吸顶行构成整体后，下一层滚到它的层级位置即被接入，子树滚完又自动被顶出。 */
+.explorer-tree-row--sticky {
+  position: sticky;
+}
+
+/* 铺底用直角矩形：行的圆角在吸顶时会露出下方滚动内容。
+   颜色跟随所在面板的底色（面板 = 半透明 island 叠在 --app-bg 上），不要色差块 */
+.explorer-tree-row--sticky::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-color: var(--app-bg);
+  content: "";
+}
+
+.sidebar .explorer-tree-row--sticky::before {
+  background-image: linear-gradient(
+    var(--surface-island-muted),
+    var(--surface-island-muted)
+  );
+}
+
+.right-panel .explorer-tree-row--sticky::before {
+  background-image: linear-gradient(
+    var(--surface-island),
+    var(--surface-island)
+  );
 }
 
 /* ===== Explorer Search ===== */
@@ -55590,8 +55625,18 @@ img.plugin-icon {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* 树只做纵向滚动，兜底裁掉意外横向溢出 */
+  overflow-x: hidden;
   scrollbar-gutter: stable;
-  padding: 2px 0 8px;
+  /* 顶部间距交给首个条目 margin：吸顶元素贴顶时不会露出缝隙 */
+  padding: 0 0 8px;
+  /* 吸顶层级：每深入一层子树 +1，用于计算吸顶偏移量 */
+  --tree-sticky-depth: 0;
+  --tree-sticky-row-height: 28px;
+}
+
+.sidebar-tree-list > :first-child {
+  margin-top: 2px;
 }
 
 .tree-collection-node {
@@ -55632,6 +55677,8 @@ img.plugin-icon {
   margin-left: 8px;
   padding-left: 4px;
   padding-top: 1px;
+  /* 合集内项目行的吸顶偏移（排在合集行下方） */
+  --tree-sticky-depth: 1;
 }
 
 .tree-collection-members::before {
@@ -55675,6 +55722,45 @@ img.plugin-icon {
 
 .tree-project-row-wrap.drag-over {
   background: var(--bg-hover);
+}
+
+/* 吸顶（参考 VS Code sticky scroll）：子项还没滚完时，
+   上方合集行/项目行固定在列表顶部，逐层堆叠。
+   :where 不参与特异性计算，保证 hover/active/drag-over 等状态样式仍能覆盖基础背景 */
+:where(.sidebar-tree-list) .project-collection-row,
+:where(.sidebar-tree-list) .tree-project-row-wrap {
+  position: sticky;
+  top: calc(var(--tree-sticky-depth, 0) * var(--tree-sticky-row-height, 28px));
+}
+
+/* 铺底用直角矩形：行自身是圆角，吸顶时四个圆角处会漏出下方滚过的内容。
+   颜色必须与侧栏底色完全一致（侧栏 = --surface-island-muted 叠在 --app-bg 上），
+   故用「不透明底 + 半透明层」的叠色写法，避免出现色差块 */
+:where(.sidebar-tree-list) .project-collection-row::before,
+:where(.sidebar-tree-list) .tree-project-row-wrap::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-color: var(--app-bg);
+  background-image: linear-gradient(
+    var(--surface-island-muted),
+    var(--surface-island-muted)
+  );
+  content: "";
+}
+
+:where(.sidebar-tree-list) .project-collection-row {
+  z-index: 3;
+}
+
+:where(.sidebar-tree-list) .tree-project-row-wrap {
+  z-index: 2;
+}
+
+/* 树内折叠容器改用 clip：overflow: hidden 会成为滚动容器，
+   使内部 sticky 吸顶元素以它为参照而失效（作用域限定在树内，不影响列表模式） */
+.sidebar-tree-list .sidebar-collapse-inner {
+  overflow: clip;
 }
 
 .tree-chevron-btn {

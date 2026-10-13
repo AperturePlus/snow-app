@@ -112,6 +112,10 @@ const flattenTree = (
   return result;
 };
 
+// 行高需与 styles.css 中 .explorer-tree-row 的 height 保持一致；
+// 目录行以「层级 × 行高」作为吸顶偏移，行高必须固定。
+const EXPLORER_ROW_HEIGHT = 24;
+
 const removeNodeByPath = (nodes: TreeNode[], targetPath: string): TreeNode[] =>
   nodes
     .filter((node) => node.path !== targetPath)
@@ -1077,6 +1081,73 @@ export function ProjectExplorerContent({
     [tree, expandedPaths],
   );
 
+  // 渲染树节点：已展开的目录行包裹自己的子树容器，
+  // 使该行的 sticky 生效范围正好是「自己 + 子树」——上级已吸顶的行构成整体后，
+  // 下一层滚到它的层级位置即被接入，子树滚完时又自动被顶出。
+  const renderNode = (node: TreeNode, depth: number): React.JSX.Element => {
+    const isExpanded = expandedPaths.has(node.path);
+    const isSelected = selectedPaths.has(node.path);
+    const hasChildren = node.isDirectory;
+    const isSticky = hasChildren && isExpanded;
+
+    return (
+      <div className="explorer-tree-node" key={node.path}>
+        <div
+          className={`explorer-tree-row${
+            isSticky ? " explorer-tree-row--sticky" : ""
+          }${isSelected ? " selected" : ""}${node.stale ? " stale" : ""}`}
+          draggable
+          onDragStart={(event) => handleTreeDragStart(event, node)}
+          onClick={(event) => handleTreeRowClick(event, node, hasChildren)}
+          onDoubleClick={() => {
+            if (!node.isDirectory) {
+              setEditingEntry({ path: node.path, name: node.name });
+            }
+          }}
+          onContextMenu={(event) => handleEntryContextMenu(event, node)}
+          style={{
+            paddingLeft: `${depth * 14 + 8}px`,
+            ...(isSticky
+              ? {
+                  top: `${depth * EXPLORER_ROW_HEIGHT}px`,
+                  // 层级越浅越靠上：某一层被子树顶出时会向上滑过上层吸顶行，
+                  // 必须从上层下面穿过，否则会出现「下层遮盖上层」
+                  zIndex: 100 - depth,
+                }
+              : {}),
+          }}
+          title={node.path}
+        >
+          <span className="explorer-tree-chevron">
+            {hasChildren ? (
+              isExpanded ? (
+                <ChevronDown size={13} />
+              ) : (
+                <ChevronRight size={13} />
+              )
+            ) : null}
+          </span>
+          {getFileIcon(node, isExpanded)}
+          <span className="explorer-tree-label">{node.name}</span>
+          {!node.isDirectory ? (
+            <span className="explorer-tree-size">{formatSize(node.size)}</span>
+          ) : node.loading ? (
+            <Loader2 className="spin explorer-tree-loading" size={11} />
+          ) : node.error ? (
+            <span title={node.error}>
+              <AlertCircle className="explorer-tree-error" size={11} />
+            </span>
+          ) : null}
+        </div>
+        {isSticky && node.children ? (
+          <div className="explorer-tree-children">
+            {node.children.map((child) => renderNode(child, depth + 1))}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
   // 树行点击：ctrl/cmd 切换选中、shift 范围选择；普通点击单选并打开/展开。
   const handleTreeRowClick = useCallback(
     (
@@ -1607,65 +1678,7 @@ export function ProjectExplorerContent({
               tabIndex={-1}
               onKeyDown={handleTreeKeyDown}
             >
-              {flatNodes.map((flatNode, index) => {
-                const { node, depth, hasChildren, isExpanded } = flatNode;
-                const isSelected = selectedPaths.has(node.path);
-                const isLast = index === flatNodes.length - 1;
-
-                return (
-                  <div
-                    className={`explorer-tree-row${
-                      isSelected ? " selected" : ""
-                    }${node.stale ? " stale" : ""}`}
-                    key={node.path}
-                    draggable
-                    onDragStart={(event) => handleTreeDragStart(event, node)}
-                    onClick={(event) =>
-                      handleTreeRowClick(event, node, hasChildren)
-                    }
-                    onDoubleClick={() => {
-                      if (!node.isDirectory) {
-                        setEditingEntry({ path: node.path, name: node.name });
-                      }
-                    }}
-                    onContextMenu={(event) =>
-                      handleEntryContextMenu(event, node)
-                    }
-                    style={{ paddingLeft: `${depth * 14 + 8}px` }}
-                    title={node.path}
-                  >
-                    <span className="explorer-tree-chevron">
-                      {hasChildren ? (
-                        isExpanded ? (
-                          <ChevronDown size={13} />
-                        ) : (
-                          <ChevronRight size={13} />
-                        )
-                      ) : null}
-                    </span>
-                    {getFileIcon(node, isExpanded)}
-                    <span className="explorer-tree-label">{node.name}</span>
-                    {!node.isDirectory ? (
-                      <span className="explorer-tree-size">
-                        {formatSize(node.size)}
-                      </span>
-                    ) : node.loading ? (
-                      <Loader2
-                        className="spin explorer-tree-loading"
-                        size={11}
-                      />
-                    ) : node.error ? (
-                      <span title={node.error}>
-                        <AlertCircle
-                          className="explorer-tree-error"
-                          size={11}
-                        />
-                      </span>
-                    ) : null}
-                    {isLast ? null : null}
-                  </div>
-                );
-              })}
+              {tree.map((node) => renderNode(node, 0))}
             </div>
           </>
         )}
