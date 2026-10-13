@@ -109,11 +109,17 @@ export function DailyTrendChart({
     (e: React.MouseEvent<SVGSVGElement>) => {
       const svg = svgRef.current;
       if (!svg || points.length === 0) return;
-      const rect = svg.getBoundingClientRect();
-      const x = ((e.clientX - rect.left) / rect.width) * VIEW_W;
+      // 用 SVG 自身的坐标变换把鼠标位置换算成 viewBox 坐标：元素是
+      // width:100% + height:138px，与 viewBox 560x150 比例不一致时，默认的
+      // preserveAspectRatio="xMidYMid meet" 会让绘图区等比缩放并水平居中（左右留白），
+      // 因此不能按整框宽度线性推算，否则索引会向中间挤压、两端出现偏差。
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return;
+      const x = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse()).x;
       const idx = Math.round(((x - PAD_L) / plotW) * (points.length - 1));
       const clamped = Math.max(0, Math.min(points.length - 1, idx));
       setActiveIndex(clamped);
+      const rect = svg.getBoundingClientRect();
       const left = e.clientX - rect.left + 12;
       const top = Math.max(4, e.clientY - rect.top - 8);
       // tooltip 宽约 190px，接近右边界时翻转到左侧。
