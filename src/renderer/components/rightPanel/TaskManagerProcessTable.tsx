@@ -4,8 +4,12 @@ import {
   Boxes,
   ChevronDown,
   ChevronRight,
+  ChevronsDown,
+  ChevronsUp,
   Cpu,
+  List,
   MonitorCog,
+  Network,
   Wrench,
   XCircle,
   type LucideIcon,
@@ -99,29 +103,34 @@ export function TaskManagerProcessTable({
             type="button"
             aria-pressed={view === "list"}
             onClick={() => setView("list")}
+            className="task-manager-view-btn"
           >
-            {t("taskManager.listView")}
+            <List size={12} aria-hidden="true" />
+            <span>{t("taskManager.listView")}</span>
           </button>
           <button
             type="button"
             aria-pressed={view === "tree"}
             onClick={() => setView("tree")}
+            className="task-manager-view-btn"
           >
-            {t("taskManager.treeView")}
+            <Network size={12} aria-hidden="true" />
+            <span>{t("taskManager.treeView")}</span>
           </button>
         </div>
         {view === "tree" && (
-          <>
+          <div className="task-manager-tree-actions">
             <button
               type="button"
-              className="task-manager-refresh-btn"
+              className="task-manager-btn-sm"
               onClick={() => setCollapsed(new Set())}
             >
-              {t("taskManager.expandAll")}
+              <ChevronsDown size={11} aria-hidden="true" />
+              <span>{t("taskManager.expandAll")}</span>
             </button>
             <button
               type="button"
-              className="task-manager-refresh-btn"
+              className="task-manager-btn-sm"
               onClick={() =>
                 setCollapsed(
                   new Set(
@@ -132,9 +141,10 @@ export function TaskManagerProcessTable({
                 )
               }
             >
-              {t("taskManager.collapseAll")}
+              <ChevronsUp size={11} aria-hidden="true" />
+              <span>{t("taskManager.collapseAll")}</span>
             </button>
-          </>
+          </div>
         )}
       </div>
       {view === "tree" && (
@@ -262,14 +272,30 @@ export function TaskManagerProcessTable({
                     </div>
                   </td>
                   <td className="task-manager-cell-kind">
-                    {t(KIND_LABEL_KEYS[process.kind])}
+                    <span
+                      className={`task-manager-kind-tag is-${process.kind}`}
+                    >
+                      {t(KIND_LABEL_KEYS[process.kind])}
+                    </span>
                   </td>
                   <td className="task-manager-cell-num">{process.pid}</td>
-                  <td className="task-manager-cell-num">
-                    {formatTaskCpu(process.cpuPercent)}
+                  <td className="task-manager-cell-num task-manager-cell-cpu">
+                    <span className="task-manager-num-val">
+                      {formatTaskCpu(process.cpuPercent)}
+                    </span>
+                    {process.cpuPercent > 0 && (
+                      <span
+                        className="task-manager-mini-bar is-cpu"
+                        style={{
+                          width: `${Math.min(100, Math.max(6, process.cpuPercent))}%`,
+                        }}
+                      />
+                    )}
                   </td>
-                  <td className="task-manager-cell-num">
-                    {formatTaskBytes(process.memoryBytes)}
+                  <td className="task-manager-cell-num task-manager-cell-mem">
+                    <span className="task-manager-num-val">
+                      {formatTaskBytes(process.memoryBytes)}
+                    </span>
                   </td>
                   <td className="task-manager-cell-num">
                     {process.threadCount}

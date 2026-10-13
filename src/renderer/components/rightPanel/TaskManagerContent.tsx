@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Activity,
   ArrowDown,
   ArrowUp,
+  Bell,
   Boxes,
   Cpu,
+  Layers,
   Loader2,
   MemoryStick,
   RefreshCw,
   Search,
+  X,
 } from "lucide-react";
 import { useI18n } from "../../i18n";
 import { ConfirmDialog } from "../common/ConfirmDialog";
@@ -27,7 +31,11 @@ import {
   type SessionSnapshot,
   type TaskManagerRow,
 } from "./taskManagerModel";
-import { TaskManagerTrend, useUsageTrend } from "./TaskManagerTrend";
+import {
+  MiniSparkline,
+  TaskManagerPerformancePanel,
+  useUsageTrend,
+} from "./TaskManagerTrend";
 import { TaskManagerProcessTable } from "./TaskManagerProcessTable";
 import { TaskManagerSessions } from "./TaskManagerSessions";
 import { TaskManagerAlerts } from "./TaskManagerAlerts";
@@ -46,6 +54,7 @@ import {
 const REFRESH_INTERVAL_MS = 1000;
 type SortField = "name" | "kind" | "pid" | "cpu" | "memory" | "threads";
 type SortDirection = "asc" | "desc";
+type TaskManagerTab = "processes" | "performance" | "sessions" | "alerts";
 
 /** One process sampler serves rows, scoped trends and optional inline alerts. */
 export const TaskManagerContent = ({
@@ -69,7 +78,7 @@ export const TaskManagerContent = ({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "lsp">("all");
   const [project, setProject] = useState("");
-  const [budgetOpen, setBudgetOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<TaskManagerTab>("processes");
   const [sortField, setSortField] = useState<SortField>("memory");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [pendingKill, setPendingKill] = useState<TaskManagerProcess | null>(
@@ -421,236 +430,384 @@ export const TaskManagerContent = ({
     new Date(value).toLocaleTimeString(locale);
   return (
     <div className="task-manager">
+      {/* 顶部指标概览卡片 */}
       <div
         className="task-manager-summary"
         aria-label={t("taskManager.visibleTotals")}
       >
-        <div className="task-manager-stat">
-          <Boxes size={14} aria-hidden="true" />
-          <strong>{summary.count}</strong>
-          <span>{t("taskManager.visibleProcesses")}</span>
-        </div>
-        <div className="task-manager-stat">
-          <MemoryStick size={14} aria-hidden="true" />
-          <strong>{formatTaskBytes(summary.memory)}</strong>
-          <span>{t("taskManager.visibleMemory")}</span>
-        </div>
-        <div className="task-manager-stat">
-          <Cpu size={14} aria-hidden="true" />
-          <strong>{formatTaskTotalCpu(summary)}</strong>
-          <span>{t("taskManager.visibleCpu")}</span>
-        </div>
-      </div>
-      <div className="task-manager-toolbar">
-        <label className="task-manager-search">
-          <Search size={13} aria-hidden="true" />
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("taskManager.search")}
-            aria-label={t("taskManager.search")}
-          />
-        </label>
-        <div
-          className="task-manager-filters"
-          role="group"
-          aria-label={t("taskManager.filter")}
-        >
-          <button
-            type="button"
-            aria-pressed={filter === "all"}
-            onClick={() => setFilter("all")}
-          >
-            {t("taskManager.all")}
-          </button>
-          <button
-            type="button"
-            aria-pressed={filter === "lsp"}
-            onClick={() => setFilter("lsp")}
-          >
-            LSP
-          </button>
-        </div>
-        <label className="toggle-switch task-manager-auto-refresh">
-          <span>{t("taskManager.autoRefresh")}</span>
-          <input
-            type="checkbox"
-            checked={autoRefresh}
-            onChange={(event) => setAutoRefresh(event.target.checked)}
-          />
-          <span className="toggle-slider" />
-        </label>
         <button
           type="button"
-          className="task-manager-refresh-btn"
-          onClick={() => void refresh(true)}
-          title={t("taskManager.refresh")}
-          aria-label={t("taskManager.refresh")}
+          className={`task-manager-stat-card ${activeTab === "processes" ? "is-selected" : ""}`}
+          onClick={() => setActiveTab("processes")}
         >
-          <RefreshCw size={13} aria-hidden="true" />
+          <div className="task-manager-stat-icon is-boxes">
+            <Boxes size={16} aria-hidden="true" />
+          </div>
+          <div className="task-manager-stat-info">
+            <span className="task-manager-stat-label">
+              {t("taskManager.visibleProcesses")}
+            </span>
+            <strong className="task-manager-stat-num">{summary.count}</strong>
+            <span className="task-manager-stat-sub">
+              {visibleRows.length === processes.length
+                ? `${t("taskManager.processCount", { values: { count: processes.length } })}`
+                : `${visibleRows.length} / ${processes.length}`}
+            </span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          className={`task-manager-stat-card ${activeTab === "performance" ? "is-selected" : ""}`}
+          onClick={() => setActiveTab("performance")}
+        >
+          <div className="task-manager-stat-icon is-mem">
+            <MemoryStick size={16} aria-hidden="true" />
+          </div>
+          <div className="task-manager-stat-info">
+            <span className="task-manager-stat-label">
+              {t("taskManager.visibleMemory")}
+            </span>
+            <strong className="task-manager-stat-num">
+              {formatTaskBytes(summary.memory)}
+            </strong>
+            <span className="task-manager-stat-sub">
+              {t("taskManager.tabPerformance")}
+            </span>
+          </div>
+          <MiniSparkline
+            samples={usageSamples}
+            metric="memory"
+            color="var(--accent-blue)"
+          />
+        </button>
+
+        <button
+          type="button"
+          className={`task-manager-stat-card ${activeTab === "performance" ? "is-selected" : ""}`}
+          onClick={() => setActiveTab("performance")}
+        >
+          <div className="task-manager-stat-icon is-cpu">
+            <Cpu size={16} aria-hidden="true" />
+          </div>
+          <div className="task-manager-stat-info">
+            <span className="task-manager-stat-label">
+              {t("taskManager.visibleCpu")}
+            </span>
+            <strong className="task-manager-stat-num">
+              {formatTaskTotalCpu(summary)}
+            </strong>
+            <span className="task-manager-stat-sub">
+              {t("taskManager.tabPerformance")}
+            </span>
+          </div>
+          <MiniSparkline
+            samples={usageSamples}
+            metric="cpu"
+            color="var(--accent-amber-text)"
+          />
         </button>
       </div>
-      <div className="task-manager-project-filter">
-        <label>
-          <span>{t("taskManager.projectScope")}</span>
-          <select
-            value={project}
-            data-project-filter="true"
-            onChange={(event) => setProject(event.target.value)}
-            aria-label={t("taskManager.projectScope")}
-            title={projects.find(([key]) => key === project)?.[1] || project}
+
+      {/* 顶部 Tab 导航栏与状态控制器 */}
+      <div className="task-manager-nav-bar">
+        <div className="task-manager-tabs" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "processes"}
+            className={`task-manager-tab-btn ${activeTab === "processes" ? "is-active" : ""}`}
+            onClick={() => setActiveTab("processes")}
           >
-            <option value="">{t("taskManager.allProjects")}</option>
-            {project && !projects.some(([key]) => key === project) && (
-              <option value={project}>{project}</option>
-            )}
-            {projects.map(([key, root]) => (
-              <option key={key} value={key}>
-                {taskProjectName(root)} · {root}
-              </option>
-            ))}
-          </select>
-        </label>
-        {project && (
+            <Layers size={13} aria-hidden="true" />
+            <span>{t("taskManager.tabProcesses")}</span>
+            <span className="task-manager-tab-badge">{visibleRows.length}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "performance"}
+            className={`task-manager-tab-btn ${activeTab === "performance" ? "is-active" : ""}`}
+            onClick={() => setActiveTab("performance")}
+          >
+            <Activity size={13} aria-hidden="true" />
+            <span>{t("taskManager.tabPerformance")}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "sessions"}
+            className={`task-manager-tab-btn ${activeTab === "sessions" ? "is-active" : ""}`}
+            onClick={() => setActiveTab("sessions")}
+          >
+            <Cpu size={13} aria-hidden="true" />
+            <span>{t("taskManager.tabSessions")}</span>
+            <span className="task-manager-tab-badge">{sessions.length}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "alerts"}
+            className={`task-manager-tab-btn ${activeTab === "alerts" ? "is-active" : ""}`}
+            onClick={() => setActiveTab("alerts")}
+          >
+            <Bell size={13} aria-hidden="true" />
+            <span>{t("taskManager.tabAlerts")}</span>
+          </button>
+        </div>
+
+        <div className="task-manager-nav-controls">
+          <div
+            className="task-manager-sampling-status"
+            title={sampledAtMs ? time(sampledAtMs) : ""}
+          >
+            <span
+              className={`task-manager-pulse-dot ${autoRefresh && !hidden ? "is-active" : "is-paused"}`}
+            />
+            <span className="task-manager-status-text">
+              {autoRefresh && !hidden
+                ? t("taskManager.autoSampling")
+                : t("taskManager.paused")}
+              {sampledAtMs ? ` · ${time(sampledAtMs)}` : ""}
+            </span>
+          </div>
+          <label className="toggle-switch task-manager-auto-refresh">
+            <span>{t("taskManager.autoRefresh")}</span>
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(event) => setAutoRefresh(event.target.checked)}
+            />
+            <span className="toggle-slider" />
+          </label>
           <button
             type="button"
             className="task-manager-refresh-btn"
-            onClick={() => setProject("")}
+            onClick={() => void refresh(true)}
+            title={t("taskManager.refresh")}
+            aria-label={t("taskManager.refresh")}
           >
-            {t("taskManager.clearProject")}
+            <RefreshCw size={13} aria-hidden="true" />
           </button>
-        )}
+        </div>
       </div>
-      {project && (
-        <p
-          className="task-manager-selected-project"
-          title={projects.find(([key]) => key === project)?.[1] || project}
-        >
-          {t("taskManager.selectedProject", {
-            values: {
-              project:
-                projects.find(([key]) => key === project)?.[1] || project,
-            },
-          })}
+
+      {/* 状态与告警提醒横幅 */}
+      {processStale && !isLoading && (
+        <div className="task-manager-notice task-manager-warning" role="status">
+          {t("taskManager.processStale")}
+        </div>
+      )}
+      {hasError && (
+        <p className="task-manager-notice task-manager-error" role="status">
+          {t("taskManager.loadError")}
         </p>
       )}
-      <div className="task-manager-status">
-        <span>
-          {autoRefresh && !hidden
-            ? t("taskManager.autoSampling")
-            : t("taskManager.paused")}
-        </span>
-        <span>
-          {sampledAtMs
-            ? t("taskManager.lastSnapshot", {
-                values: { time: time(sampledAtMs) },
-              })
-            : "—"}
-        </span>
-        {processStale && !isLoading && (
-          <span className="task-manager-error">
-            {t("taskManager.processStale")}
-          </span>
-        )}
-      </div>
-      <p className="task-manager-hint task-manager-accounting">
-        {t("taskManager.accounting")}
-      </p>
-      <TaskManagerTrend samples={usageSamples} now={now} />
-      <details
-        className="task-manager-disclosure"
-        open={budgetOpen}
-        onToggle={(event) => setBudgetOpen(event.currentTarget.open)}
-      >
-        <summary>{t("taskManager.budgetTitle")}</summary>
-        <LspResourcePanel isActive={isActive && !hidden && budgetOpen} />
-      </details>
-      <TaskManagerSessions
-        isActive={isActive && !hidden}
-        sessions={sessions}
-        rows={rows}
-        groups={groups}
-        snapshot={sessionSnapshot}
-        processStale={processStale}
-        sessionsStale={sessionsStale}
-        now={now}
-        externalBusy={pendingKill !== null || isKilling}
-        onBusyChange={setSessionBusy}
-        onRefresh={forceRefresh}
-        onProject={selectProject}
-      />
+
+      {/* 实时告警横幅（所有 Tab 可见） */}
       <TaskManagerAlerts
         samples={usageSamples}
         scopeKey={scopeKey}
         continuity={continuity}
         samplingActive={isActive && !hidden && autoRefresh}
         valid={scopeKnown && !hasError}
+        mode={activeTab === "alerts" ? "all" : "notice-only"}
       />
-      {hasError && (
-        <p className="task-manager-notice task-manager-error" role="status">
-          {t("taskManager.loadError")}
-        </p>
-      )}
-      {isLoading ? (
-        <div
-          className="task-manager-state"
-          role="status"
-          aria-label={t("taskManager.loading")}
-        >
-          <Loader2 size={18} className="spin" aria-hidden="true" />
+
+      {/* Tab 1: 进程列表与进程树 */}
+      {activeTab === "processes" && (
+        <div className="task-manager-tab-content is-processes">
+          <div className="task-manager-toolbar">
+            <label className="task-manager-search">
+              <Search size={13} aria-hidden="true" />
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={t("taskManager.search")}
+                aria-label={t("taskManager.search")}
+              />
+              {query && (
+                <button
+                  type="button"
+                  className="task-manager-clear-btn"
+                  onClick={() => setQuery("")}
+                >
+                  <X size={11} aria-hidden="true" />
+                </button>
+              )}
+            </label>
+            <div
+              className="task-manager-filters"
+              role="group"
+              aria-label={t("taskManager.filter")}
+            >
+              <button
+                type="button"
+                aria-pressed={filter === "all"}
+                onClick={() => setFilter("all")}
+              >
+                {t("taskManager.all")}
+              </button>
+              <button
+                type="button"
+                aria-pressed={filter === "lsp"}
+                onClick={() => setFilter("lsp")}
+              >
+                LSP
+              </button>
+            </div>
+            <div className="task-manager-project-filter">
+              <select
+                value={project}
+                data-project-filter="true"
+                onChange={(event) => setProject(event.target.value)}
+                aria-label={t("taskManager.projectScope")}
+                title={
+                  projects.find(([key]) => key === project)?.[1] || project
+                }
+              >
+                <option value="">{t("taskManager.allProjects")}</option>
+                {project && !projects.some(([key]) => key === project) && (
+                  <option value={project}>{project}</option>
+                )}
+                {projects.map(([key, root]) => (
+                  <option key={key} value={key}>
+                    {taskProjectName(root)} · {root}
+                  </option>
+                ))}
+              </select>
+              {project && (
+                <button
+                  type="button"
+                  className="task-manager-clear-project-btn"
+                  onClick={() => setProject("")}
+                  title={t("taskManager.clearProject")}
+                >
+                  <X size={11} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div
+              className="task-manager-state"
+              role="status"
+              aria-label={t("taskManager.loading")}
+            >
+              <Loader2 size={18} className="spin" aria-hidden="true" />
+            </div>
+          ) : (
+            <TaskManagerProcessTable
+              sortedRows={sortedProcesses}
+              stale={processStale}
+              actionsDisabled={isKilling || sessionBusy || pendingKill !== null}
+              onKill={(process) => {
+                setKillError(null);
+                setPendingKill(process);
+              }}
+              onProject={selectProject}
+              headers={
+                <>
+                  {sortableHeader(
+                    "name",
+                    t("taskManager.colName"),
+                    "task-manager-col-name",
+                  )}
+                  {sortableHeader(
+                    "kind",
+                    t("taskManager.colType"),
+                    "task-manager-col-kind",
+                  )}
+                  {sortableHeader(
+                    "pid",
+                    t("taskManager.colPid"),
+                    "task-manager-col-pid",
+                  )}
+                  {sortableHeader(
+                    "cpu",
+                    t("taskManager.ownCpu"),
+                    "task-manager-col-cpu",
+                  )}
+                  {sortableHeader(
+                    "memory",
+                    t("taskManager.ownMemory"),
+                    "task-manager-col-memory",
+                  )}
+                  {sortableHeader(
+                    "threads",
+                    t("taskManager.colThreads"),
+                    "task-manager-col-threads",
+                  )}
+                  <th scope="col" className="task-manager-col-actions">
+                    <span className="task-manager-col-actions-label">
+                      {t("taskManager.colActions")}
+                    </span>
+                  </th>
+                </>
+              }
+            />
+          )}
         </div>
-      ) : (
-        <TaskManagerProcessTable
-          sortedRows={sortedProcesses}
-          stale={processStale}
-          actionsDisabled={isKilling || sessionBusy || pendingKill !== null}
-          onKill={(process) => {
-            setKillError(null);
-            setPendingKill(process);
-          }}
-          onProject={selectProject}
-          headers={
-            <>
-              {sortableHeader(
-                "name",
-                t("taskManager.colName"),
-                "task-manager-col-name",
-              )}
-              {sortableHeader(
-                "kind",
-                t("taskManager.colType"),
-                "task-manager-col-kind",
-              )}
-              {sortableHeader(
-                "pid",
-                t("taskManager.colPid"),
-                "task-manager-col-pid",
-              )}
-              {sortableHeader(
-                "cpu",
-                t("taskManager.ownCpu"),
-                "task-manager-col-cpu",
-              )}
-              {sortableHeader(
-                "memory",
-                t("taskManager.ownMemory"),
-                "task-manager-col-memory",
-              )}
-              {sortableHeader(
-                "threads",
-                t("taskManager.colThreads"),
-                "task-manager-col-threads",
-              )}
-              <th scope="col" className="task-manager-col-actions">
-                <span className="task-manager-col-actions-label">
-                  {t("taskManager.colActions")}
-                </span>
-              </th>
-            </>
-          }
-        />
       )}
+
+      {/* Tab 2: 性能趋势大屏与图表 */}
+      {activeTab === "performance" && (
+        <div className="task-manager-tab-content is-scrollable">
+          <TaskManagerPerformancePanel
+            samples={usageSamples}
+            now={now}
+            processes={visibleRows}
+          />
+        </div>
+      )}
+
+      {/* Tab 3: LSP 会话与资源预算 */}
+      {activeTab === "sessions" && (
+        <div className="task-manager-tab-content is-scrollable">
+          <TaskManagerSessions
+            isActive={isActive && !hidden}
+            sessions={sessions}
+            rows={rows}
+            groups={groups}
+            snapshot={sessionSnapshot}
+            processStale={processStale}
+            sessionsStale={sessionsStale}
+            now={now}
+            externalBusy={pendingKill !== null || isKilling}
+            onBusyChange={setSessionBusy}
+            onRefresh={forceRefresh}
+            onProject={selectProject}
+          />
+          <div className="task-manager-card-section">
+            <div className="task-manager-section-header">
+              <Cpu size={14} />
+              <strong>{t("taskManager.budgetTitle")}</strong>
+            </div>
+            <LspResourcePanel
+              isActive={isActive && !hidden && activeTab === "sessions"}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Tab 4: 持续占用告警设置 */}
+      {activeTab === "alerts" && (
+        <div className="task-manager-tab-content is-scrollable">
+          <div className="task-manager-alerts-container">
+            <TaskManagerAlerts
+              samples={usageSamples}
+              scopeKey={scopeKey}
+              continuity={continuity}
+              samplingActive={isActive && !hidden && autoRefresh}
+              valid={scopeKnown && !hasError}
+              mode="panel-only"
+            />
+          </div>
+        </div>
+      )}
+
       <ConfirmDialog
         open={pendingKill !== null}
         title={t("taskManager.endProcessTitle")}

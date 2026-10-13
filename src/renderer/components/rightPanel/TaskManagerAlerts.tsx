@@ -16,6 +16,7 @@ type Props = {
   continuity: number;
   samplingActive: boolean;
   valid: boolean;
+  mode?: "all" | "notice-only" | "panel-only";
 };
 
 /** Ephemeral panel-only preferences. No notifications, automatic termination or config writes. */
@@ -25,6 +26,7 @@ export function TaskManagerAlerts({
   continuity,
   samplingActive,
   valid,
+  mode = "all",
 }: Props): React.JSX.Element {
   const { t } = useI18n();
   const [options, setOptions] = useState<AlertOptions>({
@@ -79,120 +81,126 @@ export function TaskManagerAlerts({
   ] as const;
   return (
     <>
-      <details className="task-manager-disclosure task-manager-alert-settings">
-        <summary>
-          {t("taskManager.alertTitle")} ·{" "}
-          {t(
-            options.enabled
-              ? "taskManager.alertEnabled"
-              : "taskManager.alertDisabled",
-          )}
-        </summary>
-        <div className="task-manager-alert-body">
-          <label className="task-manager-alert-enable">
-            <input
-              type="checkbox"
-              checked={options.enabled}
-              onChange={(event) =>
-                setOptions((current) => ({
-                  ...current,
-                  enabled: event.target.checked,
-                }))
-              }
-            />
-            {t("taskManager.alertEnable")}
-          </label>
-          <p className="task-manager-hint">{t("taskManager.alertHint")}</p>
-          <div className="task-manager-budget-fields">
-            {fields.map(([key, label, min, max, step]) => (
-              <label key={key}>
-                <span>{t(label)}</span>
-                <input
-                  type="number"
-                  data-alert-field={key}
-                  min={min}
-                  max={max}
-                  step={step}
-                  value={Number.isFinite(options[key]) ? options[key] : ""}
-                  onChange={(event) =>
-                    setOptions((current) => ({
-                      ...current,
-                      [key]:
-                        event.target.value === ""
-                          ? NaN
-                          : Number(event.target.value),
-                    }))
-                  }
-                />
-                <small>
-                  {min}–{max}
-                </small>
-              </label>
-            ))}
-          </div>
-          {!configValid && (
-            <p className="task-manager-error" role="status">
-              {t("taskManager.alertInvalid")}
-            </p>
-          )}
-          {options.enabled && configValid && (
-            <p className="task-manager-hint">
-              {t("taskManager.alertRules", {
-                values: {
-                  cpu: options.cpuPercent,
-                  memory: options.memoryMiB,
-                  duration: options.durationSecs,
-                },
-              })}
-            </p>
-          )}
-          {options.enabled && (
-            <p className="task-manager-hint">
-              {t(
-                samplingActive && valid
-                  ? "taskManager.alertMonitoring"
-                  : "taskManager.alertWaiting",
-              )}
-            </p>
-          )}
-        </div>
-      </details>
-      {(["cpu", "memory"] as const).map(
-        (metric) =>
-          alerts[metric].active &&
-          !alerts[metric].dismissed && (
-            <div
-              key={metric}
-              className="task-manager-alert-notice"
-              role="status"
-              data-alert-metric={metric}
-            >
-              <span>
-                {t("taskManager.alertTriggered", {
+      {mode !== "notice-only" && (
+        <details
+          className="task-manager-disclosure task-manager-alert-settings"
+          open={mode === "panel-only" || undefined}
+        >
+          <summary>
+            {t("taskManager.alertTitle")} ·{" "}
+            {t(
+              options.enabled
+                ? "taskManager.alertEnabled"
+                : "taskManager.alertDisabled",
+            )}
+          </summary>
+          <div className="task-manager-alert-body">
+            <label className="task-manager-alert-enable">
+              <input
+                type="checkbox"
+                checked={options.enabled}
+                onChange={(event) =>
+                  setOptions((current) => ({
+                    ...current,
+                    enabled: event.target.checked,
+                  }))
+                }
+              />
+              {t("taskManager.alertEnable")}
+            </label>
+            <p className="task-manager-hint">{t("taskManager.alertHint")}</p>
+            <div className="task-manager-budget-fields">
+              {fields.map(([key, label, min, max, step]) => (
+                <label key={key}>
+                  <span>{t(label)}</span>
+                  <input
+                    type="number"
+                    data-alert-field={key}
+                    min={min}
+                    max={max}
+                    step={step}
+                    value={Number.isFinite(options[key]) ? options[key] : ""}
+                    onChange={(event) =>
+                      setOptions((current) => ({
+                        ...current,
+                        [key]:
+                          event.target.value === ""
+                            ? NaN
+                            : Number(event.target.value),
+                      }))
+                    }
+                  />
+                  <small>
+                    {min}–{max}
+                  </small>
+                </label>
+              ))}
+            </div>
+            {!configValid && (
+              <p className="task-manager-error" role="status">
+                {t("taskManager.alertInvalid")}
+              </p>
+            )}
+            {options.enabled && configValid && (
+              <p className="task-manager-hint">
+                {t("taskManager.alertRules", {
                   values: {
-                    metric: t(
-                      metric === "cpu"
-                        ? "taskManager.visibleCpu"
-                        : "taskManager.visibleMemory",
-                    ),
-                    threshold:
-                      metric === "cpu"
-                        ? `${options.cpuPercent}%`
-                        : `${options.memoryMiB} MiB`,
+                    cpu: options.cpuPercent,
+                    memory: options.memoryMiB,
                     duration: options.durationSecs,
                   },
                 })}
-              </span>
-              <button
-                type="button"
-                className="task-manager-refresh-btn"
-                onClick={() => dismiss(metric)}
-              >
-                {t("taskManager.dismissAlert")}
-              </button>
-            </div>
-          ),
+              </p>
+            )}
+            {options.enabled && (
+              <p className="task-manager-hint">
+                {t(
+                  samplingActive && valid
+                    ? "taskManager.alertMonitoring"
+                    : "taskManager.alertWaiting",
+                )}
+              </p>
+            )}
+          </div>
+        </details>
       )}
+      {mode !== "panel-only" &&
+        (["cpu", "memory"] as const).map(
+          (metric) =>
+            alerts[metric].active &&
+            !alerts[metric].dismissed && (
+              <div
+                key={metric}
+                className="task-manager-alert-notice"
+                role="status"
+                data-alert-metric={metric}
+              >
+                <span>
+                  {t("taskManager.alertTriggered", {
+                    values: {
+                      metric: t(
+                        metric === "cpu"
+                          ? "taskManager.visibleCpu"
+                          : "taskManager.visibleMemory",
+                      ),
+                      threshold:
+                        metric === "cpu"
+                          ? `${options.cpuPercent}%`
+                          : `${options.memoryMiB} MiB`,
+                      duration: options.durationSecs,
+                    },
+                  })}
+                </span>
+                <button
+                  type="button"
+                  className="task-manager-refresh-btn"
+                  onClick={() => dismiss(metric)}
+                >
+                  {t("taskManager.dismissAlert")}
+                </button>
+              </div>
+            ),
+        )}
     </>
   );
 }
