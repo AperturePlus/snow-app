@@ -1,22 +1,56 @@
-const suppressedServerIds = new Set<string>();
+type HintSuppressed = boolean | null;
+
+let suppressed: HintSuppressed = null;
+let initialized = false;
 const listeners = new Set<() => void>();
 
-export const isPanelMcpHintSuppressed = (serverId: string): boolean =>
-  suppressedServerIds.has(serverId);
-
-export const suppressPanelMcpHint = (serverId: string): void => {
-  if (suppressedServerIds.has(serverId)) {
-    return;
-  }
-  suppressedServerIds.add(serverId);
+const notify = (): void => {
   for (const listener of listeners) {
     listener();
   }
 };
 
+const apply = (next: boolean): void => {
+  if (next === suppressed) {
+    return;
+  }
+  suppressed = next;
+  notify();
+};
+
+const ensureInitialized = (): void => {
+  if (initialized) {
+    return;
+  }
+  initialized = true;
+  void window.snow
+    .getPanelMcpHintSuppressed()
+    .then(apply)
+    .catch(() => {
+      apply(false);
+    });
+  window.snow.onPanelMcpHintSuppressedChanged(apply);
+};
+
+export const isPanelMcpHintReady = (): boolean => {
+  ensureInitialized();
+  return suppressed !== null;
+};
+
+export const isPanelMcpHintSuppressed = (): boolean => {
+  ensureInitialized();
+  return suppressed === true;
+};
+
+export const suppressPanelMcpHint = (): void => {
+  apply(true);
+  window.snow.setPanelMcpHintSuppressed(true);
+};
+
 export const subscribePanelMcpHintSuppression = (
   listener: () => void,
 ): (() => void) => {
+  ensureInitialized();
   listeners.add(listener);
   return () => {
     listeners.delete(listener);

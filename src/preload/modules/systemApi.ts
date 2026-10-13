@@ -66,6 +66,10 @@ const APP_CONTROL_OPEN_SETTINGS_BROADCAST_CHANNEL =
 // 独立浏览器窗口请求打开主窗口的项目 MCP 弹窗（窗口 → 主进程 → 主窗口）。
 const PROJECT_MCP_OPEN_FORWARD_CHANNEL = "project-mcp:open-panel-forward";
 const PROJECT_MCP_OPEN_BROADCAST_CHANNEL = "project-mcp:open-panel-broadcast";
+// 面板 MCP 门禁横幅「不再提示」的应用级状态（主进程内存，广播到所有窗口）。
+const PANEL_MCP_HINT_GET_CHANNEL = "panel-mcp:get-hint-suppressed";
+const PANEL_MCP_HINT_SET_CHANNEL = "panel-mcp:set-hint-suppressed";
+const PANEL_MCP_HINT_CHANGED_CHANNEL = "panel-mcp:hint-suppressed-changed";
 const TERMINAL_COMMAND_CHANNEL = "terminal:command";
 const TERMINAL_COMMAND_RESPONSE_CHANNEL = "terminal:command-response";
 const USER_QUESTION_CHANNEL = "user-question:request";
@@ -463,6 +467,25 @@ ipcRenderer.on(
 type OpenProjectMcpRequestSubscriber = (serverId: string) => void;
 const openProjectMcpRequestSubscribers =
   new Set<OpenProjectMcpRequestSubscriber>();
+
+type PanelMcpHintSubscriber = (suppressed: boolean) => void;
+const panelMcpHintSubscribers = new Set<PanelMcpHintSubscriber>();
+
+ipcRenderer.on(
+  PANEL_MCP_HINT_CHANGED_CHANNEL,
+  (_event: IpcRendererEvent, suppressed: unknown): void => {
+    if (typeof suppressed !== "boolean") {
+      return;
+    }
+    for (const subscriber of panelMcpHintSubscribers) {
+      try {
+        subscriber(suppressed);
+      } catch (error) {
+        console.error("[panel-mcp] Hint subscriber failed", error);
+      }
+    }
+  },
+);
 
 ipcRenderer.on(
   PROJECT_MCP_OPEN_BROADCAST_CHANNEL,
@@ -996,6 +1019,26 @@ export const systemApi = {
     openProjectMcpRequestSubscribers.add(callback);
     return () => {
       openProjectMcpRequestSubscribers.delete(callback);
+    };
+  },
+  /**
+   * 面板 MCP 门禁横幅「不再提示」的应用级状态（主进程内存，重启后恢复
+   * 提示；所有窗口共享）。
+   */
+  getPanelMcpHintSuppressed: (): Promise<boolean> =>
+    ipcRenderer.invoke(PANEL_MCP_HINT_GET_CHANNEL),
+  setPanelMcpHintSuppressed: (suppressed: boolean): void => {
+    ipcRenderer.send(PANEL_MCP_HINT_SET_CHANNEL, suppressed);
+  },
+  /**
+   * 订阅「不再提示」状态变更（主进程广播到所有窗口）。返回取消订阅函数。
+   */
+  onPanelMcpHintSuppressedChanged: (
+    callback: (suppressed: boolean) => void,
+  ): (() => void) => {
+    panelMcpHintSubscribers.add(callback);
+    return () => {
+      panelMcpHintSubscribers.delete(callback);
     };
   },
   setMcpToolEnabled: (toolName: string, enabled: boolean): Promise<void> =>

@@ -95,6 +95,11 @@ import {
 
 const browserDevToolsWindows = new Map<number, BrowserWindow>();
 
+// ===== 面板 MCP 门禁横幅「不再提示」=====
+// 应用级内存开关：不落盘，应用重启即恢复提示；主窗口与独立浏览器窗口
+// 共享同一份状态（渲染端经 IPC 读取 + 订阅变更）。
+let panelMcpHintSuppressed = false;
+
 // ===== Close behavior（「关闭 Snow App 时」行为设置）=====
 // 设置代码与渲染端 src/renderer/constants/closeBehavior.ts 保持一致，
 // 由 Rust 后端 system_settings 表持久化（native bridge 已做 storageReady 门控）。
@@ -661,6 +666,23 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
       "project-mcp:open-panel-broadcast",
       typeof serverId === "string" ? serverId : "",
     );
+  });
+
+  // 面板 MCP 门禁横幅「不再提示」：应用级内存状态，重启后恢复提示；
+  // 变更广播到所有窗口（主窗口与独立浏览器窗口共享同一状态）。
+  ipcMain.handle(
+    "panel-mcp:get-hint-suppressed",
+    (): boolean => panelMcpHintSuppressed,
+  );
+  ipcMain.on("panel-mcp:set-hint-suppressed", (_event, suppressed: unknown) => {
+    const next = suppressed === true;
+    if (next === panelMcpHintSuppressed) {
+      return;
+    }
+    panelMcpHintSuppressed = next;
+    for (const window of BrowserWindow.getAllWindows()) {
+      safeSend(window.webContents, "panel-mcp:hint-suppressed-changed", next);
+    }
   });
 
   ipcMain.handle("browser:open-devtools", (_event, webContentsId: unknown) => {

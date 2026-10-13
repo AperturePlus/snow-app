@@ -4,6 +4,7 @@ import { useI18n } from "../../i18n";
 import { ContextMenu, type ContextMenuItem } from "../common/ContextMenu";
 import { MCP_SERVER_STATE_CHANGED_EVENT } from "../mainContent/chatInput/mcpServerEvents";
 import {
+  isPanelMcpHintReady,
   isPanelMcpHintSuppressed,
   subscribePanelMcpHintSuppression,
   suppressPanelMcpHint,
@@ -78,9 +79,12 @@ export const PanelMcpEnableBanner = ({
   const { t } = useI18n();
   const state = useProjectMcpServerState(projectId, serverId);
   const [dismissed, setDismissed] = useState(false);
-  const [suppressed, setSuppressed] = useState(() =>
-    isPanelMcpHintSuppressed(serverId),
-  );
+  // 「不再提示」是应用级全局开关（所有项目、浏览器与终端面板共用，应用
+  // 重启后恢复）：未就绪前不展示横幅，避免已静默时闪一下。
+  const [hint, setHint] = useState(() => ({
+    ready: isPanelMcpHintReady(),
+    suppressed: isPanelMcpHintSuppressed(),
+  }));
   const [menuPosition, setMenuPosition] = useState<{
     x: number;
     y: number;
@@ -95,13 +99,23 @@ export const PanelMcpEnableBanner = ({
   }, [active]);
 
   useEffect(() => {
-    setSuppressed(isPanelMcpHintSuppressed(serverId));
-    return subscribePanelMcpHintSuppression(() => {
-      setSuppressed(isPanelMcpHintSuppressed(serverId));
-    });
-  }, [serverId]);
+    const sync = (): void => {
+      setHint({
+        ready: isPanelMcpHintReady(),
+        suppressed: isPanelMcpHintSuppressed(),
+      });
+    };
+    sync();
+    return subscribePanelMcpHintSuppression(sync);
+  }, []);
 
-  if (!projectId || state !== "disabled" || dismissed || suppressed) {
+  if (
+    !projectId ||
+    state !== "disabled" ||
+    dismissed ||
+    !hint.ready ||
+    hint.suppressed
+  ) {
     return null;
   }
 
@@ -121,7 +135,7 @@ export const PanelMcpEnableBanner = ({
       icon: <BellOff aria-hidden="true" size={13} strokeWidth={1.8} />,
       onClick: () => {
         setMenuPosition(null);
-        suppressPanelMcpHint(serverId);
+        suppressPanelMcpHint();
       },
     },
   ];
