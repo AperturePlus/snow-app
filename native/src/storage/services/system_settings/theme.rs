@@ -25,6 +25,11 @@ const CODE_FONT_SIZE_MIN: f64 = 10.0;
 const CODE_FONT_SIZE_MAX: f64 = 18.0;
 const DEFAULT_CODE_FONT_SIZE: f64 = 12.5;
 
+// 宠物背景大小（相对视口高度的比例）范围与默认值，与渲染层 themeSettingsUtils 保持一致。
+const PET_BACKGROUND_SCALE_MIN: f64 = 0.2;
+const PET_BACKGROUND_SCALE_MAX: f64 = 1.5;
+const DEFAULT_PET_BACKGROUND_SCALE: f64 = 0.6;
+
 // ===== Theme settings =====
 
 /// 主题调色板，对应渲染层 CSS 变量。每个字段为合法 CSS 颜色字符串
@@ -119,20 +124,34 @@ impl CustomTheme {
     }
 }
 
-/// 背景图配置。image_path 为空字符串表示未设置；opacity 范围 0.0~1.0；
-/// blur 为高斯模糊像素值（0 表示不模糊）。
+/// 背景配置。source 决定来源："image" 使用 image_path 指向的自定义图片，
+/// "pet" 使用 pet_id 指向的已安装宠物的 idle 动画（pet_scale 为相对视口高度
+/// 的比例）；opacity 范围 0.0~1.0；blur 为高斯模糊像素值（0 表示不模糊）。
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ThemeBackground {
     pub enabled: bool,
+    pub source: String,
     pub image_path: String,
+    pub pet_id: String,
+    pub pet_scale: f64,
     pub opacity: f64,
     pub blur: f64,
 }
 
 impl ThemeBackground {
     fn normalize(&mut self) {
+        self.source = self.source.trim().to_string();
+        if !matches!(self.source.as_str(), "image" | "pet") {
+            self.source = "image".to_string();
+        }
         self.image_path = self.image_path.trim().to_string();
+        self.pet_id = self.pet_id.trim().to_string();
+        if !self.pet_scale.is_finite() || self.pet_scale < PET_BACKGROUND_SCALE_MIN {
+            self.pet_scale = DEFAULT_PET_BACKGROUND_SCALE;
+        } else if self.pet_scale > PET_BACKGROUND_SCALE_MAX {
+            self.pet_scale = PET_BACKGROUND_SCALE_MAX;
+        }
         if !self.opacity.is_finite() || self.opacity < 0.0 {
             self.opacity = 1.0;
         } else if self.opacity > 1.0 {
@@ -143,7 +162,13 @@ impl ThemeBackground {
         } else if self.blur > 100.0 {
             self.blur = 100.0;
         }
-        if self.image_path.is_empty() {
+        // 当前来源缺少素材（图片路径 / 宠物 id）时视为未启用。
+        let has_content = if self.source == "pet" {
+            !self.pet_id.is_empty()
+        } else {
+            !self.image_path.is_empty()
+        };
+        if !has_content {
             self.enabled = false;
         }
     }

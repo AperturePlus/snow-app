@@ -123,7 +123,12 @@ The renderer also keeps a fast localStorage theme cache to reduce startup flashi
 
 ### Background, Font, and Streaming Cursor
 
-When you select a background image, Snow App copies it to `~/.snowapp/backgrounds/` and no longer continuously references the original file. The renderer reads the managed resource through the restricted `theme-bg://` protocol. Background settings include enabled state, opacity, and a blur value from 0 to 100.
+The background has two mutually exclusive sources:
+
+- **Image**: when you select a background image, Snow App copies it to `~/.snowapp/backgrounds/` and no longer continuously references the original file. The renderer reads the managed resource through the restricted `theme-bg://` protocol.
+- **Pet**: when you select an installed desktop pet, that pet's idle animation loops on the top layer as an animated background, with a 20%–150% size control (relative to the window height); the playback speed follows the speed multiplier in Settings > Desktop pet.
+
+Both sources share the enabled state, opacity, and a blur value from 0 to 100. The `source` field in `background` marks the active source, and `petId` / `petScale` only apply to the pet source.
 
 The font can use the system default or a selected family. The same area also provides typography settings: UI font size (12–18 px, where 13 px = 100%, applied as whole-app zoom equivalent to Electron `webFrame.setZoomFactor`), body font weight (100–900, free input), chat font size (12–20 px), chat line height (1.2–2.4), and code font size (10–18 px, applied to chat code blocks and inline code); the UI font size can also be adjusted with keyboard shortcuts and persists immediately. The streaming cursor supports:
 

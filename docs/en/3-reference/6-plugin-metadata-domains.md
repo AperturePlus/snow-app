@@ -190,14 +190,14 @@ No declaration · Not live · No parameters
 
 Field-level sensitive: `backgroundValue` to `privacyConfig` · Not live · No parameters
 
-| Field          | Type                          | Description                                                    |
-| -------------- | ----------------------------- | -------------------------------------------------------------- |
-| `mode`         | `system` \| `light` \| `dark` | Theme mode                                                     |
-| `presetId`     | string                        | Preset theme id                                                |
-| `custom`       | object                        | `{ light: ThemePalette, dark: ThemePalette }`                  |
-| `background`   | object                        | `{ enabled, imagePath, opacity, blur }`                        |
-| `fontFamily`   | string                        | UI font                                                        |
-| `streamCursor` | object                        | `{ iconType, lucideName, svgPath, iconSize }` streaming cursor |
+| Field          | Type                          | Description                                                                                     |
+| -------------- | ----------------------------- | ----------------------------------------------------------------------------------------------- |
+| `mode`         | `system` \| `light` \| `dark` | Theme mode                                                                                      |
+| `presetId`     | string                        | Preset theme id                                                                                 |
+| `custom`       | object                        | `{ light: ThemePalette, dark: ThemePalette }`                                                   |
+| `background`   | object                        | `{ enabled, source, imagePath, petId, petScale, opacity, blur }` (`source` is `image` or `pet`) |
+| `fontFamily`   | string                        | UI font                                                                                         |
+| `streamCursor` | object                        | `{ iconType, lucideName, svgPath, iconSize }` streaming cursor                                  |
 
 `ThemePalette` keys: `bgPrimary`, `bgSecondary`, `bgTertiary`, `bgHover`, `bgActive`, `chromeBg`, `appBg`, `borderColor`, `borderLight`, `borderSubtle`, `textPrimary`, `textSecondary`, `textTertiary`, `textMuted`, `accentGreen`, `accentGreenBg`, `accentGreenText`, `accentRed`, `accentRedBg`, `accentRedText`, `accentBlue`, `accentBlueBg`, `accentBlueText`, `accentColor`, `onSolid`, `selectionBg`, `focusRing`.
 

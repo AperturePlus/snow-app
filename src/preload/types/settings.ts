@@ -135,7 +135,13 @@ export type CustomTheme = {
 
 export type ThemeBackground = {
   enabled: boolean;
+  /** 背景来源：image（自定义图片）| pet（桌面宠物 idle 动画） */
+  source: string;
   imagePath: string;
+  /** 宠物背景使用的已安装宠物 id */
+  petId: string;
+  /** 宠物背景大小：相对视口高度的比例 */
+  petScale: number;
   opacity: number;
   blur: number;
 };

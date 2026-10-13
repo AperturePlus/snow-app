@@ -1,5 +1,7 @@
 import type {
   ColorGroup,
+  ThemeBackground,
+  ThemeBackgroundSource,
   ThemePalette,
   ThemeSettings,
   ThemeMode,
@@ -24,6 +26,11 @@ export const THEME_SETTING_CODE = "theme_settings";
  * ThemeSettingsPanel 预览 useEffect。
  */
 export const MAX_BACKGROUND_OPACITY = 0.6;
+
+/** 宠物背景大小（相对视口高度的比例）范围与默认值。 */
+export const PET_BACKGROUND_SCALE_MIN = 0.2;
+export const PET_BACKGROUND_SCALE_MAX = 1.5;
+export const PET_BACKGROUND_SCALE_DEFAULT = 0.6;
 
 /** 界面字号范围与默认值。字号以 13px 为 100% 基准驱动整页缩放。 */
 export const UI_FONT_SIZE_MIN = 12;
@@ -249,7 +256,10 @@ export const DEFAULT_THEME_SETTINGS: ThemeSettings = {
   },
   background: {
     enabled: false,
+    source: "image",
     imagePath: "",
+    petId: "",
+    petScale: PET_BACKGROUND_SCALE_DEFAULT,
     opacity: 0.2,
     blur: 0,
   },
@@ -336,12 +346,74 @@ export function normalizeThemeBackground(
     typeof source.blur === "number" && Number.isFinite(source.blur)
       ? Math.max(0, Math.min(100, source.blur))
       : 0;
+  const sourceKind: ThemeBackgroundSource =
+    source.source === "pet" ? "pet" : "image";
+  const imagePath = toText(source.imagePath);
+  const petId = toText(source.petId);
+  const petScale = pickInRange(
+    source.petScale,
+    PET_BACKGROUND_SCALE_MIN,
+    PET_BACKGROUND_SCALE_MAX,
+    PET_BACKGROUND_SCALE_DEFAULT,
+  );
+  // 当前来源缺少素材时视为未启用，与 Rust 端 normalize 保持一致。
+  const hasContent = sourceKind === "pet" ? Boolean(petId) : Boolean(imagePath);
   return {
-    enabled: typeof source.enabled === "boolean" ? source.enabled : false,
-    imagePath: toText(source.imagePath),
+    enabled:
+      typeof source.enabled === "boolean"
+        ? source.enabled && hasContent
+        : false,
+    source: sourceKind,
+    imagePath,
+    petId,
+    petScale,
     opacity,
     blur,
   };
+}
+
+/** 当前来源是否已有可用素材（图片已选择 / 宠物已选择）。 */
+export const hasBackgroundContent = (
+  background: ThemeSettings["background"],
+): boolean =>
+  background.source === "pet"
+    ? Boolean(background.petId)
+    : Boolean(background.imagePath);
+
+/**
+ * 将背景配置应用到 :root CSS 变量。
+ *
+ * - image：写入 --theme-bg-image，由 .app-shell::after 铺满绘制
+ * - pet：不写 --theme-bg-image（由渲染层宠物画布绘制 idle 动画），
+ *   仅提供不透明度 / 模糊 / 宠物大小变量
+ */
+export function applyBackgroundToDocument(background: ThemeBackground): void {
+  const root = document.documentElement;
+  if (background.enabled && hasBackgroundContent(background)) {
+    const opacity = Math.max(
+      0,
+      Math.min(MAX_BACKGROUND_OPACITY, background.opacity),
+    );
+    const blur = Math.max(0, background.blur);
+    if (background.source === "pet") {
+      root.style.removeProperty("--theme-bg-image");
+    } else {
+      root.style.setProperty(
+        "--theme-bg-image",
+        `url("${themeBgUrl(background.imagePath)}")`,
+      );
+    }
+    root.style.setProperty("--theme-bg-opacity", String(opacity));
+    root.style.setProperty("--theme-bg-blur", `${blur}px`);
+    root.style.setProperty("--theme-pet-scale", String(background.petScale));
+    root.setAttribute("data-theme-bg", "on");
+    return;
+  }
+  root.style.removeProperty("--theme-bg-image");
+  root.style.removeProperty("--theme-bg-opacity");
+  root.style.removeProperty("--theme-bg-blur");
+  root.style.removeProperty("--theme-pet-scale");
+  root.removeAttribute("data-theme-bg");
 }
 
 export function normalizeThemeStreamCursor(value: unknown): ThemeStreamCursor {
@@ -676,20 +748,8 @@ export const applyThemeCacheToDocument = (): "light" | "dark" | null => {
   applyStreamCursorToDocument(settings.streamCursor);
   applyTypographyToDocument(settings.typography);
 
-  // 同步背景图层 CSS 变量，避免启动时背景图延迟出现。
-  const bg = settings.background;
-  const root = document.documentElement;
-  if (bg.enabled && bg.imagePath) {
-    const opacity = Math.max(0, Math.min(MAX_BACKGROUND_OPACITY, bg.opacity));
-    const blur = Math.max(0, bg.blur);
-    root.style.setProperty(
-      "--theme-bg-image",
-      `url("${themeBgUrl(bg.imagePath)}")`,
-    );
-    root.style.setProperty("--theme-bg-opacity", String(opacity));
-    root.style.setProperty("--theme-bg-blur", `${blur}px`);
-    root.setAttribute("data-theme-bg", "on");
-  }
+  // 同步背景图层 CSS 变量，避免启动时背景延迟出现。
+  applyBackgroundToDocument(settings.background);
 
   return isDark ? "dark" : "light";
 };

@@ -3550,12 +3550,20 @@ export const en = {
   "settings.themeColorAccentBlueText": "Blue text",
   "settings.themeColorSelectionBg": "Selection background",
   "settings.themeColorFocusRing": "Focus ring",
-  "settings.themeBackgroundTitle": "Background image",
+  "settings.themeBackgroundTitle": "Background",
   "settings.themeBackgroundInfo":
-    "Upload a custom background image and adjust its opacity and blur.",
+    "Use a custom image or a desktop pet animation as the background, then adjust its opacity and blur.",
+  "settings.themeBackgroundSourceImage": "Image",
+  "settings.themeBackgroundSourcePet": "Pet",
   "settings.themeBackgroundSelect": "Select image",
   "settings.themeBackgroundSelectDialogTitle": "Select background image",
   "settings.themeBackgroundRemove": "Remove",
+  "settings.themeBackgroundPetSelect": "Select pet",
+  "settings.themeBackgroundPetEmpty":
+    "No pets installed yet. Install one in Settings > Desktop pet first.",
+  "settings.themeBackgroundPetInfo":
+    "The selected pet's idle animation loops as the background.",
+  "settings.themeBackgroundPetSize": "Pet size",
   "settings.themeBackgroundOpacity": "Opacity",
   "settings.themeBackgroundBlur": "Blur",
   "settings.themeBackgroundSaveError": "Failed to save background image",

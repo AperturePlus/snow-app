@@ -7,6 +7,7 @@ import { useI18n } from "../../i18n";
 import { useDebouncedAutoSave } from "../../hooks/useDebouncedAutoSave";
 import { getPresetById } from "./themeSettings/themePresets";
 import {
+  applyBackgroundToDocument,
   applyFontFamilyToDocument,
   applyPaletteToDocument,
   applyThemePresetToDocument,
@@ -14,7 +15,6 @@ import {
   applyThemeModeToDocument,
   applyTypographyToDocument,
   DEFAULT_THEME_SETTINGS,
-  MAX_BACKGROUND_OPACITY,
   normalizeThemeSettings,
   readThemeCache,
   resolveActivePalette,
@@ -29,7 +29,8 @@ import type {
   ThemeStreamCursor,
   ThemeTypography,
 } from "./themeSettings/types";
-import { themeBgUrl } from "../../utils/themeBgUrl";
+import type { PetManifest } from "../../../preload/types/pets";
+import { THEME_BG_PREVIEW_EVENT } from "../pet/ThemeBackgroundPetLayer";
 import { ThemeAiColorModal } from "./themeSettings/ThemeAiColorModal";
 import { ThemeBackgroundSection } from "./themeSettings/ThemeBackgroundSection";
 import { ThemeColorEditor } from "./themeSettings/ThemeColorEditor";
@@ -77,6 +78,7 @@ export function ThemeSettingsPanel(): React.JSX.Element {
   );
   const [form, setForm] = useState<ThemeSettings>(initialSettings);
   const [lastSaved, setLastSaved] = useState<ThemeSettings>(initialSettings);
+  const [pets, setPets] = useState<PetManifest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
@@ -98,10 +100,15 @@ export function ThemeSettingsPanel(): React.JSX.Element {
     setIsLoading(true);
     setError("");
     try {
-      const raw = await window.snow.getThemeSettings();
+      const [raw, installedPets] = await Promise.all([
+        window.snow.getThemeSettings(),
+        // 宠物背景来源需要已安装宠物列表，失败时降级为空列表。
+        window.snow.listInstalledPets().catch(() => [] as PetManifest[]),
+      ]);
       const normalized = normalizeThemeSettings(raw);
       setForm(normalized);
       setLastSaved(normalized);
+      setPets(installedPets);
     } catch (e) {
       setError(
         e instanceof Error
@@ -172,24 +179,12 @@ export function ThemeSettingsPanel(): React.JSX.Element {
 
     syncMacTrafficLightPosition();
 
-    const bg = form.background;
-    const root = document.documentElement;
-    if (bg.enabled && bg.imagePath) {
-      const opacity = Math.max(0, Math.min(MAX_BACKGROUND_OPACITY, bg.opacity));
-      const blur = Math.max(0, bg.blur);
-      root.style.setProperty(
-        "--theme-bg-image",
-        `url("${themeBgUrl(bg.imagePath)}")`,
-      );
-      root.style.setProperty("--theme-bg-opacity", String(opacity));
-      root.style.setProperty("--theme-bg-blur", `${blur}px`);
-      root.setAttribute("data-theme-bg", "on");
-    } else {
-      root.style.removeProperty("--theme-bg-image");
-      root.style.removeProperty("--theme-bg-opacity");
-      root.style.removeProperty("--theme-bg-blur");
-      root.removeAttribute("data-theme-bg");
-    }
+    // 背景层：图片由 CSS 变量铺满，宠物由渲染层画布绘制 idle 动画。
+    applyBackgroundToDocument(form.background);
+    // 广播实时预览，让宠物背景层无需等待持久化即可切换来源 / 宠物。
+    window.dispatchEvent(
+      new CustomEvent(THEME_BG_PREVIEW_EVENT, { detail: form.background }),
+    );
   }, [form, isLoading]);
 
   const previewPalette = useMemo<ThemePalette>(() => {
@@ -485,10 +480,9 @@ export function ThemeSettingsPanel(): React.JSX.Element {
       setForm((previous) => ({
         ...previous,
         background: {
+          ...previous.background,
           enabled: false,
           imagePath: "",
-          opacity: 0.2,
-          blur: 0,
         },
       }));
     } catch (e) {
@@ -572,8 +566,9 @@ export function ThemeSettingsPanel(): React.JSX.Element {
 
   const busy = isLoading || isSaving || isBusy;
   const isCustom = form.presetId === "custom";
-  // AI 配色按钮仅在用户已上传背景图时显示。
-  const hasBackgroundImage = Boolean(form.background.imagePath);
+  // AI 配色按钮仅在用户已上传背景图（图片来源）时显示。
+  const hasBackgroundImage =
+    form.background.source === "image" && Boolean(form.background.imagePath);
   // 弹窗中始终编辑 custom 调色板，与是否启用自定义无关。
   const currentPalette =
     editorTab === "light" ? form.custom.light : form.custom.dark;
@@ -700,6 +695,7 @@ export function ThemeSettingsPanel(): React.JSX.Element {
 
           <ThemeBackgroundSection
             background={form.background}
+            pets={pets}
             disabled={busy}
             busy={isBusy}
             onChange={handleBackgroundChange}

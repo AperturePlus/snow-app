@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  applyBackgroundToDocument,
   applyFontFamilyToDocument,
   applyPaletteToDocument,
   applyThemePresetToDocument,
@@ -13,7 +14,6 @@ import {
   writeThemeCache,
 } from "../components/sidebar/themeSettings/themeSettingsUtils";
 import type { ThemeSettings } from "../components/sidebar/themeSettings/types";
-import { themeBgUrl } from "../utils/themeBgUrl";
 
 /**
  * 全局主题应用 Hook。
@@ -62,25 +62,8 @@ export const useTheme = (): {
 
       syncMacTrafficLightPosition();
 
-      // 应用背景图层 CSS 变量。
-      const bg2 = settings.background;
-      const root = document.documentElement;
-      if (bg2.enabled && bg2.imagePath) {
-        const opacity = Math.max(0, Math.min(1, bg2.opacity));
-        const blur = Math.max(0, bg2.blur);
-        root.style.setProperty(
-          "--theme-bg-image",
-          `url("${themeBgUrl(bg2.imagePath)}")`,
-        );
-        root.style.setProperty("--theme-bg-opacity", String(opacity));
-        root.style.setProperty("--theme-bg-blur", `${blur}px`);
-        root.setAttribute("data-theme-bg", "on");
-      } else {
-        root.style.removeProperty("--theme-bg-image");
-        root.style.removeProperty("--theme-bg-opacity");
-        root.style.removeProperty("--theme-bg-blur");
-        root.removeAttribute("data-theme-bg");
-      }
+      // 应用背景图层 CSS 变量（图片背景 / 宠物背景由各自渲染层消费）。
+      applyBackgroundToDocument(settings.background);
     },
     [],
   );

@@ -130,7 +130,13 @@ impl From<CustomThemeNapi> for CustomTheme {
 #[napi(object)]
 pub struct ThemeBackgroundNapi {
     pub enabled: bool,
+    /// 背景来源："image"（自定义图片）| "pet"（桌面宠物 idle 动画）
+    pub source: String,
     pub image_path: String,
+    /// 宠物背景使用的已安装宠物 id
+    pub pet_id: String,
+    /// 宠物背景大小：相对视口高度的比例
+    pub pet_scale: f64,
     pub opacity: f64,
     pub blur: f64,
 }
@@ -139,7 +145,10 @@ impl From<ThemeBackground> for ThemeBackgroundNapi {
     fn from(b: ThemeBackground) -> Self {
         ThemeBackgroundNapi {
             enabled: b.enabled,
+            source: b.source,
             image_path: b.image_path,
+            pet_id: b.pet_id,
+            pet_scale: b.pet_scale,
             opacity: b.opacity,
             blur: b.blur,
         }
@@ -150,7 +159,10 @@ impl From<ThemeBackgroundNapi> for ThemeBackground {
     fn from(b: ThemeBackgroundNapi) -> Self {
         ThemeBackground {
             enabled: b.enabled,
+            source: b.source,
             image_path: b.image_path,
+            pet_id: b.pet_id,
+            pet_scale: b.pet_scale,
             opacity: b.opacity,
             blur: b.blur,
         }

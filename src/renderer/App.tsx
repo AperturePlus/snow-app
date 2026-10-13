@@ -40,6 +40,7 @@ import { CONVERSATION_SELECTED_EVENT } from "./components/mainContent/chatMessag
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { useI18n } from "./i18n";
 import { useTheme } from "./hooks/useTheme";
+import { ThemeBackgroundPetLayer } from "./components/pet/ThemeBackgroundPetLayer";
 import { adjustUiFontSize, resetUiFontSize } from "./utils/uiZoom";
 import {
   CLOSE_BEHAVIOR_SETTING_CODE,
@@ -404,7 +405,7 @@ export const App = (): React.JSX.Element => {
   const isWindows = navigator.userAgent.includes("Win");
   const isMacOS = navigator.userAgent.includes("Mac");
   const { t } = useI18n();
-  useTheme();
+  const { themeSettings } = useTheme();
   useAppControl({ activeDirectory, setActiveMainView });
 
   // 切换会话时退出非聊天主视图（如团队协作、独立页面），让主界面跟随会话回到聊天。
@@ -1047,6 +1048,7 @@ export const App = (): React.JSX.Element => {
           style={panelSizeStyle}
           data-snow-anchor="app.root"
         >
+          <ThemeBackgroundPetLayer background={themeSettings.background} />
           <TopBar
             activeView={activeMainView}
             isSidebarCollapsed={isSidebarCollapsed}
