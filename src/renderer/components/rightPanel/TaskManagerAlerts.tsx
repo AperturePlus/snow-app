@@ -11,35 +11,55 @@ import {
 } from "./taskManagerMonitoring";
 
 type Props = {
+  options: AlertOptions;
+  onOptionsChange: (next: AlertOptions) => void;
+  alerts: UsageAlerts;
+  onDismiss: (metric: "cpu" | "memory") => void;
+  samplingActive: boolean;
+  valid: boolean;
+  /** all: settings panel + notices. notice-only: notices only. */
+  mode?: "all" | "notice-only";
+  /** Expand the settings panel on first render (the alerts tab wants it open). */
+  settingsOpen?: boolean;
+};
+
+type HookArgs = {
   samples: UsageSample[];
   scopeKey: string;
   continuity: number;
   samplingActive: boolean;
   valid: boolean;
-  mode?: "all" | "notice-only" | "panel-only";
 };
 
-/** Ephemeral panel-only preferences. No notifications, automatic termination or config writes. */
-export function TaskManagerAlerts({
+const DEFAULT_ALERT_OPTIONS: AlertOptions = {
+  enabled: false,
+  cpuPercent: 70,
+  memoryMiB: 1024,
+  durationSecs: 10,
+};
+
+/**
+ * One monitoring instance per panel: both the settings form and the notice
+ * banner render from this state, so they can never diverge. Ephemeral
+ * preferences only - no notifications, automatic termination or config writes.
+ */
+export function useUsageAlerts({
   samples,
   scopeKey,
   continuity,
   samplingActive,
   valid,
-  mode = "all",
-}: Props): React.JSX.Element {
-  const { t } = useI18n();
-  const [options, setOptions] = useState<AlertOptions>({
-    enabled: false,
-    cpuPercent: 70,
-    memoryMiB: 1024,
-    durationSecs: 10,
-  });
+}: HookArgs): {
+  options: AlertOptions;
+  setOptions: (next: AlertOptions) => void;
+  alerts: UsageAlerts;
+  dismiss: (metric: "cpu" | "memory") => void;
+} {
+  const [options, setOptions] = useState<AlertOptions>(DEFAULT_ALERT_OPTIONS);
   const [alerts, setAlerts] = useState<UsageAlerts>(emptyUsageAlerts);
   const alertsRef = useRef<UsageAlerts>(emptyUsageAlerts());
   const consumedAtRef = useRef(0);
   const latest = samples.at(-1);
-  const configValid = alertOptionsValid(options);
   useEffect(() => {
     alertsRef.current = emptyUsageAlerts();
     consumedAtRef.current = latest?.atMs ?? 0;
@@ -74,6 +94,28 @@ export function TaskManagerAlerts({
     };
     setAlerts(alertsRef.current);
   };
+  return { options, setOptions, alerts, dismiss };
+}
+
+/**
+ * A single monitoring instance owns the state; every surface renders from it.
+ * The settings form is uncontrolled input-wise but fully driven by the caller's
+ * options/alerts so the notice banner and the settings panel never diverge.
+ */
+export function TaskManagerAlerts({
+  options,
+  onOptionsChange,
+  alerts,
+  onDismiss,
+  samplingActive,
+  valid,
+  mode = "all",
+  settingsOpen = false,
+}: Props): React.JSX.Element {
+  const { t } = useI18n();
+  const configValid = alertOptionsValid(options);
+  const update = (patch: Partial<AlertOptions>): void =>
+    onOptionsChange({ ...options, ...patch });
   const fields = [
     ["cpuPercent", "taskManager.alertCpu", 0, 100, 1],
     ["memoryMiB", "taskManager.alertMemory", 1, 1048576, 1],
@@ -84,7 +126,7 @@ export function TaskManagerAlerts({
       {mode !== "notice-only" && (
         <details
           className="task-manager-disclosure task-manager-alert-settings"
-          open={mode === "panel-only" || undefined}
+          open={settingsOpen || undefined}
         >
           <summary>
             {t("taskManager.alertTitle")} ·{" "}
@@ -95,18 +137,14 @@ export function TaskManagerAlerts({
             )}
           </summary>
           <div className="task-manager-alert-body">
-            <label className="task-manager-alert-enable">
+            <label className="toggle-switch task-manager-alert-enable">
               <input
                 type="checkbox"
                 checked={options.enabled}
-                onChange={(event) =>
-                  setOptions((current) => ({
-                    ...current,
-                    enabled: event.target.checked,
-                  }))
-                }
+                onChange={(event) => update({ enabled: event.target.checked })}
               />
-              {t("taskManager.alertEnable")}
+              <span className="toggle-slider" />
+              <span>{t("taskManager.alertEnable")}</span>
             </label>
             <p className="task-manager-hint">{t("taskManager.alertHint")}</p>
             <div className="task-manager-budget-fields">
@@ -121,13 +159,12 @@ export function TaskManagerAlerts({
                     step={step}
                     value={Number.isFinite(options[key]) ? options[key] : ""}
                     onChange={(event) =>
-                      setOptions((current) => ({
-                        ...current,
+                      update({
                         [key]:
                           event.target.value === ""
                             ? NaN
                             : Number(event.target.value),
-                      }))
+                      })
                     }
                   />
                   <small>
@@ -164,43 +201,42 @@ export function TaskManagerAlerts({
           </div>
         </details>
       )}
-      {mode !== "panel-only" &&
-        (["cpu", "memory"] as const).map(
-          (metric) =>
-            alerts[metric].active &&
-            !alerts[metric].dismissed && (
-              <div
-                key={metric}
-                className="task-manager-alert-notice"
-                role="status"
-                data-alert-metric={metric}
+      {(["cpu", "memory"] as const).map(
+        (metric) =>
+          alerts[metric].active &&
+          !alerts[metric].dismissed && (
+            <div
+              key={metric}
+              className="task-manager-alert-notice"
+              role="status"
+              data-alert-metric={metric}
+            >
+              <span>
+                {t("taskManager.alertTriggered", {
+                  values: {
+                    metric: t(
+                      metric === "cpu"
+                        ? "taskManager.visibleCpu"
+                        : "taskManager.visibleMemory",
+                    ),
+                    threshold:
+                      metric === "cpu"
+                        ? `${options.cpuPercent}%`
+                        : `${options.memoryMiB} MiB`,
+                    duration: options.durationSecs,
+                  },
+                })}
+              </span>
+              <button
+                type="button"
+                className="task-manager-refresh-btn"
+                onClick={() => onDismiss(metric)}
               >
-                <span>
-                  {t("taskManager.alertTriggered", {
-                    values: {
-                      metric: t(
-                        metric === "cpu"
-                          ? "taskManager.visibleCpu"
-                          : "taskManager.visibleMemory",
-                      ),
-                      threshold:
-                        metric === "cpu"
-                          ? `${options.cpuPercent}%`
-                          : `${options.memoryMiB} MiB`,
-                      duration: options.durationSecs,
-                    },
-                  })}
-                </span>
-                <button
-                  type="button"
-                  className="task-manager-refresh-btn"
-                  onClick={() => dismiss(metric)}
-                >
-                  {t("taskManager.dismissAlert")}
-                </button>
-              </div>
-            ),
-        )}
+                {t("taskManager.dismissAlert")}
+              </button>
+            </div>
+          ),
+      )}
     </>
   );
 }

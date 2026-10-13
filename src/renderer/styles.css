@@ -29746,14 +29746,13 @@ body.is-panel-resizing * {
 .task-manager-stat-card:hover {
   background: var(--bg-hover);
   border-color: var(--border-subtle);
-  transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .task-manager-stat-card.is-selected {
-  border-color: var(--accent-blue);
+  border-color: var(--accent-color);
   background: var(--surface-island-strong);
-  box-shadow: 0 0 0 1px var(--accent-blue);
+  box-shadow: 0 0 0 1px var(--accent-color);
 }
 
 .task-manager-stat-icon {
@@ -29772,8 +29771,8 @@ body.is-panel-resizing * {
 }
 
 .task-manager-stat-icon.is-mem {
-  background: var(--accent-blue-bg);
-  color: var(--accent-blue-text);
+  background: color-mix(in srgb, var(--accent-color) 16%, transparent);
+  color: var(--accent-color);
 }
 
 .task-manager-stat-icon.is-cpu {
@@ -30021,7 +30020,7 @@ body.is-panel-resizing * {
 
 /* The search field shares its wrapper edge instead of drawing two focus rings. */
 .task-manager-search:focus-within {
-  border-color: var(--accent-blue);
+  border-color: var(--accent-color);
   outline: none;
   box-shadow: none;
 }
@@ -30581,14 +30580,6 @@ body.is-panel-resizing * {
   fill: var(--accent-color);
 }
 
-.task-manager-chart-memory .task-manager-chart-line {
-  stroke: var(--accent-blue);
-}
-
-.task-manager-chart-memory .task-manager-chart-point {
-  fill: var(--accent-blue);
-}
-
 .task-manager-chart text,
 .task-manager-chart-tick {
   fill: var(--text-muted);
@@ -30847,7 +30838,7 @@ body.is-panel-resizing * {
 }
 
 .task-manager-mini-bar.is-mem {
-  background: var(--accent-blue);
+  background: var(--accent-color);
 }
 
 /* 嵌入式卡片容器 */
@@ -30867,12 +30858,6 @@ body.is-panel-resizing * {
   color: var(--text-primary);
   font-size: 11.5px;
   font-weight: 600;
-}
-
-.task-manager-alerts-container {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
 }
 
 .task-manager-stale-banner {
@@ -31048,15 +31033,12 @@ body.is-panel-resizing * {
 }
 
 .task-manager-alert-enable {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-secondary);
   font-size: 11px;
 }
 
-.task-manager-alert-body input[type="checkbox"] {
-  accent-color: var(--accent-color);
+.task-manager-alert-enable input:focus-visible + .toggle-slider {
+  outline: 2px solid var(--accent-color);
+  outline-offset: -2px;
 }
 
 .task-manager-alert-notice {

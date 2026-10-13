@@ -163,7 +163,7 @@ export function UsageChart({
   const segments = usageSegments(samples, metric);
 
   const isCpu = metric === "cpu";
-  const themeColor = isCpu ? "var(--accent-color)" : "var(--accent-blue)";
+  const themeColor = "var(--accent-color)";
 
   return (
     <figure

@@ -38,7 +38,7 @@ import {
 } from "./TaskManagerTrend";
 import { TaskManagerProcessTable } from "./TaskManagerProcessTable";
 import { TaskManagerSessions } from "./TaskManagerSessions";
-import { TaskManagerAlerts } from "./TaskManagerAlerts";
+import { TaskManagerAlerts, useUsageAlerts } from "./TaskManagerAlerts";
 import {
   CONTINUOUS_SAMPLE_GAP_MS,
   TREND_WINDOW_MS,
@@ -292,6 +292,20 @@ export const TaskManagerContent = ({
     continuity,
     now,
   });
+  const alertSamplingActive = isActive && !hidden && autoRefresh;
+  const alertValid = scopeKnown && !hasError;
+  const {
+    options: alertOptions,
+    setOptions: setAlertOptions,
+    alerts: usageAlerts,
+    dismiss: dismissAlert,
+  } = useUsageAlerts({
+    samples: usageSamples,
+    scopeKey,
+    continuity,
+    samplingActive: alertSamplingActive,
+    valid: alertValid,
+  });
   const groups = useMemo(() => {
     const grouped = new Map<
       NonNullable<TaskManagerRow["lspSession"]>,
@@ -478,7 +492,7 @@ export const TaskManagerContent = ({
           <MiniSparkline
             samples={usageSamples}
             metric="memory"
-            color="var(--accent-blue)"
+            color="var(--accent-color)"
           />
         </button>
 
@@ -604,14 +618,15 @@ export const TaskManagerContent = ({
         </p>
       )}
 
-      {/* 实时告警横幅（所有 Tab 可见） */}
+      {/* 实时告警横幅（所有 Tab 可见；告警 Tab 内单独渲染设置面板） */}
       <TaskManagerAlerts
-        samples={usageSamples}
-        scopeKey={scopeKey}
-        continuity={continuity}
-        samplingActive={isActive && !hidden && autoRefresh}
-        valid={scopeKnown && !hasError}
-        mode={activeTab === "alerts" ? "all" : "notice-only"}
+        options={alertOptions}
+        onOptionsChange={setAlertOptions}
+        alerts={usageAlerts}
+        onDismiss={dismissAlert}
+        samplingActive={alertSamplingActive}
+        valid={alertValid}
+        mode="notice-only"
       />
 
       {/* Tab 1: 进程列表与进程树 */}
@@ -795,16 +810,15 @@ export const TaskManagerContent = ({
       {/* Tab 4: 持续占用告警设置 */}
       {activeTab === "alerts" && (
         <div className="task-manager-tab-content is-scrollable">
-          <div className="task-manager-alerts-container">
-            <TaskManagerAlerts
-              samples={usageSamples}
-              scopeKey={scopeKey}
-              continuity={continuity}
-              samplingActive={isActive && !hidden && autoRefresh}
-              valid={scopeKnown && !hasError}
-              mode="panel-only"
-            />
-          </div>
+          <TaskManagerAlerts
+            options={alertOptions}
+            onOptionsChange={setAlertOptions}
+            alerts={usageAlerts}
+            onDismiss={dismissAlert}
+            samplingActive={alertSamplingActive}
+            valid={alertValid}
+            settingsOpen
+          />
         </div>
       )}
 
