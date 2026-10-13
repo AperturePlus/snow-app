@@ -3903,6 +3903,8 @@ export const zhTW = {
   "projectMcp.refresh": "重新整理",
   "projectMcp.scopeNote":
     "此處修改只作用於目前專案，不會變更設定頁中的全域 MCP 狀態。",
+  "projectMcp.filteredNote": "只顯示 {{server}} 的開關",
+  "projectMcp.showAllServers": "顯示全部 MCP",
   "projectMcp.systemServers": "系統內建 MCP",
   "projectMcp.projectServers": "專案 MCP",
   "projectMcp.globalServers": "全域 MCP",
@@ -4182,6 +4184,12 @@ export const zhTW = {
   "chatInput.lspBadgeTitleRunning": "{{count}} 個語言伺服器執行中",
   "chatInput.lspBadgeTitleProblems": "{{count}} 個語言伺服器異常",
   "browser.moreActions": "更多操作",
+  "panelMcpGate.browserMessage":
+    "目前專案未開啟瀏覽器控制 MCP，Agent 無法操作此瀏覽器。",
+  "panelMcpGate.terminalMessage":
+    "目前專案未開啟終端控制 MCP，Agent 無法在此終端執行命令。",
+  "panelMcpGate.enable": "去開啟",
+  "panelMcpGate.dismiss": "關閉提示",
   "browser.moreActionsHint": "截圖、縮放、顯示尺寸、清除資料、傳送給 Agent 等",
   "browser.restoreToTabs": "還原為標籤頁",
   "browser.clearBrowsingData": "清除瀏覽資料",

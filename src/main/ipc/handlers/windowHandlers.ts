@@ -491,7 +491,13 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
   // 重建浏览器。原 tab 由渲染端在成功后关闭。
   ipcMain.handle(
     "browser:open-detached-window",
-    (_event, instanceId: unknown, url: unknown, access: unknown) => {
+    (
+      _event,
+      instanceId: unknown,
+      url: unknown,
+      access: unknown,
+      projectId: unknown,
+    ) => {
       if (typeof instanceId !== "string" || !instanceId.trim()) {
         throw new Error("A valid browser instanceId is required");
       }
@@ -511,6 +517,9 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
         instanceId.trim(),
         url.trim(),
         resolvedAccess,
+        typeof projectId === "string" && projectId.trim()
+          ? projectId.trim()
+          : undefined,
       );
     },
   );
@@ -634,6 +643,24 @@ export const registerWindowHandlers = (_native: NativeBridge): void => {
     }
     mainWindow.focus();
     mainWindow.webContents.send("app-control:open-settings-broadcast", view);
+  });
+
+  // 独立浏览器窗口点击 MCP 门禁横幅「去开启」：聚焦并显示主窗口，再把请求
+  // 转发给主窗口打开项目 MCP 弹窗（渲染进程内事件无法跨窗口，必须经主进程
+  // 中转）；serverId 为弹窗中需要单独展示的服务器。
+  ipcMain.on("project-mcp:open-panel-forward", (_event, serverId: unknown) => {
+    const mainWindow = getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+    if (!mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+    mainWindow.focus();
+    mainWindow.webContents.send(
+      "project-mcp:open-panel-broadcast",
+      typeof serverId === "string" ? serverId : "",
+    );
   });
 
   ipcMain.handle("browser:open-devtools", (_event, webContentsId: unknown) => {

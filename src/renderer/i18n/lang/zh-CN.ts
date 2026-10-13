@@ -3951,6 +3951,8 @@ export const zhCN = {
   "projectMcp.refresh": "刷新",
   "projectMcp.scopeNote":
     "此处修改仅作用于当前项目，不会更改设置页中的全局 MCP 状态。",
+  "projectMcp.filteredNote": "只显示 {{server}} 的开关",
+  "projectMcp.showAllServers": "显示全部 MCP",
   "projectMcp.systemServers": "系统内置 MCP",
   "projectMcp.projectServers": "项目 MCP",
   "projectMcp.globalServers": "全局 MCP",
@@ -4229,6 +4231,12 @@ export const zhCN = {
   "chatInput.lspBadgeTitleRunning": "{{count}} 个语言服务器运行中",
   "chatInput.lspBadgeTitleProblems": "{{count}} 个语言服务器异常",
   "browser.moreActions": "更多操作",
+  "panelMcpGate.browserMessage":
+    "当前项目未开启浏览器控制 MCP，Agent 无法操作此浏览器。",
+  "panelMcpGate.terminalMessage":
+    "当前项目未开启终端控制 MCP，Agent 无法在此终端执行命令。",
+  "panelMcpGate.enable": "去开启",
+  "panelMcpGate.dismiss": "关闭提示",
   "browser.moreActionsHint": "截图、缩放、显示尺寸、清除数据、发送给 Agent 等",
   "browser.restoreToTabs": "还原为标签页",
   "browser.clearBrowsingData": "清除浏览数据",

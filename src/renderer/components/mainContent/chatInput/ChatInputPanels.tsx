@@ -14,6 +14,9 @@ export type ChatInputPanelsProps = {
   projectId?: string;
   projectName?: string;
   isProjectMcpOpen: boolean;
+  /** 项目 MCP 弹窗聚焦的服务器 id：非空时只展示该服务器 */
+  projectMcpFocusServerId: string | null;
+  onClearProjectMcpFocus: () => void;
   isProjectSensitiveCommandsOpen: boolean;
   isProjectPermissionsOpen: boolean;
   isProjectSkillsOpen: boolean;
@@ -44,6 +47,8 @@ export const ChatInputPanels = ({
   projectId,
   projectName,
   isProjectMcpOpen,
+  projectMcpFocusServerId,
+  onClearProjectMcpFocus,
   isProjectSensitiveCommandsOpen,
   isProjectPermissionsOpen,
   isProjectSkillsOpen,
@@ -74,8 +79,10 @@ export const ChatInputPanels = ({
       open={isProjectMcpOpen}
       projectId={projectId}
       projectName={projectName}
+      focusServerId={projectMcpFocusServerId}
       workflowMode={workflowMode}
       planMode={planMode}
+      onClearFocus={onClearProjectMcpFocus}
       onClose={onCloseProjectMcp}
     />
     <ProjectSensitiveCommandsPanel

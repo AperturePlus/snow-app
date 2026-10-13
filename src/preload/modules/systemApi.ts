@@ -63,6 +63,9 @@ const APP_CONTROL_OPEN_SETTINGS_FORWARD_CHANNEL =
   "app-control:open-settings-forward";
 const APP_CONTROL_OPEN_SETTINGS_BROADCAST_CHANNEL =
   "app-control:open-settings-broadcast";
+// 独立浏览器窗口请求打开主窗口的项目 MCP 弹窗（窗口 → 主进程 → 主窗口）。
+const PROJECT_MCP_OPEN_FORWARD_CHANNEL = "project-mcp:open-panel-forward";
+const PROJECT_MCP_OPEN_BROADCAST_CHANNEL = "project-mcp:open-panel-broadcast";
 const TERMINAL_COMMAND_CHANNEL = "terminal:command";
 const TERMINAL_COMMAND_RESPONSE_CHANNEL = "terminal:command-response";
 const USER_QUESTION_CHANNEL = "user-question:request";
@@ -453,6 +456,26 @@ ipcRenderer.on(
     }
     for (const subscriber of openSettingsRequestSubscribers) {
       deliverOpenSettingsRequest(subscriber, view);
+    }
+  },
+);
+
+type OpenProjectMcpRequestSubscriber = (serverId: string) => void;
+const openProjectMcpRequestSubscribers =
+  new Set<OpenProjectMcpRequestSubscriber>();
+
+ipcRenderer.on(
+  PROJECT_MCP_OPEN_BROADCAST_CHANNEL,
+  (_event: IpcRendererEvent, serverId: unknown): void => {
+    if (typeof serverId !== "string") {
+      return;
+    }
+    for (const subscriber of openProjectMcpRequestSubscribers) {
+      try {
+        subscriber(serverId);
+      } catch (error) {
+        console.error("[project-mcp] Open panel subscriber failed", error);
+      }
     }
   },
 );
@@ -955,6 +978,26 @@ export const systemApi = {
       openSettingsRequestSubscribers.delete(callback);
     };
   },
+  /**
+   * 请求主窗口打开项目 MCP 弹窗（独立浏览器窗口专用：该窗口没有聊天
+   * 输入区，事件无法跨渲染进程到达主窗口，须经主进程转发并聚焦主窗口）。
+   * serverId 为需要在弹窗中单独展示的服务器（空串表示展示全部）。
+   */
+  forwardOpenProjectMcpToMain: (serverId: string): void => {
+    ipcRenderer.send(PROJECT_MCP_OPEN_FORWARD_CHANNEL, serverId);
+  },
+  /**
+   * 订阅主进程转发过来的「打开项目 MCP 弹窗」请求（主窗口使用）。
+   * 返回取消订阅函数。
+   */
+  onOpenProjectMcpRequest: (
+    callback: (serverId: string) => void,
+  ): (() => void) => {
+    openProjectMcpRequestSubscribers.add(callback);
+    return () => {
+      openProjectMcpRequestSubscribers.delete(callback);
+    };
+  },
   setMcpToolEnabled: (toolName: string, enabled: boolean): Promise<void> =>
     ipcRenderer.invoke("mcp:set-tool-enabled", toolName, enabled),
   setMcpToolsEnabled: (toolNames: string[], enabled: boolean): Promise<void> =>
@@ -1019,12 +1062,14 @@ export const systemApi = {
     instanceId: string,
     url: string,
     access?: BrowserAgentAccessPayload,
+    projectId?: string,
   ): Promise<void> =>
     ipcRenderer.invoke(
       "browser:open-detached-window",
       instanceId,
       url,
       access ?? null,
+      projectId ?? "",
     ),
   /**
    * 独立浏览器窗口「还原为标签页」：把当前实例（页面 URL + 标题）

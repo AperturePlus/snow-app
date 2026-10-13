@@ -50,6 +50,7 @@ function DetachedBrowserWindowApp(): React.JSX.Element {
   const params = new URLSearchParams(window.location.search);
   const instanceId = params.get("instanceId") ?? "";
   const initialUrl = params.get("url") ?? "";
+  const projectId = params.get("projectId") ?? "";
   const [title, setTitle] = useState("");
   const [pageUrl, setPageUrl] = useState(initialUrl);
   // Agent 授权随窗口迁移（主窗口「在新窗口中打开」时经 query 传入）。
@@ -163,6 +164,7 @@ function DetachedBrowserWindowApp(): React.JSX.Element {
         initialUrl={initialUrl}
         isActive
         detached
+        projectId={projectId || undefined}
         agentAccess={initialAgentAccess}
         onTitleChange={setTitle}
         onUrlChange={setPageUrl}

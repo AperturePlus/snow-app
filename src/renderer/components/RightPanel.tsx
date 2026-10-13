@@ -1183,11 +1183,16 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
         const browserTab = tab.data as BrowserTabData;
         const access = getBrowserAgentAccess(browserTab.instanceId);
         void window.snow
-          .openDetachedBrowserWindow(browserTab.instanceId, browserTab.url, {
-            shared: access?.shared ?? false,
-            isolated: access?.isolated ?? false,
-            origin: access?.origin ?? "user",
-          })
+          .openDetachedBrowserWindow(
+            browserTab.instanceId,
+            browserTab.url,
+            {
+              shared: access?.shared ?? false,
+              isolated: access?.isolated ?? false,
+              origin: access?.origin ?? "user",
+            },
+            activeDirectory?.directoryId,
+          )
           .then(() => {
             handleCloseTab(tabId);
           })
@@ -1195,7 +1200,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
             console.error("Failed to open browser in new window", error);
           });
       },
-      [tabs, handleCloseTab],
+      [tabs, handleCloseTab, activeDirectory?.directoryId],
     );
 
     const handleOpenBrowserInLocalBrowser = useCallback(
@@ -1631,6 +1636,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
               ptyId={(tab.data as TerminalTabData).ptyId}
               shellPath={(tab.data as TerminalTabData).shellPath}
               sessionId={(tab.data as TerminalTabData).sessionId}
+              projectId={activeDirectory?.directoryId}
               isActive={activeTabId === tab.id}
               onTitleChange={(title) =>
                 handleTerminalTitleChange(tab.id, title)
@@ -1649,6 +1655,7 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
               instanceId={(tab.data as BrowserTabData).instanceId}
               initialUrl={(tab.data as BrowserTabData).url}
               isActive={activeTabId === tab.id}
+              projectId={activeDirectory?.directoryId}
               agentAccess={(tab.data as BrowserTabData).agentAccess}
               onTitleChange={(title) => handleBrowserTitleChange(tab.id, title)}
               onUrlChange={(url) => handleBrowserUrlChange(tab.id, url)}

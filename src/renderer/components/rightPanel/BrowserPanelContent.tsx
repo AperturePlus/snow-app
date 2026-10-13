@@ -52,7 +52,12 @@ import {
   type TerminalInsertTextPayload,
 } from "./terminal/terminalMonitor";
 import { APP_CONTROL_OPEN_SETTINGS_EVENT } from "../../hooks/useAppControl";
+import { requestOpenProjectMcpPanel } from "../mainContent/chatInput/projectMcpNavigation";
 import { useI18n } from "../../i18n";
+import {
+  BROWSER_MCP_SERVER_ID,
+  PanelMcpEnableBanner,
+} from "./PanelMcpEnableBanner";
 import {
   WEB_SNAPSHOT_REQUEST_EVENT,
   WEB_SNAPSHOT_RESULT_EVENT,
@@ -76,6 +81,8 @@ export type BrowserPanelContentProps = {
   onOpenNewTab?: (url: string, activate: boolean) => void;
   /** 独立浏览器窗口模式：工具栏菜单显示「还原为标签页」（主面板 tab 内为 false/缺省） */
   detached?: boolean;
+  /** 当前项目 id：用于未开启浏览器控制 MCP 时的横幅提示 */
+  projectId?: string;
   /** 标签页创建时的 Agent 授权初始值（运行时以 browserAgentAccess 注册表为准） */
   agentAccess?: BrowserAgentAccess;
 };
@@ -262,6 +269,7 @@ export const BrowserPanelContent = ({
   onUrlChange,
   onOpenNewTab,
   detached = false,
+  projectId,
   agentAccess,
 }: BrowserPanelContentProps): React.JSX.Element => {
   const { t } = useI18n();
@@ -1020,6 +1028,19 @@ export const BrowserPanelContent = ({
     );
   };
 
+  // 门禁横幅「去开启」：主窗口请求打开项目 MCP 弹窗（只显示对应服务器）；
+  // 独立浏览器窗口没有聊天输入框，经主进程转发给主窗口打开。
+  const handleOpenMcpPanel = useCallback(
+    (serverId: string): void => {
+      if (detached) {
+        window.snow.forwardOpenProjectMcpToMain(serverId);
+        return;
+      }
+      requestOpenProjectMcpPanel(serverId);
+    },
+    [detached],
+  );
+
   // 独立窗口「还原为标签页」：把当前页面（URL + 标题）连同 instanceId 经
   // 主进程转发给主窗口 RightPanel，恢复为右侧面板浏览器 tab（保持实例
   // id，MCP 路由不受影响），随后主进程关闭本独立窗口。
@@ -1267,6 +1288,13 @@ export const BrowserPanelContent = ({
         onDownloadOpen={handleDownloadOpen}
         onDownloadShowInFolder={handleDownloadShowInFolder}
         onDownloadCancel={handleDownloadCancel}
+      />
+      <PanelMcpEnableBanner
+        active={isActive}
+        messageKey="panelMcpGate.browserMessage"
+        onOpenMcpPanel={handleOpenMcpPanel}
+        projectId={projectId}
+        serverId={BROWSER_MCP_SERVER_ID}
       />
       {agentShareRequest && (
         <div className="browser-agent-share-request" role="alert">

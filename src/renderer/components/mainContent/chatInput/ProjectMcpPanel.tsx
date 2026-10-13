@@ -3,12 +3,13 @@ import {
   Blocks,
   ChevronDown,
   ChevronRight,
+  ListFilter,
   Loader2,
   PowerOff,
   RefreshCw,
   Wrench,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type {
   McpProjectServerStatus,
   McpProjectToolStatus,
@@ -25,8 +26,12 @@ type ProjectMcpPanelProps = {
   open: boolean;
   projectId?: string;
   projectName?: string;
+  /** 非空时只展示该服务器（右侧面板横幅「去开启」的定向入口） */
+  focusServerId?: string | null;
   workflowMode: boolean;
   planMode: boolean;
+  /** 清除定向展示，恢复完整列表 */
+  onClearFocus?: () => void;
   onClose: () => void;
 };
 
@@ -60,8 +65,10 @@ export const ProjectMcpPanel = ({
   open,
   projectId,
   projectName,
+  focusServerId,
   workflowMode,
   planMode,
+  onClearFocus,
   onClose,
 }: ProjectMcpPanelProps): React.JSX.Element => {
   const { t } = useI18n();
@@ -362,13 +369,29 @@ export const ProjectMcpPanel = ({
     }
   };
 
-  const systemServers = servers.filter((server) => server.source === "system");
-  const projectOwnedServers = servers.filter(
+  // 定向展示（横幅「去开启」）：只保留目标服务器及其所在分组；目标不在
+  // 列表中时回退完整列表，避免出现空面板。
+  const focusedServer = focusServerId
+    ? servers.find((server) => server.id === focusServerId)
+    : undefined;
+  const visibleServers = focusedServer ? [focusedServer] : servers;
+  const systemServers = visibleServers.filter(
+    (server) => server.source === "system",
+  );
+  const projectOwnedServers = visibleServers.filter(
     (server) => server.source === "project",
   );
-  const externalServers = servers.filter(
+  const externalServers = visibleServers.filter(
     (server) => server.source === "external",
   );
+  const serverGroups = [
+    { title: t("projectMcp.systemServers"), servers: systemServers },
+    { title: t("projectMcp.projectServers"), servers: projectOwnedServers },
+    { title: t("projectMcp.globalServers"), servers: externalServers },
+  ];
+  const visibleGroups = focusedServer
+    ? serverGroups.filter((group) => group.servers.length > 0)
+    : serverGroups;
 
   const renderServerGroup = (
     title: string,
@@ -641,16 +664,44 @@ export const ProjectMcpPanel = ({
       ) : (
         <>
           <div className="project-mcp-toolbar">
-            <span>{t("projectMcp.scopeNote")}</span>
-            <button
-              className="project-mcp-refresh"
-              disabled={isLoading || loadingToolServerIds.size > 0}
-              onClick={() => void loadServers()}
-              type="button"
-            >
-              <RefreshCw className={isLoading ? "spin" : ""} size={14} />
-              <span>{t("projectMcp.refresh")}</span>
-            </button>
+            <span>
+              {focusedServer
+                ? t("projectMcp.filteredNote", {
+                    values: { server: focusedServer.name },
+                  })
+                : t("projectMcp.scopeNote")}
+            </span>
+            {focusedServer && onClearFocus ? (
+              <div className="project-mcp-toolbar-actions">
+                <button
+                  className="project-mcp-refresh"
+                  onClick={onClearFocus}
+                  type="button"
+                >
+                  <ListFilter size={14} />
+                  <span>{t("projectMcp.showAllServers")}</span>
+                </button>
+                <button
+                  className="project-mcp-refresh"
+                  disabled={isLoading || loadingToolServerIds.size > 0}
+                  onClick={() => void loadServers()}
+                  type="button"
+                >
+                  <RefreshCw className={isLoading ? "spin" : ""} size={14} />
+                  <span>{t("projectMcp.refresh")}</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                className="project-mcp-refresh"
+                disabled={isLoading || loadingToolServerIds.size > 0}
+                onClick={() => void loadServers()}
+                type="button"
+              >
+                <RefreshCw className={isLoading ? "spin" : ""} size={14} />
+                <span>{t("projectMcp.refresh")}</span>
+              </button>
+            )}
           </div>
           {loadError ? (
             <div className="project-mcp-load-error">
@@ -659,12 +710,11 @@ export const ProjectMcpPanel = ({
             </div>
           ) : null}
           <div className="project-mcp-list">
-            {renderServerGroup(t("projectMcp.systemServers"), systemServers)}
-            {renderServerGroup(
-              t("projectMcp.projectServers"),
-              projectOwnedServers,
-            )}
-            {renderServerGroup(t("projectMcp.globalServers"), externalServers)}
+            {visibleGroups.map((group) => (
+              <Fragment key={group.title}>
+                {renderServerGroup(group.title, group.servers)}
+              </Fragment>
+            ))}
           </div>
         </>
       )}

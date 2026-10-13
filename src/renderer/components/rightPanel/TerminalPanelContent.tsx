@@ -22,6 +22,11 @@ import {
 import { useTerminalSettings } from "./useTerminalSettings";
 import { useI18n } from "../../i18n";
 import { ContextMenu, type ContextMenuItem } from "../common/ContextMenu";
+import { requestOpenProjectMcpPanel } from "../mainContent/chatInput/projectMcpNavigation";
+import {
+  PanelMcpEnableBanner,
+  TERMINAL_MCP_SERVER_ID,
+} from "./PanelMcpEnableBanner";
 import { useTerminalMcpInstance } from "./terminal/useTerminalMcpInstance";
 import { detectAwaitingInput } from "./terminal/terminalInputDetector";
 import {
@@ -44,6 +49,8 @@ export type TerminalPanelContentProps = {
   ptyId?: string;
   shellPath?: string;
   sessionId?: string;
+  /** 当前项目 id：用于未开启终端控制 MCP 时的横幅提示 */
+  projectId?: string;
   isActive: boolean;
   onTitleChange?: (title: string) => void;
   /** 点击终端内的链接时回调（用于打开内置浏览器 tab）。 */
@@ -154,6 +161,7 @@ export const TerminalPanelContent = ({
   ptyId: attachedPtyId,
   shellPath: shellPathProp,
   sessionId,
+  projectId,
   isActive,
   onTitleChange,
   onOpenLink,
@@ -922,6 +930,13 @@ export const TerminalPanelContent = ({
 
   return (
     <div ref={panelRef} className="terminal-panel">
+      <PanelMcpEnableBanner
+        active={isActive}
+        messageKey="panelMcpGate.terminalMessage"
+        onOpenMcpPanel={requestOpenProjectMcpPanel}
+        projectId={projectId}
+        serverId={TERMINAL_MCP_SERVER_ID}
+      />
       {/* Cursor 式：选中终端文本后在鼠标落点附近浮动「添加到输入框」按钮 */}
       {hasSelection ? (
         <button

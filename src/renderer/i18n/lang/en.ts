@@ -4204,6 +4204,8 @@ export const en = {
   "projectMcp.refresh": "Refresh",
   "projectMcp.scopeNote":
     "Changes apply only to this project and do not change global MCP settings.",
+  "projectMcp.filteredNote": "Showing {{server}} only",
+  "projectMcp.showAllServers": "Show all MCP services",
   "projectMcp.systemServers": "System MCP",
   "projectMcp.projectServers": "Project MCP",
   "projectMcp.globalServers": "Global MCP",
@@ -4501,6 +4503,12 @@ export const en = {
   "chatInput.lspBadgeTitleRunning": "{{count}} language server(s) running",
   "chatInput.lspBadgeTitleProblems": "{{count}} language server(s) unhealthy",
   "browser.moreActions": "More actions",
+  "panelMcpGate.browserMessage":
+    "Browser control MCP is off for this project, so the agent cannot operate this browser.",
+  "panelMcpGate.terminalMessage":
+    "Terminal control MCP is off for this project, so the agent cannot run commands in this terminal.",
+  "panelMcpGate.enable": "Enable",
+  "panelMcpGate.dismiss": "Dismiss this hint",
   "browser.moreActionsHint":
     "Screenshot, zoom, display size, clear data, send to agent and more",
   "browser.restoreToTabs": "Restore to tabs",

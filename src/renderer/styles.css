@@ -34726,6 +34726,13 @@ body.is-git-pane-resizing :is(.git-panel-changes, .git-panel-graph) {
   min-width: 0;
 }
 
+.project-mcp-toolbar-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+
 .project-mcp-refresh {
   display: inline-flex;
   flex-shrink: 0;
@@ -40051,6 +40058,67 @@ body.ctrl-held [data-path] {
   gap: 4px;
 }
 
+/* ===== Panel MCP gate banner（浏览器 / 终端面板共用） ===== */
+.panel-mcp-gate-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  flex-shrink: 0;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--accent-amber-text) 32%, transparent);
+  background: color-mix(in srgb, var(--accent-amber-bg) 80%, var(--bg-primary));
+  font-size: 12px;
+}
+
+.panel-mcp-gate-banner-icon {
+  flex-shrink: 0;
+  color: var(--accent-amber-text);
+}
+
+.panel-mcp-gate-banner-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.panel-mcp-gate-banner-action {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--accent-color);
+  color: var(--on-solid, #fff);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.panel-mcp-gate-banner-action:hover {
+  background: color-mix(in srgb, var(--accent-color) 88%, white);
+}
+
+.panel-mcp-gate-banner-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.panel-mcp-gate-banner-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 /* ===== Terminal Panel ===== */
 .terminal-panel {
   position: relative;
@@ -40151,6 +40219,11 @@ body.ctrl-held [data-path] {
     opacity: 1;
     transform: translate(-50%, 0);
   }
+}
+
+/* MCP 门禁横幅占位时下移等待输入提示条，避免两者叠在终端顶部。 */
+.terminal-panel:has(> .panel-mcp-gate-banner) .terminal-waiting-banner {
+  top: 40px;
 }
 
 /* 等待输入脉冲圆点：持续呼吸动画提示“活着的”等待状态 */

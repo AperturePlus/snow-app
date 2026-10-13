@@ -13,6 +13,10 @@ import { InputOverlayLayer } from "./InputOverlayLayer";
 import { TerminalMonitorBar } from "./TerminalMonitorBar";
 import { ChatInputPanels } from "./ChatInputPanels";
 import { OPEN_PROJECT_CODEBASE_PANEL_EVENT } from "./ProjectCodebasePanel";
+import {
+  OPEN_PROJECT_MCP_PANEL_EVENT,
+  consumeProjectMcpPanelRequest,
+} from "./projectMcpNavigation";
 import { ChatInputToolbar } from "./ChatInputToolbar";
 import { FileMentionPopup } from "./FileMentionPopup";
 import { RollbackTargetPopup } from "./RollbackTargetPopup";
@@ -207,6 +211,10 @@ export const ChatInputView = ({
     directoryId: conversationDirectoryId,
   });
   const [isProjectMcpOpen, setIsProjectMcpOpen] = useState(false);
+  /** 项目 MCP 弹窗的聚焦服务器 id：非空时面板只展示该项（横幅「去开启」入口）。 */
+  const [projectMcpFocusServerId, setProjectMcpFocusServerId] = useState<
+    string | null
+  >(null);
   const [isProjectSensitiveCommandsOpen, setIsProjectSensitiveCommandsOpen] =
     useState(false);
   const [isProjectPermissionsOpen, setIsProjectPermissionsOpen] =
@@ -222,6 +230,27 @@ export const ChatInputView = ({
   const handleOpenFileChanges = useCallback(() => {
     setIsFileChangesOpen(true);
   }, []);
+  /** 打开项目 MCP 弹窗（互斥关闭其他面板）；斜杠命令与右侧面板横幅共用。
+   *  serverId 为右侧面板横幅指定的服务器：面板只展示该项（未传则展示全部）。 */
+  const handleOpenMcpPanel = useCallback((serverId?: string): void => {
+    setIsProjectSensitiveCommandsOpen(false);
+    setIsProjectPermissionsOpen(false);
+    setIsProjectSkillsOpen(false);
+    setIsProjectCodebaseOpen(false);
+    setIsRoleEditorOpen(false);
+    setIsFileChangesOpen(false);
+    setIsMemoryOpen(false);
+    setIsReviewOpen(false);
+    setIsCustomCommandsOpen(false);
+    setProjectMcpFocusServerId(serverId ?? null);
+    setIsProjectMcpOpen(true);
+  }, []);
+
+  const handleCloseMcpPanel = useCallback((): void => {
+    setIsProjectMcpOpen(false);
+    setProjectMcpFocusServerId(null);
+  }, []);
+
   /** 打开代码库管理弹窗（互斥关闭其他面板）；命令面板与 TopBar 事件共用。 */
   const handleOpenCodebasePanel = useCallback((): void => {
     setIsProjectMcpOpen(false);
@@ -250,6 +279,26 @@ export const ChatInputView = ({
       );
     };
   }, [handleOpenCodebasePanel]);
+
+  // 右侧面板（浏览器 / 终端）未开启对应 MCP 时，横幅「去开启」请求打开
+  // 项目 MCP 弹窗（只展示该服务器）；挂载时补一次消费，覆盖 App 先切回
+  // 聊天视图、本组件迟到挂载的场景（事件已派发完毕）。
+  useEffect(() => {
+    const handleOpenRequest = (): void => {
+      const serverId = consumeProjectMcpPanelRequest();
+      if (serverId !== null) {
+        handleOpenMcpPanel(serverId || undefined);
+      }
+    };
+    window.addEventListener(OPEN_PROJECT_MCP_PANEL_EVENT, handleOpenRequest);
+    handleOpenRequest();
+    return () => {
+      window.removeEventListener(
+        OPEN_PROJECT_MCP_PANEL_EVENT,
+        handleOpenRequest,
+      );
+    };
+  }, [handleOpenMcpPanel]);
 
   // review 指令只在新建会话（尚未绑定历史会话）时开放，审查对象是
   // 当前项目目录的 Git 状态，而不是某个历史会话绑定的目录。
@@ -314,17 +363,7 @@ export const ChatInputView = ({
           setIsCustomCommandsOpen(false);
           setIsMemoryOpen(true);
         },
-        onOpenMcpPanel: () => {
-          setIsProjectSensitiveCommandsOpen(false);
-          setIsProjectPermissionsOpen(false);
-          setIsProjectSkillsOpen(false);
-          setIsProjectCodebaseOpen(false);
-          setIsRoleEditorOpen(false);
-          setIsFileChangesOpen(false);
-          setIsMemoryOpen(false);
-          setIsCustomCommandsOpen(false);
-          setIsProjectMcpOpen(true);
-        },
+        onOpenMcpPanel: () => handleOpenMcpPanel(),
         onOpenRolePanel: () => {
           setIsProjectMcpOpen(false);
           setIsProjectSensitiveCommandsOpen(false);
@@ -453,6 +492,7 @@ export const ChatInputView = ({
       customCommands,
       handleNewChat,
       handleOpenCodebasePanel,
+      handleOpenMcpPanel,
       handleRunCustomCommand,
       isCompacting,
       isNewChat,
@@ -715,6 +755,8 @@ export const ChatInputView = ({
         projectId={projectId}
         projectName={projectName}
         isProjectMcpOpen={isProjectMcpOpen}
+        projectMcpFocusServerId={projectMcpFocusServerId}
+        onClearProjectMcpFocus={() => setProjectMcpFocusServerId(null)}
         isProjectSensitiveCommandsOpen={isProjectSensitiveCommandsOpen}
         isProjectPermissionsOpen={isProjectPermissionsOpen}
         isProjectSkillsOpen={isProjectSkillsOpen}
@@ -736,7 +778,7 @@ export const ChatInputView = ({
             kind: "review",
           });
         }}
-        onCloseProjectMcp={() => setIsProjectMcpOpen(false)}
+        onCloseProjectMcp={handleCloseMcpPanel}
         onCloseSensitiveCommands={() =>
           setIsProjectSensitiveCommandsOpen(false)
         }

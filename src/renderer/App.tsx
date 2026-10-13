@@ -27,6 +27,10 @@ import { AppLockOverlay } from "./components/AppLockOverlay";
 import { ShortcutHelpOverlay } from "./components/ShortcutHelpOverlay";
 import { rightPanelEvents } from "./components/rightPanel/rightPanelEvents";
 import {
+  OPEN_PROJECT_MCP_PANEL_EVENT,
+  requestOpenProjectMcpPanel,
+} from "./components/mainContent/chatInput/projectMcpNavigation";
+import {
   KeyboardShortcutsProvider,
   useKeyboardShortcutsSettings,
 } from "./components/KeyboardShortcutsProvider";
@@ -416,6 +420,26 @@ export const App = (): React.JSX.Element => {
     window.addEventListener(CONVERSATION_SELECTED_EVENT, handler);
     return () => {
       window.removeEventListener(CONVERSATION_SELECTED_EVENT, handler);
+    };
+  }, []);
+
+  // 右侧面板（浏览器 / 终端）的 MCP 门禁横幅请求打开项目 MCP 弹窗：弹窗
+  // 挂在聊天输入区，先切回聊天视图；独立浏览器窗口的同类请求经主进程转发，
+  // 同样走这条链路（由 ChatInputView 消费 pending 标记后打开弹窗）。
+  useEffect(() => {
+    const handleOpenRequest = (): void => {
+      setActiveMainView("chat");
+    };
+    window.addEventListener(OPEN_PROJECT_MCP_PANEL_EVENT, handleOpenRequest);
+    const dispose = window.snow.onOpenProjectMcpRequest((serverId) =>
+      requestOpenProjectMcpPanel(serverId),
+    );
+    return () => {
+      window.removeEventListener(
+        OPEN_PROJECT_MCP_PANEL_EVENT,
+        handleOpenRequest,
+      );
+      dispose();
     };
   }, []);
 
