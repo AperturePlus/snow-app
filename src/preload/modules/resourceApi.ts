@@ -4,10 +4,6 @@ import type { TaskManagerProcess } from "../types/taskManager";
 
 /** 应用资源占用查询 API。 */
 export const resourceApi = {
-  /** 当前进程常驻内存占用（字节）；由 Rust 侧系统调用统计 */
-  getProcessMemoryBytes: (): Promise<number> =>
-    ipcRenderer.invoke("settings:get-process-memory"),
-
   /** 应用任务管理器：采集应用进程树占用快照（CPU 为相对上次调用的增量） */
   getProcessSnapshot: (): Promise<TaskManagerProcess[]> =>
     ipcRenderer.invoke("processes:snapshot"),

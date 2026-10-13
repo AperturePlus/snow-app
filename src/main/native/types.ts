@@ -3031,8 +3031,6 @@ export type NativeBridge = {
   rollbackStorageMigration: (kind: StorageLocationKind) => Promise<void>;
   /** 计算文件或目录的占用字节数（目录递归统计，用于展示存储占用） */
   getPathSize: (path: string) => Promise<number>;
-  /** 当前进程常驻内存占用（字节；用于设置页展示资源占用） */
-  getProcessMemoryBytes: () => Promise<number>;
   /** 采集以 rootPid 为根的应用进程树快照（任务管理器面板；CPU 为相对上次采样的占用） */
   listProcessTree: (rootPid: number) => Promise<ProcessSnapshotEntry[]>;
   /** 结束指定进程树（任务管理器面板的「结束进程」；仅用于应用派生的子进程） */

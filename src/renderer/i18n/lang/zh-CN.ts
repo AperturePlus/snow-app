@@ -3100,10 +3100,8 @@ export const zhCN = {
   "settings.generalSettingsInfo": "语言、版本与更新管理。",
   "settings.storageTab": "存储与资源",
   "settings.resourceUsage": "资源占用",
-  "settings.resourceUsageInfo": "应用进程内存与本地数据占用统计。",
-  "settings.resourceMemory": "内存占用",
+  "settings.resourceUsageInfo": "本地数据占用统计。",
   "settings.resourceDataDisk": "数据盘占用",
-  "settings.resourceRefresh": "刷新",
   "settings.resourceOptimize": "优化占用",
   "settings.resourceOptimizeInfo":
     "重建数据库文件回收磁盘空间，并整理进程内存。",

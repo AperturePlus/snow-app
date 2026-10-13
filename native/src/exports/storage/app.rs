@@ -29,15 +29,6 @@ pub async fn optimize_database(kind: String) -> napi::Result<DatabaseOptimizeRes
         .map_err(map_spawn_error)?
 }
 
-/// 当前进程常驻内存占用（字节）；用于设置页展示资源占用。
-/// 系统调用极快但仍置于 spawn_blocking，避免阻塞 Node.js 主线程。
-#[napi]
-pub async fn get_process_memory_bytes() -> napi::Result<i64> {
-    tokio::task::spawn_blocking(crate::storage::get_process_memory_bytes)
-        .await
-        .map_err(map_spawn_error)?
-}
-
 /// 采集以 `root_pid` 为根的应用进程树快照（任务管理器面板）。
 /// 系统调用 + CPU 采样缓存，置于 spawn_blocking，不阻塞 Node.js 主线程。
 #[napi]

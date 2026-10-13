@@ -168,15 +168,7 @@ const RAW_GROUPS: RawGroup[] = [
         "settings.resourceUsage",
         "Resource usage",
         ["general.tab.storage"],
-        ["memory", "资源占用"],
-      ],
-      [
-        "general.storage.memory",
-        "field",
-        "settings.resourceMemory",
-        "Memory usage",
-        ["general.tab.storage"],
-        ["memory", "内存"],
+        ["资源占用"],
       ],
       [
         "general.storage.optimize",

@@ -3275,10 +3275,8 @@ export const en = {
   "settings.generalSettingsInfo": "Language, version and update management.",
   "settings.storageTab": "Storage & resources",
   "settings.resourceUsage": "Resource usage",
-  "settings.resourceUsageInfo": "App process memory and local data usage.",
-  "settings.resourceMemory": "Memory usage",
+  "settings.resourceUsageInfo": "Local data usage.",
   "settings.resourceDataDisk": "Data on disk",
-  "settings.resourceRefresh": "Refresh",
   "settings.resourceOptimize": "Optimize usage",
   "settings.resourceOptimizeInfo":
     "Rebuild database files to reclaim disk space and compact process memory.",

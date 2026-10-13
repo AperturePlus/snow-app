@@ -3103,10 +3103,8 @@ export const zhTW = {
   "settings.generalSettingsInfo": "語言、版本與更新管理。",
   "settings.storageTab": "儲存與資源",
   "settings.resourceUsage": "資源佔用",
-  "settings.resourceUsageInfo": "應用程式記憶體與本機資料佔用統計。",
-  "settings.resourceMemory": "記憶體佔用",
+  "settings.resourceUsageInfo": "本機資料佔用統計。",
   "settings.resourceDataDisk": "資料磁碟佔用",
-  "settings.resourceRefresh": "重新整理",
   "settings.resourceOptimize": "最佳化佔用",
   "settings.resourceOptimizeInfo":
     "重建資料庫檔案回收磁碟空間，並整理行程記憶體。",

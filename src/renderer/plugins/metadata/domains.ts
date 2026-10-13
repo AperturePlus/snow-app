@@ -70,7 +70,6 @@ export const METADATA_DOMAINS: MetadataDomainDefinition[] = [
       appVersion: await safe(() => window.snow.getAppVersion()),
       updateStatus: await safe(() => window.snow.getUpdateStatus()),
       engine: await safe(() => window.snow.engineInfo()),
-      processMemoryBytes: await safe(() => window.snow.getProcessMemoryBytes()),
       storageLocations: await safe(() => window.snow.getStorageLocations()),
       pluginsDirectory: await safe(() => window.snow.getPluginsDirectory()),
       locale: ctx.locale,
@@ -82,6 +81,46 @@ export const METADATA_DOMAINS: MetadataDomainDefinition[] = [
       startedAt: performance.timeOrigin,
       now: Date.now(),
     }),
+  },
+  {
+    id: "processes",
+    sensitiveFields: { title: "privacyConfig", url: "privacyConfig" },
+    collect: async () => {
+      const snapshot = await safe(() => window.snow.getProcessSnapshot());
+      if (!snapshot) {
+        return null;
+      }
+      let totalMemoryBytes = 0;
+      let totalCpuPercent = 0;
+      let hasCpuBaseline = false;
+      const processes = snapshot.map((entry) => {
+        totalMemoryBytes += entry.memoryBytes;
+        if (entry.cpuPercent >= 0) {
+          totalCpuPercent += entry.cpuPercent;
+          hasCpuBaseline = true;
+        }
+        return {
+          pid: entry.pid,
+          parentPid: entry.parentPid,
+          name: entry.name,
+          exePath: entry.exePath,
+          kind: entry.kind,
+          serviceName: entry.serviceName,
+          title: entry.title,
+          url: entry.url,
+          cpuPercent: entry.cpuPercent,
+          memoryBytes: entry.memoryBytes,
+          threadCount: entry.threadCount,
+          killable: entry.killable,
+        };
+      });
+      return {
+        count: processes.length,
+        totalMemoryBytes,
+        totalCpuPercent: hasCpuBaseline ? totalCpuPercent : null,
+        processes,
+      };
+    },
   },
   {
     id: "theme",

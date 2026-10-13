@@ -52,9 +52,9 @@ const list = api.metadata.domains(); // [{ id, scope, granted, live, sensitiveFi
 | `withheld`    | object   | Domain id to the list of stripped field paths (for example `["0.apiKey", "api.apiKey"]`)   |
 | `unknown`     | string[] | Domain ids that do not exist                                                               |
 
-`get(domain)` accepts a single domain id or an array; an empty array requests all 35 domains (undeclared sensitive domains are still denied).
+`get(domain)` accepts a single domain id or an array; an empty array requests all 36 domains (undeclared sensitive domains are still denied).
 
-The app ships the same catalog for users: **Plugins** at the bottom of the sidebar, then **Metadata catalog** in the toolbar, opens the "App metadata available to plugins" modal. It groups all 35 domains with a one-line summary, the privacy requirement, live-versus-polled behavior and accepted parameters, and offers keyword search; the per-plugin "Metadata n/35" link marks that plugin's declared (readable) and undeclared (denied) domains. The modal offers "Reading" and "Writable" tabs; the Writable tab uses the same catalog source (204 write actions with their required `scope` and declaration state), and the "Write n/204" badge on a plugin row counts the write actions that plugin has declared; the amber privacy-scope badges on plugin and script rows open the "Privacy scopes" dialog, which lists each declared scope with its purpose and the readable / writable surface it unlocks - see [24-Plugin development and installation](../2-guides/24-plugin-development-and-installation.md).
+The app ships the same catalog for users: **Plugins** at the bottom of the sidebar, then **Metadata catalog** in the toolbar, opens the "App metadata available to plugins" modal. It groups all 36 domains with a one-line summary, the privacy requirement, live-versus-polled behavior and accepted parameters, and offers keyword search; the per-plugin "Metadata n/36" link marks that plugin's declared (readable) and undeclared (denied) domains. The modal offers "Reading" and "Writable" tabs; the Writable tab uses the same catalog source (204 write actions with their required `scope` and declaration state), and the "Write n/204" badge on a plugin row counts the write actions that plugin has declared; the amber privacy-scope badges on plugin and script rows open the "Privacy scopes" dialog, which lists each declared scope with its purpose and the readable / writable surface it unlocks - see [24-Plugin development and installation](../2-guides/24-plugin-development-and-installation.md).
 
 ### 1.2 Parameters (`params`)
 
@@ -77,7 +77,7 @@ When a parameter is missing, mistyped, or the underlying data is unavailable, th
 | Kind                | Push behavior                                                                         | Domains                                                                        |
 | ------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | Live (`live: true`) | Re-collected and pushed after a 200 ms debounce whenever the runtime snapshot changes | `projects`, `git`, `conversations`, `messages`, `runtime`, `panels`, `plugins` |
-| Non-live            | Pushed once on subscribe; pass `intervalMs` (minimum 1000 ms) to poll                 | The other 28 domains                                                           |
+| Non-live            | Pushed once on subscribe; pass `intervalMs` (minimum 1000 ms) to poll                 | The other 29 domains                                                           |
 
 The `live` flag from `api.metadata.domains()` lets a panel distinguish "realtime once subscribed" from "poll to refresh" domains.
 
@@ -109,6 +109,7 @@ The `live` flag from `api.metadata.domains()` lets a panel distinguish "realtime
 | Privacy filtering settings                               | `privacy`                                           | `enabled`, `mode`, `toolResults`                            |
 | System prompts, custom headers, global ROLE              | `systemPrompts`, `customHeaders`, `personalization` | Record arrays or file content                               |
 | App version, engine, storage locations, memory usage     | `app`                                               | `appVersion`, `engine`, `storageLocations`                  |
+| Task manager process CPU, memory, and threads            | `processes`                                         | `processes[]`, `totalMemoryBytes`                           |
 | SSH credentials, `~/.ssh/config` hosts, remote drafts    | `ssh`                                               | `credentials[]`, `configHosts[]`, `remoteDrafts[]`          |
 | Mobile remote-control pairing and tunnel state           | `remoteControl`                                     | `pairing`, `tunnel`                                         |
 | Browser passwords, bookmarks, downloads, import sources  | `browser`                                           | Four arrays                                                 |
@@ -157,6 +158,7 @@ The `live` flag from `api.metadata.domains()` lets a panel distinguish "realtime
 | `browser`         | `browserData`       | No   | —                                                      | Passwords, bookmarks, downloads, import sources                   |
 | `userscripts`     | `userscripts`       | No   | —                                                      | Userscript inventory                                              |
 | `imageLibrary`    | —                   | No   | —                                                      | Library images, albums, and root directory                        |
+| `processes`       | Field-level         | No   | —                                                      | Task manager process tree: roles, CPU, memory, threads, children  |
 
 "Field-level" means the whole domain is readable, but values whose key name matches a sensitive field are stripped unless the matching privacy scope is declared; chapter 4 lists each domain.
 
@@ -175,7 +177,6 @@ No declaration · Not live · No parameters
 | `appVersion`                          | string \| null | App version (`app:get-version`)                                                                                    |
 | `updateStatus`                        | object \| null | `{ available, version, downloading, progress, downloaded, error, releaseNotes, releaseNotesZh, releaseNotesZhTw }` |
 | `engine`                              | string \| null | Rust engine information string                                                                                     |
-| `processMemoryBytes`                  | number \| null | Resident memory of the app process in bytes                                                                        |
 | `storageLocations`                    | object \| null | `{ databasePath, archiveDbPath, checkpointDir, uploadDir, checkpointRoot, uploadRoot }`                            |
 | `pluginsDirectory`                    | string \| null | Plugin install root (`~/.snowapp/plugins`)                                                                         |
 | `locale`                              | string         | UI language (`en` / `zh-CN` / `zh-TW`)                                                                             |
@@ -596,6 +597,35 @@ No declaration · Not live · No parameters
 | `albums`    | object[] \| null | `{ id, name, createdAt, coverPath, imageCount }`                                                                  |
 | `directory` | string \| null   | Absolute path of the image library root                                                                           |
 
+### 4.6 Other
+
+#### 4.6.1 `processes`
+
+Field-level sensitive: `title`, `url` to `privacyConfig` · Not live · No parameters
+
+| Field              | Type             | Description                                                                                                                                                          |
+| ------------------ | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `count`            | number           | Number of processes in the tree                                                                                                                                      |
+| `totalMemoryBytes` | number           | Resident memory of all processes, in bytes                                                                                                                           |
+| `totalCpuPercent`  | number \| null   | Summed CPU percentage of all processes relative to the previous sample, normalized by the machine's logical processor count; `null` when this sample has no baseline |
+| `processes`        | object[] \| null | Per-process entries, listed below                                                                                                                                    |
+
+Each `processes[]` entry:
+
+| Field                         | Type    | Description                                                                                                                              |
+| ----------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `pid` / `parentPid`           | number  | Process id and parent process id                                                                                                         |
+| `name`                        | string  | Executable file name                                                                                                                     |
+| `exePath`                     | string  | Full executable path (empty string when unavailable)                                                                                     |
+| `kind`                        | string  | `browser` / `renderer` / `gpu` / `utility` / `child`: the Electron-owned process role; app-spawned child processes are `child`           |
+| `serviceName`                 | string  | Utility service name (empty for other kinds)                                                                                             |
+| `title` / `url`               | string  | Page title and URL of a renderer process (empty for other processes); field-level sensitive, stripped unless `privacyConfig` is declared |
+| `cpuPercent`                  | number  | CPU percentage relative to the previous sample; `-1` means no baseline                                                                   |
+| `memoryBytes` / `threadCount` | number  | Resident memory (bytes) and thread count                                                                                                 |
+| `killable`                    | boolean | Whether the process may be terminated: `false` for Electron-owned processes, `true` for app-spawned children                             |
+
+Data source: the app task manager process tree snapshot - the Electron `app.getAppMetrics()` list merged with the Rust `listProcessTree` result, so it covers both Electron-owned processes (browser, renderer, GPU, utility) and app-spawned child processes; process icons are not included.
+
 ## 5. Examples
 
 ### 5.1 Live token usage ring
@@ -688,9 +718,9 @@ api.metadata.subscribe("git", ({ domains }) => {
 
 ## Source anchors
 
-- `src/renderer/plugins/metadata/domains.ts::METADATA_DOMAINS`: definitions, parameter resolution, and collectors for all 35 domains
+- `src/renderer/plugins/metadata/domains.ts::METADATA_DOMAINS`: definitions, parameter resolution, and collectors for all 36 domains
 - `src/renderer/plugins/metadata/index.ts::collectMetadata`, `::subscribeMetadata`, `::describeMetadataDomains`: privacy checks, field redaction, subscribe/poll plumbing
-- `src/renderer/plugins/metadata/catalog.ts::METADATA_DOMAIN_CATALOG`: grouping, accepted parameters and quick-reference summaries for the 35 domains (data source of the in-app catalog)
+- `src/renderer/plugins/metadata/catalog.ts::METADATA_DOMAIN_CATALOG`: grouping, accepted parameters and quick-reference summaries for the 36 domains (data source of the in-app catalog)
 - `src/renderer/plugins/writes/index.ts::executeWrite`, `::describeWriteDomains`: privacy-declaration checks for write actions and the action list returned by `api.write.domains()` (data source of the write badge and modal section)
 - `src/renderer/plugins/writes/domains/`: 204 write action definitions in `content.ts`, `system.ts`, `draft.ts`, `config.ts`, and `admin.ts`
 - `src/renderer/components/sidebar/PluginMetadataCatalog.tsx`: the user-facing "App metadata available to plugins" modal (including the writable-capabilities section)

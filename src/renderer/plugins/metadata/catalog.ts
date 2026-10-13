@@ -46,6 +46,15 @@ export const METADATA_DOMAIN_CATALOG: Record<
       "zh-TW": "主題模式、調色盤、字型、背景與串流游標",
     },
   },
+  processes: {
+    group: "other",
+    params: [],
+    summary: {
+      en: "Task manager process tree: roles, CPU, memory, threads, child processes",
+      "zh-CN": "任务管理器进程树：进程角色、CPU、内存、线程与派生子进程",
+      "zh-TW": "工作管理員行程樹：行程角色、CPU、記憶體、執行緒與衍生子行程",
+    },
+  },
   settings: {
     group: "appearance",
     params: ["conversationId"],
