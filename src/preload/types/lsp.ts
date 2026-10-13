@@ -49,7 +49,31 @@ export type ProjectStackDetection = {
 };
 
 /** 语言服务器会话运行时状态（native ServerManager 内存态快照，实时轮询用）。 */
+export type LspResourcePolicy = {
+  maxSessions: number;
+  idleTimeoutSecs: number;
+  maxConcurrentStarts: number;
+};
+
+export type LspResourceSnapshot = {
+  pid: number | null;
+  sampledAtMs: number;
+  parentMemoryBytes: number | null;
+  parentCpuSeconds: number | null;
+  treeCpuSeconds: number | null;
+  treeProcessCount: number | null;
+};
+
+/** 已登记物理会话的确认身份；缺少 PID 的状态不可管理。 */
+export type LspSessionTarget = {
+  lang: string;
+  projectRoot: string;
+  expectedPid: number;
+  expectedRestartCount: number;
+};
+
 export type LspSessionStatus = {
+  resources?: LspResourceSnapshot | null;
   /** 语言标识（rust / typescript / python ...） */
   lang: string;
   /** 会话项目根目录（绝对路径） */

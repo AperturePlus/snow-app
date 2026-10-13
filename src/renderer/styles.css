@@ -17084,6 +17084,18 @@ body.is-panel-resizing * {
   flex-shrink: 0;
 }
 
+.tool-call-cache-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  border: 1px solid var(--border-subtle, transparent);
+}
+
 .tool-call-error {
   display: flex;
   align-items: center;
@@ -19062,6 +19074,8 @@ body.is-panel-resizing * {
   color: var(--accent-blue-text);
   background: var(--accent-blue-bg);
 }
+
+/* External tool-specific styles are supplied by renderer plugins. */
 
 /* ImageGen Tool Call */
 .tool-call-imagegen-body {
@@ -21640,109 +21654,7 @@ body.is-panel-resizing * {
   color: var(--accent-green-text);
 }
 
-/* dbx：数据库工具卡片 */
-.tool-call-dbx-command {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  min-width: 0;
-  padding: 6px 9px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-tertiary);
-  font-size: 11.5px;
-  line-height: 1.5;
-}
-
-.tool-call-dbx-command > svg {
-  display: block;
-  flex-shrink: 0;
-  margin-top: 1px;
-  color: var(--accent-blue-text);
-}
-
-.tool-call-dbx-command code {
-  min-width: 0;
-  font-family: var(--font-mono);
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  word-break: break-all;
-  user-select: text;
-}
-
-.tool-call-dbx-table-wrap {
-  overflow: auto;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-}
-
-.tool-call-dbx-table {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 11px;
-}
-
-.tool-call-dbx-table th,
-.tool-call-dbx-table td {
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--border-light);
-  text-align: left;
-  white-space: nowrap;
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tool-call-dbx-table th {
-  position: sticky;
-  top: 0;
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  font-weight: 600;
-}
-
-.tool-call-dbx-table td {
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-}
-
-.tool-call-dbx-table tbody tr:hover td {
-  background: var(--bg-tertiary);
-}
-
-.tool-call-dbx-cell-null {
-  color: var(--text-tertiary);
-  font-style: italic;
-  opacity: 0.85;
-}
-
-.tool-call-dbx-empty {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  border: 1px dashed var(--border-light);
-  border-radius: var(--radius-sm);
-  font-size: 11.5px;
-  color: var(--text-tertiary);
-}
-
-.tool-call-dbx-empty > svg {
-  display: block;
-  flex-shrink: 0;
-  color: var(--text-tertiary);
-}
-
-.tool-call-dbx-table tr:last-child td {
-  border-bottom: none;
-}
-
-.tool-call-dbx-table-more {
-  padding: 4px 8px;
-  font-size: 10.5px;
-  color: var(--text-tertiary);
-  background: var(--bg-tertiary);
-  border-top: 1px solid var(--border-light);
-}
+/* Shared application-log styles remain in the host. */
 
 .tool-call-app-logs-body {
   gap: 8px;
@@ -29798,48 +29710,343 @@ body.is-panel-resizing * {
   display: flex;
   flex-direction: column;
   flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-primary);
+  container-type: inline-size;
+}
+
+.task-manager-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px 12px 6px;
+  flex-shrink: 0;
+}
+
+.task-manager-stat-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--surface-island);
+  color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  user-select: none;
+  position: relative;
+  overflow: hidden;
+}
+
+.task-manager-stat-card:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-subtle);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.task-manager-stat-card.is-selected {
+  border-color: var(--accent-blue);
+  background: var(--surface-island-strong);
+  box-shadow: 0 0 0 1px var(--accent-blue);
+}
+
+.task-manager-stat-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.task-manager-stat-icon.is-boxes {
+  background: var(--accent-green-bg);
+  color: var(--accent-green-text);
+}
+
+.task-manager-stat-icon.is-mem {
+  background: var(--accent-blue-bg);
+  color: var(--accent-blue-text);
+}
+
+.task-manager-stat-icon.is-cpu {
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+}
+
+.task-manager-stat-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+
+.task-manager-stat-label {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-manager-stat-num {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.task-manager-stat-sub {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-manager-stat-sparkline {
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: 0.82;
+  transition: opacity 0.2s ease;
+}
+
+.task-manager-stat-card:hover .task-manager-stat-sparkline {
+  opacity: 1;
+}
+
+/* 兼容保留 */
+.task-manager-stat {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: center;
+  gap: 3px 6px;
+  padding: 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.task-manager-stat strong {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-manager-stat > span {
+  grid-column: 1 / -1;
+}
+
+/* 顶级 Tab 导航栏与状态区 */
+.task-manager-nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-primary);
+}
+
+.task-manager-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-pill);
+}
+
+.task-manager-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.task-manager-tab-btn:hover:not(.is-active) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.task-manager-tab-btn.is-active {
+  background: var(--surface-island-strong);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.task-manager-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.task-manager-tab-btn.is-active .task-manager-tab-badge {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+
+.task-manager-nav-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.task-manager-sampling-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.task-manager-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  animation: pulse-green 2s infinite;
+}
+
+.task-manager-pulse-dot.is-paused {
+  background: var(--text-muted);
+  animation: none;
+  box-shadow: none;
+}
+
+@keyframes pulse-green {
+  0% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6);
+  }
+  70% {
+    box-shadow: 0 0 0 5px rgba(34, 197, 94, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+
+/* Tab 视图区域 */
+.task-manager-tab-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+.task-manager-tab-content.is-scrollable {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 12px;
+  gap: 12px;
 }
 
 .task-manager-toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 12px;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 10px;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border-light);
 }
 
-.task-manager-summary {
+.task-manager-search {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 11px;
+  gap: 5px;
+  flex: 1 1 180px;
+  min-width: 100px;
+  padding: 5px 7px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
   color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
+}
+
+.task-manager-search input {
+  width: 100%;
   min-width: 0;
-  overflow: hidden;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent !important;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 11px;
 }
 
-.task-manager-summary-item {
+.task-manager-search input::placeholder {
+  color: var(--text-muted);
+}
+
+/* The search field shares its wrapper edge instead of drawing two focus rings. */
+.task-manager-search:focus-within {
+  border-color: var(--accent-blue);
+  outline: none;
+  box-shadow: none;
+}
+
+.task-manager .task-manager-toolbar .task-manager-search input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.task-manager-filters {
   display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
 }
 
-/* 自动刷新开关复用全局 .toggle-switch（文字在左、滑块在右）。 */
-.task-manager-auto-refresh {
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
+.task-manager-filters button,
 .task-manager-refresh-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
-  padding: 3px 8px;
+  padding: 4px 8px;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -29847,14 +30054,188 @@ body.is-panel-resizing * {
   font-size: 11px;
   cursor: pointer;
   flex-shrink: 0;
-  transition:
-    background 0.12s,
-    color 0.12s;
 }
 
-.task-manager-refresh-btn:hover {
+.task-manager-filters button[aria-pressed="true"] {
+  background: var(--bg-hover);
+  color: var(--accent-color);
+  font-weight: 600;
+}
+
+.task-manager-auto-refresh {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.task-manager-refresh-btn:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.task-manager button:focus-visible,
+.task-manager summary:focus-visible,
+.task-manager-budget input:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+.task-manager-auto-refresh input:focus-visible + .toggle-slider {
+  outline: 2px solid var(--accent-color);
+  outline-offset: -2px;
+}
+
+.task-manager button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.task-manager-status,
+.task-manager-session-metrics {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.task-manager-status {
+  padding: 2px 10px;
+  flex-shrink: 0;
+}
+
+.task-manager-hint {
+  margin: 4px 0;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.task-manager-accounting {
+  margin: 4px 10px 6px;
+  flex-shrink: 0;
+}
+
+.task-manager-disclosure {
+  flex-shrink: 1;
+  min-height: 29px;
+  max-height: 240px;
+  overflow: auto;
+  border-top: 1px solid var(--border-light);
+  scrollbar-width: thin;
+}
+
+.task-manager-disclosure > summary {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 7px 10px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.task-manager-disclosure > summary .task-manager-badge {
+  margin-left: 8px;
+}
+
+.task-manager-budget,
+.task-manager-session-list {
+  padding: 4px 10px 10px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.task-manager-budget-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.task-manager-budget-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 10.5px;
+}
+
+.task-manager-budget-fields input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 5px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.task-manager-budget-fields small {
+  color: var(--text-muted);
+}
+
+.task-manager-budget-save {
+  border: 1px solid var(--border-color);
+}
+
+.task-manager-session {
+  padding: 7px 0;
+  border-top: 1px solid var(--border-light);
+}
+
+.task-manager-session-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.task-manager-session-heading strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.task-manager-badge {
+  display: inline-block;
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--accent-color);
+  font-size: 9.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.task-manager-session-state {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.task-manager-session-state.is-running {
+  color: var(--accent-color);
+}
+
+.task-manager-session-error {
+  margin: 4px 0 0;
+  color: var(--accent-red-text, var(--text-primary));
+  font-size: 10.5px;
+  overflow-wrap: anywhere;
 }
 
 .task-manager-state {
@@ -29863,27 +30244,39 @@ body.is-panel-resizing * {
   justify-content: center;
   gap: 8px;
   flex: 1;
-  min-height: 0;
+  min-height: 60px;
   padding: 24px;
   font-size: 12px;
   color: var(--text-muted);
 }
 
-.task-manager-error {
-  color: var(--accent-red-text, #e5484d);
+.task-manager-error,
+.task-manager-kill-error {
+  color: var(--accent-red-text, var(--text-primary));
+}
+
+.task-manager-notice {
+  margin: 4px 10px;
+  font-size: 11px;
 }
 
 .task-manager-table-wrap {
-  flex: 1;
-  min-height: 0;
+  flex: 1 0 100px;
+  min-height: 100px;
   overflow: auto;
   scrollbar-width: thin;
+  border-top: 1px solid var(--border-light);
+}
+
+.task-manager-table-wrap.is-stale tbody {
+  opacity: 0.65;
 }
 
 .task-manager-table {
   width: 100%;
+  min-width: 690px;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 11px;
   table-layout: fixed;
 }
 
@@ -29904,11 +30297,11 @@ body.is-panel-resizing * {
   align-items: center;
   gap: 3px;
   width: 100%;
-  padding: 6px 10px;
+  padding: 7px 8px;
   border: none;
   background: transparent;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
   text-align: left;
   cursor: pointer;
@@ -29921,41 +30314,35 @@ body.is-panel-resizing * {
 .task-manager-col-name {
   width: auto;
 }
-
 .task-manager-col-kind {
-  width: 92px;
+  width: 80px;
 }
-
 .task-manager-col-pid {
-  width: 72px;
+  width: 66px;
 }
-
 .task-manager-col-cpu {
-  width: 68px;
+  width: 82px;
 }
-
 .task-manager-col-memory {
-  width: 86px;
+  width: 90px;
 }
-
 .task-manager-col-threads {
-  width: 60px;
+  width: 55px;
 }
-
 .task-manager-col-actions {
-  width: 44px;
+  width: 45px;
 }
 
 .task-manager-col-actions-label {
   display: block;
-  padding: 6px 10px;
-  font-size: 11px;
+  padding: 7px 8px;
+  font-size: 10.5px;
   font-weight: 600;
   color: var(--text-muted);
 }
 
 .task-manager-table td {
-  padding: 5px 10px;
+  padding: 6px 8px;
   border-bottom: 1px solid var(--border-light);
   color: var(--text-secondary);
   vertical-align: middle;
@@ -29968,7 +30355,7 @@ body.is-panel-resizing * {
   background: var(--bg-hover);
 }
 
-.task-manager-cell-name {
+.task-manager-table .task-manager-cell-name {
   color: var(--text-primary);
 }
 
@@ -29989,22 +30376,25 @@ body.is-panel-resizing * {
 
 .task-manager-name-text {
   display: block;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.task-manager-name-sub {
+.task-manager-name-sub,
+.task-manager-project {
   display: block;
-  font-size: 10.5px;
+  margin-top: 2px;
+  font-size: 10px;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-manager-cell-num {
   text-align: right;
   font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
 }
 
 .task-manager-cell-actions {
@@ -30015,28 +30405,707 @@ body.is-panel-resizing * {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition:
-    background 0.12s,
-    color 0.12s;
 }
 
-.task-manager-kill-btn:hover {
+.task-manager-kill-btn:hover:not(:disabled) {
   background: var(--bg-hover);
-  color: var(--accent-red-text, #e5484d);
+  color: var(--accent-red-text, var(--text-primary));
 }
 
 .task-manager-kill-error {
   margin: 8px 0 0;
   font-size: 11.5px;
-  color: var(--accent-red-text, #e5484d);
+}
+
+@container (max-width: 420px) {
+  .task-manager-search {
+    flex-basis: 100%;
+  }
+  .task-manager-stat {
+    padding: 6px;
+    gap: 3px;
+  }
+  .task-manager-stat strong {
+    font-size: 11px;
+  }
+  .task-manager-stat > svg {
+    display: none;
+  }
+  .task-manager-stat {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .task-manager-budget-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Task-manager enhancements stay inside the existing theme-aware panel scope. */
+.task-manager-trend-body,
+.task-manager-alert-body {
+  padding: 5px 10px 10px;
+}
+
+.task-manager-charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.task-manager-chart {
+  min-width: 0;
+  margin: 5px 0 0;
+  color: var(--text-secondary);
+}
+
+.task-manager-chart.is-standalone {
+  margin: 0;
+  background: var(--surface-island);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 10px 12px 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.task-manager-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.task-manager-chart-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.task-manager-chart-icon {
+  color: var(--text-muted);
+}
+
+.task-manager-chart-current {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.task-manager-chart-stats {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.task-manager-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-pill-label {
+  color: var(--text-muted);
+}
+
+.stat-pill-val {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.task-manager-chart figcaption {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10px;
+}
+
+.task-manager-chart strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-manager-chart-canvas-wrap {
+  width: 100%;
+}
+
+.task-manager-chart svg {
+  display: block;
+  width: 100%;
+  min-height: 70px;
+  overflow: visible;
+}
+
+.task-manager-chart-grid {
+  fill: none;
+  stroke: var(--border-light);
+  stroke-width: 0.6;
+  stroke-dasharray: 2 3;
+}
+
+.task-manager-chart-axis {
+  fill: none;
+  stroke: var(--border-color);
+  stroke-width: 0.7;
+}
+
+.task-manager-chart-area {
+  transition: d 0.2s ease;
+}
+
+.task-manager-chart-line {
+  fill: none;
+  stroke: var(--accent-color);
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+
+.task-manager-chart-point {
+  fill: var(--accent-color);
+}
+
+.task-manager-chart-memory .task-manager-chart-line {
+  stroke: var(--accent-blue);
+}
+
+.task-manager-chart-memory .task-manager-chart-point {
+  fill: var(--accent-blue);
+}
+
+.task-manager-chart text,
+.task-manager-chart-tick {
+  fill: var(--text-muted);
+  font-size: 8px;
+}
+
+.task-manager-chart-footer {
+  margin-top: 2px;
+}
+
+.task-manager-chart-scale {
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+/* 性能大屏视图容器 */
+.task-manager-perf-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.task-manager-perf-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.task-manager-perf-details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+/* TOP 5 进程卡片 */
+.task-manager-top-card {
+  background: var(--surface-island);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.task-manager-top-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.task-manager-top-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.task-manager-top-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.task-manager-top-empty {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  padding: 8px 0;
+  text-align: center;
+}
+
+.task-manager-top-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.task-manager-top-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10.5px;
+}
+
+.task-manager-top-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.task-manager-top-name {
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10.5px;
+}
+
+.task-manager-top-pid {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.task-manager-top-val {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  font-size: 10.5px;
+  flex-shrink: 0;
+}
+
+.task-manager-top-bar-bg {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.task-manager-top-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.task-manager-top-bar-fill.is-cpu {
+  background: var(--accent-amber-text);
+}
+
+.task-manager-top-bar-fill.is-mem {
+  background: var(--accent-blue);
+}
+
+/* 进程类型分布条卡片 */
+.task-manager-dist-card {
+  background: var(--surface-island);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.task-manager-dist-header {
+  margin-bottom: 7px;
+}
+
+.task-manager-dist-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.task-manager-dist-bar {
+  display: flex;
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg-secondary);
+  margin-bottom: 8px;
+}
+
+.task-manager-dist-segment {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.task-manager-dist-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  font-size: 9.5px;
+}
+
+.task-manager-dist-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+}
+
+.task-manager-dist-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.task-manager-dist-kind-pct {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.task-manager-dist-kind-count {
+  color: var(--text-muted);
+}
+
+/* 标签徽章与微条 */
+.task-manager-kind-tag {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: var(--radius-pill);
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.task-manager-kind-tag.is-browser {
+  background: var(--accent-blue-bg);
+  color: var(--accent-blue-text);
+}
+
+.task-manager-kind-tag.is-renderer {
+  background: var(--accent-green-bg);
+  color: var(--accent-green-text);
+}
+
+.task-manager-kind-tag.is-gpu {
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+}
+
+.task-manager-kind-tag.is-utility {
+  background: rgba(139, 92, 246, 0.16);
+  color: #8b5cf6;
+}
+
+.task-manager-kind-tag.is-child {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.task-manager-cell-cpu {
+  position: relative;
+}
+
+.task-manager-mini-bar {
+  display: block;
+  height: 2px;
+  margin-top: 2px;
+  border-radius: 1px;
+}
+
+.task-manager-mini-bar.is-cpu {
+  background: var(--accent-amber-text);
+}
+
+.task-manager-mini-bar.is-mem {
+  background: var(--accent-blue);
+}
+
+/* 嵌入式卡片容器 */
+.task-manager-card-section {
+  background: var(--surface-island);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+
+.task-manager-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.task-manager-alerts-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.task-manager-stale-banner {
+  padding: 5px 12px;
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber-text);
+  font-size: 10.5px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.task-manager-tree-toolbar,
+.task-manager-session-actions,
+.task-manager-project-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.task-manager-tree-toolbar {
+  padding: 5px 12px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-light);
+  justify-content: space-between;
+}
+
+.task-manager-tree-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.task-manager-view-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  font-size: 10.5px;
+}
+
+.task-manager-btn-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.task-manager-btn-sm:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.task-manager-project-filter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.task-manager-project-filter select {
+  max-width: 220px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 10.5px;
+}
+
+.task-manager-clear-project-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.task-manager-clear-project-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.task-manager-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.task-manager-clear-btn:hover {
+  color: var(--text-primary);
+}
+
+.task-manager .task-manager-project-filter select:focus-visible,
+.task-manager-alert-body input:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: -2px;
+  box-shadow: none;
+}
+
+.task-manager-selected-project {
+  margin: 0 10px 4px;
+  color: var(--accent-color);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+
+.task-manager-project-link {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+}
+
+.task-manager-project-link:hover {
+  color: var(--accent-color);
+  text-decoration: underline;
+}
+
+.task-manager-tree-toggle,
+.task-manager-tree-spacer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 18px;
+}
+
+.task-manager-tree-toggle {
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.task-manager-tree-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--accent-color);
+}
+
+.task-manager-session-actions {
+  margin-top: 5px;
+}
+
+.task-manager-session-confirm .confirm-dialog-body {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.task-manager-alert-enable {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.task-manager-alert-body input[type="checkbox"] {
+  accent-color: var(--accent-color);
+}
+
+.task-manager-alert-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 7px 10px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-light);
+  color: var(--accent-red-text, var(--text-primary));
+  background: var(--bg-secondary);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+@container (max-width: 620px) {
+  .task-manager-summary {
+    grid-template-columns: 1fr;
+  }
+  .task-manager-perf-charts-grid,
+  .task-manager-perf-details-grid {
+    grid-template-columns: 1fr;
+  }
+  .task-manager-nav-bar {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .task-manager-nav-controls {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+@container (max-width: 420px) {
+  .task-manager-charts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .task-manager-search {
+    flex-basis: 100%;
+  }
+  .task-manager-tabs {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .task-manager-tab-btn {
+    padding: 4px 6px;
+    font-size: 10px;
+  }
 }
 
 /* ===== Codebase Panel View Toggle ===== */

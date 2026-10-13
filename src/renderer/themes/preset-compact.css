@@ -38,11 +38,13 @@
   --accent-primary-bg: rgba(2, 132, 199, 0.12);
   --accent-primary-text: #0369a1;
 
-  /* Pure surface contrast without heavy cast shadows */
+  /* Flat controls and cards; only detached menus/tooltips need a soft shadow. */
   --island-shadow: none;
-  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06);
-  --shadow-md: 0 4px 16px rgba(15, 23, 42, 0.08);
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --tooltip-shadow: var(--shadow-md);
+  --tooltip-border: var(--border-light);
   --backdrop-blur-lg: none;
 
   /* Density & geometry controls */
@@ -101,7 +103,7 @@
   --compact-danger-text: #fca5a5;
   --compact-danger-solid: #b91c1c;
   --compact-danger-hover: #991b1b;
-  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.22);
   --accent: #0ea5e9;
   --accent-primary: #0ea5e9;
   --accent-color: #0ea5e9;
@@ -273,7 +275,7 @@
   height: 24px;
   border-radius: var(--radius-pill);
   background: linear-gradient(180deg, #38bdf8, #818cf8);
-  box-shadow: 0 0 10px var(--compact-accent-bg);
+  box-shadow: none;
   content: "";
   transform: translateY(-50%);
 }
@@ -442,7 +444,7 @@
 :root[data-theme-preset="compact"] .panel-resizer:hover::before,
 :root[data-theme-preset="compact"] .panel-resizer.is-active::before {
   background: var(--compact-accent) !important;
-  box-shadow: 0 0 0 1px var(--compact-accent) !important;
+  box-shadow: none !important;
 }
 
 :root[data-theme-preset="compact"]
@@ -537,7 +539,7 @@
   border: 1px solid transparent !important;
   border-radius: var(--radius-md) !important;
   font-weight: 500 !important;
-  box-shadow: 0 1px 3px rgba(2, 132, 199, 0.25) !important;
+  box-shadow: none !important;
   transition: var(--compact-control-transition) !important;
 }
 
@@ -566,10 +568,10 @@
   background: var(--compact-button-hover) !important;
   color: #ffffff !important;
   transform: none;
-  box-shadow: 0 3px 8px rgba(2, 132, 199, 0.35) !important;
+  box-shadow: none !important;
 }
 
-/* 主按钮以阴影反馈按压，保持点击区域稳定 */
+/* 主按钮以颜色反馈交互，不叠加阴影，保持点击区域稳定 */
 :root[data-theme-preset="compact"]
   :is(
     .api-settings-action-btn.primary,
@@ -593,7 +595,7 @@
     .send-btn
   ):active:not(:disabled):not([aria-disabled="true"]) {
   transform: none !important;
-  box-shadow: 0 1px 2px rgba(2, 132, 199, 0.2) !important;
+  box-shadow: none !important;
   transition: var(--compact-control-transition) !important;
 }
 
@@ -736,7 +738,7 @@
 
 :root[data-theme-preset="compact"] .chat-item-icon.streaming {
   color: var(--compact-accent) !important;
-  filter: drop-shadow(0 0 6px rgba(2, 132, 199, 0.4));
+  filter: none;
   animation: horizon-gentle-pulse 2s ease-in-out infinite;
 }
 
@@ -801,9 +803,9 @@
     transparent
   ) !important;
   color: var(--compact-danger-text) !important;
-  border: 1px solid
-    color-mix(in srgb, var(--compact-danger-text) 30%, transparent) !important;
+  border: 1px solid transparent !important;
   border-radius: var(--radius-md) !important;
+  box-shadow: none !important;
   transition: var(--compact-control-transition) !important;
 }
 
@@ -839,7 +841,7 @@
 
 :root[data-theme-preset="compact"] .user-message-bubble {
   border-radius: var(--radius-xl) !important;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08) !important;
+  box-shadow: none !important;
   padding: 10px 16px !important;
   border: 1px solid var(--border-light) !important;
   background: var(--bg-tertiary) !important;
@@ -850,7 +852,7 @@
 
 :root[data-theme-preset="compact"] .user-message-bubble:hover {
   border-color: var(--border-color);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12) !important;
+  box-shadow: none !important;
 }
 
 :root[data-theme-preset="compact"] .assistant-message-content {
@@ -858,34 +860,51 @@
   line-height: 1.65 !important;
 }
 
-:root[data-theme-preset="compact"] .chat-input-wrapper {
-  padding: 0 20px 14px !important;
+:root[data-theme-preset="compact"] .input-area {
+  padding: 12px 20px 0;
 }
 
-:root[data-theme-preset="compact"] .chat-input-container {
-  border-radius: var(--radius-xl) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
-  border: 1px solid var(--border-subtle) !important;
-  background: var(--bg-primary) !important;
-  transition:
-    border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+:root[data-theme-preset="compact"] .input-box {
+  border-radius: var(--radius-xl);
+  box-shadow: none;
+  border: 1px solid var(--border-light);
+  background: var(--surface-island-strong);
+  transition: border-color 0.15s ease;
 }
 
-:root[data-theme-preset="compact"] .chat-input-container:focus-within {
-  border-color: var(--compact-accent) !important;
-  box-shadow: 0 0 0 3px var(--compact-accent-bg) !important;
+/* The base composer adds an animated rainbow ring; Horizon uses one quiet edge. */
+:root[data-theme-preset="compact"] .input-box::before {
+  content: none;
+  animation: none;
 }
 
-:root[data-theme-preset="compact"] .chat-input-textarea {
-  padding: 11px 16px !important;
-  font-size: 13px !important;
-  line-height: 1.55 !important;
+:root[data-theme-preset="compact"] .input-box:focus-within {
+  border-color: var(--compact-focus-color);
+  box-shadow: none;
+}
+
+:root[data-theme-preset="compact"] .input-field {
+  padding: 0;
+  background: transparent;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+:root[data-theme-preset="compact"] .toolbar-btn.model[aria-expanded="true"] {
+  background: var(--compact-selected-bg);
+  color: var(--compact-accent-text);
+  box-shadow: none;
+}
+
+:root[data-theme-preset="compact"] .toolbar-btn.model:focus-visible {
+  outline: 1px solid var(--compact-focus-color) !important;
+  outline-offset: -1px;
+  box-shadow: none;
 }
 
 :root[data-theme-preset="compact"] .chat-float-island {
   border-radius: var(--radius-pill) !important;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16) !important;
+  box-shadow: none !important;
   border: 1px solid var(--border-light) !important;
   background: var(--bg-secondary) !important;
   color: var(--text-secondary);
@@ -894,11 +913,11 @@
 
 :root[data-theme-preset="compact"] .chat-float-island:hover {
   transform: none;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2) !important;
+  box-shadow: none !important;
 }
 
 /* ==========================================================================
-   7. Form Inputs & Select Controls (全局表单与聚焦环)
+   7. Form Inputs & Select Controls (单层边界与聚焦反馈)
    ========================================================================== */
 
 :root[data-theme-preset="compact"]
@@ -918,9 +937,8 @@
   border-radius: var(--radius-md);
   background: var(--bg-primary);
   color: var(--text-primary);
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
+  box-shadow: none !important;
+  transition: border-color 0.15s ease;
 }
 
 :root[data-theme-preset="compact"]
@@ -938,6 +956,7 @@
   ):focus {
   border-color: var(--compact-focus-color);
   outline: none;
+  box-shadow: none !important;
 }
 
 :root[data-theme-preset="compact"] .range-slider {
@@ -1028,7 +1047,7 @@
   border-color: var(--compact-accent) !important;
   background: var(--compact-accent-bg) !important;
   color: var(--compact-accent-text) !important;
-  box-shadow: inset 0 0 0 1px var(--compact-accent) !important;
+  box-shadow: none !important;
 }
 
 :root[data-theme-preset="compact"] .form-dialog-input {
@@ -1041,14 +1060,15 @@
 :root[data-theme-preset="compact"] .form-dialog-input:focus:not([readonly]) {
   border-color: var(--compact-focus-color) !important;
   outline: none !important;
-  box-shadow: 0 0 0 1px var(--compact-focus-color) !important;
+  box-shadow: none !important;
 }
 
 :root[data-theme-preset="compact"]
   .form-dialog-input:focus-visible:not([readonly]) {
   border-color: var(--compact-focus-color) !important;
-  outline: none !important;
-  box-shadow: 0 0 0 1px var(--compact-focus-color) !important;
+  outline: 2px solid var(--compact-focus-color) !important;
+  outline-offset: -2px;
+  box-shadow: none !important;
 }
 
 :root[data-theme-preset="compact"] .form-dialog-input[readonly] {
@@ -1090,14 +1110,14 @@
   border: 1px solid transparent !important;
   background: var(--compact-button-bg) !important;
   color: #ffffff !important;
-  box-shadow: 0 1px 3px rgba(2, 132, 199, 0.25) !important;
+  box-shadow: none !important;
 }
 
 :root[data-theme-preset="compact"]
   .form-dialog-button.confirm:hover:not(:disabled):not([aria-disabled="true"]) {
   background: var(--compact-button-hover) !important;
   color: #ffffff !important;
-  box-shadow: 0 3px 8px rgba(2, 132, 199, 0.35) !important;
+  box-shadow: none !important;
 }
 
 :root[data-theme-preset="compact"] .form-dialog-button.confirm:disabled,
@@ -1436,7 +1456,7 @@
   border-color: var(--compact-accent);
   background: var(--compact-accent-bg);
   transform: translateY(-2.5px) !important;
-  box-shadow: 0 6px 20px rgba(2, 132, 199, 0.15) !important;
+  box-shadow: none !important;
 }
 
 :root[data-theme-preset="compact"]
@@ -1518,7 +1538,7 @@
   border-color: var(--border-light);
   border-radius: var(--radius-pill);
   background: var(--surface-island-strong);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  box-shadow: none;
   /* Keep the base translate(-50%, -50%) at every interaction state.
      Replacing it with scale alone shifts the grab handle right/down. */
   transition:
@@ -1546,10 +1566,8 @@
 :root[data-theme-preset="compact"] .h-resizer:active::after,
 :root[data-theme-preset="compact"] body.is-git-pane-resizing .h-resizer::after {
   border-color: var(--compact-accent);
-  background: var(--surface-island-strong);
-  box-shadow:
-    0 0 0 3px var(--compact-accent-bg),
-    0 2px 8px rgba(2, 132, 199, 0.16);
+  background: var(--compact-selected-bg);
+  box-shadow: none;
 }
 
 :root[data-theme-preset="compact"] .h-resizer-icon {
@@ -1597,25 +1615,45 @@
    15. Token Usage Rings, Scroll to Bottom & Stream Glow
    ========================================================================== */
 
+/* One ring track; semantic colors are shared with the tooltip legend. */
+:root[data-theme-preset="compact"] .token-usage-ring-wrapper {
+  --compact-token-input: var(--compact-accent);
+  --compact-token-output: #059669;
+  --compact-token-cache-read: #8b5cf6;
+  --compact-token-cache-write: #d97706;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+:root[data-theme-preset="compact"][data-theme="dark"]
+  .token-usage-ring-wrapper {
+  --compact-token-input: #38bdf8;
+  --compact-token-output: #34d399;
+  --compact-token-cache-read: #a78bfa;
+  --compact-token-cache-write: #fbbf24;
+}
+
 :root[data-theme-preset="compact"] .token-usage-ring-bg {
-  stroke: var(--border-subtle);
-  opacity: 0.4;
+  stroke: var(--border-light);
+  opacity: 0.65;
 }
 
 :root[data-theme-preset="compact"] .token-usage-ring-input {
-  stroke: var(--compact-accent);
+  stroke: var(--compact-token-input);
 }
 
 :root[data-theme-preset="compact"] .token-usage-ring-output {
-  stroke: var(--accent-green);
+  stroke: var(--compact-token-output);
 }
 
 :root[data-theme-preset="compact"] .token-usage-ring-cache {
-  stroke: #38bdf8;
+  stroke: var(--compact-token-cache-read);
 }
 
 :root[data-theme-preset="compact"] .token-usage-ring-text {
-  color: var(--text-secondary);
+  color: var(--text-primary);
 }
 
 :root[data-theme-preset="compact"] .token-usage-tooltip {
@@ -1634,19 +1672,46 @@
 }
 
 :root[data-theme-preset="compact"] .token-usage-dot-input {
-  background: var(--compact-accent);
+  background: var(--compact-token-input);
 }
 
 :root[data-theme-preset="compact"] .token-usage-dot-output {
-  background: var(--accent-green);
+  background: var(--compact-token-output);
 }
 
 :root[data-theme-preset="compact"] .token-usage-dot-cache {
-  background: var(--warning);
+  background: var(--compact-token-cache-write);
 }
 
 :root[data-theme-preset="compact"] .token-usage-dot-cache-read {
-  background: var(--compact-accent);
+  background: var(--compact-token-cache-read);
+}
+
+/* Keep the dot, label and value aligned with the corresponding ring segment. */
+:root[data-theme-preset="compact"]
+  .token-usage-tooltip-row:has(> .token-usage-dot-input) {
+  --compact-token-row-color: var(--compact-token-input);
+}
+
+:root[data-theme-preset="compact"]
+  .token-usage-tooltip-row:has(> .token-usage-dot-output) {
+  --compact-token-row-color: var(--compact-token-output);
+}
+
+:root[data-theme-preset="compact"]
+  .token-usage-tooltip-row:has(> .token-usage-dot-cache) {
+  --compact-token-row-color: var(--compact-token-cache-write);
+}
+
+:root[data-theme-preset="compact"]
+  .token-usage-tooltip-row:has(> .token-usage-dot-cache-read) {
+  --compact-token-row-color: var(--compact-token-cache-read);
+}
+
+:root[data-theme-preset="compact"]
+  .token-usage-tooltip-row:has(> .token-usage-dot)
+  :is(.token-usage-label, .token-usage-value) {
+  color: var(--compact-token-row-color);
 }
 
 :root[data-theme-preset="compact"] .token-usage-tooltip-divider {
@@ -1675,7 +1740,7 @@
     var(--surface-island-strong)
   );
   color: var(--compact-accent-text);
-  box-shadow: 0 4px 16px rgba(2, 132, 199, 0.25);
+  box-shadow: none;
   transform: translate(-50%, calc(-100% - 6px));
 }
 
@@ -1684,14 +1749,15 @@
   box-shadow: none;
 }
 
+/* Running state uses the existing edge instead of a second rotating halo. */
+:root[data-theme-preset="compact"] .chat-scroll-to-bottom.is-streaming {
+  border-color: var(--compact-accent);
+  background: var(--compact-selected-bg);
+  color: var(--compact-accent-text);
+}
+
 :root[data-theme-preset="compact"] .chat-scroll-to-bottom.is-streaming::before {
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg,
-    var(--compact-accent) 60deg,
-    transparent 140deg,
-    transparent 360deg
-  );
+  content: none;
 }
 
 /* ==========================================================================
@@ -1722,12 +1788,13 @@
 
 :root[data-theme-preset="compact"] .theme-preset-card-compact:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(2, 132, 199, 0.16) !important;
+  box-shadow: none !important;
 }
 
 :root[data-theme-preset="compact"] .theme-preset-card-compact.active {
   border-color: var(--compact-accent) !important;
-  box-shadow: 0 0 0 2px var(--compact-accent-bg) !important;
+  background: var(--compact-selected-bg) !important;
+  box-shadow: none !important;
 }
 
 /* ==========================================================================
@@ -2013,7 +2080,8 @@
    20. Keyboard focus, disabled controls & compact-window ergonomics
    ========================================================================== */
 
-/* Outline stays independent of selected-state inset markers and hover shadows. */
+/* Draw keyboard focus on the existing edge, not as a second outer ring.
+   Selected-state inset markers remain independent of this focus indicator. */
 :root[data-theme-preset="compact"]
   :where(
     button,
@@ -2027,7 +2095,13 @@
     [tabindex]:not([tabindex="-1"])
   ):focus-visible {
   outline: 2px solid var(--compact-focus-color) !important;
-  outline-offset: 2px;
+  outline-offset: -2px;
+}
+
+/* The composer already exposes focus through its single container border. */
+:root[data-theme-preset="compact"] .input-field:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 /* Split-button parents clip their children, so draw the focus ring inside. */
@@ -2047,7 +2121,7 @@
   input:focus-visible
   + .toggle-slider {
   outline: 2px solid var(--compact-focus-color);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 /* Visual state only: native disabled / aria-disabled behavior remains component-owned. */
@@ -2097,8 +2171,8 @@
     padding: 12px 16px !important;
   }
 
-  :root[data-theme-preset="compact"] .chat-input-wrapper {
-    padding: 0 16px 12px !important;
+  :root[data-theme-preset="compact"] .input-area {
+    padding: 12px 16px 0 !important;
   }
 }
 
@@ -2111,8 +2185,8 @@
     padding: 10px 12px !important;
   }
 
-  :root[data-theme-preset="compact"] .chat-input-wrapper {
-    padding: 0 12px 10px !important;
+  :root[data-theme-preset="compact"] .input-area {
+    padding: 10px 12px 0 !important;
   }
 
   :root[data-theme-preset="compact"] .top-bar-main {

@@ -92,6 +92,8 @@ export type OpenExplorerPayload = {
 type RightPanelEventMap = {
   "open-file-diff-preview": (payload: OpenFileDiffPreviewPayload) => void;
   "open-browser-tab": (payload: OpenBrowserTabPayload) => void;
+  /** Restricted plugin link navigation; aliases the existing browser tab event. */
+  "browser:navigate": (payload: OpenBrowserTabPayload) => void;
   "focus-browser-tab": (payload: FocusBrowserTabPayload) => void;
   "open-file": (payload: OpenFilePayload) => void;
   "open-terminal-command": (payload: OpenTerminalCommandPayload) => void;
@@ -105,6 +107,7 @@ type EventKey = keyof RightPanelEventMap;
 const listeners: {
   "open-file-diff-preview"?: Set<(payload: OpenFileDiffPreviewPayload) => void>;
   "open-browser-tab"?: Set<(payload: OpenBrowserTabPayload) => void>;
+  "browser:navigate"?: Set<(payload: OpenBrowserTabPayload) => void>;
   "focus-browser-tab"?: Set<(payload: FocusBrowserTabPayload) => void>;
   "open-file"?: Set<(payload: OpenFilePayload) => void>;
   "open-terminal-command"?: Set<(payload: OpenTerminalCommandPayload) => void>;
@@ -118,15 +121,16 @@ export const rightPanelEvents = {
     event: K,
     listener: RightPanelEventMap[K],
   ): () => void {
-    const set = listeners[event];
+    const key = event === "browser:navigate" ? "open-browser-tab" : event;
+    const set = listeners[key];
     if (!set) {
-      // 不同事件的 listener 类型不同，用类型断言统一初始化
-      (listeners as Record<string, Set<(...args: never[]) => void>>)[event] =
+      // Different events carry different payloads; browser:navigate is an alias.
+      (listeners as Record<string, Set<(...args: never[]) => void>>)[key] =
         new Set() as unknown as Set<RightPanelEventMap[K]>;
     }
-    (listeners[event] as Set<RightPanelEventMap[K]>).add(listener);
+    (listeners[key] as Set<RightPanelEventMap[K]>).add(listener);
     return () => {
-      (listeners[event] as Set<RightPanelEventMap[K]> | undefined)?.delete(
+      (listeners[key] as Set<RightPanelEventMap[K]> | undefined)?.delete(
         listener,
       );
     };
@@ -136,10 +140,9 @@ export const rightPanelEvents = {
     event: K,
     ...args: Parameters<RightPanelEventMap[K]>
   ): void {
-    const set = listeners[event] as Set<(...a: never[]) => void> | undefined;
-    if (!set) {
-      return;
-    }
+    const key = event === "browser:navigate" ? "open-browser-tab" : event;
+    const set = listeners[key] as Set<(...a: never[]) => void> | undefined;
+    if (!set) return;
     for (const listener of set) {
       (listener as (...a: Parameters<RightPanelEventMap[K]>) => void)(...args);
     }

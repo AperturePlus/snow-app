@@ -170,11 +170,19 @@ interface CallSnapshot {
   fileSnapshot?: FileSnapshot | null;
   gitSnapshot?: GitSnapshot | null;
   recordedAt: number;
+  result: string;
+  hitCount: number;
+}
+
+export interface ReadonlyCallCacheItem {
+  result: string;
+  fromCache: boolean;
+  isLoopAbort: boolean;
 }
 
 export interface ReadonlyCallFilterResult {
   executableToolCalls: ToolCallInfo[];
-  duplicateReadonlyResults: Map<ToolCallInfo, string>;
+  duplicateReadonlyResults: Map<ToolCallInfo, ReadonlyCallCacheItem>;
 }
 
 export interface ReadonlyCallGuardOptions {
@@ -235,7 +243,10 @@ export class ReadonlyCallGuard {
     toolCalls: ToolCallInfo[],
     readonlyToolNames: Set<string>,
   ): Promise<ReadonlyCallFilterResult> {
-    const duplicateReadonlyResults = new Map<ToolCallInfo, string>();
+    const duplicateReadonlyResults = new Map<
+      ToolCallInfo,
+      ReadonlyCallCacheItem
+    >();
     const executableToolCalls: ToolCallInfo[] = [];
 
     for (const toolCall of toolCalls) {
@@ -262,15 +273,33 @@ export class ReadonlyCallGuard {
         continue;
       }
 
-      // 目标确实分毫不差、无任何状态或版本变动
-      const result = JSON.stringify({
-        success: false,
-        error: "DUPLICATE_READONLY_TOOL_CALL",
-        message:
-          "This read-only tool call already completed with identical arguments during this agent run, and no file or Git changes were detected since. Use the prior tool result and finish the task without repeating the call.",
-        toolName: toolCall.name,
+      priorSnapshot.hitCount += 1;
+
+      // 仅当对完全相同参数的只读调用在物理无变更的情况下重复请求达到熔断阈值（>= 3次）时，
+      // 才作为死循环拦截，避免无休止空耗 Token。
+      if (priorSnapshot.hitCount >= 3) {
+        const result = JSON.stringify({
+          success: false,
+          error: "DUPLICATE_READONLY_TOOL_CALL",
+          message:
+            "This read-only tool call was repeatedly requested 3+ times with identical parameters and no modifications. Loop aborted to prevent unbounded calls. Use the existing result in history.",
+          toolName: toolCall.name,
+        });
+        duplicateReadonlyResults.set(toolCall, {
+          result,
+          fromCache: false,
+          isLoopAbort: true,
+        });
+        continue;
+      }
+
+      // 正常只读缓存命中：直接返回此前已执行成功的真实结果，
+      // 既避免重复磁盘 I/O，又保证模型获得预期数据并顺利执行后续操作。
+      duplicateReadonlyResults.set(toolCall, {
+        result: priorSnapshot.result,
+        fromCache: true,
+        isLoopAbort: false,
       });
-      duplicateReadonlyResults.set(toolCall, result);
     }
 
     return { executableToolCalls, duplicateReadonlyResults };
@@ -324,7 +353,7 @@ export class ReadonlyCallGuard {
 
       const key = this.getReadonlyCallKey(toolCall);
       if (key && result && !isFailedToolResult(result)) {
-        const snapshot = await this.captureSnapshot(toolCall, key);
+        const snapshot = await this.captureSnapshot(toolCall, key, result);
         this.completedCalls.set(key, snapshot);
       }
     }
@@ -455,11 +484,14 @@ export class ReadonlyCallGuard {
   private async captureSnapshot(
     toolCall: ToolCallInfo,
     callKey: string,
+    result: string,
   ): Promise<CallSnapshot> {
     const snapshot: CallSnapshot = {
       toolName: toolCall.name,
       callKey,
       recordedAt: Date.now(),
+      result,
+      hitCount: 0,
     };
 
     try {

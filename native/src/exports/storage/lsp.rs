@@ -1,6 +1,21 @@
 //! LSP 服务器配置的 NAPI 转发（照 mcp.rs 模式）。
 
 use super::*;
+use crate::mcp::servers::lsp::manager::{ResourcePolicy, ServerManager};
+use crate::mcp::servers::lsp::LspResourceSnapshot;
+
+#[napi]
+pub async fn get_lsp_resource_policy() -> napi::Result<String> {
+    serde_json::to_string(&ServerManager::instance().resource_policy())
+        .map_err(|error| Error::from_reason(error.to_string()))
+}
+
+#[napi]
+pub async fn set_lsp_resource_policy(policy_json: String) -> napi::Result<()> {
+    let policy: ResourcePolicy = serde_json::from_str(&policy_json)
+        .map_err(|error| Error::from_reason(error.to_string()))?;
+    ServerManager::instance().save_resource_policy(policy).await
+}
 
 #[napi(object)]
 pub struct LspCommandProbeResult {
@@ -144,6 +159,7 @@ pub async fn delete_project_lsp_server_config(
 /// 语言服务器会话运行时状态（前端状态徽章实时展示用）。
 #[napi(object)]
 pub struct LspSessionStatus {
+    pub resources: Option<LspResourceSnapshot>,
     pub lang: String,
     /// 会话项目根目录（绝对路径）。
     pub project_root: String,
@@ -197,6 +213,7 @@ pub async fn list_lsp_session_statuses(
         .await
         .into_iter()
         .map(|status| LspSessionStatus {
+            resources: status.resources,
             lang: status.lang,
             project_root: status.project_root,
             status: status.status,
@@ -220,6 +237,7 @@ pub async fn start_lsp_session(
         .await
         .map_err(|e| Error::new(Status::GenericFailure, format!("{e:?}")))?;
     Ok(LspSessionStatus {
+        resources: status.resources,
         lang: status.lang,
         project_root: status.project_root,
         status: status.status,
@@ -227,6 +245,31 @@ pub async fn start_lsp_session(
         last_used_ms: status.last_used_ms as i64,
         error: status.error,
     })
+}
+
+/// Manage only the confirmed registered physical session. No project lookup,
+/// root discovery, prefix stop, or persistent diagnostic-cache clearing.
+#[napi]
+pub async fn manage_lsp_session(
+    target_json: String,
+    action: String,
+) -> napi::Result<Option<LspSessionStatus>> {
+    let target: crate::mcp::servers::lsp::manager::SessionTarget =
+        serde_json::from_str(&target_json)
+            .map_err(|error| Error::new(Status::InvalidArg, format!("Invalid LSP session target: {error}")))?;
+    let status = ServerManager::instance()
+        .manage_session_exact(&target, &action)
+        .await
+        .map_err(|error| Error::new(Status::GenericFailure, format!("{error:?}")))?;
+    Ok(status.map(|status| LspSessionStatus {
+        resources: status.resources,
+        lang: status.lang,
+        project_root: status.project_root,
+        status: status.status,
+        restart_count: status.restart_count,
+        last_used_ms: status.last_used_ms as i64,
+        error: status.error,
+    }))
 }
 
 /// 手动停止指定项目和语言的 LSP 会话（释放进程与内存）。
@@ -260,6 +303,7 @@ pub async fn restart_lsp_session(
         .await
         .map_err(|e| Error::new(Status::GenericFailure, format!("{e:?}")))?;
     Ok(LspSessionStatus {
+        resources: status.resources,
         lang: status.lang,
         project_root: status.project_root,
         status: status.status,

@@ -41,6 +41,8 @@ const requiredExports = [
   "scanCleanup",
   "deleteCleanupData",
   // LSP 服务器配置与会话状态（配置中心 / 状态徽章轮询）
+  "getLspResourcePolicy",
+  "setLspResourcePolicy",
   "listLspServerConfigs",
   "upsertLspServerConfig",
   "deleteLspServerConfig",
@@ -51,6 +53,8 @@ const requiredExports = [
   "probeLspServerCommands",
   "detectProjectStack",
   "listLspSessionStatuses",
+  // 任务管理器精准物理会话管理（拒绝缺少新接口的旧绑定）
+  "manageLspSession",
   // 工作区条目 / 用量统计 / 计划任务
   // （历史会话引用已改为 @@conversation: 内联标签，不再需要附件表导出）
   "deleteWorkspaceEntries",

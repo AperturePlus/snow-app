@@ -5,7 +5,10 @@
  * - 精确名 `websearch-websearch-search` → 网页搜索卡片（query + 结果条目列表）；
  * - 精确名 `websearch-websearch-fetch`  → 网页抓取卡片（URL + 正文预览 / 图片结果）；
  * - 精确名 `imagegen-generate`         → 图像生成卡片（参数 + 生成状态 + 图片区）；
- * - 前缀 `browser-`                     → 内置浏览器卡片（18 个操作，见 BROWSER_OPS）。
+ * - 前缀 `browser-`                     → 内置浏览器卡片（18 个操作，见 BROWSER_OPS）；
+ * - 前缀 `anysearch-` / `anysearch_`    → Anysearch（外部 MCP）检索卡片（search /
+ *                                          extract / batch-search / get-sub-domains，
+ *                                          结果正文为 markdown，解析见 parse* 系列）。
  *
  * ── 图片可达性（重要结论，勿单方面改动） ──────────────────────────────────
  * 远控桥对工具字段只脱敏、不截断（arguments / result / streaming* 全量下发，
@@ -2203,11 +2206,595 @@ const renderBrowser = (tool: SnowRemoteToolCall): HTMLElement | null => {
   });
 };
 
+// ── anysearch-*（外部 MCP：Anysearch 检索服务） ─────────────────────────────
+
+/** Anysearch 操作（归一化后的短名）。 */
+type AnySearchOp = "search" | "extract" | "batch-search" | "get-sub-domains";
+
+const ANYSEARCH_OPS: readonly string[] = [
+  "search",
+  "extract",
+  "batch-search",
+  "get-sub-domains",
+];
+
+/**
+ * 归一化 Anysearch 工具名：外部 MCP 的工具名可能是连字符（anysearch-search）、
+ * 下划线（anysearch_search），也可能是 MCP 自带 server 前缀的复合形态
+ * （anysearch_batch_search）——先剥 server 前缀，再剥工具名自带前缀，最后统一
+ * 把下划线归一为连字符，得到 search / extract / batch-search / get-sub-domains。
+ */
+const anysearchOpOf = (name: string): string => {
+  let bare = name.replace(/^anysearch[-_]/, "");
+  if (bare.startsWith("anysearch_")) bare = bare.slice("anysearch_".length);
+  return bare.replace(/_/g, "-");
+};
+
+const isAnySearchOp = (value: string): value is AnySearchOp =>
+  ANYSEARCH_OPS.includes(value);
+
+/** MCP content 数组里的首个文本块（无则 undefined）。 */
+const mcpText = (record: JsonRecord): string | undefined => {
+  const content = readArray(record, "content");
+  if (!content) return undefined;
+  for (const block of records(content)) {
+    if (block.type !== "text") continue;
+    const text = readString(block, "text");
+    if (text !== undefined) return text;
+  }
+  return undefined;
+};
+
+// ── Anysearch markdown 解析（纯函数：格式不符就少解析，绝不抛错） ──────────
+
+/** 结果条目：复用 websearch 的 SearchItem 形状（displayUrl 留空 → 直接展示 url）。 */
+type SearchEntry = SearchItem;
+
+/** `### 1. Tokio - An asynchronous Rust runtime` */
+const SEARCH_ITEM_RE = /^###\s+(\d+)\.\s*(.+?)\s*$/;
+/** `- **URL**: https://tokio.rs/` */
+const SEARCH_URL_RE = /^[-*]\s*\*\*URL\*\*:\s*(\S+)\s*$/i;
+/** `- Tokio is a runtime for writing reliable ...` */
+const SEARCH_TEXT_RE = /^[-*]\s+(.*)$/;
+/** `## Search Results (2 results, 1413ms)` */
+const SEARCH_META_RE = /^##\s+Search Results\s*\(([^)]*)\)\s*$/i;
+/** `## Query 1: tokio runtime tutorial` */
+const BATCH_QUERY_RE = /^##\s+Query\s+\d+\s*:\s*(.*)$/i;
+/** 组间分隔线 `---`（批量检索里没有条目的分组用它占位）。 */
+const SECTION_RULE_RE = /^-{3,}\s*$/;
+/** `## code Domain Capabilities (2 available)` */
+const DOMAIN_META_RE = /^##\s+(\S+)\s+Domain Capabilities\s*\(([^)]*)\)\s*$/i;
+/** `### code.doc` */
+const DOMAIN_ENTRY_RE = /^###\s+(.+?)\s*$/;
+/** `**Parameters:**` */
+const DOMAIN_PARAMS_RE = /^\*\*Parameters:\*\*\s*$/i;
+/** `- \`library\` (required): Library or framework name to query docs for` */
+const DOMAIN_PARAM_RE = /^[-*]\s+`([^`]+)`\s*(?:\((required)\))?\s*:?\s*(.*)$/;
+
+/** 搜索结果正文行（`## ` / `### ` 标题行作为段落边界，标题本身除外）。 */
+const isSearchBodyLine = (line: string): boolean => {
+  if (SEARCH_URL_RE.test(line) || SEARCH_TEXT_RE.test(line)) return true;
+  return SEARCH_ITEM_RE.test(line) || SEARCH_META_RE.test(line);
+};
+
+/**
+ * 搜索结果 markdown：`### <序号>. <标题>` 起一条，紧随的 `- **URL**: …` 取 URL，
+ * 其余 `- ` 行按空格拼成摘要；`## Search Results (N results, Xms)` 里取总数与耗时。
+ */
+const parseSearchMarkdown = (
+  text: string,
+): { total?: number; elapsedMs?: number; items: SearchEntry[] } => {
+  const items: SearchEntry[] = [];
+  let total: number | undefined;
+  let elapsedMs: number | undefined;
+  let current: SearchEntry | null = null;
+
+  const flush = (): void => {
+    if (current && current.title !== "") items.push(current);
+    current = null;
+  };
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const meta = SEARCH_META_RE.exec(line);
+    if (meta) {
+      const numbers = meta[1].match(/\d+/g) ?? [];
+      if (numbers.length > 0) total = Number(numbers[0]);
+      if (numbers.length > 1) elapsedMs = Number(numbers[1]);
+      continue;
+    }
+    const head = SEARCH_ITEM_RE.exec(line);
+    if (head) {
+      flush();
+      current = { title: head[2].trim(), url: "", snippet: "", displayUrl: "" };
+      continue;
+    }
+    if (!current) continue;
+    const url = SEARCH_URL_RE.exec(line);
+    if (url) {
+      current.url = url[1];
+      continue;
+    }
+    const bodyLine = SEARCH_TEXT_RE.exec(line);
+    if (bodyLine) {
+      const snippet = bodyLine[1].trim();
+      if (snippet !== "") {
+        current.snippet = current.snippet
+          ? `${current.snippet} ${snippet}`
+          : snippet;
+      }
+    }
+  }
+  flush();
+
+  return { total, elapsedMs, items };
+};
+
+/** 批量检索：按 `## Query N: xxx` 分组，组内复用 parseSearchMarkdown。 */
+const parseBatchSections = (
+  text: string,
+): { query: string; items: SearchEntry[] }[] => {
+  const sections: { query: string; lines: string[] }[] = [];
+  let current: { query: string; lines: string[] } | null = null;
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const head = BATCH_QUERY_RE.exec(rawLine.trim());
+    if (head) {
+      if (current) sections.push(current);
+      current = { query: head[1].trim(), lines: [] };
+      continue;
+    }
+    if (!current) continue;
+    const line = rawLine.trim();
+    if (line === "" || SECTION_RULE_RE.test(line) || isSearchBodyLine(line)) {
+      current.lines.push(rawLine);
+    }
+  }
+  if (current) sections.push(current);
+
+  return sections.map((entry) => ({
+    query: entry.query,
+    items: parseSearchMarkdown(entry.lines.join("\n")).items,
+  }));
+};
+
+type ExtractedPage = { url: string; title: string; content: string };
+
+/** extract：优先 structuredContent，其次 content 文本里的 JSON 字符串。 */
+const parseExtract = (record: JsonRecord): ExtractedPage | null => {
+  const structured = isRecord(record.structuredContent)
+    ? record.structuredContent
+    : null;
+  if (structured) {
+    const page = {
+      url: readString(structured, "url") ?? "",
+      title: readString(structured, "title") ?? "",
+      content: readString(structured, "content") ?? "",
+    };
+    if (page.url !== "" || page.content !== "") return page;
+  }
+
+  const text = mcpText(record);
+  if (text === undefined) return null;
+  const parsed = parseJsonRecord(text);
+  if (!parsed) return null;
+  const page = {
+    url: readString(parsed, "url") ?? "",
+    title: readString(parsed, "title") ?? "",
+    content: readString(parsed, "content") ?? "",
+  };
+  return page.url !== "" || page.content !== "" ? page : null;
+};
+
+type DomainParam = { name: string; required: boolean; description: string };
+
+type DomainCapability = {
+  name: string;
+  description: string;
+  params: DomainParam[];
+};
+
+/**
+ * `## <domain> Domain Capabilities (N available)` 取领域名；`### <name>` 起一个
+ * 能力条目，其后的普通段落是描述，`**Parameters:**` 之后的 `- \`param\` (required): …`
+ * 解析为参数。
+ */
+const parseDomains = (
+  text: string,
+): { domain: string; entries: DomainCapability[] } => {
+  let domain = "";
+  const entries: DomainCapability[] = [];
+  const descriptionLines: string[] = [];
+  let current: DomainCapability | null = null;
+  let inParams = false;
+
+  const flushDescription = (): void => {
+    if (!current) return;
+    const description = descriptionLines.join(" ").trim();
+    if (description !== "") current.description = description;
+    descriptionLines.length = 0;
+  };
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const meta = DOMAIN_META_RE.exec(line);
+    if (meta) {
+      if (domain === "") domain = meta[1];
+      continue;
+    }
+    const head = DOMAIN_ENTRY_RE.exec(line);
+    if (head) {
+      flushDescription();
+      current = { name: head[1], description: "", params: [] };
+      entries.push(current);
+      inParams = false;
+      continue;
+    }
+    if (!current) continue;
+    if (DOMAIN_PARAMS_RE.test(line)) {
+      flushDescription();
+      inParams = true;
+      continue;
+    }
+    const param = DOMAIN_PARAM_RE.exec(line);
+    if (param && (inParams || current.params.length > 0)) {
+      current.params.push({
+        name: param[1],
+        required: param[2] !== undefined,
+        description: param[3].trim(),
+      });
+      continue;
+    }
+    if (inParams) continue;
+    if (line === "" || line.startsWith("#")) continue;
+    descriptionLines.push(line);
+  }
+  flushDescription();
+
+  return { domain, entries };
+};
+
+// ── Anysearch 渲染 ─────────────────────────────────────────────────────────
+
+/** 每张卡片的可解析上下文：参数、结果记录与结果里的错误文案。 */
+type AnySearchContext = {
+  args: JsonRecord | null;
+  result: JsonRecord | null;
+  error?: string;
+};
+
+const anysearchContext = (tool: SnowRemoteToolCall): AnySearchContext => {
+  const args = parseJsonRecord(tool.arguments);
+  const result = parseJsonRecord(tool.result);
+  const error = result ? optional(readString(result, "error")) : undefined;
+  return { args, result, error };
+};
+
+/** 参数与结果都解析不出（半截 JSON / 空结果）时交给兜底卡。 */
+const isOpaqueAnySearch = (
+  tool: SnowRemoteToolCall,
+  ctx: AnySearchContext,
+): boolean =>
+  ctx.args === null &&
+  ctx.result === null &&
+  ((tool.result ?? "").trim() !== "" || resolveStatus(tool) === "error");
+
+/** 领域能力条目：名称 + 描述 + 参数列表（名称复用搜索结果条目标题样式）。 */
+const capabilityBlock = (entry: DomainCapability): HTMLElement => {
+  const card = el("div", "tc-web-cap");
+  const head = el("div", "tc-web-cap-head");
+  const name = textSpan("tc-web-item-title", entry.name);
+  name.title = entry.name;
+  head.append(name);
+  if (entry.params.length > 0) head.append(badge(tr("anysearch.parameters")));
+  card.append(head);
+
+  if (entry.description) {
+    card.append(el("p", "tc-web-cap-desc", entry.description));
+  }
+  if (entry.params.length > 0) {
+    const list = el("div", "tc-web-cap-params");
+    for (const param of entry.params) {
+      const row = el("div", "tc-web-cap-param");
+      row.append(textSpan("tc-web-cap-param-name", param.name));
+      if (param.required) {
+        row.append(badge(tr("anysearch.required"), { variant: "warn" }));
+      }
+      if (param.description) {
+        row.append(textSpan("tc-web-cap-param-desc", param.description));
+      }
+      list.append(row);
+    }
+    card.append(list);
+  }
+  return card;
+};
+
+const renderAnySearchSearch = (
+  tool: SnowRemoteToolCall,
+  ctx: AnySearchContext,
+): HTMLElement | null => {
+  if (isOpaqueAnySearch(tool, ctx)) return null;
+  const query = ctx.args ? optional(readString(ctx.args, "query")) : undefined;
+  const maxResults = ctx.args ? readNumber(ctx.args, "maxResults") : undefined;
+  const text = ctx.result ? mcpText(ctx.result) : undefined;
+  const parsed = text !== undefined ? parseSearchMarkdown(text) : null;
+  const items = parsed?.items ?? [];
+  const body = document.createDocumentFragment();
+
+  const params: Node[] = [];
+  if (query) params.push(kv(tr("label.query"), query, true));
+  if (maxResults !== undefined) {
+    params.push(kv(tr("label.maxResults"), String(maxResults)));
+  }
+  if (params.length) body.append(paramsHost(...params));
+
+  if (ctx.error) {
+    body.append(tcErrorRow(ctx.error));
+  } else if (items.length > 0) {
+    const shown = items.slice(0, MAX_SEARCH_ITEMS);
+    const rows: Node[] = shown.map(searchItemEl);
+    if (items.length > shown.length) {
+      rows.push(
+        hintRow(tr("search.omitted", { count: items.length - shown.length })),
+      );
+    }
+    body.append(
+      section(tr("search.results"), rowList(rows), {
+        icon: "search",
+        meta: [
+          badge(
+            tr("search.resultCount", { count: parsed?.total ?? items.length }),
+          ),
+        ],
+      }),
+    );
+    body.append(hintRow(tr("search.linkHint")));
+  } else if (tool.status === "running") {
+    body.append(noteRow("note", "search", tr("search.searching")));
+  } else if (tool.status === "pending") {
+    body.append(noteRow("note", "search", tr("search.waiting")));
+  } else {
+    body.append(noteRow("empty", "search", tr("search.noResults")));
+  }
+
+  const meta: HTMLElement[] = [];
+  if (items.length > 0) {
+    meta.push(
+      badge(
+        tr("search.resultCount", { count: parsed?.total ?? items.length }),
+        {
+          variant: "ok",
+        },
+      ),
+    );
+  }
+
+  return createToolNode({
+    tool,
+    status: resolveStatus(tool),
+    badge: tr("anysearch.op.search"),
+    display: query || argsSummary(tool.arguments),
+    displayTitle: query || undefined,
+    meta,
+    className: "tc-web-anysearch tc-web-anysearch--search",
+    bodyClass: "tc-web",
+    body,
+  });
+};
+
+const renderAnySearchBatch = (
+  tool: SnowRemoteToolCall,
+  ctx: AnySearchContext,
+): HTMLElement | null => {
+  if (isOpaqueAnySearch(tool, ctx)) return null;
+  const queries = (ctx.args ? readArray(ctx.args, "queries") : undefined) ?? [];
+  const queryLabels = queries.map((entry) => {
+    const record = isRecord(entry) ? entry : null;
+    const text = record ? readString(record, "query") : undefined;
+    return text?.trim() || undefined;
+  });
+  const text = ctx.result ? mcpText(ctx.result) : undefined;
+  const sections = text !== undefined ? parseBatchSections(text) : [];
+  const itemCount = sections.reduce(
+    (sum, entry) => sum + entry.items.length,
+    0,
+  );
+  const body = document.createDocumentFragment();
+
+  if (ctx.error) {
+    body.append(tcErrorRow(ctx.error));
+  } else if (sections.length > 0) {
+    sections.forEach((entry, index) => {
+      const rows: Node[] =
+        entry.items.length > 0
+          ? entry.items.map(searchItemEl)
+          : [noteRow("empty", "search", tr("search.noResults"))];
+      body.append(
+        section(
+          entry.query || queryLabels[index] || `#${index + 1}`,
+          rowList(rows),
+          {
+            icon: "search",
+            meta: [
+              badge(tr("search.resultCount", { count: entry.items.length }), {
+                variant: entry.items.length > 0 ? "ok" : "muted",
+              }),
+            ],
+          },
+        ),
+      );
+    });
+    body.append(hintRow(tr("search.linkHint")));
+  } else if (tool.status === "running") {
+    body.append(noteRow("note", "search", tr("search.searching")));
+  } else if (tool.status === "pending") {
+    body.append(noteRow("note", "search", tr("search.waiting")));
+  } else {
+    body.append(noteRow("empty", "search", tr("search.noResults")));
+  }
+
+  const meta: HTMLElement[] = [];
+  const count = sections.length || queryLabels.length;
+  if (count > 0) meta.push(badge(tr("anysearch.queryCount", { count })));
+  if (itemCount > 0) {
+    meta.push(
+      badge(tr("search.resultCount", { count: itemCount }), { variant: "ok" }),
+    );
+  }
+
+  return createToolNode({
+    tool,
+    status: resolveStatus(tool),
+    badge: tr("anysearch.op.batch-search"),
+    display: queryLabels[0] ?? argsSummary(tool.arguments),
+    displayTitle: queryLabels[0] ?? undefined,
+    meta,
+    className: "tc-web-anysearch tc-web-anysearch--batch-search",
+    bodyClass: "tc-web",
+    body,
+  });
+};
+
+const renderAnySearchExtract = (
+  tool: SnowRemoteToolCall,
+  ctx: AnySearchContext,
+): HTMLElement | null => {
+  if (isOpaqueAnySearch(tool, ctx)) return null;
+  const argUrl = ctx.args ? optional(readString(ctx.args, "url")) : undefined;
+  const page = ctx.result ? parseExtract(ctx.result) : null;
+  const targetUrl = page?.url || argUrl || "";
+  const content = page ? decodeEscapedNewlines(page.content) : "";
+  const body = document.createDocumentFragment();
+
+  const params: Node[] = [];
+  if (argUrl) params.push(kv(tr("label.url"), argUrl, true));
+  if (params.length) body.append(paramsHost(...params));
+
+  if (ctx.error) {
+    body.append(tcErrorRow(ctx.error));
+  } else if (page) {
+    body.append(pageCard(page.title, targetUrl));
+    if (content) {
+      body.append(
+        section(tr("fetch.preview"), tcPre(content, { maxLines: 8 }), {
+          icon: "file",
+        }),
+      );
+      body.append(
+        section(tr("fetch.fullContent"), tcPre(content, { maxLines: 40 }), {
+          icon: "file",
+        }),
+      );
+    } else {
+      body.append(noteRow("empty", "file", tr("fetch.noContent")));
+    }
+  } else if (tool.status === "running") {
+    body.append(
+      noteRow("progress", "loader-circle", tr("anysearch.extracting")),
+    );
+  } else if (tool.status === "pending") {
+    body.append(noteRow("note", "clock", tr("anysearch.waitingExtract")));
+  } else {
+    body.append(noteRow("empty", "file", tr("fetch.noContent")));
+  }
+
+  const meta: HTMLElement[] = [];
+  if (page) {
+    meta.push(badge(tr("anysearch.charCount", { count: content.length })));
+  }
+
+  return createToolNode({
+    tool,
+    status: resolveStatus(tool),
+    badge: tr("anysearch.op.extract"),
+    display: targetUrl ? hostOf(targetUrl) : argsSummary(tool.arguments),
+    displayTitle: targetUrl || undefined,
+    meta,
+    className: "tc-web-anysearch tc-web-anysearch--extract",
+    bodyClass: "tc-web",
+    body,
+  });
+};
+
+const renderAnySearchDomains = (
+  tool: SnowRemoteToolCall,
+  ctx: AnySearchContext,
+): HTMLElement | null => {
+  if (isOpaqueAnySearch(tool, ctx)) return null;
+  const argDomains = (
+    (ctx.args ? readArray(ctx.args, "domains") : undefined) ?? []
+  ).filter(
+    (item): item is string => typeof item === "string" && item.trim() !== "",
+  );
+  const text = ctx.result ? mcpText(ctx.result) : undefined;
+  const entries =
+    (text !== undefined ? parseDomains(text) : null)?.entries ?? [];
+  const body = document.createDocumentFragment();
+
+  if (ctx.error) {
+    body.append(tcErrorRow(ctx.error));
+  } else if (entries.length > 0) {
+    body.append(rowList(entries.map(capabilityBlock)));
+  } else if (tool.status === "running") {
+    body.append(noteRow("note", "search", tr("search.searching")));
+  } else if (tool.status === "pending") {
+    body.append(noteRow("note", "search", tr("search.waiting")));
+  } else {
+    body.append(noteRow("empty", "search", tr("search.noResults")));
+  }
+
+  const meta: HTMLElement[] = [];
+  if (entries.length > 0) {
+    meta.push(
+      badge(tr("anysearch.capabilityCount", { count: entries.length })),
+    );
+  }
+
+  return createToolNode({
+    tool,
+    status: resolveStatus(tool),
+    badge: tr("anysearch.op.get-sub-domains"),
+    display:
+      argDomains.length > 0
+        ? argDomains.join(", ")
+        : argsSummary(tool.arguments),
+    displayTitle: argDomains.length > 0 ? argDomains.join(", ") : undefined,
+    meta,
+    className: "tc-web-anysearch tc-web-anysearch--sub-domains",
+    bodyClass: "tc-web",
+    body,
+  });
+};
+
+/**
+ * Anysearch（外部 MCP）卡片：先归一化操作名再分派；未登记的操作、以及参数与
+ * 结果都解析不出的情况返回 null，交给后续候选与兜底卡。
+ */
+const renderAnysearch = (tool: SnowRemoteToolCall): HTMLElement | null => {
+  const op = anysearchOpOf(tool.name);
+  if (!isAnySearchOp(op)) return null;
+  const ctx = anysearchContext(tool);
+  switch (op) {
+    case "search":
+      return renderAnySearchSearch(tool, ctx);
+    case "batch-search":
+      return renderAnySearchBatch(tool, ctx);
+    case "extract":
+      return renderAnySearchExtract(tool, ctx);
+    case "get-sub-domains":
+      return renderAnySearchDomains(tool, ctx);
+    default:
+      return null;
+  }
+};
+
 // ── 模块装配 ───────────────────────────────────────────────────────────────
 
 /**
  * 模块注册表（契约见 tools/types.ts 的 ToolModule）：
- * 三个精确名 + browser- 前缀整族接管（未登记的操作返回 null 回退兜底卡）。
+ * 三个精确名 + browser- / anysearch- 前缀族接管（未登记的操作返回 null 回退兜底卡）。
+ * 前缀按长度降序派发，`anysearch-` / `anysearch_` 与 `browser-` 互不重叠。
  */
 export const webModule: ToolModule = {
   renderers: {
@@ -2215,5 +2802,9 @@ export const webModule: ToolModule = {
     "websearch-websearch-fetch": renderFetch,
     "imagegen-generate": renderImageGen,
   },
-  prefixes: [{ prefix: "browser-", render: renderBrowser }],
+  prefixes: [
+    { prefix: "browser-", render: renderBrowser },
+    { prefix: "anysearch-", render: renderAnysearch },
+    { prefix: "anysearch_", render: renderAnysearch },
+  ],
 };

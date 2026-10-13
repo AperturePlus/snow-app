@@ -38,6 +38,7 @@ import {
 } from "./chatInput/fileTagUtils";
 import { useTextSelectionQuote } from "./chatMessages/hooks/useTextSelectionQuote";
 import { directoryIdToPath } from "./chatMessages/utils/conversationHelpers";
+import { registerSessionDraftSaver } from "./chatInput/chatInputDraftBridge";
 
 type ChatContentProps = {
   activeDirectory?: WorkspaceDirectoryRecord | null;
@@ -172,6 +173,12 @@ const ChatContentBody = ({
       setIsFloatDismissed(true);
     }
   }, [isFloating]);
+
+  useEffect(() => {
+    return registerSessionDraftSaver((_sessionKey, conversationId, content) => {
+      saveInputDraft(conversationId ?? undefined, content);
+    });
+  }, [saveInputDraft]);
 
   const hasHistoryContent = hasMessages;
 

@@ -26,7 +26,6 @@ export { SkillToolCall } from "./SkillToolCall";
 export { ConfigToolCall } from "./ConfigToolCall";
 export { AppLogsToolCall } from "./AppLogsToolCall";
 export { AppControlToolCall } from "./AppControlToolCall";
-export { DbxToolCall } from "./DbxToolCall";
 export { WorkflowToolCall } from "./WorkflowToolCall";
 export { GenericToolCall } from "./GenericToolCall";
 export { HookExecutionUI } from "./HookExecutionUI";

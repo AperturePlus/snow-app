@@ -420,12 +420,25 @@ export const FilesystemReadToolCall = ({
       displayNameDataPath={isMulti ? undefined : filePath}
       status={effectiveStatus}
       meta={
-        rangeLabel ? (
-          <span className="tool-call-line-range">
-            <Hash size={10} aria-hidden="true" />
-            {rangeLabel}
-          </span>
-        ) : null
+        <>
+          {rangeLabel ? (
+            <span className="tool-call-line-range">
+              <Hash size={10} aria-hidden="true" />
+              {rangeLabel}
+            </span>
+          ) : null}
+          {toolCall.fromCache ? (
+            <span
+              className="tool-call-cache-badge"
+              title={t("toolCall.common.fromCacheHint", {
+                defaultValue:
+                  "已复用此前相同调用的读取结果，未重复读取物理文件",
+              })}
+            >
+              {t("toolCall.common.fromCache", { defaultValue: "已复用" })}
+            </span>
+          ) : null}
+        </>
       }
       className="tool-call-filesystem-read"
     >

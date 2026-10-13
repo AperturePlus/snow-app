@@ -50,6 +50,7 @@ const buildScriptPluginView = (
   entry: "",
   panels: [],
   messageFooters: [],
+  toolCallRenderers: [],
   locales: {},
   styles: [],
   privacy: Array.isArray(info.privacy)

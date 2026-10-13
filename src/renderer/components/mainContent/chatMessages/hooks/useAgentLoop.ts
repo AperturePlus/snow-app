@@ -1352,15 +1352,18 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
                 ? {
                     ...currentMessage,
                     toolCalls: [...duplicateReadonlyResults.entries()].reduce(
-                      (currentToolCalls, [toolCall, result]) =>
+                      (currentToolCalls, [toolCall, cacheItem]) =>
                         updateFirstMatchingToolCall(
                           currentToolCalls,
                           toolCall,
                           ["pending", "running"],
                           (currentToolCall) => ({
                             ...currentToolCall,
-                            status: "completed" as const,
-                            result,
+                            status: cacheItem.isLoopAbort
+                              ? ("error" as const)
+                              : ("completed" as const),
+                            result: cacheItem.result,
+                            fromCache: cacheItem.fromCache,
                           }),
                         ),
                       currentMessage.toolCalls,
@@ -1431,12 +1434,12 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         }[] = [];
         let executedResultIndex = 0;
         for (const toolCall of toolCalls) {
-          const duplicateResult = duplicateReadonlyResults.get(toolCall);
-          if (duplicateResult !== undefined) {
+          const duplicateItem = duplicateReadonlyResults.get(toolCall);
+          if (duplicateItem !== undefined) {
             structuredToolResults.push({
               name: toolCall.name,
               callId: toolCall.callId || "",
-              result: duplicateResult,
+              result: duplicateItem.result,
             });
             continue;
           }
@@ -1510,14 +1513,14 @@ export const useAgentLoop = (params: UseAgentLoopParams) => {
         ]);
         const toolResultsJson = JSON.stringify(structuredToolResults);
 
-        // A duplicate-only batch has no new work to execute. Preserve its
-        // structured results and request one tool-free continuation so the
-        // provider can summarize the already available evidence. The recovery
-        // instruction is request-local and never enters chat history.
-        if (
-          duplicateReadonlyResults.size > 0 &&
-          executableToolCalls.length === 0
-        ) {
+        // 仅当只读工具调用触发死循环熔断（isLoopAbort: true），且没有任何其他可执行工具时，
+        // 才触发一次 tool-free 的恢复请求以阻断死循环。
+        // 正常的只读缓存命中（fromCache: true）已复用返回真实内容，允许模型像普通调用完成
+        // 一样自然推进后续决策，绝不在此阶段禁用工具。
+        const hasLoopAbort = [...duplicateReadonlyResults.values()].some(
+          (item) => item.isLoopAbort,
+        );
+        if (hasLoopAbort && executableToolCalls.length === 0) {
           if (readonlyGuard.getDuplicateRecoveryAttempted()) {
             runFailed = true;
             if (response.conversationId) {

@@ -238,7 +238,12 @@ pub async fn resolve_symbol_or_coords(
     if !local.is_empty() {
         return Ok(resolve_document_matches(file_path, symbol, local).await);
     }
-    let workspace = session.workspace_symbols(symbol).await?;
+    let mut workspace = session.workspace_symbols(symbol).await?;
+    if session.lang == "go" {
+        let scope = detect::find_lang_root(&session.project_root, file_path.parent(), "go")
+            .unwrap_or_else(|| file_path.parent().unwrap_or(file_path).to_path_buf());
+        super::workspace_queries::scope_go_response(&mut workspace, &scope, false);
+    }
     let mut matches = Vec::new();
     collect_matching_workspace_symbols(
         &workspace,
@@ -433,7 +438,11 @@ pub async fn resolve_symbol_workspace_global_in_root(
                     .get_or_start(&config.lang, &root, project_id)
                     .await?;
                 let mut guard = session.lock().await;
-                guard.workspace_symbols(symbol).await
+                let mut value = guard.workspace_symbols_for_root(symbol, &root).await?;
+                if config.lang == "go" {
+                    super::workspace_queries::scope_go_response(&mut value, &project_root, false);
+                }
+                Ok::<_, LspError>(value)
             }
             .await;
             match result {
@@ -527,6 +536,9 @@ mod tests {
         ));
         assert!(!workspace_response_complete(
             &json!({"symbols":[],"warnings":["failed"]})
+        ));
+        assert!(!workspace_response_complete(
+            &json!({"symbols":[],"incomplete":true})
         ));
         assert!(workspace_response_complete(
             &json!({"symbols":[],"total":0})

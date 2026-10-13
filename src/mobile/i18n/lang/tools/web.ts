@@ -46,6 +46,19 @@ export const webEn: Record<string, string> = {
   "remote.toolCall.web.search.blockedTitle": "Blocked results",
   "remote.toolCall.web.search.blockedRules": "Matched rules",
 
+  // ── anysearch-*（外部 MCP：检索 / 网页提取 / 批量检索 / 子领域能力） ──
+  "remote.toolCall.web.anysearch.op.search": "Search",
+  "remote.toolCall.web.anysearch.op.extract": "Page extract",
+  "remote.toolCall.web.anysearch.op.batch-search": "Batch search",
+  "remote.toolCall.web.anysearch.op.get-sub-domains": "Sub-domains",
+  "remote.toolCall.web.anysearch.queryCount": "{{count}} queries",
+  "remote.toolCall.web.anysearch.capabilityCount": "{{count}} capabilities",
+  "remote.toolCall.web.anysearch.charCount": "{{count}} chars",
+  "remote.toolCall.web.anysearch.parameters": "Parameters",
+  "remote.toolCall.web.anysearch.required": "required",
+  "remote.toolCall.web.anysearch.extracting": "Extracting page…",
+  "remote.toolCall.web.anysearch.waitingExtract": "Waiting to extract",
+
   // ── websearch-fetch ──
   "remote.toolCall.web.fetch.name": "Fetch page",
   "remote.toolCall.web.fetch.fetching": "Fetching page…",
@@ -223,6 +236,19 @@ export const webZhCN: Record<string, string> = {
   "remote.toolCall.web.search.blockedTitle": "被屏蔽的结果",
   "remote.toolCall.web.search.blockedRules": "命中规则",
 
+  // ── anysearch-*（外部 MCP：检索 / 网页提取 / 批量检索 / 子领域能力） ──
+  "remote.toolCall.web.anysearch.op.search": "检索",
+  "remote.toolCall.web.anysearch.op.extract": "网页提取",
+  "remote.toolCall.web.anysearch.op.batch-search": "批量检索",
+  "remote.toolCall.web.anysearch.op.get-sub-domains": "子领域能力",
+  "remote.toolCall.web.anysearch.queryCount": "{{count}} 组查询",
+  "remote.toolCall.web.anysearch.capabilityCount": "{{count}} 项能力",
+  "remote.toolCall.web.anysearch.charCount": "{{count}} 字符",
+  "remote.toolCall.web.anysearch.parameters": "参数",
+  "remote.toolCall.web.anysearch.required": "必填",
+  "remote.toolCall.web.anysearch.extracting": "正在提取网页…",
+  "remote.toolCall.web.anysearch.waitingExtract": "等待提取",
+
   // ── websearch-fetch ──
   "remote.toolCall.web.fetch.name": "网页抓取",
   "remote.toolCall.web.fetch.fetching": "正在抓取…",
@@ -395,6 +421,19 @@ export const webZhTW: Record<string, string> = {
   "remote.toolCall.web.search.blocked": "已封鎖 {{count}} 筆",
   "remote.toolCall.web.search.blockedTitle": "被封鎖的結果",
   "remote.toolCall.web.search.blockedRules": "命中規則",
+
+  // ── anysearch-*（外部 MCP：檢索 / 網頁擷取 / 批次檢索 / 子領域能力） ──
+  "remote.toolCall.web.anysearch.op.search": "檢索",
+  "remote.toolCall.web.anysearch.op.extract": "網頁擷取",
+  "remote.toolCall.web.anysearch.op.batch-search": "批次檢索",
+  "remote.toolCall.web.anysearch.op.get-sub-domains": "子領域能力",
+  "remote.toolCall.web.anysearch.queryCount": "{{count}} 組查詢",
+  "remote.toolCall.web.anysearch.capabilityCount": "{{count}} 項能力",
+  "remote.toolCall.web.anysearch.charCount": "{{count}} 字元",
+  "remote.toolCall.web.anysearch.parameters": "參數",
+  "remote.toolCall.web.anysearch.required": "必填",
+  "remote.toolCall.web.anysearch.extracting": "正在擷取網頁…",
+  "remote.toolCall.web.anysearch.waitingExtract": "等待擷取",
 
   // ── websearch-fetch ──
   "remote.toolCall.web.fetch.name": "網頁抓取",

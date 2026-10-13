@@ -20,3 +20,34 @@ export const writeBackToChatInput = (content: string): boolean => {
   sink(content);
   return true;
 };
+
+type SessionDraftSaver = (
+  sessionKey: string,
+  conversationId: string | null,
+  content: string,
+) => void;
+
+let sessionDraftSaver: SessionDraftSaver | null = null;
+
+export const registerSessionDraftSaver = (
+  handler: SessionDraftSaver,
+): (() => void) => {
+  sessionDraftSaver = handler;
+  return () => {
+    if (sessionDraftSaver === handler) {
+      sessionDraftSaver = null;
+    }
+  };
+};
+
+export const persistSessionDraft = (
+  sessionKey: string,
+  conversationId: string | null,
+  content: string,
+): boolean => {
+  if (!sessionDraftSaver) {
+    return false;
+  }
+  sessionDraftSaver(sessionKey, conversationId, content);
+  return true;
+};

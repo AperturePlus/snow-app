@@ -1,237 +1,415 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AppWindow,
+  Activity,
   ArrowDown,
   ArrowUp,
+  Bell,
   Boxes,
   Cpu,
+  Layers,
   Loader2,
   MemoryStick,
-  MonitorCog,
   RefreshCw,
-  Wrench,
-  XCircle,
-  type LucideIcon,
+  Search,
+  X,
 } from "lucide-react";
-
 import { useI18n } from "../../i18n";
 import { ConfirmDialog } from "../common/ConfirmDialog";
-import type {
-  TaskManagerProcess,
-  TaskManagerProcessKind,
-} from "../../../preload";
+import { LspResourcePanel } from "../sidebar/lspSettings/LspResourcePanel";
+import type { TaskManagerProcess } from "../../../preload";
+import {
+  associateLspProcesses,
+  captureSessions,
+  filterTaskProcesses,
+  LSP_REFRESH_INTERVAL_MS,
+  normalizeTaskProject,
+  processIdentity,
+  reconcileSessionRoots,
+  SNAPSHOT_FRESHNESS_MS,
+  summarizeProcesses,
+  uniqueProcesses,
+  type SessionSnapshot,
+  type TaskManagerRow,
+} from "./taskManagerModel";
+import {
+  MiniSparkline,
+  TaskManagerPerformancePanel,
+  useUsageTrend,
+} from "./TaskManagerTrend";
+import { TaskManagerProcessTable } from "./TaskManagerProcessTable";
+import { TaskManagerSessions } from "./TaskManagerSessions";
+import { TaskManagerAlerts } from "./TaskManagerAlerts";
+import {
+  CONTINUOUS_SAMPLE_GAP_MS,
+  TREND_WINDOW_MS,
+  type SampleStamp,
+} from "./taskManagerMonitoring";
+import {
+  formatTaskBytes,
+  formatTaskTotalCpu,
+  taskDisplayName,
+  taskProjectName,
+} from "./taskManagerPresentation";
 
-/** 自动刷新间隔：与 Chrome 任务管理器同量级，够实时又不会明显增加开销。 */
 const REFRESH_INTERVAL_MS = 1000;
-
 type SortField = "name" | "kind" | "pid" | "cpu" | "memory" | "threads";
 type SortDirection = "asc" | "desc";
+type TaskManagerTab = "processes" | "performance" | "sessions" | "alerts";
 
-/** 进程类型 → i18n 键（标签文案在渲染时解析）。 */
-const KIND_LABEL_KEYS: Record<TaskManagerProcessKind, string> = {
-  browser: "taskManager.kindBrowser",
-  renderer: "taskManager.kindRenderer",
-  gpu: "taskManager.kindGpu",
-  utility: "taskManager.kindUtility",
-  child: "taskManager.kindChild",
-};
-
-/** 取不到系统图标时的回退图标（按进程类型区分）。 */
-const KIND_FALLBACK_ICONS: Record<TaskManagerProcessKind, LucideIcon> = {
-  browser: Cpu,
-  renderer: AppWindow,
-  gpu: MonitorCog,
-  utility: Wrench,
-  child: Boxes,
-};
-
-const ProcessFallbackIcon = ({
-  kind,
-  className,
-}: {
-  kind: TaskManagerProcessKind;
-  className?: string;
-}): React.JSX.Element => {
-  const Icon = KIND_FALLBACK_ICONS[kind];
-  return (
-    <Icon
-      size={14}
-      strokeWidth={1.7}
-      className={className}
-      aria-hidden="true"
-    />
-  );
-};
-
-const formatBytes = (bytes: number): string => {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-  if (bytes < 1024 * 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-};
-
-/** CPU 百分比：-1 表示本次采样没有基线（首次采集），显示占位符。 */
-const formatCpu = (percent: number): string =>
-  percent < 0 ? "—" : `${percent.toFixed(1)}%`;
-
-/** 进程在界面上的展示名：优先语义标签（页面标题 / 服务名），回退可执行文件名。 */
-const displayName = (process: TaskManagerProcess): string =>
-  process.title || process.serviceName || process.name;
-
-type TaskManagerContentProps = {
-  /** tab 是否为当前激活项：非激活时暂停轮询，避免后台空转。 */
-  isActive: boolean;
-};
-
-/**
- * 应用任务管理器面板。
- *
- * 数据来自主进程 `processes:snapshot`（Rust 采集进程树事实 + Electron 补语义），
- * 仅在面板可见且窗口未被隐藏时按固定间隔轮询；CPU 百分比本身是两次采样之差，
- * 因此轮询间隔同时决定了 CPU 数值的口径。
- */
+/** One process sampler serves rows, scoped trends and optional inline alerts. */
 export const TaskManagerContent = ({
   isActive,
-}: TaskManagerContentProps): React.JSX.Element => {
-  const { t } = useI18n();
+}: {
+  isActive: boolean;
+}): React.JSX.Element => {
+  const { t, locale } = useI18n();
   const [processes, setProcesses] = useState<TaskManagerProcess[]>([]);
+  const [sessionSnapshot, setSessionSnapshot] =
+    useState<SessionSnapshot | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  const [lspError, setLspError] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [hidden, setHidden] = useState(document.hidden);
+  const [sampledAtMs, setSampledAtMs] = useState(0);
+  const [now, setNow] = useState(Date.now());
+  const [stamp, setStamp] = useState<SampleStamp | null>(null);
+  const [continuity, setContinuity] = useState(0);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<"all" | "lsp">("all");
+  const [project, setProject] = useState("");
+  const [activeTab, setActiveTab] = useState<TaskManagerTab>("processes");
   const [sortField, setSortField] = useState<SortField>("memory");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [pendingKill, setPendingKill] = useState<TaskManagerProcess | null>(
     null,
   );
   const [isKilling, setIsKilling] = useState(false);
+  const [sessionBusy, setSessionBusy] = useState(false);
   const [killError, setKillError] = useState<string | null>(null);
-  // 防止慢请求堆积：同一时刻只允许一个在途请求。
   const inFlightRef = useRef(false);
-
-  const refresh = useCallback(async (): Promise<void> => {
-    if (inFlightRef.current) {
-      return;
-    }
-    inFlightRef.current = true;
-    try {
-      const snapshot = await window.snow.getProcessSnapshot();
-      setProcesses(snapshot);
-      setHasError(false);
-    } catch {
-      setHasError(true);
-    } finally {
-      inFlightRef.current = false;
-      setIsLoading(false);
-    }
+  const forceQueuedRef = useRef(false);
+  const refreshWaitersRef = useRef<Array<() => void>>([]);
+  const refreshRef = useRef<((force?: boolean) => Promise<void>) | null>(null);
+  const lastLspAttemptRef = useRef(0);
+  const mountedRef = useRef(false);
+  const activeRef = useRef(isActive);
+  const sampledRef = useRef(0);
+  const sequenceRef = useRef(0);
+  const continuityRef = useRef(0);
+  const scopeKey = JSON.stringify([
+    query.trim().toLocaleLowerCase(),
+    filter,
+    project,
+  ]);
+  const scopeRef = useRef(scopeKey);
+  scopeRef.current = scopeKey;
+  activeRef.current = isActive;
+  const breakSampling = useCallback((): void => {
+    continuityRef.current += 1;
+    setContinuity(continuityRef.current);
   }, []);
 
-  // 首次挂载立即采集一次；激活状态下按固定间隔轮询。
+  const refresh = useCallback(
+    async (forceLsp = false): Promise<void> => {
+      if (!activeRef.current || document.hidden) return;
+      if (inFlightRef.current) {
+        if (!forceLsp) return;
+        forceQueuedRef.current = true;
+        return new Promise<void>((resolve) =>
+          refreshWaitersRef.current.push(resolve),
+        );
+      }
+      inFlightRef.current = true;
+      const requestScope = scopeRef.current;
+      const requestContinuity = continuityRef.current;
+      const fetchLsp =
+        forceLsp ||
+        Date.now() - lastLspAttemptRef.current >= LSP_REFRESH_INTERVAL_MS;
+      if (fetchLsp) lastLspAttemptRef.current = Date.now();
+      try {
+        const [processResult, sessionResult] = await Promise.allSettled([
+          window.snow
+            .getProcessSnapshot()
+            .then((value) => ({ value, receivedAtMs: Date.now() })),
+          fetchLsp
+            ? window.snow
+                .listLspSessionStatuses()
+                .then((value) => ({ value, receivedAtMs: Date.now() }))
+            : Promise.resolve(null),
+        ]);
+        if (!mountedRef.current) return;
+        const snapshot =
+          processResult.status === "fulfilled"
+            ? uniqueProcesses(processResult.value.value)
+            : null;
+        if (snapshot && processResult.status === "fulfilled") {
+          setProcesses(snapshot);
+          sampledRef.current = processResult.value.receivedAtMs;
+          setSampledAtMs(processResult.value.receivedAtMs);
+          setHasError(false);
+          sequenceRef.current += 1;
+          setStamp({
+            id: sequenceRef.current,
+            atMs: processResult.value.receivedAtMs,
+            scopeKey: requestScope,
+            continuity: requestContinuity,
+          });
+        } else {
+          setHasError(true);
+          breakSampling();
+        }
+        if (fetchLsp) {
+          if (
+            sessionResult.status === "fulfilled" &&
+            sessionResult.value !== null
+          ) {
+            setSessionSnapshot(
+              captureSessions(
+                sessionResult.value.value,
+                snapshot ?? [],
+                sessionResult.value.receivedAtMs,
+              ),
+            );
+            setLspError(false);
+          } else {
+            setLspError(true);
+            if (snapshot)
+              setSessionSnapshot((previous) =>
+                previous ? reconcileSessionRoots(previous, snapshot) : null,
+              );
+          }
+        } else if (snapshot) {
+          setSessionSnapshot((previous) =>
+            previous ? reconcileSessionRoots(previous, snapshot) : null,
+          );
+        }
+        setNow(Date.now());
+      } finally {
+        inFlightRef.current = false;
+        if (mountedRef.current) setIsLoading(false);
+        const queued = forceQueuedRef.current;
+        forceQueuedRef.current = false;
+        const waiters = refreshWaitersRef.current.splice(0);
+        if (
+          queued &&
+          mountedRef.current &&
+          activeRef.current &&
+          !document.hidden
+        ) {
+          void refreshRef
+            .current?.(true)
+            .finally(() => waiters.forEach((resolve) => resolve()));
+        } else waiters.forEach((resolve) => resolve());
+      }
+    },
+    [breakSampling],
+  );
+  refreshRef.current = refresh;
+  const forceRefresh = useCallback(() => refresh(true), [refresh]);
+
   useEffect(() => {
-    if (!isActive) {
-      return undefined;
-    }
-    void refresh();
+    mountedRef.current = true;
+    const onVisibility = (): void => {
+      setHidden(document.hidden);
+      setNow(Date.now());
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      mountedRef.current = false;
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+  useEffect(() => {
+    breakSampling();
+  }, [scopeKey, breakSampling]);
+  useEffect(() => {
+    breakSampling();
+    if (!isActive || hidden) return;
+    setNow(Date.now());
     if (!autoRefresh) {
-      return undefined;
+      if (!sampledRef.current) void refresh(true);
+      return;
     }
-    const timer = window.setInterval(() => {
-      // 窗口被隐藏时跳过采样：后台不需要刷新数值（也避免无谓的系统调用）。
-      if (!document.hidden) {
-        void refresh();
-      }
-    }, REFRESH_INTERVAL_MS);
+    void refresh(true);
+    const timer = window.setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [isActive, autoRefresh, refresh]);
+  }, [isActive, hidden, autoRefresh, refresh, breakSampling]);
+  // Finite expiry events only: age retained data during pauses/slow requests without fetching.
+  useEffect(() => {
+    if (!isActive || hidden) return;
+    const currentTime = Date.now();
+    const samples = [
+      sampledAtMs,
+      sessionSnapshot?.receivedAtMs ?? 0,
+      ...(sessionSnapshot?.sessions.map(
+        (session) => session.resources?.sampledAtMs ?? 0,
+      ) ?? []),
+    ];
+    const expiries = samples.flatMap((sample) => [
+      sample + SNAPSHOT_FRESHNESS_MS + 1,
+      sample + TREND_WINDOW_MS + 1,
+    ]);
+    expiries.push(sampledAtMs + CONTINUOUS_SAMPLE_GAP_MS + 1);
+    const next = expiries.filter((expiry) => expiry > currentTime);
+    if (!next.length) return;
+    const timer = window.setTimeout(
+      () => setNow(Date.now()),
+      Math.min(...next) - currentTime,
+    );
+    return () => window.clearTimeout(timer);
+  }, [isActive, hidden, sampledAtMs, sessionSnapshot, now]);
 
-  const summary = useMemo(() => {
-    let memory = 0;
-    let cpu = 0;
-    let hasCpu = false;
-    for (const process of processes) {
-      memory += process.memoryBytes;
-      if (process.cpuPercent >= 0) {
-        cpu += process.cpuPercent;
-        hasCpu = true;
-      }
+  const processStale =
+    hasError || !sampledAtMs || now - sampledAtMs > SNAPSHOT_FRESHNESS_MS;
+  const sessionsStale =
+    lspError ||
+    !sessionSnapshot ||
+    now - sessionSnapshot.receivedAtMs > SNAPSHOT_FRESHNESS_MS;
+  const rows = useMemo(
+    () =>
+      associateLspProcesses(
+        processes,
+        sessionSnapshot,
+        now,
+        processStale || sessionsStale,
+      ),
+    [processes, sessionSnapshot, now, processStale, sessionsStale],
+  );
+  const visibleRows = useMemo(
+    () => filterTaskProcesses(rows, { query, kind: filter, project }),
+    [rows, query, filter, project],
+  );
+  const summary = useMemo(() => summarizeProcesses(visibleRows), [visibleRows]);
+  const scopeKnown =
+    !processStale &&
+    (!(filter === "lsp" || project || query.trim()) || !sessionsStale);
+  const usageSamples = useUsageTrend({
+    stamp,
+    scopeKey,
+    summary,
+    scopeKnown,
+    continuity,
+    now,
+  });
+  const groups = useMemo(() => {
+    const grouped = new Map<
+      NonNullable<TaskManagerRow["lspSession"]>,
+      TaskManagerRow[]
+    >();
+    for (const row of visibleRows) {
+      if (!row.lspSession) continue;
+      const group = grouped.get(row.lspSession) ?? [];
+      group.push(row);
+      grouped.set(row.lspSession, group);
     }
-    return { memory, cpu, hasCpu, count: processes.length };
-  }, [processes]);
-
+    return grouped;
+  }, [visibleRows]);
+  const search = query.trim().toLocaleLowerCase();
+  const sessions = (sessionSnapshot?.sessions ?? []).filter(
+    (session) =>
+      (!project || normalizeTaskProject(session.projectRoot) === project) &&
+      (!search ||
+        groups.has(session) ||
+        [session.lang, session.projectRoot, session.resources?.pid]
+          .join(" ")
+          .toLocaleLowerCase()
+          .includes(search)),
+  );
+  const projects = useMemo(() => {
+    const roots = new Map<string, string>();
+    for (const session of sessionSnapshot?.sessions ?? [])
+      roots.set(normalizeTaskProject(session.projectRoot), session.projectRoot);
+    return [...roots.entries()].sort((left, right) =>
+      left[1].localeCompare(right[1]),
+    );
+  }, [sessionSnapshot]);
+  const selectProject = useCallback(
+    (root: string): void => setProject(normalizeTaskProject(root)),
+    [],
+  );
   const sortedProcesses = useMemo(() => {
     const factor = sortDirection === "asc" ? 1 : -1;
-    const compare = (
-      left: TaskManagerProcess,
-      right: TaskManagerProcess,
-    ): number => {
+    return [...visibleRows].sort((left, right) => {
+      let compared = 0;
       switch (sortField) {
         case "name":
-          return displayName(left).localeCompare(displayName(right)) * factor;
+          compared = taskDisplayName(left).localeCompare(
+            taskDisplayName(right),
+          );
+          break;
         case "kind":
-          return left.kind.localeCompare(right.kind) * factor;
+          compared = left.kind.localeCompare(right.kind);
+          break;
         case "pid":
-          return (left.pid - right.pid) * factor;
+          compared = left.pid - right.pid;
+          break;
         case "cpu":
-          return (left.cpuPercent - right.cpuPercent) * factor;
+          compared = left.cpuPercent - right.cpuPercent;
+          break;
         case "threads":
-          return (left.threadCount - right.threadCount) * factor;
-        case "memory":
+          compared = left.threadCount - right.threadCount;
+          break;
         default:
-          return (left.memoryBytes - right.memoryBytes) * factor;
+          compared = left.memoryBytes - right.memoryBytes;
       }
-    };
-    return [...processes].sort(compare);
-  }, [processes, sortField, sortDirection]);
-
+      return compared * factor || left.pid - right.pid;
+    });
+  }, [visibleRows, sortField, sortDirection]);
   const handleSort = (field: SortField): void => {
-    if (field === sortField) {
+    if (field === sortField)
       setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
-      return;
+    else {
+      setSortField(field);
+      setSortDirection(field === "name" || field === "kind" ? "asc" : "desc");
     }
-    setSortField(field);
-    // 数值列默认降序（先看占用大户），文本列默认升序。
-    setSortDirection(field === "name" || field === "kind" ? "asc" : "desc");
   };
-
+  const killLockRef = useRef(false);
   const handleConfirmKill = async (): Promise<void> => {
-    if (!pendingKill) {
+    if (!pendingKill || killLockRef.current || sessionBusy) return;
+    const current = processes.find(
+      (process) => process.pid === pendingKill.pid,
+    );
+    if (
+      hasError ||
+      Date.now() - sampledRef.current > SNAPSHOT_FRESHNESS_MS ||
+      !current?.killable ||
+      processIdentity(current) !== processIdentity(pendingKill)
+    ) {
+      setKillError(t("taskManager.processChanged"));
       return;
     }
+    killLockRef.current = true;
     setIsKilling(true);
     setKillError(null);
     try {
       await window.snow.killProcessTree(pendingKill.pid);
       setPendingKill(null);
-      await refresh();
+      breakSampling();
+      await refresh(true);
     } catch (error) {
       setKillError(error instanceof Error ? error.message : String(error));
     } finally {
+      killLockRef.current = false;
       setIsKilling(false);
     }
   };
-
-  const renderSortIcon = (field: SortField): React.ReactNode => {
-    if (field !== sortField) {
-      return null;
-    }
-    return sortDirection === "asc" ? (
-      <ArrowUp size={11} strokeWidth={2} aria-hidden="true" />
-    ) : (
-      <ArrowDown size={11} strokeWidth={2} aria-hidden="true" />
-    );
-  };
-
   const sortableHeader = (
     field: SortField,
     label: string,
     className: string,
   ): React.ReactNode => (
-    <th className={className}>
+    <th
+      className={className}
+      scope="col"
+      aria-sort={
+        field === sortField
+          ? sortDirection === "asc"
+            ? "ascending"
+            : "descending"
+          : "none"
+      }
+    >
       <button
         type="button"
         className="task-manager-sort-btn"
@@ -239,170 +417,394 @@ export const TaskManagerContent = ({
         title={t("taskManager.sortBy", { values: { column: label } })}
       >
         <span>{label}</span>
-        {renderSortIcon(field)}
+        {field === sortField &&
+          (sortDirection === "asc" ? (
+            <ArrowUp size={11} aria-hidden="true" />
+          ) : (
+            <ArrowDown size={11} aria-hidden="true" />
+          ))}
       </button>
     </th>
   );
-
+  const time = (value: number): string =>
+    new Date(value).toLocaleTimeString(locale);
   return (
     <div className="task-manager">
-      <div className="task-manager-toolbar">
-        <div className="task-manager-summary">
-          <span className="task-manager-summary-item">
-            {t("taskManager.processCount", {
-              values: { count: summary.count },
-            })}
-          </span>
-          <span className="task-manager-summary-item">
-            <MemoryStick size={12} strokeWidth={1.8} aria-hidden="true" />
-            {formatBytes(summary.memory)}
-          </span>
-          <span className="task-manager-summary-item">
-            <Cpu size={12} strokeWidth={1.8} aria-hidden="true" />
-            {summary.hasCpu ? `${summary.cpu.toFixed(1)}%` : "—"}
-          </span>
-        </div>
-        <label className="toggle-switch task-manager-auto-refresh">
-          <span>{t("taskManager.autoRefresh")}</span>
-          <input
-            type="checkbox"
-            checked={autoRefresh}
-            onChange={(event) => setAutoRefresh(event.target.checked)}
-          />
-          <span className="toggle-slider" />
-        </label>
+      {/* 顶部指标概览卡片 */}
+      <div
+        className="task-manager-summary"
+        aria-label={t("taskManager.visibleTotals")}
+      >
         <button
           type="button"
-          className="task-manager-refresh-btn"
-          onClick={() => void refresh()}
-          title={t("taskManager.refresh")}
+          className={`task-manager-stat-card ${activeTab === "processes" ? "is-selected" : ""}`}
+          onClick={() => setActiveTab("processes")}
         >
-          <RefreshCw size={13} strokeWidth={1.8} aria-hidden="true" />
-          <span>{t("taskManager.refresh")}</span>
+          <div className="task-manager-stat-icon is-boxes">
+            <Boxes size={16} aria-hidden="true" />
+          </div>
+          <div className="task-manager-stat-info">
+            <span className="task-manager-stat-label">
+              {t("taskManager.visibleProcesses")}
+            </span>
+            <strong className="task-manager-stat-num">{summary.count}</strong>
+            <span className="task-manager-stat-sub">
+              {visibleRows.length === processes.length
+                ? `${t("taskManager.processCount", { values: { count: processes.length } })}`
+                : `${visibleRows.length} / ${processes.length}`}
+            </span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          className={`task-manager-stat-card ${activeTab === "performance" ? "is-selected" : ""}`}
+          onClick={() => setActiveTab("performance")}
+        >
+          <div className="task-manager-stat-icon is-mem">
+            <MemoryStick size={16} aria-hidden="true" />
+          </div>
+          <div className="task-manager-stat-info">
+            <span className="task-manager-stat-label">
+              {t("taskManager.visibleMemory")}
+            </span>
+            <strong className="task-manager-stat-num">
+              {formatTaskBytes(summary.memory)}
+            </strong>
+            <span className="task-manager-stat-sub">
+              {t("taskManager.tabPerformance")}
+            </span>
+          </div>
+          <MiniSparkline
+            samples={usageSamples}
+            metric="memory"
+            color="var(--accent-blue)"
+          />
+        </button>
+
+        <button
+          type="button"
+          className={`task-manager-stat-card ${activeTab === "performance" ? "is-selected" : ""}`}
+          onClick={() => setActiveTab("performance")}
+        >
+          <div className="task-manager-stat-icon is-cpu">
+            <Cpu size={16} aria-hidden="true" />
+          </div>
+          <div className="task-manager-stat-info">
+            <span className="task-manager-stat-label">
+              {t("taskManager.visibleCpu")}
+            </span>
+            <strong className="task-manager-stat-num">
+              {formatTaskTotalCpu(summary)}
+            </strong>
+            <span className="task-manager-stat-sub">
+              {t("taskManager.tabPerformance")}
+            </span>
+          </div>
+          <MiniSparkline
+            samples={usageSamples}
+            metric="cpu"
+            color="var(--accent-amber-text)"
+          />
         </button>
       </div>
 
-      {isLoading ? (
-        <div className="task-manager-state">
-          <Loader2 size={18} strokeWidth={1.8} className="spin" />
+      {/* 顶部 Tab 导航栏与状态控制器 */}
+      <div className="task-manager-nav-bar">
+        <div className="task-manager-tabs" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "processes"}
+            className={`task-manager-tab-btn ${activeTab === "processes" ? "is-active" : ""}`}
+            onClick={() => setActiveTab("processes")}
+          >
+            <Layers size={13} aria-hidden="true" />
+            <span>{t("taskManager.tabProcesses")}</span>
+            <span className="task-manager-tab-badge">{visibleRows.length}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "performance"}
+            className={`task-manager-tab-btn ${activeTab === "performance" ? "is-active" : ""}`}
+            onClick={() => setActiveTab("performance")}
+          >
+            <Activity size={13} aria-hidden="true" />
+            <span>{t("taskManager.tabPerformance")}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "sessions"}
+            className={`task-manager-tab-btn ${activeTab === "sessions" ? "is-active" : ""}`}
+            onClick={() => setActiveTab("sessions")}
+          >
+            <Cpu size={13} aria-hidden="true" />
+            <span>{t("taskManager.tabSessions")}</span>
+            <span className="task-manager-tab-badge">{sessions.length}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "alerts"}
+            className={`task-manager-tab-btn ${activeTab === "alerts" ? "is-active" : ""}`}
+            onClick={() => setActiveTab("alerts")}
+          >
+            <Bell size={13} aria-hidden="true" />
+            <span>{t("taskManager.tabAlerts")}</span>
+          </button>
         </div>
-      ) : hasError ? (
-        <div className="task-manager-state task-manager-error">
+
+        <div className="task-manager-nav-controls">
+          <div
+            className="task-manager-sampling-status"
+            title={sampledAtMs ? time(sampledAtMs) : ""}
+          >
+            <span
+              className={`task-manager-pulse-dot ${autoRefresh && !hidden ? "is-active" : "is-paused"}`}
+            />
+            <span className="task-manager-status-text">
+              {autoRefresh && !hidden
+                ? t("taskManager.autoSampling")
+                : t("taskManager.paused")}
+              {sampledAtMs ? ` · ${time(sampledAtMs)}` : ""}
+            </span>
+          </div>
+          <label className="toggle-switch task-manager-auto-refresh">
+            <span>{t("taskManager.autoRefresh")}</span>
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(event) => setAutoRefresh(event.target.checked)}
+            />
+            <span className="toggle-slider" />
+          </label>
+          <button
+            type="button"
+            className="task-manager-refresh-btn"
+            onClick={() => void refresh(true)}
+            title={t("taskManager.refresh")}
+            aria-label={t("taskManager.refresh")}
+          >
+            <RefreshCw size={13} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+
+      {/* 状态与告警提醒横幅 */}
+      {processStale && !isLoading && (
+        <div className="task-manager-notice task-manager-warning" role="status">
+          {t("taskManager.processStale")}
+        </div>
+      )}
+      {hasError && (
+        <p className="task-manager-notice task-manager-error" role="status">
           {t("taskManager.loadError")}
-        </div>
-      ) : sortedProcesses.length === 0 ? (
-        <div className="task-manager-state">{t("taskManager.empty")}</div>
-      ) : (
-        <div className="task-manager-table-wrap">
-          <table className="task-manager-table">
-            <thead>
-              <tr>
-                {sortableHeader(
-                  "name",
-                  t("taskManager.colName"),
-                  "task-manager-col-name",
+        </p>
+      )}
+
+      {/* 实时告警横幅（所有 Tab 可见） */}
+      <TaskManagerAlerts
+        samples={usageSamples}
+        scopeKey={scopeKey}
+        continuity={continuity}
+        samplingActive={isActive && !hidden && autoRefresh}
+        valid={scopeKnown && !hasError}
+        mode={activeTab === "alerts" ? "all" : "notice-only"}
+      />
+
+      {/* Tab 1: 进程列表与进程树 */}
+      {activeTab === "processes" && (
+        <div className="task-manager-tab-content is-processes">
+          <div className="task-manager-toolbar">
+            <label className="task-manager-search">
+              <Search size={13} aria-hidden="true" />
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={t("taskManager.search")}
+                aria-label={t("taskManager.search")}
+              />
+              {query && (
+                <button
+                  type="button"
+                  className="task-manager-clear-btn"
+                  onClick={() => setQuery("")}
+                >
+                  <X size={11} aria-hidden="true" />
+                </button>
+              )}
+            </label>
+            <div
+              className="task-manager-filters"
+              role="group"
+              aria-label={t("taskManager.filter")}
+            >
+              <button
+                type="button"
+                aria-pressed={filter === "all"}
+                onClick={() => setFilter("all")}
+              >
+                {t("taskManager.all")}
+              </button>
+              <button
+                type="button"
+                aria-pressed={filter === "lsp"}
+                onClick={() => setFilter("lsp")}
+              >
+                LSP
+              </button>
+            </div>
+            <div className="task-manager-project-filter">
+              <select
+                value={project}
+                data-project-filter="true"
+                onChange={(event) => setProject(event.target.value)}
+                aria-label={t("taskManager.projectScope")}
+                title={
+                  projects.find(([key]) => key === project)?.[1] || project
+                }
+              >
+                <option value="">{t("taskManager.allProjects")}</option>
+                {project && !projects.some(([key]) => key === project) && (
+                  <option value={project}>{project}</option>
                 )}
-                {sortableHeader(
-                  "kind",
-                  t("taskManager.colType"),
-                  "task-manager-col-kind",
-                )}
-                {sortableHeader(
-                  "pid",
-                  t("taskManager.colPid"),
-                  "task-manager-col-pid",
-                )}
-                {sortableHeader(
-                  "cpu",
-                  t("taskManager.colCpu"),
-                  "task-manager-col-cpu",
-                )}
-                {sortableHeader(
-                  "memory",
-                  t("taskManager.colMemory"),
-                  "task-manager-col-memory",
-                )}
-                {sortableHeader(
-                  "threads",
-                  t("taskManager.colThreads"),
-                  "task-manager-col-threads",
-                )}
-                <th className="task-manager-col-actions">
-                  <span className="task-manager-col-actions-label">
-                    {t("taskManager.colActions")}
-                  </span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedProcesses.map((process) => (
-                <tr key={process.pid}>
-                  <td
-                    className="task-manager-cell-name"
-                    title={
-                      process.exePath || process.url || displayName(process)
-                    }
-                  >
-                    <span className="task-manager-name-main">
-                      {process.iconDataUrl ? (
-                        <img
-                          className="task-manager-process-icon"
-                          src={process.iconDataUrl}
-                          alt=""
-                          aria-hidden="true"
-                        />
-                      ) : (
-                        <ProcessFallbackIcon
-                          kind={process.kind}
-                          className="task-manager-process-icon"
-                        />
-                      )}
-                      <span className="task-manager-name-text">
-                        {displayName(process)}
-                      </span>
+                {projects.map(([key, root]) => (
+                  <option key={key} value={key}>
+                    {taskProjectName(root)} · {root}
+                  </option>
+                ))}
+              </select>
+              {project && (
+                <button
+                  type="button"
+                  className="task-manager-clear-project-btn"
+                  onClick={() => setProject("")}
+                  title={t("taskManager.clearProject")}
+                >
+                  <X size={11} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div
+              className="task-manager-state"
+              role="status"
+              aria-label={t("taskManager.loading")}
+            >
+              <Loader2 size={18} className="spin" aria-hidden="true" />
+            </div>
+          ) : (
+            <TaskManagerProcessTable
+              sortedRows={sortedProcesses}
+              stale={processStale}
+              actionsDisabled={isKilling || sessionBusy || pendingKill !== null}
+              onKill={(process) => {
+                setKillError(null);
+                setPendingKill(process);
+              }}
+              onProject={selectProject}
+              headers={
+                <>
+                  {sortableHeader(
+                    "name",
+                    t("taskManager.colName"),
+                    "task-manager-col-name",
+                  )}
+                  {sortableHeader(
+                    "kind",
+                    t("taskManager.colType"),
+                    "task-manager-col-kind",
+                  )}
+                  {sortableHeader(
+                    "pid",
+                    t("taskManager.colPid"),
+                    "task-manager-col-pid",
+                  )}
+                  {sortableHeader(
+                    "cpu",
+                    t("taskManager.ownCpu"),
+                    "task-manager-col-cpu",
+                  )}
+                  {sortableHeader(
+                    "memory",
+                    t("taskManager.ownMemory"),
+                    "task-manager-col-memory",
+                  )}
+                  {sortableHeader(
+                    "threads",
+                    t("taskManager.colThreads"),
+                    "task-manager-col-threads",
+                  )}
+                  <th scope="col" className="task-manager-col-actions">
+                    <span className="task-manager-col-actions-label">
+                      {t("taskManager.colActions")}
                     </span>
-                    {process.title && process.name ? (
-                      <span className="task-manager-name-sub">
-                        {process.name}
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className="task-manager-cell-kind">
-                    {t(KIND_LABEL_KEYS[process.kind])}
-                  </td>
-                  <td className="task-manager-cell-num">{process.pid}</td>
-                  <td className="task-manager-cell-num">
-                    {formatCpu(process.cpuPercent)}
-                  </td>
-                  <td className="task-manager-cell-num">
-                    {formatBytes(process.memoryBytes)}
-                  </td>
-                  <td className="task-manager-cell-num">
-                    {process.threadCount}
-                  </td>
-                  <td className="task-manager-cell-actions">
-                    {process.killable ? (
-                      <button
-                        type="button"
-                        className="task-manager-kill-btn"
-                        onClick={() => {
-                          setKillError(null);
-                          setPendingKill(process);
-                        }}
-                        title={t("taskManager.endProcess")}
-                      >
-                        <XCircle
-                          size={13}
-                          strokeWidth={1.8}
-                          aria-hidden="true"
-                        />
-                      </button>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </th>
+                </>
+              }
+            />
+          )}
+        </div>
+      )}
+
+      {/* Tab 2: 性能趋势大屏与图表 */}
+      {activeTab === "performance" && (
+        <div className="task-manager-tab-content is-scrollable">
+          <TaskManagerPerformancePanel
+            samples={usageSamples}
+            now={now}
+            processes={visibleRows}
+          />
+        </div>
+      )}
+
+      {/* Tab 3: LSP 会话与资源预算 */}
+      {activeTab === "sessions" && (
+        <div className="task-manager-tab-content is-scrollable">
+          <TaskManagerSessions
+            isActive={isActive && !hidden}
+            sessions={sessions}
+            rows={rows}
+            groups={groups}
+            snapshot={sessionSnapshot}
+            processStale={processStale}
+            sessionsStale={sessionsStale}
+            now={now}
+            externalBusy={pendingKill !== null || isKilling}
+            onBusyChange={setSessionBusy}
+            onRefresh={forceRefresh}
+            onProject={selectProject}
+          />
+          <div className="task-manager-card-section">
+            <div className="task-manager-section-header">
+              <Cpu size={14} />
+              <strong>{t("taskManager.budgetTitle")}</strong>
+            </div>
+            <LspResourcePanel
+              isActive={isActive && !hidden && activeTab === "sessions"}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Tab 4: 持续占用告警设置 */}
+      {activeTab === "alerts" && (
+        <div className="task-manager-tab-content is-scrollable">
+          <div className="task-manager-alerts-container">
+            <TaskManagerAlerts
+              samples={usageSamples}
+              scopeKey={scopeKey}
+              continuity={continuity}
+              samplingActive={isActive && !hidden && autoRefresh}
+              valid={scopeKnown && !hasError}
+              mode="panel-only"
+            />
+          </div>
         </div>
       )}
 
@@ -413,7 +815,7 @@ export const TaskManagerContent = ({
           pendingKill
             ? t("taskManager.endProcessConfirm", {
                 values: {
-                  name: displayName(pendingKill),
+                  name: taskDisplayName(pendingKill),
                   pid: pendingKill.pid,
                 },
               })
@@ -423,7 +825,7 @@ export const TaskManagerContent = ({
         cancelLabel={t("common.cancel", { defaultValue: "Cancel" })}
         onConfirm={() => void handleConfirmKill()}
         onCancel={() => {
-          if (!isKilling) {
+          if (!killLockRef.current) {
             setPendingKill(null);
             setKillError(null);
           }
@@ -431,9 +833,7 @@ export const TaskManagerContent = ({
         isConfirming={isKilling}
         variant="danger"
       >
-        {killError ? (
-          <p className="task-manager-kill-error">{killError}</p>
-        ) : null}
+        {killError && <p className="task-manager-kill-error">{killError}</p>}
       </ConfirmDialog>
     </div>
   );
