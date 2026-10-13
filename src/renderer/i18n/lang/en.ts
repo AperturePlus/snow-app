@@ -4812,6 +4812,7 @@ export const en = {
   "rightPanel.tabContextNewTerminal": "New Terminal",
   "rightPanel.tabContextNewBrowser": "New Browser",
   "rightPanel.tabContextNewDrawing": "New Drawing Workspace",
+  "rightPanel.tabContextNewTasks": "Task manager",
   "rightPanel.openInNewWindow": "Open in new window",
   "rightPanel.openInLocalBrowser": "Open in local browser",
   "rightPanel.selectFileToViewDiff": "Select a file to view its diff",

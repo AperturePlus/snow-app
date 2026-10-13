@@ -3,6 +3,7 @@ import {
   ChevronsRight,
   CopyX,
   ExternalLink,
+  Gauge,
   Globe,
   MonitorUp,
   Paintbrush,
@@ -34,6 +35,7 @@ type RightPanelTabContextMenuProps = {
   onNewTerminal: () => void;
   onNewBrowser: () => void;
   onNewDrawing: () => void;
+  onNewTasks: () => void;
   /** 已启用插件的声明式面板入口，与加号菜单保持一致。 */
   pluginItems?: ContextMenuItem[];
   onCloseTab: () => void;
@@ -41,7 +43,7 @@ type RightPanelTabContextMenuProps = {
 };
 
 /**
- * 右侧面板 tab 的右键菜单：新建终端 / 新建浏览器 / 新建绘图工作台 / 关闭标签页
+ * 右侧面板 tab 的右键菜单：新建终端 / 新建浏览器 / 新建绘图工作台 / 任务管理器 / 关闭标签页
  * （含关闭其他、关闭右侧、关闭左侧、关闭所有）。定位在鼠标点击处，
  * 越界时自动收进视口；点击外部或按 Esc 关闭。
  */
@@ -59,6 +61,7 @@ export function RightPanelTabContextMenu({
   onNewTerminal,
   onNewBrowser,
   onNewDrawing,
+  onNewTasks,
   pluginItems = [],
   onCloseTab,
   onClose,
@@ -89,6 +92,14 @@ export function RightPanelTabContextMenu({
       }),
       icon: <Paintbrush size={13} strokeWidth={1.8} />,
       onClick: onNewDrawing,
+    },
+    {
+      id: "new-tasks",
+      label: t("rightPanel.tabContextNewTasks", {
+        defaultValue: "Task manager",
+      }),
+      icon: <Gauge size={13} strokeWidth={1.8} />,
+      onClick: onNewTasks,
     },
     ...pluginItems,
   ];

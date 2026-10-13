@@ -4477,6 +4477,7 @@ export const zhTW = {
   "rightPanel.tabContextNewTerminal": "新增終端",
   "rightPanel.tabContextNewBrowser": "新增瀏覽器",
   "rightPanel.tabContextNewDrawing": "新增繪圖工作台",
+  "rightPanel.tabContextNewTasks": "任務管理器",
   "rightPanel.aiDrawing.promptPlaceholder":
     "描述你想生成的畫面，支援中文；例如：賽博龐克風格的雨夜城市，霓虹燈倒影…",
   "rightPanel.aiDrawing.promptHint": "Ctrl + Enter 快速生成",

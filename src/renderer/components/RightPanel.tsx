@@ -2063,6 +2063,10 @@ export const RightPanel = forwardRef<RightPanelRef, RightPanelProps>(
               setTabContextMenu(null);
               handleOpenDrawingTab();
             }}
+            onNewTasks={() => {
+              setTabContextMenu(null);
+              handleOpenTaskManagerTab();
+            }}
             onOpenInNewWindow={
               contextMenuTargetIsBrowser
                 ? () => {

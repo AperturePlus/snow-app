@@ -620,6 +620,15 @@ export const TopBar = ({
         ]
       : []),
     {
+      id: "tasks",
+      label: t("topBar.plusMenu.tasks", { defaultValue: "Task manager" }),
+      icon: <Gauge size={13} strokeWidth={1.8} />,
+      onClick: () => {
+        setBranchContextMenu(null);
+        onOpenTaskManager?.();
+      },
+    },
+    {
       id: "copy-path",
       separator: true,
       label: t("topBar.copyProjectPath", {
